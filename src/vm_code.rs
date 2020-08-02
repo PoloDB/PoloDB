@@ -1,14 +1,15 @@
 
 #[repr(u8)]
 pub enum VmCode {
-    PushUndefined = 0,
+    PushUndefined = 0,  // 1
     // PushNull,
-    PushI32,
-    PushI64,
-    PushTrue,
-    PushFalse,
-    PushBool,
-    Pop,
+    PushI32,            // 5
+    PushI64,            // 9
+    PushTrue,           // 1
+    PushFalse,          // 1
+    PushBool,           // 2
+    Pop,                // 1
+    CreateCollection,   // 1, st: -2
     // AddI32,
     // AddI64,
     // Add,
@@ -22,6 +23,6 @@ pub enum VmCode {
     // DivI64,
     // Div,
     // Mod,
-    Resolve,
-    Reject
+    Resolve,             // 1
+    Reject               // 1
 }

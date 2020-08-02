@@ -1,4 +1,4 @@
-
+pub mod hex;
 pub mod object_id;
 pub mod document;
 pub mod value;

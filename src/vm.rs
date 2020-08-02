@@ -55,7 +55,7 @@ impl VM {
                         let mut buffer: [u8; 4] = [0; 4];
                         pc.copy_to(buffer.as_mut_ptr(), 4);
                         let num = i32::from_be_bytes(buffer);
-                        st.write(Value::I32(num));
+                        st.write(Value::Int(num as i64));
                         st = st.add(1);
                         pc = pc.add(4);
                     }
@@ -64,7 +64,7 @@ impl VM {
                         let mut buffer: [u8; 8] = [0; 8];
                         pc.copy_to(buffer.as_mut_ptr(), 8);
                         let num = i64::from_be_bytes(buffer);
-                        st.write(Value::I64(num));
+                        st.write(Value::Int(num));
                         st = st.add(1);
                         pc = pc.add(8);
                     }
@@ -88,6 +88,16 @@ impl VM {
 
                     VmCode::Pop => {
                         st = st.sub(1);
+                    }
+
+                    VmCode::CreateCollection => {
+                        let n1 = st.sub(1);
+                        let option = n1.read();
+                        let n2 = st.sub(2);
+                        let name = n2.read();
+                        st = n2;
+
+                        println!("create collection: {}, {}", name, name)
                     }
 
                     // VmCode::AddI32 => {
