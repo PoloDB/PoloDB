@@ -2,8 +2,9 @@
 use super::ObjectId;
 use super::document::Document;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
+    Undefined,
     Double(f64),
     Boolean(bool),
     I32(i32),

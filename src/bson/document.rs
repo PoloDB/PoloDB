@@ -13,7 +13,7 @@ use crate::bson::object_id::ObjectIdMaker;
 //     next:       *mut DocTuple,
 // }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Document {
     map: LinkedHashMap<String, value::Value>,
 }

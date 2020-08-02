@@ -2,7 +2,7 @@ use std::time::Instant;
 use std::fmt;
 use std::num::ParseIntError;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ObjectId {
     pub timestamp: i32,
     pub counter:   i64,

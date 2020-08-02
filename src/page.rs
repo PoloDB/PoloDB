@@ -2,7 +2,6 @@ use std::io;
 use std::fmt;
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write, Read};
-use std::num;
 use std::sync::Weak;
 use std::sync::Arc;
 
