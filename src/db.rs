@@ -2,6 +2,7 @@ use std::fs::File;
 use std::sync::{ Arc, Weak };
 use super::page::{ RawPage, ContentPageWrapper, header_page_utils };
 use crate::bson::object_id::ObjectIdMaker;
+use crate::journal::JournalManager;
 
 static DB_INIT_BLOCK_COUNT: u32 = 8;
 
@@ -27,6 +28,7 @@ pub struct DbContext {
     pub first_page:   RawPage,
     pub obj_id_maker: ObjectIdMaker,
 
+    journal_manager:  Box<JournalManager>,
     pub weak_this:    Option<Weak<DbContext>>,
 }
 
@@ -63,11 +65,15 @@ fn read_first_block(file: &mut File, block_size: u32) -> std::io::Result<RawPage
 
 impl DbContext {
 
-    fn new(path: String) -> std::io::Result<DbContext> {
+    fn new(path: &str) -> std::io::Result<DbContext> {
         let mut db_file = File::create(path)?;
         let block_size = 4096;
         let (first_page, block_count) = init_db(&mut db_file, block_size)?;
         let obj_id_maker = ObjectIdMaker::new();
+
+        let journal_file_path: String = format!("{}.journal", &path);
+        let journal_manager = JournalManager::open(&journal_file_path)?;
+
         let ctx = DbContext {
             db_file,
 
@@ -78,6 +84,7 @@ impl DbContext {
             first_page,
             obj_id_maker,
 
+            journal_manager: Box::new(journal_manager),
             weak_this: None,
         };
         Ok(ctx)
@@ -126,7 +133,7 @@ impl DbContext {
 
 impl Database {
 
-    pub fn new(path: String) -> std::io::Result<Database>  {
+    pub fn new(path: &str) -> std::io::Result<Database>  {
         let ctx = DbContext::new(path)?;
         let mut rc_ctx: Arc<DbContext> = Arc::new(ctx);
         let weak_ctx = Arc::downgrade(&rc_ctx);

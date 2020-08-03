@@ -20,7 +20,7 @@ enum PageType {
 #[derive(Debug)]
 pub struct RawPage {
     page_id:       u32,
-    data:          Vec<u8>,
+    pub data:      Vec<u8>,
     pos:           u32,
 }
 
