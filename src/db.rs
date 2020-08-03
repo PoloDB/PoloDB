@@ -72,7 +72,7 @@ impl DbContext {
         let obj_id_maker = ObjectIdMaker::new();
 
         let journal_file_path: String = format!("{}.journal", &path);
-        let journal_manager = JournalManager::open(&journal_file_path)?;
+        let journal_manager = JournalManager::open(&journal_file_path, block_size)?;
 
         let ctx = DbContext {
             db_file,
