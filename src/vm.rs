@@ -27,7 +27,7 @@ impl VM {
 
     fn new(program: Box<SubProgram>) -> VM {
         let mut stack = Vec::new();
-        stack.resize(STACK_SIZE, value::Value::Undefined);
+        stack.resize(STACK_SIZE, value::Value::Null);
         VM {
             state: VmState::Init,
             stack,
@@ -45,8 +45,8 @@ impl VM {
                 pc = pc.add(1);
 
                 match op {
-                    VmCode::PushUndefined => {
-                        st.write(Value::Undefined);
+                    VmCode::PushNull => {
+                        st.write(Value::Null);
                         st = st.add(1);
                         pc = pc.add(1);
                     }
@@ -97,7 +97,7 @@ impl VM {
                         let name = n2.read();
                         st = n2;
 
-                        println!("create collection: {}, {}", name, name)
+                        println!("create collection: {}, {}", name, option)
                     }
 
                     // VmCode::AddI32 => {

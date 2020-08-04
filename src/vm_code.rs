@@ -1,7 +1,7 @@
 
 #[repr(u8)]
 pub enum VmCode {
-    PushUndefined = 0,  // 1
+    PushNull = 0,       // 1
     // PushNull,
     PushI32,            // 5
     PushI64,            // 9

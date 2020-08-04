@@ -1,6 +1,7 @@
 pub mod hex;
 pub mod object_id;
 pub mod document;
+pub mod array;
 pub mod value;
 mod linked_hash_map;
 
@@ -15,7 +16,7 @@ mod tests {
     #[test]
     fn document_basic() {
         let mut id_maker = ObjectIdMaker::new();
-        let doc = Document::new(&mut id_maker);
+        let _doc = Document::new(&mut id_maker);
         assert_eq!(2 + 2, 4);
     }
 

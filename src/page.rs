@@ -1,8 +1,6 @@
-use std::fmt;
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write, Read};
 use std::sync::Weak;
-use std::sync::Arc;
 
 use super::db::DbContext;
 
@@ -19,9 +17,9 @@ enum PageType {
 
 #[derive(Debug)]
 pub struct RawPage {
-    page_id:       u32,
-    pub data:      Vec<u8>,
-    pos:           u32,
+    pub page_id:    u32,
+    pub data:       Vec<u8>,
+    pos:            u32,
 }
 
 impl RawPage {
@@ -36,13 +34,24 @@ impl RawPage {
         }
     }
 
+    pub unsafe fn copy_from_ptr(&mut self, ptr: *const u8) {
+        let target_ptr = self.data.as_mut_ptr();
+        target_ptr.copy_from_nonoverlapping(ptr, self.data.len());
+    }
+
+    pub unsafe fn copy_to_ptr(&self, ptr: *mut u8) {
+        let target_ptr = self.data.as_ptr();
+        target_ptr.copy_to_nonoverlapping(ptr, self.data.len());
+    }
+
     pub fn put(&mut self, data: &[u8]) {
         if data.len() + self.pos as usize > self.data.len() {
             panic!("space is not enough for page");
         }
 
         unsafe {
-            self.data.as_mut_ptr().offset(self.pos as isize).copy_from(data.as_ptr(), data.len());
+            self.data.as_mut_ptr().offset(self.pos as isize)
+                .copy_from_nonoverlapping(data.as_ptr(), data.len());
         }
 
         self.pos += data.len() as u32;
@@ -54,19 +63,26 @@ impl RawPage {
         }
 
         unsafe {
-            self.data.as_mut_ptr().offset(self.pos as isize).copy_from(str.as_ptr(), str.len());
+            self.data.as_mut_ptr().offset(self.pos as isize).copy_from_nonoverlapping(str.as_ptr(), str.len());
         }
 
         self.pos += str.len() as u32;
     }
 
-    pub fn get_u8(&self, pos: usize) -> u8 {
-        self.data[pos]
+    pub fn get_u8(&self, pos: u32) -> u8 {
+        self.data[pos as usize]
     }
 
     #[inline]
     pub fn put_u8(&mut self, data: u8) {
         self.data[self.pos as usize] = data
+    }
+
+    #[inline]
+    pub fn get_u16(&self, pos: u32) -> u16 {
+        let mut buffer: [u8; 2] = [0; 2];
+        buffer.copy_from_slice(&self.data[(pos as usize)..((pos as usize) + 2)]);
+        u16::from_be_bytes(buffer)
     }
 
     #[inline]
@@ -76,10 +92,10 @@ impl RawPage {
     }
 
     #[inline]
-    pub fn get_u16(&self, pos: usize) -> u16 {
-        let mut buffer: [u8; 2] = [0; 2];
-        buffer.copy_from_slice(&self.data[pos..(pos+2)]);
-        u16::from_be_bytes(buffer)
+    pub fn get_u32(&self, pos: u32) -> u32 {
+        let mut buffer: [u8; 4] = [0; 4];
+        buffer.copy_from_slice(&self.data[(pos as usize)..((pos as usize) + 4)]);
+        u32::from_be_bytes(buffer)
     }
 
     #[inline]
@@ -89,22 +105,15 @@ impl RawPage {
     }
 
     #[inline]
-    pub fn get_u32(&self, pos: usize) -> u32 {
-        let mut buffer: [u8; 4] = [0; 4];
-        buffer.copy_from_slice(&self.data[pos..(pos + 4)]);
-        u32::from_be_bytes(buffer)
-    }
-
-    #[inline]
     pub fn put_u64(&mut self, data: u64) {
         let data_be = data.to_be_bytes();
         self.put(&data_be)
     }
 
     #[inline]
-    pub fn get_u64(&self, pos: usize) -> u64 {
+    pub fn get_u64(&self, pos: u32) -> u64 {
         let mut buffer: [u8; 8] = [0; 8];
-        buffer.copy_from_slice(&self.data[pos..(pos + 8)]);
+        buffer.copy_from_slice(&self.data[(pos as usize)..((pos as usize) + 8)]);
         u64::from_be_bytes(buffer)
     }
 
@@ -116,7 +125,7 @@ impl RawPage {
 
     pub fn read_from_file(&mut self, file: &mut File, offset: u64) -> std::io::Result<()> {
         file.seek(SeekFrom::Start(offset))?;
-        file.read(self.data.as_mut_slice())?;
+        file.read_exact(self.data.as_mut_slice())?;
         Ok(())
     }
 
@@ -126,8 +135,8 @@ impl RawPage {
     }
 
     #[inline]
-    pub fn len(&self) {
-        self.data.len();
+    pub fn len(&self) -> u32 {
+        self.data.len() as u32
     }
 
 }
@@ -136,8 +145,6 @@ struct FreeList {
     free_list_page_id:   u32,
     data:                Vec<u32>,
 }
-
-static FREE_LIST_OFFSET: usize = 2048;
 
 impl FreeList {
 
@@ -149,14 +156,14 @@ impl FreeList {
     }
 
     fn from_raw(raw_page: &RawPage) -> FreeList {
-        let size = raw_page.get_u32(FREE_LIST_OFFSET);
-        let free_list_page_id = raw_page.get_u32(FREE_LIST_OFFSET + 4);
+        let size = raw_page.get_u32(header_page_utils::FREE_LIST_OFFSET);
+        let free_list_page_id = raw_page.get_u32(header_page_utils::FREE_LIST_OFFSET + 4);
 
         let mut data: Vec<u32> = Vec::new();
         data.resize(size as usize, 0);
 
         for i in 0..size {
-            let offset = FREE_LIST_OFFSET + 8 + (i * 4) as usize;
+            let offset = header_page_utils::FREE_LIST_OFFSET + 8 + (i * 4);
             data.insert(i as usize, raw_page.get_u32(offset));
         }
 
@@ -173,6 +180,8 @@ impl FreeList {
  * Offset 32 (8 bytes) : Version 0.0.0.0;
  * Offset 40 (4 bytes) : SectorSize;
  * Offset 44 (4 bytes) : PageSize;
+ * Offset 48 (4 bytes) : NullPageBarId;
+ * Offset 52 (4 bytes) : MetaPageId(usually 1);
  *
  * Free list offset: 2048;
  * | 4b   | 4b                  | 4b     | 4b    | ... |
@@ -181,16 +190,19 @@ impl FreeList {
 pub mod header_page_utils {
     use crate::page::RawPage;
 
-    static HEADER_DESP: &str       = "PipeappleDB Format v0.1";
-    static SECTOR_SIZE_OFFSET: u32 = 40;
-    static PAGE_SIZE_OFFSET: u32   = 44;
-    static FREE_LIST_OFFSET: u32   = 2048;
+    static HEADER_DESP: &str         = "PipeappleDB Format v0.1";
+    static SECTOR_SIZE_OFFSET: u32   = 40;
+    static PAGE_SIZE_OFFSET: u32     = 44;
+    static NULL_PAGE_BAR_OFFSET: u32 = 48;
+    static META_PAGE_ID: u32         = 52;
+    pub static FREE_LIST_OFFSET: u32 = 2048;
 
     pub fn init(page: &mut RawPage) {
         set_title(page, HEADER_DESP);
         set_version(page, &[0, 0, 0, 0]);
         set_sector_size(page, 4096);
         set_page_size(page, 4096);
+        set_null_page_bar(page, 1);
     }
 
     pub fn set_title(page: &mut RawPage, title: &str) {
@@ -234,7 +246,7 @@ pub mod header_page_utils {
     }
 
     pub fn get_sector_size(page: &RawPage) -> u32 {
-        page.get_u32(SECTOR_SIZE_OFFSET as usize)
+        page.get_u32(SECTOR_SIZE_OFFSET)
     }
 
     pub fn set_page_size(page: &mut RawPage, page_size: u32) {
@@ -243,21 +255,39 @@ pub mod header_page_utils {
     }
 
     pub fn get_page_size(page: &RawPage) -> u32 {
-        page.get_u32(PAGE_SIZE_OFFSET as usize)
+        page.get_u32(PAGE_SIZE_OFFSET)
+    }
+
+    pub fn get_null_page_bar(page: &RawPage) -> u32 {
+        page.get_u32(NULL_PAGE_BAR_OFFSET)
+    }
+
+    pub fn set_null_page_bar(page: &mut RawPage, data: u32) {
+        page.seek(NULL_PAGE_BAR_OFFSET);
+        page.put_u32(data)
+    }
+
+    pub fn get_meta_page_id(page: &RawPage) -> u32 {
+        page.get_u32(META_PAGE_ID)
+    }
+
+    pub fn set_meta_page_id(page: &mut RawPage, data: u32) {
+        page.seek(META_PAGE_ID);
+        page.put_u32(data)
     }
 
     pub fn get_free_list_size(page: &RawPage) -> u32 {
-        page.get_u32(FREE_LIST_OFFSET as usize)
+        page.get_u32(FREE_LIST_OFFSET)
     }
 
     pub fn set_free_list_size(page: &mut RawPage, size: u32) {
         page.seek(FREE_LIST_OFFSET);
-        let _ = page.put_u32(size);
+        page.put_u32(size)
     }
 
     pub fn get_free_list_content(page: &RawPage, index: u32) -> u32 {
         let offset = index * 4 + FREE_LIST_OFFSET + 8;
-        page.get_u32(offset as usize)
+        page.get_u32(offset)
     }
 
     #[cfg(test)]
@@ -364,7 +394,7 @@ impl ContentPageWrapper {
     }
 
     pub fn ty(&self) -> ContentPageType {
-        let ty8 = self.raw.get_u8(CONTENT_TY_OFFSET as usize);
+        let ty8 = self.raw.get_u8(CONTENT_TY_OFFSET);
         ContentPageType::from_u8(ty8)
     }
 

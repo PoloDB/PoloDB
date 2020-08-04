@@ -1,14 +1,15 @@
-use std::time::Instant;
 use std::fmt;
-use std::num::ParseIntError;
+use std::io::Write;
 use std::cmp::Ordering;
-use std::panic::resume_unwind;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::ptr::null_mut;
+use std::os::raw::c_uint;
+
 use libc;
 use super::hex;
-
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::ptr::{null, null_mut};
-use std::os::raw::c_uint;
+use crate::serialization::DbSerializer;
+use crate::db::DbResult;
+use crate::error::DbErr;
 
 #[derive(Debug, Clone, Eq)]
 pub struct ObjectId {
@@ -18,14 +19,13 @@ pub struct ObjectId {
 
 impl ObjectId {
 
-    fn from_hex(data: &str) -> Result<ObjectId, ParseError> {
-        let bytes = match hex::decode(data) {
-            Ok(result) => result,
-            Err(_) => return Err(ParseError::Length())
-        };
+    fn plain() -> ObjectId {
+        ObjectId { timestamp: 0, counter: 0 }
+    }
 
+    pub fn deserialize(bytes: &[u8]) -> DbResult<ObjectId> {
         if bytes.len() != 12 {
-            return Err(ParseError::Length());
+            return Err(DbErr::ParseError);
         }
 
         let mut timestamp_buffer: [u8; 4] = [0; 4];
@@ -39,16 +39,21 @@ impl ObjectId {
         Ok(ObjectId { timestamp, counter })
     }
 
+    fn from_hex(data: &str) -> DbResult<ObjectId> {
+        let bytes = match hex::decode(data) {
+            Ok(result) => result,
+            Err(_) => return Err(DbErr::ParseError)
+        };
+
+        ObjectId::deserialize(&bytes)
+    }
+
     fn to_hex(&self) -> String {
-        let mut result = vec![];
-        result.resize(12, 0);
-        let timestamp_le: [u8; 4] = self.timestamp.to_be_bytes();
-        let counter_le: [u8; 8] = self.counter.to_be_bytes();
+        let mut bytes = vec![];
 
-        result[0..4].copy_from_slice(&timestamp_le);
-        result[4..12].copy_from_slice(&counter_le);
+        self.serialize(&mut bytes).expect("object id serializing failed");
 
-        hex::encode(result)
+        hex::encode(bytes)
     }
 
 }
@@ -89,33 +94,23 @@ impl PartialEq for ObjectId {
 
 }
 
+impl DbSerializer for ObjectId {
+
+    fn serialize(&self, writer: &mut dyn Write) -> DbResult<()> {
+        let timestamp_le: [u8; 4] = self.timestamp.to_be_bytes();
+        let counter_le: [u8; 8] = self.counter.to_be_bytes();
+
+        writer.write_all(&timestamp_le)?;
+        writer.write_all(&counter_le)?;
+
+        Ok(())
+    }
+
+}
+
 #[derive(Debug)]
 pub struct ObjectIdMaker {
     pub counter:   i64,
-}
-
-#[derive(Debug, Clone)]
-pub enum ParseError {
-    ParseInt(ParseIntError),
-    Length(),
-}
-
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ParseError::ParseInt(parse_int_err) => parse_int_err.fmt(f),
-            ParseError::Length() =>
-                write!(f, "the length of str should be 12")
-        }
-    }
-}
-
-impl std::error::Error for ParseError{}
-
-impl From<ParseIntError> for ParseError {
-    fn from(err: ParseIntError) -> ParseError {
-        return ParseError::ParseInt(err);
-    }
 }
 
 fn random_i32() -> i32 {
@@ -158,9 +153,9 @@ impl ObjectIdMaker {
         }
     }
 
-    pub fn value_of(content: &str) -> Result<ObjectId, ParseError> {
+    pub fn value_of(content: &str) -> DbResult<ObjectId> {
         if content.len() != 12 {
-            return Err(ParseError::Length())
+            return Err(DbErr::ParseError);
         }
 
         let timestamp_str = &content[0..4];
