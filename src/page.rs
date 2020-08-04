@@ -24,15 +24,6 @@ pub struct RawPage {
     pos:           u32,
 }
 
-#[derive(Debug, Clone)]
-pub struct SpaceNotEnough;
-
-impl fmt::Display for SpaceNotEnough {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "page space is not enough")
-    }
-}
-
 impl RawPage {
 
     pub fn new(page_id: u32, size: u32) -> RawPage {
@@ -45,9 +36,9 @@ impl RawPage {
         }
     }
 
-    pub fn put(&mut self, data: &[u8]) -> Result<(), SpaceNotEnough> {
+    pub fn put(&mut self, data: &[u8]) {
         if data.len() + self.pos as usize > self.data.len() {
-            return Err(SpaceNotEnough);
+            panic!("space is not enough for page");
         }
 
         unsafe {
@@ -55,21 +46,18 @@ impl RawPage {
         }
 
         self.pos += data.len() as u32;
-
-        Ok(())
     }
 
-    pub fn put_str(&mut self, str: &str) -> Result<(), SpaceNotEnough> {
+    pub fn put_str(&mut self, str: &str) {
         if str.len() + self.pos as usize > self.data.len() {
-            return Err(SpaceNotEnough);
+            panic!("space is not enough for page");
         }
 
         unsafe {
             self.data.as_mut_ptr().offset(self.pos as isize).copy_from(str.as_ptr(), str.len());
         }
-        self.pos += str.len() as u32;
 
-        Ok(())
+        self.pos += str.len() as u32;
     }
 
     pub fn get_u8(&self, pos: usize) -> u8 {
@@ -82,7 +70,7 @@ impl RawPage {
     }
 
     #[inline]
-    pub fn put_u16(&mut self, data: u16) -> Result<(), SpaceNotEnough> {
+    pub fn put_u16(&mut self, data: u16) {
         let data_be = data.to_le_bytes();
         self.put(&data_be)
     }
@@ -95,7 +83,7 @@ impl RawPage {
     }
 
     #[inline]
-    pub fn put_u32(&mut self, data: u32) -> Result<(), SpaceNotEnough> {
+    pub fn put_u32(&mut self, data: u32) {
         let data_be = data.to_be_bytes();
         self.put(&data_be)
     }
@@ -108,7 +96,7 @@ impl RawPage {
     }
 
     #[inline]
-    pub fn put_u64(&mut self, data: u64) -> Result<(), SpaceNotEnough> {
+    pub fn put_u64(&mut self, data: u64) {
         let data_be = data.to_be_bytes();
         self.put(&data_be)
     }
@@ -363,12 +351,12 @@ impl ContentPageWrapper {
 
     pub fn set_magic_key(&mut self, key: u16) {
         self.raw.seek(0);
-        self.raw.put_u16(key).expect("set magic key failed");
+        self.raw.put_u16(key);
     }
 
     pub fn set_next_page_id(&mut self, next_pid: u32) {
         self.raw.seek(32);
-        self.raw.put_u32(next_pid).expect("set page id failed")
+        self.raw.put_u32(next_pid)
     }
 
     pub fn get_next_page_id(&self) -> u32 {

@@ -25,6 +25,14 @@ struct Journal {
     origin_jid: i64,
 }
 
+// 40 bytes
+struct FrameHeader {
+    page_id:       u32,  // offset 0
+    db_size:       u64,  // offset 8
+    salt1:         u32,  // offset 16
+    salt2:         u32,  // offset 20
+}
+
 // name:       32 bytes
 // version:    4bytes(offset 32)
 // page_size:  4bytes(offset 36)
@@ -100,6 +108,37 @@ impl JournalManager {
             journal_file,
             block_size: 4096,
         })
+    }
+
+    pub fn append_frame_header(&mut self, frame_header: &FrameHeader, checksum2: u64) -> std::io::Result<()> {
+        let mut header24 = vec![];
+        header24.resize(24, 0);
+
+        let page_id_be = frame_header.page_id.to_be_bytes();
+        header24[0..4].copy_from_slice(&page_id_be);
+
+        let db_size_be = frame_header.db_size.to_be_bytes();
+        header24[8..16].copy_from_slice(&db_size_be);
+
+        let salt1_be = frame_header.salt1.to_be_bytes();
+        header24[16..20].copy_from_slice(&salt1_be);
+
+        let salt2_be = frame_header.salt2.to_be_bytes();
+        header24[20..24].copy_from_slice(&salt2_be);
+
+        self.journal_file.seek(SeekFrom::End(0))?;
+        self.journal_file.write(&header24)?;
+
+        let checksum1 = crc64(0, &header24);
+        let checksum1_be = checksum1.to_be_bytes();
+        self.journal_file.write(&checksum1_be)?;
+
+        let checksum2_be = checksum2.to_be_bytes();
+        self.journal_file.write(&checksum2_be)?;
+
+        self.journal_file.flush()?;
+
+        Ok(())
     }
 
 }
