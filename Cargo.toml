@@ -1,5 +1,5 @@
 [package]
-name = "pipeapple_db_rust"
+name = "polodb"
 version = "0.1.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 edition = "2018"

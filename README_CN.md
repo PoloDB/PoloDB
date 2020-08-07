@@ -1,7 +1,7 @@
 
-# PipeappleDB
+# PoloDB
 
-PipeappleDB 是一个嵌入式 NoSQL 数据库。
+PoloDB 是一个嵌入式 NoSQL 数据库。
 
 # 特性
 
@@ -14,15 +14,15 @@ PipeappleDB 是一个嵌入式 NoSQL 数据库。
 
 # 介绍
 
-PipeappleDB 是一个 Rust 实现的轻量级的嵌入式数据库。
+PoloDB 是一个 Rust 实现的轻量级的嵌入式数据库。
 
-PipeappleDB 几乎没有依赖（除了 libc，系统自带），
+PoloDB 几乎没有依赖（除了 libc，系统自带），
 所以可以很好地跨平台（也因为 Rust 语言本身）。
 
-PipeappleDB 所有数据都储存在一个文件里。PipeappleDB
+PoloDB 所有数据都储存在一个文件里。PoloDB
 的文件格式是稳定的，跨平台而且向后兼容的。
 
-PipeappleDB 的 API 和 MongoDB 类似，易学易用。
+PoloDB 的 API 和 MongoDB 类似，易学易用。
 
 # 开发计划
 
@@ -54,6 +54,6 @@ PipeappleDB 的 API 和 MongoDB 类似，易学易用。
 
 # FAQ
 
-## PipeappleDB 支持多线程吗？
+## PoloDB 支持多线程吗？
 
 暂时**不支持**，不过已经在需求池了。
