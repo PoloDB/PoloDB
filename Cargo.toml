@@ -1,10 +1,10 @@
-[package]
-name = "polodb"
-version = "0.1.0"
-authors = ["Vincent Chan <okcdz@diverse.space>"]
-edition = "2018"
+[workspace]
+members = [
+    "src/polodb_core",
+    "src/polodb_cli",
+]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-libc = "0.2"
+exclude = [
+    "build",
+    "obj",
+]

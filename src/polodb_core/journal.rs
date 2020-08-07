@@ -7,24 +7,6 @@ use crate::crc64::crc64;
 
 static HEADER_DESP: &str       = "PipeappleDB Journal v0.1";
 
-enum JournalType  {
-    Invalid = 0,
-
-    NewPage,
-
-    WritePage,
-
-    DeletePage,
-
-}
-
-struct Journal {
-    ty: JournalType,
-    __reserved0: u16,
-    current_jid: i32,
-    origin_jid: i64,
-}
-
 // 40 bytes
 pub struct FrameHeader {
     page_id:       u32,  // offset 0
@@ -151,7 +133,7 @@ impl JournalManager {
         Ok(())
     }
 
-    pub fn append_raw_page(&mut self, raw_page: &RawPage) -> std::io::Result<()> {
+    pub(crate) fn append_raw_page(&mut self, raw_page: &RawPage) -> std::io::Result<()> {
         let start_pos = self.journal_file.seek(SeekFrom::Current(0))?;
 
         let frame_header = FrameHeader {
@@ -174,7 +156,7 @@ impl JournalManager {
         Ok(())
     }
 
-    pub fn read_page(&mut self, page_id: u32) -> std::io::Result<Option<RawPage>> {
+    pub(crate) fn read_page(&mut self, page_id: u32) -> std::io::Result<Option<RawPage>> {
         let offset = match self.offset_map.get(&page_id) {
             Some(offset) => *offset,
             None => return Ok(None),
@@ -189,7 +171,7 @@ impl JournalManager {
         Ok(Some(result))
     }
 
-    pub fn checkpoint_finished(&mut self) -> std::io::Result<()> {
+    pub(crate) fn checkpoint_finished(&mut self) -> std::io::Result<()> {
         self.journal_file.set_len(64)?;  // truncate file to 64 bytes
 
         // clear all data
@@ -203,7 +185,7 @@ impl JournalManager {
     }
 
     #[inline]
-    pub fn len(&self) -> u32 {
+    pub(crate) fn len(&self) -> u32 {
         self.count
     }
 

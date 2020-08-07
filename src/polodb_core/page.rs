@@ -16,7 +16,7 @@ enum PageType {
 }
 
 #[derive(Debug)]
-pub struct RawPage {
+pub(crate) struct RawPage {
     pub page_id:    u32,
     pub data:       Vec<u8>,
     pos:            u32,
@@ -197,7 +197,7 @@ pub mod header_page_utils {
     static META_PAGE_ID: u32         = 52;
     pub static FREE_LIST_OFFSET: u32 = 2048;
 
-    pub fn init(page: &mut RawPage) {
+    pub(crate) fn init(page: &mut RawPage) {
         set_title(page, HEADER_DESP);
         set_version(page, &[0, 0, 0, 0]);
         set_sector_size(page, 4096);
@@ -205,12 +205,12 @@ pub mod header_page_utils {
         set_null_page_bar(page, 1);
     }
 
-    pub fn set_title(page: &mut RawPage, title: &str) {
+    pub(crate) fn set_title(page: &mut RawPage, title: &str) {
         page.seek(0);
         let _ = page.put_str(title);
     }
 
-    pub fn get_title(page: &RawPage) -> String {
+    pub(crate) fn get_title(page: &RawPage) -> String {
         let mut zero_pos: i32 = -1;
         for i in 0..32 {
             if page.data[i] == 0 {
@@ -227,12 +227,12 @@ pub mod header_page_utils {
         title.to_string()
     }
 
-    pub fn set_version(page: &mut RawPage, version: &[u8]) {
+    pub(crate) fn set_version(page: &mut RawPage, version: &[u8]) {
         page.seek(32);
         let _ = page.put(version);
     }
 
-    pub fn get_version(page: &RawPage) -> [u8; 4] {
+    pub(crate) fn get_version(page: &RawPage) -> [u8; 4] {
         let mut version: [u8; 4] = [0; 4];
         for i in 0..4 {
             version[i] = page.data[32 + i];
@@ -240,52 +240,52 @@ pub mod header_page_utils {
         version
     }
 
-    pub fn set_sector_size(page: &mut RawPage, sector_size: u32) {
+    pub(crate) fn set_sector_size(page: &mut RawPage, sector_size: u32) {
         page.seek(SECTOR_SIZE_OFFSET);
         let _ = page.put_u32(sector_size);
     }
 
-    pub fn get_sector_size(page: &RawPage) -> u32 {
+    pub(crate) fn get_sector_size(page: &RawPage) -> u32 {
         page.get_u32(SECTOR_SIZE_OFFSET)
     }
 
-    pub fn set_page_size(page: &mut RawPage, page_size: u32) {
+    pub(crate) fn set_page_size(page: &mut RawPage, page_size: u32) {
         page.seek(PAGE_SIZE_OFFSET);
         let _ = page.put_u32(page_size);
     }
 
-    pub fn get_page_size(page: &RawPage) -> u32 {
+    pub(crate) fn get_page_size(page: &RawPage) -> u32 {
         page.get_u32(PAGE_SIZE_OFFSET)
     }
 
-    pub fn get_null_page_bar(page: &RawPage) -> u32 {
+    pub(crate) fn get_null_page_bar(page: &RawPage) -> u32 {
         page.get_u32(NULL_PAGE_BAR_OFFSET)
     }
 
-    pub fn set_null_page_bar(page: &mut RawPage, data: u32) {
+    pub(crate) fn set_null_page_bar(page: &mut RawPage, data: u32) {
         page.seek(NULL_PAGE_BAR_OFFSET);
         page.put_u32(data)
     }
 
-    pub fn get_meta_page_id(page: &RawPage) -> u32 {
+    pub(crate) fn get_meta_page_id(page: &RawPage) -> u32 {
         page.get_u32(META_PAGE_ID)
     }
 
-    pub fn set_meta_page_id(page: &mut RawPage, data: u32) {
+    pub(crate) fn set_meta_page_id(page: &mut RawPage, data: u32) {
         page.seek(META_PAGE_ID);
         page.put_u32(data)
     }
 
-    pub fn get_free_list_size(page: &RawPage) -> u32 {
+    pub(crate) fn get_free_list_size(page: &RawPage) -> u32 {
         page.get_u32(FREE_LIST_OFFSET)
     }
 
-    pub fn set_free_list_size(page: &mut RawPage, size: u32) {
+    pub(crate) fn set_free_list_size(page: &mut RawPage, size: u32) {
         page.seek(FREE_LIST_OFFSET);
         page.put_u32(size)
     }
 
-    pub fn get_free_list_content(page: &RawPage, index: u32) -> u32 {
+    pub(crate) fn get_free_list_content(page: &RawPage, index: u32) -> u32 {
         let offset = index * 4 + FREE_LIST_OFFSET + 8;
         page.get_u32(offset)
     }
@@ -365,7 +365,7 @@ pub struct ContentPageWrapper {
 
 impl ContentPageWrapper {
 
-    pub fn new(weak_ctx: Weak<DbContext>, page: RawPage) -> ContentPageWrapper {
+    pub(crate) fn new(weak_ctx: Weak<DbContext>, page: RawPage) -> ContentPageWrapper {
         // let ctx = weak_ctx.upgrade().expect("get ctx failed");
         let start_page_id = page.page_id;
         ContentPageWrapper {

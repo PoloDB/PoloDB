@@ -57,35 +57,32 @@ fn encode_u64(writer: &mut dyn Write, num: u64) -> DbResult<()> {
     Ok(())
 }
 
-fn decode(iter: &mut Iter<u8>) -> DbResult<i64> {
-    let tmp = decode_u64(iter)?;
-    Ok(tmp as i64)
-}
-
-macro_rules! try_read_byte {
-    ($curIter:expr) => {
-        match $curIter {
-            Some(byte) => *byte,
-            None => return Err(DbErr::DecodeEOF),
+macro_rules! read_byte_plus {
+    ($ptr:ident) => {
+        {
+            let byte = $ptr.read();
+            $ptr = $ptr.add(1);
+            byte
         }
     }
 }
 
 #[inline]
-fn decode_u64(iter: &mut Iter<u8>) -> DbResult<u64> {
-    let first_byte = try_read_byte!(iter.next());
+pub unsafe fn decode_u64_raw(iter: *const u8) -> DbResult<(u64, *const u8)> {
+    let mut ptr = iter;
+    let first_byte = read_byte_plus!(ptr);
 
     if (first_byte & BYTE_MARK1) == 0 {  // 1 byte
-        return Ok(first_byte as u64)
+        return Ok((first_byte as u64, ptr))
     }
 
     if first_byte & BYTE_MARK2 == 0b10000000 {  // 2 bytes
-        let one_more = try_read_byte!(iter.next());
+        let one_more = read_byte_plus!(ptr);
 
         let uint16: u16 = u16::from_be_bytes([
             first_byte & (!BYTE_MARK1), one_more
         ]);
-        return Ok(uint16 as u64)
+        return Ok((uint16 as u64, ptr))
     }
 
     if first_byte & BYTE_MARK3 == 0b11000000 {  // 3 bytes
@@ -94,10 +91,10 @@ fn decode_u64(iter: &mut Iter<u8>) -> DbResult<u64> {
 
         // tmp[0] is 0
         tmp[1] = first_byte & (!BYTE_MARK3);
-        tmp[2] = try_read_byte!(iter.next());
-        tmp[3] = try_read_byte!(iter.next());
+        tmp[2] = read_byte_plus!(ptr);
+        tmp[3] = read_byte_plus!(ptr);
 
-        return Ok(u32::from_be_bytes(tmp) as u64)
+        return Ok((u32::from_be_bytes(tmp) as u64, ptr))
     }
 
     match first_byte & BYTE_MARK5 {  // three arms
@@ -105,11 +102,11 @@ fn decode_u64(iter: &mut Iter<u8>) -> DbResult<u64> {
             let mut tmp: [u8; 4] = [0; 4];
 
             tmp[0] = first_byte & (!BYTE_MARK5);
-            tmp[1] = try_read_byte!(iter.next());
-            tmp[2] = try_read_byte!(iter.next());
-            tmp[3] = try_read_byte!(iter.next());
+            tmp[1] = read_byte_plus!(ptr);
+            tmp[2] = read_byte_plus!(ptr);
+            tmp[3] = read_byte_plus!(ptr);
 
-            return Ok(u32::from_be_bytes(tmp) as u64)
+            return Ok((u32::from_be_bytes(tmp) as u64, ptr))
         }
 
         0b11101000 => {  // 5 bytes
@@ -117,10 +114,10 @@ fn decode_u64(iter: &mut Iter<u8>) -> DbResult<u64> {
 
             tmp[3] = first_byte & (!BYTE_MARK5);
             for i in 4..8 {
-                tmp[i] = try_read_byte!(iter.next());
+                tmp[i] = read_byte_plus!(ptr);
             }
 
-            return Ok(u64::from_be_bytes(tmp))
+            return Ok((u64::from_be_bytes(tmp), ptr))
         }
 
         0b11110000 => {  // 8 bytes
@@ -128,10 +125,10 @@ fn decode_u64(iter: &mut Iter<u8>) -> DbResult<u64> {
 
             tmp[0] = first_byte & (!BYTE_MARK5);
             for i in 1..8 {
-                tmp[i] = try_read_byte!(iter.next());
+                tmp[i] = read_byte_plus!(ptr);
             }
 
-            return Ok(u64::from_be_bytes(tmp))
+            return Ok((u64::from_be_bytes(tmp), ptr))
         }
 
         _ => ()
@@ -140,22 +137,30 @@ fn decode_u64(iter: &mut Iter<u8>) -> DbResult<u64> {
     if first_byte == 0b11111000 {  // 6 bytes
         let mut tmp: [u8; 8] = [0; 8];
         for i in 3..8 {
-            tmp[i] = try_read_byte!(iter.next());
+            tmp[i] = read_byte_plus!(ptr);
         }
 
-        return Ok(u64::from_be_bytes(tmp));
+        return Ok((u64::from_be_bytes(tmp), ptr));
     }
 
     if first_byte == 0b11111001 {  // 9 bytes
         let mut tmp: [u8; 8] = [0; 8];
         for i in 0..8 {
-            tmp[i] = try_read_byte!(iter.next());
+            tmp[i] = read_byte_plus!(ptr);
         }
 
-        return Ok(u64::from_be_bytes(tmp));
+        return Ok((u64::from_be_bytes(tmp), ptr));
     }
 
     Err(DbErr::DecodeIntUnknownByte)
+}
+
+#[inline]
+fn decode_u64(content: &[u8]) -> DbResult<u64> {
+    unsafe {
+        let (result, _) = decode_u64_raw(content.as_ptr())?;
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -179,8 +184,7 @@ mod tests {
 
         assert_eq!(bytes.len(), 2);
 
-        let mut iter = bytes.iter();
-        let decode_int = decode_u64(&mut iter).expect("decode err");
+        let decode_int = decode_u64(&bytes).expect("decode err");
 
         assert_eq!(decode_int, 256);
     }
@@ -195,8 +199,7 @@ mod tests {
 
         assert_eq!(bytes.len(), 3);
 
-        let mut iter = bytes.iter();
-        let decode_int = decode_u64(&mut iter).expect("decode err");
+        let decode_int = decode_u64(&bytes).expect("decode err");
 
         assert_eq!(decode_int, num)
     }
@@ -211,8 +214,7 @@ mod tests {
 
         assert_eq!(bytes.len(), 4);
 
-        let mut iter = bytes.iter();
-        let decode_int = decode_u64(&mut iter).expect("decode err");
+        let decode_int = decode_u64(&bytes).expect("decode err");
 
         assert_eq!(decode_int, num)
     }
@@ -227,8 +229,7 @@ mod tests {
 
         assert_eq!(bytes.len(), 5);
 
-        let mut iter = bytes.iter();
-        let decode_int = decode_u64(&mut iter).expect("decode err");
+        let decode_int = decode_u64(&bytes).expect("decode err");
 
         assert_eq!(decode_int, num)
     }
@@ -243,8 +244,7 @@ mod tests {
 
         assert_eq!(bytes.len(), 6);
 
-        let mut iter = bytes.iter();
-        let decode_int = decode_u64(&mut iter).expect("decode err");
+        let decode_int = decode_u64(&bytes).expect("decode err");
 
         assert_eq!(decode_int, num)
     }
@@ -259,8 +259,7 @@ mod tests {
 
         assert_eq!(bytes.len(), 8);
 
-        let mut iter = bytes.iter();
-        let decode_int = decode_u64(&mut iter).expect("decode err");
+        let decode_int = decode_u64(&bytes).expect("decode err");
 
         assert_eq!(decode_int, num)
     }
@@ -275,8 +274,7 @@ mod tests {
 
         assert_eq!(bytes.len(), 9);
 
-        let mut iter = bytes.iter();
-        let decode_int = decode_u64(&mut iter).expect("decode err");
+        let decode_int = decode_u64(&bytes).expect("decode err");
 
         assert_eq!(decode_int, num)
     }

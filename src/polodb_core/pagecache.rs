@@ -243,7 +243,7 @@ impl PageCache {
         result as u32
     }
 
-    pub fn get_from_cache(&self, page_id: u32) -> Option<RawPage> {
+    pub(crate) fn get_from_cache(&self, page_id: u32) -> Option<RawPage> {
         let mut lru_map = self.lru_map.borrow_mut();
         let index = match lru_map.find(page_id) {
             Some(index) => index,
@@ -257,7 +257,7 @@ impl PageCache {
         Some(result)
     }
 
-    pub fn insert_to_cache(&mut self, page: &RawPage) {
+    pub(crate) fn insert_to_cache(&mut self, page: &RawPage) {
         let mut lru_map = self.lru_map.borrow_mut();
         let new_index = if lru_map.len() < lru_map.cap() {  // is not full
             lru_map.len() as u32

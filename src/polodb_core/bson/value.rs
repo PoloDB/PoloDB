@@ -1,10 +1,13 @@
-
+use std::rc::Rc;
 use std::fmt;
+use std::cmp::Ordering;
+
 use super::ObjectId;
 use super::document::Document;
 use super::array::Array;
 use crate::vli;
-use crate::serialization::DbSerializer;
+use crate::db::DbResult;
+use crate::error::DbErr;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -18,11 +21,15 @@ pub enum Value {
 
     String(String),
     ObjectId(ObjectId),
-    Array(Array),
-    Document(Document),
+    Array(Rc<Array>),
+    Document(Rc<Document>),
 }
 
 impl Value {
+
+    pub fn value_cmp(&self, other: &Value) -> DbResult<Ordering> {
+        Err(DbErr::NotImplement)
+    }
 
     #[inline]
     fn ty_name(&self) -> &str {

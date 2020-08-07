@@ -1,42 +1,8 @@
-// Copyright 2013 The Rust Project Developers. See the COPYRIGHT
-// file at the top-level directory of this distribution and at
-// http://rust-lang.org/COPYRIGHT.
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
-//! A `HashMap` wrapper that holds key-value pairs in insertion order.
-//!
-//! # Examples
-//!
-//! ```
-//! use linked_hash_map::LinkedHashMap;
-//!
-//! let mut map = LinkedHashMap::new();
-//! map.insert(2, 20);
-//! map.insert(1, 10);
-//! map.insert(3, 30);
-//! assert_eq!(map[&1], 10);
-//! assert_eq!(map[&2], 20);
-//! assert_eq!(map[&3], 30);
-//!
-//! let items: Vec<(i32, i32)> = map.iter().map(|t| (*t.0, *t.1)).collect();
-//! assert_eq!(items, [(2, 20), (1, 10), (3, 30)]);
-//! ```
-
-#![forbid(missing_docs)]
-#![cfg_attr(all(feature = "nightly", test), feature(test))]
 
 #![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 #![cfg_attr(feature = "clippy", deny(clippy))]
 
-// Optional Serde support
-#[cfg(feature = "serde_impl")]
-pub mod serde;
 // Optional Heapsize support
 #[cfg(feature = "heapsize_impl")]
 mod heap_size;

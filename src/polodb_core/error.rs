@@ -1,7 +1,7 @@
-
 use std::io;
 use std::fmt;
 use std::num;
+use crate::bson::value::Value;
 
 #[derive(Debug)]
 pub enum DbErr {
@@ -13,6 +13,9 @@ pub enum DbErr {
     DecodeEOF,
     DecodeIntUnknownByte,
     DataOverflow,
+    DataExist(Value),
+    PageSpaceNotEnough,
+    DataHasNoPrimaryKey,
 }
 
 impl fmt::Display for DbErr {
@@ -28,6 +31,9 @@ impl fmt::Display for DbErr {
             DbErr::DecodeEOF => write!(f, "DecodeEOF"),
             DbErr::DecodeIntUnknownByte => write!(f, "DecodeIntUnknownByte"),
             DbErr::DataOverflow => write!(f, "DataOverflow"),
+            DbErr::DataExist(value) => write!(f, "DataExist(pkey = {})", value.to_string()),
+            DbErr::PageSpaceNotEnough => write!(f, "PageSpaceNotEnough"),
+            DbErr::DataHasNoPrimaryKey => write!(f, "DataHasNoPrimaryKey"),
         }
     }
 

@@ -7,7 +7,6 @@ use std::os::raw::c_uint;
 
 use libc;
 use super::hex;
-use crate::serialization::DbSerializer;
 use crate::db::DbResult;
 use crate::error::DbErr;
 
@@ -56,6 +55,16 @@ impl ObjectId {
         hex::encode(bytes)
     }
 
+    pub fn serialize(&self, writer: &mut dyn Write) -> DbResult<()> {
+        let timestamp_le: [u8; 4] = self.timestamp.to_be_bytes();
+        let counter_le: [u8; 8] = self.counter.to_be_bytes();
+
+        writer.write_all(&timestamp_le)?;
+        writer.write_all(&counter_le)?;
+
+        Ok(())
+    }
+
 }
 
 impl fmt::Display for ObjectId {
@@ -90,20 +99,6 @@ impl PartialEq for ObjectId {
 
     fn eq(&self, other: &Self) -> bool {
         self.counter == other.counter && self.timestamp == other.timestamp
-    }
-
-}
-
-impl DbSerializer for ObjectId {
-
-    fn serialize(&self, writer: &mut dyn Write) -> DbResult<()> {
-        let timestamp_le: [u8; 4] = self.timestamp.to_be_bytes();
-        let counter_le: [u8; 8] = self.counter.to_be_bytes();
-
-        writer.write_all(&timestamp_le)?;
-        writer.write_all(&counter_le)?;
-
-        Ok(())
     }
 
 }

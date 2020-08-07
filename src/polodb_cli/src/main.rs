@@ -1,0 +1,164 @@
+use std::sync::Mutex;
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
+use quick_js::{Context, JsValue};
+use polodb_core::Database;
+
+use clap::{Arg, App};
+use std::borrow::BorrowMut;
+
+fn value_to_str(val: &JsValue) -> String {
+    match val {
+        JsValue::String(str) => {
+            let mut result = String::new();
+            result.push_str("\"");
+            result.push_str(str);
+            result.push_str("\"");
+            result
+        },
+
+        JsValue::Int(i) => i.to_string(),
+
+        JsValue::Null => "null".into(),
+
+        JsValue::Array(arr) => {
+            let mut result = String::new();
+            result.push_str("[ ");
+            for (index, item) in arr.iter().enumerate() {
+                result.push_str(value_to_str(item).as_str());
+
+                if index != arr.len() - 1 {
+                    result.push_str(", ");
+                }
+            }
+            result.push_str(" ]");
+
+            result
+        }
+
+        JsValue::Bool(bl) => {
+            return if *bl {
+                "true".into()
+            } else {
+                "false".into()
+            }
+        }
+
+        JsValue::Float(f) => {
+            f.to_string()
+        }
+
+        JsValue::Object(obj) => {
+            let mut result = String::new();
+            result.push_str("{ ");
+            for (index, item) in obj.iter().enumerate() {
+                result.push_str(item.0);
+                result.push_str(": ");
+                result.push_str(value_to_str(item.1).as_str());
+
+                if index != obj.len() - 1 {
+                    result.push_str(", ");
+                }
+            }
+            result.push_str(" }");
+
+            result
+        }
+
+        _ => panic!("not implment")
+
+    }
+}
+
+fn main() {
+    let matches = App::new("PoloDB Cli")
+        .version("1.0")
+        .about("Command line tool for PoloDB")
+        .author("Vincent Chan <okcdz@diverse.space>")
+        .arg(Arg::with_name("path")
+            .index(1)
+            .required(true))
+        .get_matches();
+
+    let path = matches.value_of("path").expect("no path");
+
+    let db = Database::open(path).expect("open database failed");
+    let context = Context::new().unwrap();
+
+    {
+        let db = Mutex::new(db.clone());
+        context.add_callback("__create_collection",  move |name: String| {
+            let mut db = db.lock().unwrap();
+            let db = db.borrow_mut();
+            db.create_collection(name.as_str()).unwrap();
+            JsValue::Null
+        }).unwrap();
+    }
+
+    {
+        context.add_callback("exit",  move || {
+            std::process::exit(0);
+            JsValue::Null
+        }).unwrap();
+    }
+
+    context.eval(r#"
+      var db = (function() {
+        const collectionIdSymbol = Symbol("collectionIdSymbol");
+
+        class Collection {
+
+          constructor(id) {
+            this[collectionIdSymbol] = id;
+          }
+
+          find() {
+            return {
+              _id: "haha",
+            };
+          }
+
+        }
+
+        return {
+
+          createCollection(name) {
+            __create_collection(name);
+          },
+
+          getCollection(name) {
+            return new Collection(1);
+          }
+
+        };
+      })();
+    "#).unwrap();
+
+    // `()` can be used when no completer is required
+    let mut rl = Editor::<()>::new();
+    loop {
+        let readline = rl.readline(">> ");
+        match readline {
+            Ok(line) => {
+                rl.add_history_entry(line.as_str());
+                // println!("Line: {}", line);
+
+                let value = context.eval(line.as_str()).unwrap();
+                let str = value_to_str(&value);
+                println!("{}", str);
+            },
+            Err(ReadlineError::Interrupted) => {
+                println!("CTRL-C");
+                break
+            },
+            Err(ReadlineError::Eof) => {
+                println!("CTRL-D");
+                break
+            },
+            Err(err) => {
+                println!("Error: {:?}", err);
+                break
+            }
+        }
+    }
+}

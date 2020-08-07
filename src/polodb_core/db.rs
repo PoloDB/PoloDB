@@ -1,32 +1,35 @@
+// root_btree schema
+// {
+//   _id: ObjectId,
+//   name: String,
+//   root_pid: Int,
+//   flags: Int,
+// }
+//
+// flags indicates:
+// key_ty: 1byte
+// ...
+//
 use std::fs::File;
-use std::sync::{ Arc, Weak };
+use std::rc::{Rc, Weak};
+use std::cell::RefCell;
+use std::collections::LinkedList;
 use super::error::DbErr;
 use super::pagecache::PageCache;
-use super::page::{ RawPage, ContentPageWrapper, header_page_utils };
+use super::page::{ RawPage, header_page_utils };
 use crate::bson::object_id::ObjectIdMaker;
 use crate::journal::JournalManager;
+use crate::overflow_data::{ OverflowDataWrapper, OverflowDataTicket };
+use crate::error::DbErr::NotImplement;
+use crate::bson::{ObjectId, Document, value};
+use crate::btree::BTreePageWrapper;
+use crate::page::ContentPageType::BTreeNode;
 
-static DB_INIT_BLOCK_COUNT: u32 = 8;
+static DB_INIT_BLOCK_COUNT: u32 = 16;
 
-// pub struct Collection {
-//     start_page_id:     u32,
-// }
-//
-// pub struct CreateCollectionOptions {
-//     capped: bool,
-//     max:    u32,
-// }
-//
-// impl Collection {
-//
-//     pub fn new(start_page_id: u32) -> Collection {
-//         Collection { start_page_id }
-//     }
-//
-// }
-
+#[derive(Clone)]
 pub struct Database {
-    ctx: Arc<DbContext>,
+    ctx: Rc<RefCell<DbContext>>,
 }
 
 fn force_write_first_block(file: &mut File, page_size: u32) -> std::io::Result<RawPage> {
@@ -58,19 +61,22 @@ fn read_first_block(file: &mut File, page_size: u32) -> std::io::Result<RawPage>
 
 pub type DbResult<T> = Result<T, DbErr>;
 
-pub struct DbContext {
+pub(crate) struct DbContext {
     pub db_file:      File,
+
+    pub last_commit_db_size: u64,
 
     pub page_size:    u32,
     page_count:       u32,
     pending_block_offset: u32,
+    overflow_data_pages: LinkedList<u32>,
 
     page_cache:       PageCache,
 
     pub obj_id_maker: ObjectIdMaker,
 
     journal_manager:  Box<JournalManager>,
-    pub weak_this:    Option<Weak<DbContext>>,
+    pub weak_this:    Option<Weak<RefCell<DbContext>>>,
 }
 
 impl DbContext {
@@ -86,12 +92,20 @@ impl DbContext {
 
         let page_cache = PageCache::new_default(page_size);
 
+        let last_commit_db_size = {
+            let meta = db_file.metadata()?;
+            meta.len()
+        };
+
         let ctx = DbContext {
             db_file,
+
+            last_commit_db_size,
 
             page_size,
             page_count,
             pending_block_offset: 0,
+            overflow_data_pages: LinkedList::new(),
 
             page_cache,
 
@@ -122,38 +136,33 @@ impl DbContext {
         let null_page_bar = header_page_utils::get_null_page_bar(&first_page);
         header_page_utils::set_null_page_bar(&mut first_page, null_page_bar + 1);
 
-        // TODO: check bar
+        if (null_page_bar as u64) >= self.last_commit_db_size {  // truncate file
+            let expected_size = self.last_commit_db_size + (DB_INIT_BLOCK_COUNT * self.page_size) as u64;
+
+            self.last_commit_db_size = expected_size;
+        }
 
         self.pipeline_write_page(&first_page)?;
 
         Ok(null_page_bar)
     }
 
-    /**
-     * check free list first,
-     * if free list is empty, distribte a block from file
-     * if file is full, resize the file
-     */
-    // fn alloc_content_page(&mut self) -> DbResult<ContentPageWrapper> {
-    //     match self.try_get_free_page_id()? {
-    //         Some(page_id) =>  {
-    //             let raw_page = self.pipeline_read_page(page_id)?;
-    //
-    //             let weak_ctx = self.weak_this.clone().expect("clone weak ref failed");
-    //             let content_page = ContentPageWrapper::new(weak_ctx, raw_page);
-    //             Ok(content_page)
-    //         }
-    //
-    //         None =>  {
-    //             let page_id = 1;  // TODO:
-    //             let raw_page = RawPage::new(page_id, self.page_size);
-    //
-    //             let weak_ctx = self.weak_this.clone().expect("clone weak ref failed");
-    //             let content_page = ContentPageWrapper::new(weak_ctx, raw_page);
-    //             Ok(content_page)
-    //         }
-    //     }
-    // }
+    fn alloc_overflow_ticker(&mut self, size: u32) -> DbResult<OverflowDataTicket> {
+        let page_id = self.alloc_page_id()?;
+
+        self.overflow_data_pages.push_back(page_id);
+
+        let raw_page = self.pipeline_read_page(page_id)?;
+
+        let weak_this = self.weak_this.as_ref().expect("not weak this").clone();
+        let mut overflow = OverflowDataWrapper::from_raw_page(weak_this, raw_page)?;
+
+        let ticket = overflow.alloc(size)?;
+
+        Ok(OverflowDataTicket {
+            items: vec![ ticket ],
+        })
+    }
 
     fn try_get_free_page_id(&mut self) -> DbResult<Option<u32>> {
         let mut first_page = self.get_first_page()?;
@@ -225,6 +234,35 @@ impl DbContext {
         self.pipeline_read_page(0)
     }
 
+    pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {
+        let self_rc = self.weak_this.as_ref().unwrap().upgrade().unwrap();
+
+        let oid = self.obj_id_maker.mk_object_id();
+        let mut doc = Document::new_without_id();
+        doc.insert("_id".into(), value::Value::ObjectId(oid.clone()));
+
+        let root_pid = self.alloc_page_id()?;
+        doc.insert("root_pid".into(), value::Value::Int(root_pid as i64));
+
+        doc.insert("flags".into(), value::Value::Int(0));
+
+        let head_page = self.pipeline_read_page(0)?;
+        let meta_page_id = header_page_utils::get_meta_page_id(&head_page);
+
+        let mut btree_wrapper = BTreePageWrapper::new(self_rc, meta_page_id);
+
+        let backward = btree_wrapper.insert_item(Rc::new(doc), false)?;
+
+        match backward {
+            Some(_backward_item) => {
+
+                Err(DbErr::NotImplement)
+            }
+
+            None => Ok(oid)
+        }
+    }
+
 }
 
 impl Drop for DbContext {
@@ -237,22 +275,26 @@ impl Drop for DbContext {
 
 impl Database {
 
-    pub fn new(path: &str) -> DbResult<Database>  {
+    pub fn open(path: &str) -> DbResult<Database>  {
         let ctx = DbContext::new(path)?;
-        let mut rc_ctx: Arc<DbContext> = Arc::new(ctx);
-        let weak_ctx = Arc::downgrade(&rc_ctx);
+        let mut rc_ctx = Rc::new(RefCell::new(ctx));
+        let weak_ctx = Rc::downgrade(&rc_ctx);
 
-        // set weak_this
-        let mut_ctx = Arc::get_mut(&mut rc_ctx).expect("get mut ctx failed");
-        mut_ctx.weak_this = Some(weak_ctx);
+        {
+            // set weak_this
+            let cloned = rc_ctx.clone();
+            let mut mut_ctx = cloned.borrow_mut();
+            mut_ctx.weak_this = Some(weak_ctx);
+        }
 
         Ok(Database {
             ctx: rc_ctx,
         })
     }
 
-    // pub fn create_collection(&mut self, name: &str) -> Collection {
-    //     Collection::new(0)
-    // }
+    pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {
+        let mut ctx = self.ctx.borrow_mut();
+        ctx.create_collection(name)
+    }
 
 }
