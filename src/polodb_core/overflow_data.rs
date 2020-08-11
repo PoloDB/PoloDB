@@ -1,7 +1,7 @@
-use std::rc::Weak;
+use std::rc::Rc;
 use std::cell::RefCell;
-use crate::page::RawPage;
-use crate::db::{DbResult, DbContext};
+use crate::page::{RawPage, PageHandler};
+use crate::db::DbResult;
 use crate::error::DbErr;
 
 static OVERFLOW_PAGE_HEADER_SIZE: u32 = 16;
@@ -21,14 +21,14 @@ pub struct OverflowDataTicket {
 // Offset 2: page type(2 bytes)
 // Offset 16: data begin
 pub struct OverflowDataWrapper {
-    ctx:        Weak<RefCell<DbContext>>,
+    ctx:        Rc<RefCell<PageHandler>>,
     record_bar: Vec<u16>,
     page:       RawPage,
 }
 
 impl OverflowDataWrapper {
 
-    pub(crate) fn from_raw_page(ctx: Weak<RefCell<DbContext>>, page: RawPage) -> DbResult<OverflowDataWrapper> {
+    pub(crate) fn from_raw_page(ctx: Rc<RefCell<PageHandler>>, page: RawPage) -> DbResult<OverflowDataWrapper> {
         let mut page = page;
 
         // init
@@ -55,8 +55,7 @@ impl OverflowDataWrapper {
     }
 
     pub fn alloc(&mut self, size: u32) -> DbResult<OverflowDataTicketItem> {
-        let ctx_rc = self.ctx.upgrade().expect("context not found");
-        let ctx = ctx_rc.borrow();
+        let ctx = self.ctx.borrow();
         let remain_space: i64 = (ctx.page_size as i64) - (OVERFLOW_PAGE_HEADER_SIZE as i64) - (((self.record_bar.len() as i64) + 2) * 2);
 
         if remain_space < 32 {

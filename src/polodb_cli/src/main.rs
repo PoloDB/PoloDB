@@ -1,11 +1,12 @@
 use std::sync::Mutex;
+use std::rc::Rc;
+use std::cell::RefCell;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use quick_js::{Context, JsValue};
 use polodb_core::Database;
 
 use clap::{Arg, App};
-use std::borrow::BorrowMut;
 
 fn value_to_str(val: &JsValue) -> String {
     match val {
@@ -82,14 +83,14 @@ fn main() {
 
     let path = matches.value_of("path").expect("no path");
 
-    let db = Database::open(path).expect("open database failed");
+    let db = Rc::new(RefCell::new(Database::open(path).expect("open database failed")));
     let context = Context::new().unwrap();
 
     {
         let db = Mutex::new(db.clone());
         context.add_callback("__create_collection",  move |name: String| {
-            let mut db = db.lock().unwrap();
-            let db = db.borrow_mut();
+            let db = db.lock().unwrap();
+            let mut db = db.as_ref().borrow_mut();
             db.create_collection(name.as_str()).unwrap();
             JsValue::Null
         }).unwrap();
@@ -106,6 +107,7 @@ fn main() {
         let db = Mutex::new(db.clone());
         context.add_callback("__version",  move || {
             let db = db.lock().unwrap();
+            let db = db.as_ref().borrow_mut();
             db.get_version()
         }).unwrap();
     }

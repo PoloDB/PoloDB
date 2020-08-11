@@ -1,11 +1,10 @@
 use std::cmp::Ordering;
 use std::rc::Rc;
-use std::cell::RefCell;
 use std::ops::Deref;
 use std::borrow::Borrow;
 
-use crate::db::{DbContext, DbResult};
-use crate::page::RawPage;
+use crate::db::DbResult;
+use crate::page::{RawPage, PageHandler, PageType};
 use crate::error::DbErr;
 use crate::bson::Document;
 
@@ -27,12 +26,28 @@ impl BTreeNode {
     // Offset 4: left_pid (4 bytes)
     // Offset 8: next_pid (4 bytes)
     fn from_raw(page: &RawPage, pid: u32, parent_pid: u32, item_size: u32) -> DbResult<BTreeNode> {
+        let page_type = PageType::BTreeNode;
+        let magic = page_type.to_magic();
+        if page.data[0..2] != magic {
+            if page.data[0..2] == [0, 0] {  // null page
+                return Ok(BTreeNode {
+                    pid,
+                    parent_pid,
+                    content: vec![],
+                    indexes: vec![ 0 ],
+                });
+            }
+            return Err(DbErr::ParseError);
+        }
+
         let mut left_pid = page.get_u32(4);
         let mut content = vec![];
         let mut indexes = vec![ left_pid ];
 
-        for i in 0..item_size {
-            let offset: u32 = HEADER_SIZE + i * ITEM_SIZE;
+        let len = page.get_u16(2);
+
+        for i in 0..len {
+            let offset: u32 = HEADER_SIZE + (i as u32) * ITEM_SIZE;
 
             let right_pid = page.get_u32(offset);
 
@@ -60,6 +75,11 @@ impl BTreeNode {
 
     fn to_raw(&self, page: &mut RawPage) -> DbResult<()> {
         let items_len = page.data.len() as u16;
+
+        let page_type = PageType::BTreeNode;
+        let magic = page_type.to_magic();
+        page.seek(0);
+        page.put(&magic);
 
         page.seek(2);
         page.put_u16(items_len);
@@ -150,20 +170,19 @@ impl BackwardItem {
 // Offset 0: right pid(4 bytes)
 // Offset 4: overflow_pid(4 bytes)
 // Offset 8: data
-pub(crate) struct BTreePageWrapper {
-    ctx:                Rc<RefCell<DbContext>>,
+pub(crate) struct BTreePageWrapper<'a> {
+    page_handler:       &'a mut PageHandler,
     root_page_id:       u32,
     item_size:          u32,
 }
 
-impl BTreePageWrapper {
+impl<'a> BTreePageWrapper<'a> {
 
-    pub fn new(ctx_rc: Rc<RefCell<DbContext>>, root_page_id: u32) -> BTreePageWrapper {
-        let ctx: &RefCell<DbContext> = ctx_rc.borrow();
-        let item_size = (ctx.borrow().page_size - HEADER_SIZE) / ITEM_SIZE;
+    pub fn new(page_handler: &mut PageHandler, root_page_id: u32) -> BTreePageWrapper {
+        let item_size = (page_handler.page_size - HEADER_SIZE) / ITEM_SIZE;
 
         BTreePageWrapper {
-            ctx: ctx_rc,
+            page_handler,
             root_page_id, item_size
         }
     }
@@ -173,8 +192,8 @@ impl BTreePageWrapper {
         self.insert_item_to_page(self.root_page_id, 0, doc, false, replace)
     }
 
-    fn get_node(&self, pid: u32, parent_pid: u32) -> DbResult<BTreeNode> {
-        let raw_page = self.ctx.borrow_mut().pipeline_read_page(pid)?;
+    fn get_node(&mut self, pid: u32, parent_pid: u32) -> DbResult<BTreeNode> {
+        let raw_page = self.page_handler.pipeline_read_page(pid)?;
 
         BTreeNode::from_raw(&raw_page, pid, parent_pid, self.item_size)
     }
@@ -262,18 +281,14 @@ impl BTreePageWrapper {
     }
 
     fn write_btree_node(&mut self, node: &BTreeNode) -> DbResult<()> {
-        let mut ctx = self.ctx.borrow_mut();
-        let mut raw_page = RawPage::new(node.pid, ctx.page_size);
+        let mut raw_page = RawPage::new(node.pid, self.page_handler.page_size);
 
         node.to_raw(&mut raw_page)?;
 
-        ctx.pipeline_write_page(&raw_page)
+        self.page_handler.pipeline_write_page(&raw_page)
     }
 
     fn divide_and_return_backward(&mut self, btree_node: BTreeNode) -> DbResult<Option<BackwardItem>> {
-        let ctx_rc = self.ctx.clone();
-        let mut ctx = ctx_rc.borrow_mut();
-
         let middle_index = (btree_node.content.len() + 1) / 2;
 
         // use current page block to store left
@@ -288,7 +303,7 @@ impl BTreePageWrapper {
             }
         };
 
-        let right_page_id = ctx.alloc_page_id()?;
+        let right_page_id = self.page_handler.alloc_page_id()?;
         // alloc new page to store right
         let right = {
             let content = btree_node.content[(middle_index + 1)..].to_vec();

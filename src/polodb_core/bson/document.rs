@@ -285,7 +285,7 @@ mod tests {
         doc.map.insert("can_do_b".into(), Value::Boolean(false));
         doc.map.insert("can_do_c".into(), Value::Boolean(false));
 
-        let mut bytes = doc.to_bytes().expect("serial error");
+        let bytes = doc.to_bytes().expect("serial error");
 
         let parsed_doc = Document::from_bytes(&bytes).expect("deserialize error");
 

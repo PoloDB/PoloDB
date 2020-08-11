@@ -12,28 +12,24 @@ use crate::error::DbErr;
 
 #[derive(Debug, Clone, Eq)]
 pub struct ObjectId {
-    pub timestamp: i32,
-    pub counter:   i64,
+    pub timestamp: u64,
+    pub counter:   u32,
 }
 
 impl ObjectId {
-
-    fn plain() -> ObjectId {
-        ObjectId { timestamp: 0, counter: 0 }
-    }
 
     pub fn deserialize(bytes: &[u8]) -> DbResult<ObjectId> {
         if bytes.len() != 12 {
             return Err(DbErr::ParseError);
         }
 
-        let mut timestamp_buffer: [u8; 4] = [0; 4];
-        timestamp_buffer.copy_from_slice(&bytes[0..4]);
-        let timestamp = i32::from_be_bytes(timestamp_buffer);
+        let mut timestamp_buffer: [u8; 8] = [0; 8];
+        timestamp_buffer.copy_from_slice(&bytes[0..8]);
+        let timestamp = u64::from_be_bytes(timestamp_buffer);
 
-        let mut counter_buffer: [u8; 8] = [0; 8];
-        counter_buffer.copy_from_slice(&bytes[4..12]);
-        let counter = i64::from_be_bytes(counter_buffer);
+        let mut counter_buffer: [u8; 4] = [0; 4];
+        counter_buffer.copy_from_slice(&bytes[8..12]);
+        let counter = u32::from_be_bytes(counter_buffer);
 
         Ok(ObjectId { timestamp, counter })
     }
@@ -56,8 +52,8 @@ impl ObjectId {
     }
 
     pub fn serialize(&self, writer: &mut dyn Write) -> DbResult<()> {
-        let timestamp_le: [u8; 4] = self.timestamp.to_be_bytes();
-        let counter_le: [u8; 8] = self.counter.to_be_bytes();
+        let timestamp_le: [u8; 8] = self.timestamp.to_be_bytes();
+        let counter_le: [u8; 4] = self.counter.to_be_bytes();
 
         writer.write_all(&timestamp_le)?;
         writer.write_all(&counter_le)?;
@@ -105,19 +101,13 @@ impl PartialEq for ObjectId {
 
 #[derive(Debug)]
 pub struct ObjectIdMaker {
-    pub counter:   i64,
+    pub counter:   u32,
 }
 
 fn random_i32() -> i32 {
     unsafe {
         libc::rand()
     }
-}
-
-fn random_counter() -> i64 {
-    let i1: i64 = random_i32() as i64;
-    let i2: i64 = random_i32() as i64;
-    i1 << 32 | i2
 }
 
 impl ObjectIdMaker {
@@ -127,7 +117,7 @@ impl ObjectIdMaker {
             let time = libc::time(null_mut());
             libc::srand(time as c_uint);
         }
-        let counter: i64 = random_counter();
+        let counter: u32 = random_i32() as u32;
         return ObjectIdMaker { counter };
     }
 
@@ -143,7 +133,7 @@ impl ObjectIdMaker {
         let id = self.counter;
         self.counter += 1;
         ObjectId {
-            timestamp: in_ms as i32,
+            timestamp: in_ms,
             counter : id,
         }
     }
@@ -153,11 +143,11 @@ impl ObjectIdMaker {
             return Err(DbErr::ParseError);
         }
 
-        let timestamp_str = &content[0..4];
-        let counter_str = &content[4..12];
+        let timestamp_str = &content[0..8];
+        let counter_str = &content[8..12];
 
-        let timestamp: i32 = timestamp_str.parse::<i32>()?;
-        let counter: i64 = counter_str.parse::<i64>()?;
+        let timestamp: u64 = timestamp_str.parse::<u64>()?;
+        let counter: u32 = counter_str.parse::<u32>()?;
 
         Ok(ObjectId {
             timestamp,

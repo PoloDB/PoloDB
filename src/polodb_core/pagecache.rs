@@ -208,7 +208,7 @@ impl LruMap {
 
 }
 
-pub struct PageCache {
+pub(crate) struct PageCache {
     cache_size: usize,
     page_size:  u32,
     data:       *mut u8,

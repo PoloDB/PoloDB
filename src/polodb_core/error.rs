@@ -16,6 +16,9 @@ pub enum DbErr {
     DataExist(Value),
     PageSpaceNotEnough,
     DataHasNoPrimaryKey,
+    ChecksumMismatch,
+    JournalPageSizeMismatch(u32, u32),
+    SaltMismatch,
 }
 
 impl fmt::Display for DbErr {
@@ -34,6 +37,9 @@ impl fmt::Display for DbErr {
             DbErr::DataExist(value) => write!(f, "DataExist(pkey = {})", value.to_string()),
             DbErr::PageSpaceNotEnough => write!(f, "PageSpaceNotEnough"),
             DbErr::DataHasNoPrimaryKey => write!(f, "DataHasNoPrimaryKey"),
+            DbErr::ChecksumMismatch => write!(f, "ChecksumMismatch"),
+            DbErr::JournalPageSizeMismatch(expect, actual) => write!(f, "JournalPageSizeMismatch(expect={}, actual={})", expect, actual),
+            DbErr::SaltMismatch => write!(f, "SaltMismatch"),
         }
     }
 
