@@ -22,14 +22,14 @@ PoloDB 几乎没有依赖（除了 libc，系统自带），
 PoloDB 所有数据都储存在一个文件里。PoloDB
 的文件格式是稳定的，跨平台而且向后兼容的。
 
-PoloDB 的 API 和 MongoDB 类似，易学易用。
+PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
 
 # 开发计划
 
 以下特性会按计划一个一个来：
 
 - [ ] MongoDB 的 API
-- [ ] 命令行工具
+- [x] 命令行工具
 - [ ] 移动平台的编译
   - [ ] iOS
   - [ ] Android
@@ -51,6 +51,14 @@ PoloDB 的 API 和 MongoDB 类似，易学易用。
   - [ ] 数据加密
   - [ ] JavaScript 引擎
 - [ ] 可视化工具
+
+# 命令行工具
+
+PoloDB 的核心部分是没有任何依赖的。不过 PoloDB 提供
+一个独立的工具来帮助用户和数据库进行交互。
+
+这个命令行工具是基于 [QuickJS](https://bellard.org/quickjs/)
+实现的，QuickJS 提供了一个完整的 JavaScript 执行环境。
 
 # FAQ
 

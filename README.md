@@ -17,7 +17,7 @@ PoloDB is a embedded NoSQL database.
 # Introduction
 
 PoloDB is a libray written in Rust
-that implemnts a lightweight MongoDB.
+that implemnts a lightweight [MongoDB](https://www.mongodb.com/).
 
 PoloDB has no dependency(except for libc),
 so it can be easily run on most platform(thanks 
@@ -35,7 +35,7 @@ It's very easy to use.
 The feature will be implemented one by on in order.
 
 - [ ] Basic API of MongoDB
-- [ ] Command line Tools
+- [x] Command line Tools
 - [ ] Mobile Platform Compilation
   - [ ] iOS
   - [ ] Android
@@ -57,6 +57,14 @@ The feature will be implemented one by on in order.
   - [ ] Data Encryption
   - [ ] JavaScript Engine
 - [ ] Visualization Tools
+
+# Command Line Tool
+
+The core part of PoloDB has no dependency. But PoloDB provides
+a standalone bool to help user handle the database interactively.
+
+The command line tool is based on [QuickJS](https://bellard.org/quickjs/),
+which provides a full-feature JavaScript enverionment.
 
 # FAQ
 
