@@ -20,10 +20,8 @@ use super::page::{ RawPage, header_page_utils };
 use crate::bson::object_id::ObjectIdMaker;
 use crate::journal::JournalManager;
 use crate::overflow_data::{ OverflowDataWrapper, OverflowDataTicket };
-use crate::error::DbErr::NotImplement;
 use crate::bson::{ObjectId, Document, value};
 use crate::btree::BTreePageWrapper;
-use crate::page::ContentPageType::BTreeNode;
 
 static DB_INIT_BLOCK_COUNT: u32 = 16;
 
@@ -241,22 +239,38 @@ impl DbContext {
         let mut doc = Document::new_without_id();
         doc.insert("_id".into(), value::Value::ObjectId(oid.clone()));
 
+        doc.insert("name".into(), value::Value::String(name.into()));
+
         let root_pid = self.alloc_page_id()?;
         doc.insert("root_pid".into(), value::Value::Int(root_pid as i64));
 
         doc.insert("flags".into(), value::Value::Int(0));
 
-        let head_page = self.pipeline_read_page(0)?;
-        let meta_page_id = header_page_utils::get_meta_page_id(&head_page);
+        let meta_page_id: u32 = {
+            let head_page = self.pipeline_read_page(0)?;
+            header_page_utils::get_meta_page_id(&head_page)
+        };
 
-        let mut btree_wrapper = BTreePageWrapper::new(self_rc, meta_page_id);
+        let mut btree_wrapper = BTreePageWrapper::new(self_rc.clone(), meta_page_id);
 
         let backward = btree_wrapper.insert_item(Rc::new(doc), false)?;
 
         match backward {
-            Some(_backward_item) => {
+            Some(backward_item) => {
+                let new_root_id = self.alloc_page_id()?;
 
-                Err(DbErr::NotImplement)
+                let raw_page = backward_item.write_to_page(new_root_id, meta_page_id, self.page_size)?;
+
+                // update head page
+                {
+                    let mut head_page = self.pipeline_read_page(0)?;
+                    header_page_utils::set_meta_page_id(&mut head_page, new_root_id);
+                    self.pipeline_write_page(&head_page)?;
+                }
+
+                self.pipeline_write_page(&raw_page)?;
+
+                Ok(oid)
             }
 
             None => Ok(oid)
@@ -277,7 +291,7 @@ impl Database {
 
     pub fn open(path: &str) -> DbResult<Database>  {
         let ctx = DbContext::new(path)?;
-        let mut rc_ctx = Rc::new(RefCell::new(ctx));
+        let rc_ctx = Rc::new(RefCell::new(ctx));
         let weak_ctx = Rc::downgrade(&rc_ctx);
 
         {
@@ -295,6 +309,11 @@ impl Database {
     pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {
         let mut ctx = self.ctx.borrow_mut();
         ctx.create_collection(name)
+    }
+
+    pub fn get_version(&self) -> String {
+        const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+        return VERSION.into();
     }
 
 }

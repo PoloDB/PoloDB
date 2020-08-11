@@ -1,7 +1,6 @@
 use crate::db::DbResult;
 use crate::error::DbErr;
 use std::io::Write;
-use std::slice::Iter;
 
 // http://www.dlugosz.com/ZIP2/VLI.html
 

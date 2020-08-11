@@ -102,6 +102,14 @@ fn main() {
         }).unwrap();
     }
 
+    {
+        let db = Mutex::new(db.clone());
+        context.add_callback("__version",  move || {
+            let db = db.lock().unwrap();
+            db.get_version()
+        }).unwrap();
+    }
+
     context.eval(r#"
       var db = (function() {
         const collectionIdSymbol = Symbol("collectionIdSymbol");
@@ -128,6 +136,10 @@ fn main() {
 
           getCollection(name) {
             return new Collection(1);
+          },
+
+          getVersion() {
+            return __version();
           }
 
         };

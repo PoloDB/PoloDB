@@ -1,8 +1,5 @@
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write, Read};
-use std::sync::Weak;
-
-use super::db::DbContext;
 
 enum PageType {
     Undefined = 0,
@@ -340,68 +337,58 @@ impl ContentPageType {
 
 }
 
-pub struct CollectionPage {
-    ty: ContentPageType,  // u16
-}
-
-pub struct ContentPage {
-    ty: ContentPageType,  // u16
-    right_pid: u32,       // u32
-    __reserved: u16,      // u16
-}
-
-static CONTENT_TY_OFFSET: u32   = 16;
-
-// magic key:  u16
-// ty:         u8
-// reserve:    u8
-// next_pid:   u32
-// data:       offset 64
-pub struct ContentPageWrapper {
-    ctx:        Weak<DbContext>,
-    raw:        RawPage,
-    start_page_id:  u32,
-}
-
-impl ContentPageWrapper {
-
-    pub(crate) fn new(weak_ctx: Weak<DbContext>, page: RawPage) -> ContentPageWrapper {
-        // let ctx = weak_ctx.upgrade().expect("get ctx failed");
-        let start_page_id = page.page_id;
-        ContentPageWrapper {
-            ctx: weak_ctx,
-            raw: page,
-            start_page_id,
-        }
-    }
-
-    pub fn magic_key(&self) {
-        self.raw.get_u16(0);
-    }
-
-    pub fn set_magic_key(&mut self, key: u16) {
-        self.raw.seek(0);
-        self.raw.put_u16(key);
-    }
-
-    pub fn set_next_page_id(&mut self, next_pid: u32) {
-        self.raw.seek(32);
-        self.raw.put_u32(next_pid)
-    }
-
-    pub fn get_next_page_id(&self) -> u32 {
-        self.raw.get_u32(32)
-    }
-
-    pub fn ty(&self) -> ContentPageType {
-        let ty8 = self.raw.get_u8(CONTENT_TY_OFFSET);
-        ContentPageType::from_u8(ty8)
-    }
-
-    pub fn set_ty(&mut self, ty: ContentPageType) {
-        let ty8 = ty as u8;
-        self.raw.seek(CONTENT_TY_OFFSET);
-        self.raw.put_u8(ty8);
-    }
-
-}
+// static CONTENT_TY_OFFSET: u32   = 16;
+//
+// // magic key:  u16
+// // ty:         u8
+// // reserve:    u8
+// // next_pid:   u32
+// // data:       offset 64
+// pub struct ContentPageWrapper {
+//     ctx:        Weak<DbContext>,
+//     raw:        RawPage,
+//     start_page_id:  u32,
+// }
+//
+// impl ContentPageWrapper {
+//
+//     pub(crate) fn new(weak_ctx: Weak<DbContext>, page: RawPage) -> ContentPageWrapper {
+//         // let ctx = weak_ctx.upgrade().expect("get ctx failed");
+//         let start_page_id = page.page_id;
+//         ContentPageWrapper {
+//             ctx: weak_ctx,
+//             raw: page,
+//             start_page_id,
+//         }
+//     }
+//
+//     pub fn magic_key(&self) {
+//         self.raw.get_u16(0);
+//     }
+//
+//     pub fn set_magic_key(&mut self, key: u16) {
+//         self.raw.seek(0);
+//         self.raw.put_u16(key);
+//     }
+//
+//     pub fn set_next_page_id(&mut self, next_pid: u32) {
+//         self.raw.seek(32);
+//         self.raw.put_u32(next_pid)
+//     }
+//
+//     pub fn get_next_page_id(&self) -> u32 {
+//         self.raw.get_u32(32)
+//     }
+//
+//     pub fn ty(&self) -> ContentPageType {
+//         let ty8 = self.raw.get_u8(CONTENT_TY_OFFSET);
+//         ContentPageType::from_u8(ty8)
+//     }
+//
+//     pub fn set_ty(&mut self, ty: ContentPageType) {
+//         let ty8 = ty as u8;
+//         self.raw.seek(CONTENT_TY_OFFSET);
+//         self.raw.put_u8(ty8);
+//     }
+//
+// }

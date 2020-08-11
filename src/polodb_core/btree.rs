@@ -1,10 +1,9 @@
 use std::cmp::Ordering;
-use std::rc::{Rc, Weak};
-use std::cell::{RefCell, Ref};
+use std::rc::Rc;
+use std::cell::RefCell;
 use std::ops::Deref;
 use std::borrow::Borrow;
 
-use super::bson::ObjectId;
 use crate::db::{DbContext, DbResult};
 use crate::page::RawPage;
 use crate::error::DbErr;
@@ -19,28 +18,6 @@ struct BTreeNode {
     pid:         u32,
     content:     Vec<BTreeNodeDataItem>,
     indexes:     Vec<u32>,
-}
-
-#[derive(Clone)]
-struct BTreeNodeDataItem {
-    doc:          Rc<Document>,
-    overflow_pid: u32,
-}
-
-impl BTreeNodeDataItem {
-
-    fn with_doc(doc: Rc<Document>) -> BTreeNodeDataItem {
-        BTreeNodeDataItem {
-            doc,
-            overflow_pid: 0,
-        }
-    }
-
-}
-
-pub(crate) struct BackwardItem {
-    content: BTreeNodeDataItem,
-    right_pid: u32,
 }
 
 impl BTreeNode {
@@ -123,6 +100,49 @@ impl BTreeNode {
 
 }
 
+#[derive(Clone)]
+struct BTreeNodeDataItem {
+    doc:          Rc<Document>,
+    overflow_pid: u32,
+}
+
+impl BTreeNodeDataItem {
+
+    fn with_doc(doc: Rc<Document>) -> BTreeNodeDataItem {
+        BTreeNodeDataItem {
+            doc,
+            overflow_pid: 0,
+        }
+    }
+
+}
+
+pub(crate) struct BackwardItem {
+    content: BTreeNodeDataItem,
+    right_pid: u32,
+}
+
+impl BackwardItem {
+
+    pub fn write_to_page(&self, new_page_id: u32, left_pid: u32, page_size: u32) -> DbResult<RawPage> {
+        let mut result = RawPage::new(new_page_id, page_size);
+
+        let content = vec![self.content.clone()];
+        let indexes: Vec<u32> = vec![left_pid, self.right_pid];
+        let node = BTreeNode {
+            parent_pid: 0,
+            pid: new_page_id,
+            content,
+            indexes
+        };
+
+        node.to_raw(&mut result)?;
+
+        Ok(result)
+    }
+
+}
+
 // Offset 0:  header(64 bytes)
 // Offset 64: Item(500 bytes) * 8
 //
@@ -131,7 +151,7 @@ impl BTreeNode {
 // Offset 4: overflow_pid(4 bytes)
 // Offset 8: data
 pub(crate) struct BTreePageWrapper {
-    ctx:                Weak<RefCell<DbContext>>,
+    ctx:                Rc<RefCell<DbContext>>,
     root_page_id:       u32,
     item_size:          u32,
 }
@@ -143,7 +163,7 @@ impl BTreePageWrapper {
         let item_size = (ctx.borrow().page_size - HEADER_SIZE) / ITEM_SIZE;
 
         BTreePageWrapper {
-            ctx: Rc::downgrade(&ctx_rc),
+            ctx: ctx_rc,
             root_page_id, item_size
         }
     }
@@ -154,10 +174,7 @@ impl BTreePageWrapper {
     }
 
     fn get_node(&self, pid: u32, parent_pid: u32) -> DbResult<BTreeNode> {
-        let mut ctx_rc = self.ctx.upgrade().expect("context missing");
-        let mut ctx = ctx_rc.borrow_mut();
-
-        let raw_page = ctx.pipeline_read_page(pid)?;
+        let raw_page = self.ctx.borrow_mut().pipeline_read_page(pid)?;
 
         BTreeNode::from_raw(&raw_page, pid, parent_pid, self.item_size)
     }
@@ -245,8 +262,7 @@ impl BTreePageWrapper {
     }
 
     fn write_btree_node(&mut self, node: &BTreeNode) -> DbResult<()> {
-        let mut ctx_rc = self.ctx.upgrade().expect("context missing");
-        let mut ctx = ctx_rc.borrow_mut();
+        let mut ctx = self.ctx.borrow_mut();
         let mut raw_page = RawPage::new(node.pid, ctx.page_size);
 
         node.to_raw(&mut raw_page)?;
@@ -255,7 +271,7 @@ impl BTreePageWrapper {
     }
 
     fn divide_and_return_backward(&mut self, btree_node: BTreeNode) -> DbResult<Option<BackwardItem>> {
-        let mut ctx_rc = self.ctx.upgrade().expect("context missing");
+        let ctx_rc = self.ctx.clone();
         let mut ctx = ctx_rc.borrow_mut();
 
         let middle_index = (btree_node.content.len() + 1) / 2;

@@ -5,7 +5,6 @@ use std::cmp::Ordering;
 use super::ObjectId;
 use super::document::Document;
 use super::array::Array;
-use crate::vli;
 use crate::db::DbResult;
 use crate::error::DbErr;
 
