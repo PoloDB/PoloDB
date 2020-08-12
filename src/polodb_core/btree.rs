@@ -1,7 +1,5 @@
 use std::cmp::Ordering;
 use std::rc::Rc;
-use std::ops::Deref;
-use std::borrow::Borrow;
 
 use crate::db::DbResult;
 use crate::page::{RawPage, PageHandler, PageType};
@@ -10,7 +8,7 @@ use crate::bson::Document;
 
 static HEADER_SIZE: u32      = 64;
 static ITEM_SIZE: u32        = 500;
-static ITEM_HEADER_SIZE: u32 = 8;
+static ITEM_HEADER_SIZE: u32 = 12;
 
 struct BTreeNode {
     parent_pid:  u32,
@@ -25,13 +23,13 @@ impl BTreeNode {
     // Offset 2: items_len(2 bytes)
     // Offset 4: left_pid (4 bytes)
     // Offset 8: next_pid (4 bytes)
-    fn from_raw(page: &RawPage, pid: u32, parent_pid: u32, item_size: u32) -> DbResult<BTreeNode> {
+    fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32) -> DbResult<BTreeNode> {
         let page_type = PageType::BTreeNode;
         let magic = page_type.to_magic();
         if page.data[0..2] != magic {
             if page.data[0..2] == [0, 0] {  // null page
                 return Ok(BTreeNode {
-                    pid,
+                    pid: page.page_id,
                     parent_pid,
                     content: vec![],
                     indexes: vec![ 0 ],
@@ -45,6 +43,10 @@ impl BTreeNode {
         let mut indexes = vec![ left_pid ];
 
         let len = page.get_u16(2);
+
+        if (len as u32) > item_size {  // data error
+            return Err(DbErr::ItemSizeGreaterThenExpected);
+        }
 
         for i in 0..len {
             let offset: u32 = HEADER_SIZE + (i as u32) * ITEM_SIZE;
@@ -66,7 +68,7 @@ impl BTreeNode {
         }
 
         Ok(BTreeNode {
-            pid,
+            pid: page.page_id,
             parent_pid,
             content,
             indexes,
@@ -74,7 +76,7 @@ impl BTreeNode {
     }
 
     fn to_raw(&self, page: &mut RawPage) -> DbResult<()> {
-        let items_len = page.data.len() as u16;
+        let items_len = self.content.len() as u16;
 
         let page_type = PageType::BTreeNode;
         let magic = page_type.to_magic();
@@ -91,22 +93,22 @@ impl BTreeNode {
             page.put_u32(*left_id);
         });
 
-        let mut index =  1;
-        while index < self.content.len() - 1 {
+        let mut index = 0;
+        while index < self.content.len() {
             let item = &self.content[index];
             let right_pid = self.indexes[index + 1];
 
             let offset: u32 = HEADER_SIZE + (index as u32) * ITEM_SIZE;
-            let item  = item.deref().borrow();
 
             page.seek(offset);
             page.put_u32(right_pid);
 
             // TODO: overflow pid
+            page.put_u64(0);
 
             // TODO: write data
-            // page.seek(offset + ITEM_HEADER_SIZE);
-            // page.put(&item.data);
+            let doc_bytes = item.doc.to_bytes()?;
+            page.put(&doc_bytes);
 
             index += 1;
         }
@@ -187,7 +189,7 @@ impl<'a> BTreePageWrapper<'a> {
         }
     }
 
-    pub(crate) fn insert_item(&mut self, doc: Rc<Document>, replace: bool) -> DbResult<Option<BackwardItem>> {
+    pub fn insert_item(&mut self, doc: Rc<Document>, replace: bool) -> DbResult<Option<BackwardItem>> {
         // insert to root node
         self.insert_item_to_page(self.root_page_id, 0, doc, false, replace)
     }
@@ -195,10 +197,42 @@ impl<'a> BTreePageWrapper<'a> {
     fn get_node(&mut self, pid: u32, parent_pid: u32) -> DbResult<BTreeNode> {
         let raw_page = self.page_handler.pipeline_read_page(pid)?;
 
-        BTreeNode::from_raw(&raw_page, pid, parent_pid, self.item_size)
+        BTreeNode::from_raw(&raw_page, parent_pid, self.item_size)
     }
 
-    pub(crate) fn insert_item_to_page(&mut self, pid: u32, parent_pid: u32, doc: Rc<Document>, backward: bool, replace: bool) -> DbResult<Option<BackwardItem>> {
+    pub fn query_all_data(&mut self) -> DbResult<Vec<Rc<Document>>> {
+        let mut result = vec![];
+
+        self.query_data_by_page_id(self.root_page_id, &mut result)?;
+
+        Ok(result)
+    }
+
+    // recrusively query data
+    // DON'T worry about stack overflow
+    // the stack is usually very shallow
+    fn query_data_by_page_id(&mut self, page_id: u32, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
+        let btree_page = self.page_handler.pipeline_read_page(page_id)?;
+        let btree_node = BTreeNode::from_raw(&btree_page, 0, self.item_size)?;
+
+        for (index, item) in btree_node.content.iter().enumerate() {
+            let left_pid = btree_node.indexes[index];
+            if left_pid != 0 {
+                self.query_data_by_page_id(left_pid, result)?;
+            }
+
+            result.push(item.doc.clone());
+
+            let right_pid = btree_node.indexes[index + 1];
+            if right_pid != 0 {
+                self.query_data_by_page_id(right_pid, result)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn insert_item_to_page(&mut self, pid: u32, parent_pid: u32, doc: Rc<Document>, backward: bool, replace: bool) -> DbResult<Option<BackwardItem>> {
         let mut btree_node: BTreeNode = self.get_node(pid, parent_pid)?;
 
         if btree_node.content.is_empty() {

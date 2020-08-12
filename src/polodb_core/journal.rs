@@ -77,7 +77,7 @@ fn generate_a_salt() -> u32 {
 impl JournalManager {
 
     pub fn open(path: &str, page_size: u32) -> DbResult<JournalManager> {
-        let mut journal_file = std::fs::OpenOptions::new()
+        let journal_file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .read(true)

@@ -13,13 +13,13 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::LinkedList;
+use std::ops::DerefMut;
 use super::error::DbErr;
 use super::page::{ header_page_utils, PageHandler };
 use crate::bson::object_id::ObjectIdMaker;
 use crate::overflow_data::{ OverflowDataWrapper, OverflowDataTicket };
 use crate::bson::{ObjectId, Document, value};
 use crate::btree::BTreePageWrapper;
-use std::ops::DerefMut;
 
 static DB_INIT_BLOCK_COUNT: u32 = 16;
 
@@ -77,6 +77,13 @@ impl DbContext {
         })
     }
 
+    #[inline]
+    fn get_meta_page_id(&mut self) -> DbResult<u32> {
+        let mut page_handler = self.page_handler.as_ref().borrow_mut();
+        let head_page = page_handler.pipeline_read_page(0)?;
+        Ok(header_page_utils::get_meta_page_id(&head_page))
+    }
+
     pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {
         let oid = self.obj_id_maker.mk_object_id();
         let mut doc = Document::new_without_id();
@@ -92,11 +99,7 @@ impl DbContext {
 
         doc.insert("flags".into(), value::Value::Int(0));
 
-        let meta_page_id: u32 = {
-            let mut page_handler = self.page_handler.as_ref().borrow_mut();
-            let head_page = page_handler.pipeline_read_page(0)?;
-            header_page_utils::get_meta_page_id(&head_page)
-        };
+        let meta_page_id: u32 = self.get_meta_page_id()?;
 
         let mut page_handler = self.page_handler.borrow_mut();
         let mut btree_wrapper = BTreePageWrapper::new(page_handler.deref_mut(), meta_page_id);
@@ -124,6 +127,14 @@ impl DbContext {
 
             None => Ok(oid)
         }
+    }
+
+    pub fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let mut page_handler = self.page_handler.as_ref().borrow_mut();
+        let mut btree_wrapper = BTreePageWrapper::new(page_handler.deref_mut(), meta_page_id);
+
+        btree_wrapper.query_all_data()
     }
 
 }
@@ -156,6 +167,34 @@ impl Database {
         return VERSION.into();
     }
 
+    pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<()> {
+        let meta = self.query_all_meta()?;
+
+        for item in &meta {
+            match item.map.get(col_name) {
+                Some(value::Value::String(name)) => {
+                    if name == col_name {  // found
+                        let page_id = item.map.get("page_id").unwrap();
+                        match page_id {
+                            value::Value::Int(_page_id) => {
+                                // TODO: insert iterm
+                                return Ok(())
+                            }
+                            _ => panic!("page id is not int type")
+                        }
+                    }
+                }
+                _ => ()
+            }
+        }
+
+        Err(DbErr::CollectionNotFound(col_name.into()))
+    }
+
+    pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
+        self.ctx.query_all_meta()
+    }
+
 }
 
 #[cfg(test)]
@@ -169,7 +208,13 @@ mod tests {
 
         let mut db = Database::open("/tmp/test.db").unwrap();
         let result = db.create_collection("test").unwrap();
-        println!("object:id {}", result.to_string())
+        println!("object:id {}", result.to_string());
+
+        let meta = db.query_all_meta().unwrap();
+
+        for (index, doc) in meta.iter().enumerate() {
+            println!("index: {}, object: {}", index, doc)
+        }
     }
 
 }

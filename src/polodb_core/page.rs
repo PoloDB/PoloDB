@@ -288,7 +288,7 @@ impl RawPage {
 
     #[inline]
     pub fn put_u16(&mut self, data: u16) {
-        let data_be = data.to_le_bytes();
+        let data_be = data.to_be_bytes();
         self.put(&data_be)
     }
 

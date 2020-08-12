@@ -19,6 +19,8 @@ pub enum DbErr {
     ChecksumMismatch,
     JournalPageSizeMismatch(u32, u32),
     SaltMismatch,
+    ItemSizeGreaterThenExpected,
+    CollectionNotFound(String),
 }
 
 impl fmt::Display for DbErr {
@@ -40,6 +42,8 @@ impl fmt::Display for DbErr {
             DbErr::ChecksumMismatch => write!(f, "ChecksumMismatch"),
             DbErr::JournalPageSizeMismatch(expect, actual) => write!(f, "JournalPageSizeMismatch(expect={}, actual={})", expect, actual),
             DbErr::SaltMismatch => write!(f, "SaltMismatch"),
+            DbErr::ItemSizeGreaterThenExpected => write!(f, "ItemSizeGreaterThenExpected"),
+            DbErr::CollectionNotFound(name) => write!(f, "collection \"{}\" not found", name),
         }
     }
 

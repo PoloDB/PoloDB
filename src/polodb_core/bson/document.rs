@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::fmt;
 use super::value;
 use super::linked_hash_map::LinkedHashMap;
 use crate::vli;
@@ -9,7 +10,7 @@ use crate::bson::array::Array;
 
 #[derive(Debug, Clone)]
 pub struct Document {
-    map: LinkedHashMap<String, value::Value>,
+    pub map: LinkedHashMap<String, value::Value>,
 }
 
 impl Document {
@@ -290,6 +291,26 @@ mod tests {
         let parsed_doc = Document::from_bytes(&bytes).expect("deserialize error");
 
         println!("len: {}", bytes.len())
+    }
+
+}
+
+impl fmt::Display for Document {
+
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{ ")?;
+
+        let mut index = 0;
+        for (key, value) in &self.map {
+            write!(f, "{}: {}", key, value)?;
+
+            if index < self.map.len() - 1 {
+                write!(f, ", ")?;
+            }
+            index += 1;
+        }
+
+        write!(f, " }}")
     }
 
 }
