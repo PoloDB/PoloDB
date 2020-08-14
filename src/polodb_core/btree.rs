@@ -6,24 +6,43 @@ use crate::page::{RawPage, PageHandler, PageType};
 use crate::error::DbErr;
 use crate::bson::Document;
 
-static HEADER_SIZE: u32      = 64;
-static ITEM_SIZE: u32        = 500;
-static ITEM_HEADER_SIZE: u32 = 12;
+pub(crate) static HEADER_SIZE: u32      = 64;
+pub(crate) static ITEM_SIZE: u32        = 500;
+pub(crate) static ITEM_HEADER_SIZE: u32 = 12;
 
-struct BTreeNode {
-    parent_pid:  u32,
-    pid:         u32,
-    content:     Vec<BTreeNodeDataItem>,
-    indexes:     Vec<u32>,
+pub(crate) struct BTreeNode {
+    pub parent_pid:  u32,
+    pub pid:         u32,
+    pub content:     Vec<BTreeNodeDataItem>,
+    pub indexes:     Vec<u32>,
 }
 
 impl BTreeNode {
+
+    pub fn clone_with_content(&self, new_index: usize, new_item: BTreeNodeDataItem) -> BTreeNode {
+        let mut content: Vec<BTreeNodeDataItem> = Vec::with_capacity(self.content.capacity());
+
+        for (index, item) in self.content.iter().enumerate() {
+            if index == new_index {
+                content.push(new_item.clone());
+            } else {
+                content.push(item.clone());
+            }
+        }
+
+        BTreeNode {
+            parent_pid: self.parent_pid,
+            pid: self.pid,
+            content,
+            indexes: self.indexes.clone(),
+        }
+    }
 
     // Offset 0: magic(2 bytes)
     // Offset 2: items_len(2 bytes)
     // Offset 4: left_pid (4 bytes)
     // Offset 8: next_pid (4 bytes)
-    fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32) -> DbResult<BTreeNode> {
+    pub fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32) -> DbResult<BTreeNode> {
         let page_type = PageType::BTreeNode;
         let magic = page_type.to_magic();
         if page.data[0..2] != magic {
@@ -75,7 +94,7 @@ impl BTreeNode {
         })
     }
 
-    fn to_raw(&self, page: &mut RawPage) -> DbResult<()> {
+    pub fn to_raw(&self, page: &mut RawPage) -> DbResult<()> {
         let items_len = self.content.len() as u16;
 
         let page_type = PageType::BTreeNode;
@@ -123,9 +142,9 @@ impl BTreeNode {
 }
 
 #[derive(Clone)]
-struct BTreeNodeDataItem {
-    doc:          Rc<Document>,
-    overflow_pid: u32,
+pub(crate) struct BTreeNodeDataItem {
+    pub doc:          Rc<Document>,
+    pub overflow_pid: u32,
 }
 
 impl BTreeNodeDataItem {
@@ -198,38 +217,6 @@ impl<'a> BTreePageWrapper<'a> {
         let raw_page = self.page_handler.pipeline_read_page(pid)?;
 
         BTreeNode::from_raw(&raw_page, parent_pid, self.item_size)
-    }
-
-    pub fn query_all_data(&mut self) -> DbResult<Vec<Rc<Document>>> {
-        let mut result = vec![];
-
-        self.query_data_by_page_id(self.root_page_id, &mut result)?;
-
-        Ok(result)
-    }
-
-    // recrusively query data
-    // DON'T worry about stack overflow
-    // the stack is usually very shallow
-    fn query_data_by_page_id(&mut self, page_id: u32, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
-        let btree_page = self.page_handler.pipeline_read_page(page_id)?;
-        let btree_node = BTreeNode::from_raw(&btree_page, 0, self.item_size)?;
-
-        for (index, item) in btree_node.content.iter().enumerate() {
-            let left_pid = btree_node.indexes[index];
-            if left_pid != 0 {
-                self.query_data_by_page_id(left_pid, result)?;
-            }
-
-            result.push(item.doc.clone());
-
-            let right_pid = btree_node.indexes[index + 1];
-            if right_pid != 0 {
-                self.query_data_by_page_id(right_pid, result)?;
-            }
-        }
-
-        Ok(())
     }
 
     pub fn insert_item_to_page(&mut self, pid: u32, parent_pid: u32, doc: Rc<Document>, backward: bool, replace: bool) -> DbResult<Option<BackwardItem>> {

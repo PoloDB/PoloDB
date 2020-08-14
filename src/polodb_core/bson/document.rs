@@ -10,7 +10,7 @@ use crate::bson::array::Array;
 
 #[derive(Debug, Clone)]
 pub struct Document {
-    pub map: LinkedHashMap<String, value::Value>,
+    map: LinkedHashMap<String, value::Value>,
 }
 
 impl Document {
@@ -30,8 +30,24 @@ impl Document {
         }
     }
 
+    #[inline]
     pub fn insert(&mut self, key: String, value: value::Value) -> Option<value::Value> {
         self.map.insert(key, value)
+    }
+
+    #[inline]
+    pub fn get(&self, key: &str) -> Option<&value::Value> {
+        self.map.get(key)
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
     }
 
     pub fn pkey_id(&self) -> Option<value::Value> {

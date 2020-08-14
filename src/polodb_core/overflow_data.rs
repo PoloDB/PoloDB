@@ -1,5 +1,3 @@
-use std::rc::Rc;
-use std::cell::RefCell;
 use crate::page::{RawPage, PageHandler};
 use crate::db::DbResult;
 use crate::error::DbErr;
@@ -20,15 +18,15 @@ pub struct OverflowDataTicket {
 // Offset 0: magic(2 bytes)
 // Offset 2: page type(2 bytes)
 // Offset 16: data begin
-pub struct OverflowDataWrapper {
-    ctx:        Rc<RefCell<PageHandler>>,
+pub struct OverflowDataWrapper<'a> {
+    ctx:        &'a mut PageHandler,
     record_bar: Vec<u16>,
     page:       RawPage,
 }
 
-impl OverflowDataWrapper {
+impl<'a> OverflowDataWrapper<'a> {
 
-    pub(crate) fn from_raw_page(ctx: Rc<RefCell<PageHandler>>, page: RawPage) -> DbResult<OverflowDataWrapper> {
+    pub(crate) fn from_raw_page(ctx: &'a mut PageHandler, page: RawPage) -> DbResult<OverflowDataWrapper> {
         let mut page = page;
 
         // init
@@ -55,8 +53,7 @@ impl OverflowDataWrapper {
     }
 
     pub fn alloc(&mut self, size: u32) -> DbResult<OverflowDataTicketItem> {
-        let ctx = self.ctx.borrow();
-        let remain_space: i64 = (ctx.page_size as i64) - (OVERFLOW_PAGE_HEADER_SIZE as i64) - (((self.record_bar.len() as i64) + 2) * 2);
+        let remain_space: i64 = (self.ctx.page_size as i64) - (OVERFLOW_PAGE_HEADER_SIZE as i64) - (((self.record_bar.len() as i64) + 2) * 2);
 
         if remain_space < 32 {
             return Err(DbErr::PageSpaceNotEnough);
@@ -65,7 +62,7 @@ impl OverflowDataWrapper {
         if (remain_space - 8) <= (size as i64) {  // page can be stored in this page
             let last_bar: u32 = match self.record_bar.last() {
                 Some(i) => (*i) as u32,
-                None => ctx.page_size,
+                None => self.ctx.page_size,
             };
 
             let bar = (last_bar - size) as u16;

@@ -7,7 +7,7 @@ PoloDB is a embedded NoSQL database.
 
 # Feature
 
-- Embedded(No standard process)
+- Embedded(No standalone processes, no cross-process calls)
 - No dependency(except for libc, which is a system lib)
 - NoSQL
 - MongoDB like API

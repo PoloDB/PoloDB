@@ -1,12 +1,14 @@
-pub mod hex;
-pub mod object_id;
-pub mod document;
-pub mod array;
-pub mod value;
+mod hex;
+mod object_id;
+mod document;
+mod array;
+mod value;
 mod linked_hash_map;
 
-pub use object_id::ObjectId;
+pub use object_id::{ObjectId, ObjectIdMaker};
 pub use document::Document;
+pub use array::Array;
+pub use value::Value;
 
 #[cfg(test)]
 mod tests {

@@ -11,17 +11,14 @@
 // ...
 //
 use std::rc::Rc;
-use std::cell::RefCell;
 use std::collections::LinkedList;
-use std::ops::DerefMut;
 use super::error::DbErr;
 use super::page::{ header_page_utils, PageHandler };
-use crate::bson::object_id::ObjectIdMaker;
+use crate::bson::ObjectIdMaker;
 use crate::overflow_data::{ OverflowDataWrapper, OverflowDataTicket };
-use crate::bson::{ObjectId, Document, value};
+use crate::bson::{ObjectId, Document, Value};
 use crate::btree::BTreePageWrapper;
-
-static DB_INIT_BLOCK_COUNT: u32 = 16;
+use crate::cursor::Cursor;
 
 // #[derive(Clone)]
 pub struct Database {
@@ -31,7 +28,7 @@ pub struct Database {
 pub type DbResult<T> = Result<T, DbErr>;
 
 pub(crate) struct DbContext {
-    page_handler :        Rc<RefCell<PageHandler>>,
+    page_handler :        Box<PageHandler>,
     pending_block_offset: u32,
     overflow_data_pages:  LinkedList<u32>,
 
@@ -49,7 +46,7 @@ impl DbContext {
         let obj_id_maker = ObjectIdMaker::new();
 
         let ctx = DbContext {
-            page_handler: Rc::new(RefCell::new(page_handler)),
+            page_handler: Box::new(page_handler),
 
             pending_block_offset: 0,
             overflow_data_pages: LinkedList::new(),
@@ -61,14 +58,13 @@ impl DbContext {
     }
 
     fn alloc_overflow_ticker(&mut self, size: u32) -> DbResult<OverflowDataTicket> {
-        let mut page_handler = self.page_handler.as_ref().borrow_mut();
-        let page_id = page_handler.alloc_page_id()?;
+        let page_id = self.page_handler.alloc_page_id()?;
 
         self.overflow_data_pages.push_back(page_id);
 
-        let raw_page = page_handler.pipeline_read_page(page_id)?;
+        let raw_page = self.page_handler.pipeline_read_page(page_id)?;
 
-        let mut overflow = OverflowDataWrapper::from_raw_page(self.page_handler.clone(), raw_page)?;
+        let mut overflow = OverflowDataWrapper::from_raw_page(&mut self.page_handler, raw_page)?;
 
         let ticket = overflow.alloc(size)?;
 
@@ -79,48 +75,42 @@ impl DbContext {
 
     #[inline]
     fn get_meta_page_id(&mut self) -> DbResult<u32> {
-        let mut page_handler = self.page_handler.as_ref().borrow_mut();
-        let head_page = page_handler.pipeline_read_page(0)?;
+        let head_page = self.page_handler.pipeline_read_page(0)?;
         Ok(header_page_utils::get_meta_page_id(&head_page))
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {
         let oid = self.obj_id_maker.mk_object_id();
         let mut doc = Document::new_without_id();
-        doc.insert("_id".into(), value::Value::ObjectId(oid.clone()));
+        doc.insert("_id".into(), Value::ObjectId(oid.clone()));
 
-        doc.insert("name".into(), value::Value::String(name.into()));
+        doc.insert("name".into(), Value::String(name.into()));
 
-        let root_pid = {
-            let mut page_handler = self.page_handler.as_ref().borrow_mut();
-            page_handler.alloc_page_id()?
-        };
-        doc.insert("root_pid".into(), value::Value::Int(root_pid as i64));
+        let root_pid = self.page_handler.alloc_page_id()?;
+        doc.insert("root_pid".into(), Value::Int(root_pid as i64));
 
-        doc.insert("flags".into(), value::Value::Int(0));
+        doc.insert("flags".into(), Value::Int(0));
 
         let meta_page_id: u32 = self.get_meta_page_id()?;
 
-        let mut page_handler = self.page_handler.borrow_mut();
-        let mut btree_wrapper = BTreePageWrapper::new(page_handler.deref_mut(), meta_page_id);
+        let mut btree_wrapper = BTreePageWrapper::new(&mut self.page_handler, meta_page_id);
 
         let backward = btree_wrapper.insert_item(Rc::new(doc), false)?;
 
         match backward {
             Some(backward_item) => {
-                let mut page_handler = self.page_handler.as_ref().borrow_mut();
-                let new_root_id = page_handler.alloc_page_id()?;
+                let new_root_id = self.page_handler.alloc_page_id()?;
 
-                let raw_page = backward_item.write_to_page(new_root_id, meta_page_id, page_handler.page_size)?;
+                let raw_page = backward_item.write_to_page(new_root_id, meta_page_id, self.page_handler.page_size)?;
 
                 // update head page
                 {
-                    let mut head_page = page_handler.pipeline_read_page(0)?;
+                    let mut head_page = self.page_handler.pipeline_read_page(0)?;
                     header_page_utils::set_meta_page_id(&mut head_page, new_root_id);
-                    page_handler.pipeline_write_page(&head_page)?;
+                    self.page_handler.pipeline_write_page(&head_page)?;
                 }
 
-                page_handler.pipeline_write_page(&raw_page)?;
+                self.page_handler.pipeline_write_page(&raw_page)?;
 
                 Ok(oid)
             }
@@ -129,12 +119,76 @@ impl DbContext {
         }
     }
 
+    fn insert(&mut self, col_name: &str, mut doc: Rc<Document>) -> DbResult<()> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
+
+        let doc = {
+            let id = doc.get("_id");
+            match id {
+                Some(val) => doc,
+                None => {
+                    let new_doc = Rc::make_mut(&mut doc);
+                    new_doc.insert("_id".into(), Value::ObjectId(self.obj_id_maker.mk_object_id()));
+                    doc
+                }
+            }
+        };
+
+        cursor.insert(col_name, doc)
+    }
+
+    fn get_collection_cursor(&mut self, col_name: &str) -> DbResult<Cursor> {
+        let root_page_id: i64 = {
+            let meta_page_id = self.get_meta_page_id()?;
+            let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
+
+            let mut tmp: i64 = -1;
+
+            while cursor.has_next() {
+                let doc = cursor.peek().unwrap();
+
+                let doc_name = match doc.get("name") {
+                    Some(name) => name,
+                    None => return Err(DbErr::CollectionNotFound(col_name.into()))
+                };
+
+                if let Value::String(str_content) = doc_name {
+                    if str_content == col_name {
+                        tmp = match doc.get("root_pid") {
+                            Some(Value::Int(pid)) => *pid,
+                            _ => -1,
+                        };
+                        break;
+                    }
+                }
+
+                let _ = cursor.next()?;
+            }
+
+            if tmp < 0 {
+                return Err(DbErr::CollectionNotFound(col_name.into()))
+            }
+
+            tmp
+        };
+
+        Ok(Cursor::new(&mut self.page_handler, root_page_id as u32)?)
+    }
+
     pub fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
         let meta_page_id = self.get_meta_page_id()?;
-        let mut page_handler = self.page_handler.as_ref().borrow_mut();
-        let mut btree_wrapper = BTreePageWrapper::new(page_handler.deref_mut(), meta_page_id);
 
-        btree_wrapper.query_all_data()
+        let mut result = vec![];
+        let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
+
+        while cursor.has_next() {
+            result.push(cursor.peek().unwrap());
+
+            let _ = cursor.next()?;
+        }
+
+        Ok(result)
     }
 
 }
@@ -142,7 +196,7 @@ impl DbContext {
 impl Drop for DbContext {
 
     fn drop(&mut self) {
-        let _ = self.page_handler.as_ref().borrow_mut().checkpoint_journal();  // ignored
+        let _ = self.page_handler.checkpoint_journal();  // ignored
     }
 
 }
@@ -168,27 +222,7 @@ impl Database {
     }
 
     pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<()> {
-        let meta = self.query_all_meta()?;
-
-        for item in &meta {
-            match item.map.get(col_name) {
-                Some(value::Value::String(name)) => {
-                    if name == col_name {  // found
-                        let page_id = item.map.get("page_id").unwrap();
-                        match page_id {
-                            value::Value::Int(_page_id) => {
-                                // TODO: insert iterm
-                                return Ok(())
-                            }
-                            _ => panic!("page id is not int type")
-                        }
-                    }
-                }
-                _ => ()
-            }
-        }
-
-        Err(DbErr::CollectionNotFound(col_name.into()))
+        self.ctx.insert(col_name, doc)
     }
 
     pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
@@ -200,6 +234,8 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use crate::Database;
+    use std::rc::Rc;
+    use crate::bson::{ Document, Value };
 
     #[test]
     fn test_create_collection() {
@@ -214,6 +250,19 @@ mod tests {
 
         for (index, doc) in meta.iter().enumerate() {
             println!("index: {}, object: {}", index, doc)
+        }
+
+        for i in 0..100 {
+            let content = i.to_string();
+            let mut new_doc = Document::new_without_id();
+            new_doc.insert("content".into(), Value::String(content));
+            db.insert("test", Rc::new(new_doc)).unwrap();
+        }
+
+        let test_col_cursor = db.ctx.get_collection_cursor("test").unwrap();
+        while test_col_cursor.has_next() {
+            let doc = test_col_cursor.peek().unwrap();
+            println!("object: {}", doc)
         }
     }
 

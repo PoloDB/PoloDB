@@ -27,7 +27,14 @@ pub enum Value {
 impl Value {
 
     pub fn value_cmp(&self, other: &Value) -> DbResult<Ordering> {
-        Err(DbErr::NotImplement)
+        match (self, other) {
+            (Value::Null, Value::Null) => Ok(Ordering::Equal),
+            (Value::Int(i1), Value::Int(i2)) => Ok(i1.cmp(i2)),
+            (Value::String(str1), Value::String(str2)) => Ok(str1.cmp(str2)),
+            (Value::ObjectId(oid1), Value::ObjectId(oid2)) => Ok(oid1.cmp(oid2)),
+            _ =>
+                return Err(DbErr::TypeNotComparable(self.ty_name().into(), other.ty_name().into()))
+        }
     }
 
     #[inline]

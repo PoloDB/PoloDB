@@ -1,5 +1,4 @@
-use super::bson::value;
-use super::bson::value::Value;
+use super::bson::Value;
 use super::vm_code::{ VmCode };
 use std::vec::Vec;
 
@@ -19,7 +18,7 @@ pub enum VmState {
 
 pub struct VM {
     state: VmState,
-    stack: Vec<value::Value>,
+    stack: Vec<Value>,
     program: Box<SubProgram>,
 }
 
@@ -27,7 +26,7 @@ impl VM {
 
     fn new(program: Box<SubProgram>) -> VM {
         let mut stack = Vec::new();
-        stack.resize(STACK_SIZE, value::Value::Null);
+        stack.resize(STACK_SIZE, Value::Null);
         VM {
             state: VmState::Init,
             stack,

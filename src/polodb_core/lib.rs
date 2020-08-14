@@ -9,6 +9,7 @@ mod pagecache;
 mod error;
 mod vli;
 mod overflow_data;
+mod cursor;
 
 pub mod db;
 pub use db::{Database, DbResult};

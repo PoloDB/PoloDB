@@ -1,14 +1,14 @@
 use std::io;
 use std::fmt;
 use std::num;
-use crate::bson::value::Value;
+use crate::bson::Value;
 
 #[derive(Debug)]
 pub enum DbErr {
     ParseError,
     ParseIntError(num::ParseIntError),
     IOErr(io::Error),
-    TypeMismatch(String, String),
+    TypeNotComparable(String, String),
     NotImplement,
     DecodeEOF,
     DecodeIntUnknownByte,
@@ -30,8 +30,8 @@ impl fmt::Display for DbErr {
             DbErr::ParseError => write!(f, "ParseError"),
             DbErr::ParseIntError(parse_int_err) => std::fmt::Display::fmt(&parse_int_err, f),
             DbErr::IOErr(io_err) => std::fmt::Display::fmt(&io_err, f),
-            DbErr::TypeMismatch(expected, actual) =>
-                write!(f, "TypeMismatch(expected: {}, actual: {})", expected, actual),
+            DbErr::TypeNotComparable(expected, actual) =>
+                write!(f, "TypeNotComparable(expected: {}, actual: {})", expected, actual),
             DbErr::NotImplement => write!(f, "NotImplement"),
             DbErr::DecodeEOF => write!(f, "DecodeEOF"),
             DbErr::DecodeIntUnknownByte => write!(f, "DecodeIntUnknownByte"),
