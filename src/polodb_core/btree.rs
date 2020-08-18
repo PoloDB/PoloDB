@@ -278,7 +278,7 @@ impl<'a> BTreePageWrapper<'a> {
         }
 
         if index >= btree_node.content.len() - 1 {  // greater than the last
-            let right_pid = btree_node.indexes[index + 1];
+            let right_pid = btree_node.indexes[index];  // index is already equal content.len()
             if backward || right_pid == 0 {  // right page is null, insert in current page
                 btree_node.content.push(BTreeNodeDataItem::with_doc(doc.clone()));
                 btree_node.indexes.push(0);

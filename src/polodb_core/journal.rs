@@ -298,6 +298,9 @@ impl JournalManager {
         self.offset_map.insert(raw_page.page_id, start_pos);
         self.count += 1;
 
+        #[cfg(feature = "log")]
+            eprintln!("append page to journal, page_id: {}, start_pos:\t\t0x{:0>8X}", raw_page.page_id, start_pos);
+
         Ok(())
     }
 
@@ -312,6 +315,9 @@ impl JournalManager {
 
         let mut result = RawPage::new(page_id, self.page_size);
         result.read_from_file(&mut self.journal_file, data_offset)?;
+
+        #[cfg(feature = "log")]
+            eprintln!("read page from journal, page_id: {}, data_offset:\t\t0x{:0>8X}", page_id, data_offset);
 
         Ok(Some(result))
     }

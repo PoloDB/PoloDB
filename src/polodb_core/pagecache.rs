@@ -1,7 +1,6 @@
 use libc::{ malloc, free };
 use std::collections::HashMap;
 use std::ptr::null_mut;
-use std::cell::RefCell;
 use crate::page::RawPage;
 
 struct LruNode {
@@ -41,10 +40,12 @@ impl LruMap {
         }
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
+    #[inline]
     pub fn cap(&self) -> usize {
         self.cap
     }
@@ -212,7 +213,7 @@ pub(crate) struct PageCache {
     cache_size: usize,
     page_size:  u32,
     data:       *mut u8,
-    lru_map:    RefCell<LruMap>,
+    lru_map:    Box<LruMap>,
 }
 
 impl PageCache {
@@ -234,7 +235,7 @@ impl PageCache {
             cache_size,
             page_size,
             data,
-            lru_map: RefCell::new(lru_map),
+            lru_map: Box::new(lru_map),
         }
     }
 
@@ -243,9 +244,8 @@ impl PageCache {
         result as u32
     }
 
-    pub(crate) fn get_from_cache(&self, page_id: u32) -> Option<RawPage> {
-        let mut lru_map = self.lru_map.borrow_mut();
-        let index = match lru_map.find(page_id) {
+    pub(crate) fn get_from_cache(&mut self, page_id: u32) -> Option<RawPage> {
+        let index = match self.lru_map.find(page_id) {
             Some(index) => index,
             None => return None,
         };
@@ -258,11 +258,10 @@ impl PageCache {
     }
 
     pub(crate) fn insert_to_cache(&mut self, page: &RawPage) {
-        let mut lru_map = self.lru_map.borrow_mut();
-        let new_index = if lru_map.len() < lru_map.cap() {  // is not full
-            lru_map.len() as u32
+        let new_index = if self.lru_map.len() < self.lru_map.cap() {  // is not full
+            self.lru_map.len() as u32
         } else {
-            let (_, tail_value) = lru_map.remove_tail().expect("data error");
+            let (_, tail_value) = self.lru_map.remove_tail().expect("data error");
             tail_value
         };
 

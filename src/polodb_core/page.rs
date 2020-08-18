@@ -121,6 +121,8 @@ impl PageHandler {
 
         if self.is_journal_full() {
             self.checkpoint_journal()?;
+            #[cfg(feature = "log")]
+                eprintln!("checkpoint journal finished");
         }
 
         self.page_cache.insert_to_cache(page);
@@ -132,7 +134,12 @@ impl PageHandler {
     // 3. read from main db
     pub fn pipeline_read_page(&mut self, page_id: u32) -> Result<RawPage, DbErr> {
         match self.page_cache.get_from_cache(page_id) {
-            Some(page) => return Ok(page),
+            Some(page) => {
+                #[cfg(feature = "log")]
+                eprintln!("read page from cache, page_id: {}", page_id);
+
+                return Ok(page);
+            },
             None => (), // nothing
         }
 
@@ -152,6 +159,9 @@ impl PageHandler {
         result.read_from_file(&mut self.file, offset)?;
 
         self.page_cache.insert_to_cache(&result);
+
+        #[cfg(feature = "log")]
+            eprintln!("read page from main file, id: {}", page_id);
 
         Ok(result)
     }
@@ -188,6 +198,10 @@ impl PageHandler {
     pub fn alloc_page_id(&mut self) -> DbResult<u32> {
         match self.try_get_free_page_id()? {
             Some(page_id) =>  {
+
+                #[cfg(feature = "log")]
+                    eprintln!("get new page_id from free list: {}", page_id);
+
                 Ok(page_id)
             }
 
@@ -210,6 +224,9 @@ impl PageHandler {
         }
 
         self.pipeline_write_page(&first_page)?;
+
+        #[cfg(feature = "log")]
+            eprintln!("alloc new page_id : {}", null_page_bar);
 
         Ok(null_page_bar)
     }
