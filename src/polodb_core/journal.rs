@@ -317,7 +317,7 @@ impl JournalManager {
         result.read_from_file(&mut self.journal_file, data_offset)?;
 
         #[cfg(feature = "log")]
-            eprintln!("read page from journal, page_id: {}, data_offset:\t\t0x{:0>8X}", page_id, data_offset);
+            eprintln!("read page from journal, page_id: {}, data_offset:\t\t0x{:0>8X}", page_id, offset);
 
         Ok(Some(result))
     }
@@ -356,6 +356,51 @@ impl JournalManager {
     #[inline]
     pub(crate) fn len(&self) -> u32 {
         self.count
+    }
+
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::journal::JournalManager;
+    use crate::page::RawPage;
+
+    static TEST_PAGE_LEN: u32 = 100;
+
+    fn make_raw_page(page_id: u32) -> RawPage {
+        let mut page = RawPage::new(page_id, 4096);
+
+        for i in 0..4096 {
+            page.data[i] = unsafe {
+                libc::rand() as u8
+            }
+        }
+
+        page
+    }
+
+    #[test]
+    fn test_journal() {
+        let _ = std::fs::remove_file("/tmp/test-journal");
+        let mut journal_manager = JournalManager::open("/tmp/test-journal", 4096).unwrap();
+
+        let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);
+
+        for i in 0..TEST_PAGE_LEN {
+            ten_pages.push(make_raw_page(i))
+        }
+
+        for item in &ten_pages {
+            journal_manager.append_raw_page(item).unwrap();
+        }
+
+        for i in 0..TEST_PAGE_LEN {
+            let page = journal_manager.read_page(i).unwrap().unwrap();
+
+            for (index, ch) in page.data.iter().enumerate() {
+                assert_eq!(*ch, ten_pages[i as usize].data[index])
+            }
+        }
     }
 
 }

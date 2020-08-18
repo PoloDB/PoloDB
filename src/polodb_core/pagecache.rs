@@ -269,6 +269,8 @@ impl PageCache {
         unsafe {
             page.copy_to_ptr(self.data.add(offset));
         }
+
+        let _ = self.lru_map.insert(page.page_id, offset as u32);
     }
 
 }
