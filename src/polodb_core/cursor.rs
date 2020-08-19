@@ -1,10 +1,11 @@
 use std::rc::Rc;
 use std::collections::LinkedList;
 use crate::page::{PageHandler, RawPage};
-use crate::btree::{BTreeNode, HEADER_SIZE, ITEM_SIZE, BTreeNodeDataItem, BTreePageWrapper};
+use crate::btree::{BTreeNode, HEADER_SIZE, ITEM_SIZE, BTreeNodeDataItem, BTreePageWrapper, BackwardItem};
 use crate::DbResult;
 use crate::bson::{Document, Value};
 use crate::error::DbErr;
+use crate::db::meta_document_key;
 
 #[derive(Clone)]
 struct CursorItem {
@@ -189,31 +190,21 @@ impl<'a> Cursor<'a> {
     pub fn insert(&mut self, col_name: &str, doc_value: Rc<Document>) -> DbResult<()> {
         while self.has_next() {
             let doc = self.peek().unwrap();
-            match doc.get("name") {
+            match doc.get(meta_document_key::NAME) {
                 Some(Value::String(name)) => {
                     if name == col_name {  // found
-                        let page_id = doc.get("root_pid").unwrap();
+                        let page_id = doc.get(meta_document_key::ROOT_PID).unwrap();
                         match page_id {
                             Value::Int(page_id) => {
                                 let mut btree_wrapper = BTreePageWrapper::new(self.page_handler, *page_id as u32);
-
                                 let backward = btree_wrapper.insert_item(doc_value.clone(), false)?;
-                                match backward {
+
+                                return match backward {
                                     Some(backward_item) => {
-                                        let new_root_id = self.page_handler.alloc_page_id()?;
-                                        let new_root_page = backward_item.write_to_page(new_root_id, *page_id as u32, self.page_handler.page_size)?;
-
-                                        let mut new_doc = doc.clone();
-                                        let doc = Rc::make_mut(&mut new_doc);
-                                        doc.insert("page_id".into(), Value::Int(new_root_id as i64));
-                                        self.update_current(new_doc)?;
-
-                                        self.page_handler.pipeline_write_page(&new_root_page)?
+                                        self.handle_backward_item(doc.clone(), *page_id as u32, backward_item)
                                     },
-                                    None => ()
+                                    None => Ok(())
                                 }
-
-                                return Ok(())
                             }
 
                             _ => panic!("page id is not int type")
@@ -228,6 +219,17 @@ impl<'a> Cursor<'a> {
         }
 
         Err(DbErr::CollectionNotFound(col_name.into()))
+    }
+
+    fn handle_backward_item(&mut self, mut meta_doc_rc: Rc<Document>, left_pid: u32, backward_item: BackwardItem) -> DbResult<()> {
+        let new_root_id = self.page_handler.alloc_page_id()?;
+        let new_root_page = backward_item.write_to_page(new_root_id, left_pid, self.page_handler.page_size)?;
+
+        let meta_doc = Rc::make_mut(&mut meta_doc_rc);
+        meta_doc.insert(meta_document_key::ROOT_PID.into(), Value::Int(new_root_id as i64));
+        self.update_current(meta_doc_rc)?;
+
+        self.page_handler.pipeline_write_page(&new_root_page)
     }
 
 }

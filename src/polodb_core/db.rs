@@ -20,6 +20,14 @@ use crate::bson::{ObjectId, Document, Value};
 use crate::btree::BTreePageWrapper;
 use crate::cursor::Cursor;
 
+pub(crate) mod meta_document_key {
+    pub(crate) static ID: &str       = "_id";
+    pub(crate) static ROOT_PID: &str = "root_pid";
+    pub(crate) static NAME: &str     = "name";
+    pub(crate) static FLAGS: &str    = "flags";
+
+}
+
 // #[derive(Clone)]
 pub struct Database {
     ctx: Box<DbContext>,
@@ -88,14 +96,14 @@ impl DbContext {
     pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {
         let oid = self.obj_id_maker.mk_object_id();
         let mut doc = Document::new_without_id();
-        doc.insert("_id".into(), Value::ObjectId(oid.clone()));
+        doc.insert(meta_document_key::ID.into(), Value::ObjectId(oid.clone()));
 
-        doc.insert("name".into(), Value::String(name.into()));
+        doc.insert(meta_document_key::NAME.into(), Value::String(name.into()));
 
         let root_pid = self.page_handler.alloc_page_id()?;
-        doc.insert("root_pid".into(), Value::Int(root_pid as i64));
+        doc.insert(meta_document_key::ROOT_PID.into(), Value::Int(root_pid as i64));
 
-        doc.insert("flags".into(), Value::Int(0));
+        doc.insert(meta_document_key::FLAGS.into(), Value::Int(0));
 
         let meta_page_id: u32 = self.get_meta_page_id()?;
 
@@ -125,21 +133,23 @@ impl DbContext {
         }
     }
 
-    fn insert(&mut self, col_name: &str, mut doc: Rc<Document>) -> DbResult<()> {
-        let meta_page_id = self.get_meta_page_id()?;
-        let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
-
-        let doc = {
-            let id = doc.get("_id");
-            match id {
-                Some(val) => doc,
-                None => {
-                    let new_doc = Rc::make_mut(&mut doc);
-                    new_doc.insert("_id".into(), Value::ObjectId(self.obj_id_maker.mk_object_id()));
-                    doc
-                }
+    #[inline]
+    fn fix_doc(&mut self, mut doc: Rc<Document>) -> Rc<Document> {
+        let id = doc.get("_id");
+        match id {
+            Some(_) => doc,
+            None => {
+                let new_doc = Rc::make_mut(&mut doc);
+                new_doc.insert("_id".into(), Value::ObjectId(self.obj_id_maker.mk_object_id()));
+                doc
             }
-        };
+        }
+    }
+
+    fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<()> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let doc = self.fix_doc(doc);
+        let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
 
         cursor.insert(col_name, doc)
     }
@@ -154,14 +164,14 @@ impl DbContext {
             while cursor.has_next() {
                 let doc = cursor.peek().unwrap();
 
-                let doc_name = match doc.get("name") {
+                let doc_name = match doc.get(meta_document_key::NAME) {
                     Some(name) => name,
                     None => return Err(DbErr::CollectionNotFound(col_name.into()))
                 };
 
                 if let Value::String(str_content) = doc_name {
                     if str_content == col_name {
-                        tmp = match doc.get("root_pid") {
+                        tmp = match doc.get(meta_document_key::ROOT_PID) {
                             Some(Value::Int(pid)) => *pid,
                             _ => -1,
                         };
@@ -218,19 +228,23 @@ impl Database {
         })
     }
 
+    #[inline]
     pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {
         self.ctx.create_collection(name)
     }
 
+    #[inline]
     pub fn get_version(&self) -> String {
         const VERSION: &'static str = env!("CARGO_PKG_VERSION");
         return VERSION.into();
     }
 
+    #[inline]
     pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<()> {
         self.ctx.insert(col_name, doc)
     }
 
+    #[inline]
     pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
         self.ctx.query_all_meta()
     }
@@ -265,10 +279,11 @@ mod tests {
             db.insert("test", Rc::new(new_doc)).unwrap();
         }
 
-        let test_col_cursor = db.ctx.get_collection_cursor("test").unwrap();
+        let mut test_col_cursor = db.ctx.get_collection_cursor("test").unwrap();
         while test_col_cursor.has_next() {
             let doc = test_col_cursor.peek().unwrap();
-            println!("object: {}", doc)
+            println!("object: {}", doc);
+            let _ = test_col_cursor.next().unwrap();
         }
     }
 

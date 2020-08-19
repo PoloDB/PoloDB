@@ -320,7 +320,7 @@ impl<'a> BTreePageWrapper<'a> {
     }
 
     fn divide_and_return_backward(&mut self, btree_node: BTreeNode) -> DbResult<Option<BackwardItem>> {
-        let middle_index = (btree_node.content.len() + 1) / 2;
+        let middle_index = btree_node.content.len() / 2;
 
         // use current page block to store left
         let left = {

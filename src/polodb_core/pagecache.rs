@@ -210,7 +210,7 @@ impl LruMap {
 }
 
 pub(crate) struct PageCache {
-    cache_size: usize,
+    page_count: usize,
     page_size:  u32,
     data:       *mut u8,
     lru_map:    Box<LruMap>,
@@ -219,29 +219,24 @@ pub(crate) struct PageCache {
 impl PageCache {
 
     pub fn new_default(page_size: u32) -> PageCache {
-        let four_m = 4 * 1024 * 1024;
-        Self::new(four_m, page_size)
+        Self::new(1024, page_size)
     }
 
-    pub fn new(cache_size: usize, page_size: u32) -> PageCache {
+    pub fn new(page_count: usize, page_size: u32) -> PageCache {
+        let cache_size = page_count * (page_size as usize);
+
         let data: *mut u8 = unsafe {
             malloc(cache_size).cast()
         };
 
-        let page_count = cache_size / (page_size as usize);
         let lru_map = LruMap::new(page_count);
 
         PageCache {
-            cache_size,
+            page_count,
             page_size,
             data,
             lru_map: Box::new(lru_map),
         }
-    }
-
-    pub fn page_count(&self) -> u32 {
-        let result : usize = (self.cache_size) / (self.page_size as usize);
-        result as u32
     }
 
     pub(crate) fn get_from_cache(&mut self, page_id: u32) -> Option<RawPage> {
@@ -252,25 +247,39 @@ impl PageCache {
         let offset: usize = (index as usize) * (self.page_size as usize);
         let mut result = RawPage::new(page_id, self.page_size);
         unsafe {
-            result.copy_from_ptr(self.data.add(offset));
+            result.copy_from_ptr(self.data.add(offset as usize));
         }
         Some(result)
     }
 
-    pub(crate) fn insert_to_cache(&mut self, page: &RawPage) {
-        let new_index = if self.lru_map.len() < self.lru_map.cap() {  // is not full
+    #[inline]
+    fn distribute_new_index(&mut self) -> u32 {
+        if self.lru_map.len() < self.page_count {  // is not full
             self.lru_map.len() as u32
         } else {
             let (_, tail_value) = self.lru_map.remove_tail().expect("data error");
             tail_value
-        };
-
-        let offset = (new_index as usize) * (self.page_size as usize);
-        unsafe {
-            page.copy_to_ptr(self.data.add(offset));
         }
+    }
 
-        let _ = self.lru_map.insert(page.page_id, offset as u32);
+    pub(crate) fn insert_to_cache(&mut self, page: &RawPage) {
+        match self.lru_map.find(page.page_id) {
+            Some(index) => {  // override
+                let offset = (index as usize) * (self.page_size as usize);
+                unsafe {
+                    page.copy_to_ptr(self.data.add(offset));
+                }
+            }
+
+            None => {
+                let index = self.distribute_new_index();
+                let offset = (index as usize) * (self.page_size as usize);
+                unsafe {
+                    page.copy_to_ptr(self.data.add(offset));
+                }
+                let _ = self.lru_map.insert(page.page_id, index);
+            },
+        };
     }
 
 }
@@ -287,7 +296,21 @@ impl Drop for PageCache {
 
 #[cfg(test)]
 mod tests {
-    use crate::pagecache::LruMap;
+
+    use crate::pagecache::{LruMap, PageCache};
+    use crate::page::RawPage;
+
+    fn make_raw_page(page_id: u32) -> RawPage {
+        let mut page = RawPage::new(page_id, 4096);
+
+        for i in 0..4096 {
+            page.data[i] = unsafe {
+                libc::rand() as u8
+            }
+        }
+
+        page
+    }
 
     #[test]
     fn lru_map() {
@@ -305,6 +328,51 @@ mod tests {
 
         for i in 90..100 {
             assert!(lru_map.find(i).is_some());
+        }
+    }
+
+    static TEST_PAGE_LEN: u32 = 10;
+
+    #[test]
+    fn page_cache() {
+        let mut page_cache = PageCache::new(3, 4096);
+
+        let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);
+
+        for i in 0..TEST_PAGE_LEN {
+            ten_pages.push(make_raw_page(i))
+        }
+
+        for i in 0..3 {
+            page_cache.insert_to_cache(&ten_pages[i as usize]);
+        }
+
+        for i in 0..3 {
+            let page = page_cache.get_from_cache(i).unwrap();
+
+            for (index, ch) in page.data.iter().enumerate() {
+                assert_eq!(*ch, ten_pages[i as usize].data[index])
+            }
+        }
+
+
+        for i in 3..6 {
+            page_cache.insert_to_cache(&ten_pages[i as usize]);
+        }
+
+        for i in 0..3 {
+            match page_cache.get_from_cache(i) {
+                Some(_) => panic!("removed"),
+                None => ()
+            };
+        }
+
+        for i in 3..6 {
+            let page = page_cache.get_from_cache(i).unwrap();
+
+            for (index, ch) in page.data.iter().enumerate() {
+                assert_eq!(*ch, ten_pages[i as usize].data[index])
+            }
         }
     }
 
