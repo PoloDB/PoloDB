@@ -3,7 +3,7 @@ use std::io::{Seek, SeekFrom, Write, Read};
 use crate::pagecache::PageCache;
 use crate::journal::JournalManager;
 use crate::DbResult;
-use crate::error::DbErr;
+use crate::error::{DbErr, parse_error_reason};
 
 static DB_INIT_BLOCK_COUNT: u32 = 16;
 
@@ -25,7 +25,7 @@ impl PageType {
 
     pub fn from_magic(magic: [u8; 2]) -> DbResult<PageType> {
         if magic[0] != 0xFF {
-            return Err(DbErr::ParseError);
+            return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_PAGE_HEADER.into()));
         }
 
         match magic[1] {
@@ -35,7 +35,7 @@ impl PageType {
 
             2 => Ok(PageType::OverflowData),
 
-            _ => Err(DbErr::ParseError)
+            _ => Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_PAGE_TYPE.into()))
         }
     }
 

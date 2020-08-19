@@ -76,7 +76,13 @@ impl DbContext {
     #[inline]
     fn get_meta_page_id(&mut self) -> DbResult<u32> {
         let head_page = self.page_handler.pipeline_read_page(0)?;
-        Ok(header_page_utils::get_meta_page_id(&head_page))
+        let result = header_page_utils::get_meta_page_id(&head_page);
+
+        if result == 0 {  // unexpected
+            return Err(DbErr::MetaPageIdError);
+        }
+
+        Ok(result)
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {

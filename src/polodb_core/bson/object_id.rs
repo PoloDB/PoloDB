@@ -8,7 +8,7 @@ use std::os::raw::c_uint;
 use libc;
 use super::hex;
 use crate::db::DbResult;
-use crate::error::DbErr;
+use crate::error::{DbErr, parse_error_reason};
 
 #[derive(Debug, Clone, Eq)]
 pub struct ObjectId {
@@ -20,7 +20,7 @@ impl ObjectId {
 
     pub fn deserialize(bytes: &[u8]) -> DbResult<ObjectId> {
         if bytes.len() != 12 {
-            return Err(DbErr::ParseError);
+            return Err(DbErr::ParseError(parse_error_reason::OBJECT_ID_LEN.into()));
         }
 
         let mut timestamp_buffer: [u8; 8] = [0; 8];
@@ -37,7 +37,7 @@ impl ObjectId {
     fn from_hex(data: &str) -> DbResult<ObjectId> {
         let bytes = match hex::decode(data) {
             Ok(result) => result,
-            Err(_) => return Err(DbErr::ParseError)
+            Err(_) => return Err(DbErr::ParseError(parse_error_reason::OBJECT_ID_HEX_DECODE_ERROR.into()))
         };
 
         ObjectId::deserialize(&bytes)
@@ -140,7 +140,7 @@ impl ObjectIdMaker {
 
     pub fn value_of(content: &str) -> DbResult<ObjectId> {
         if content.len() != 12 {
-            return Err(DbErr::ParseError);
+            return Err(DbErr::ParseError(parse_error_reason::OBJECT_ID_HEX_DECODE_ERROR.into()));
         }
 
         let timestamp_str = &content[0..8];

@@ -91,6 +91,12 @@ impl<'a> Cursor<'a> {
         }
 
         let top = self.btree_stack.back().unwrap();
+
+        #[cfg(debug_assertions)]
+        if top.node.content.is_empty() {
+            panic!("top node content is empty, page_id: {}", top.node.pid);
+        }
+
         Some(top.node.content[top.index].doc.clone())
     }
 

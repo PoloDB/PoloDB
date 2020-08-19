@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use crate::db::DbResult;
 use crate::page::{RawPage, PageHandler, PageType};
-use crate::error::DbErr;
+use crate::error::{DbErr, parse_error_reason};
 use crate::bson::Document;
 
 pub(crate) static HEADER_SIZE: u32      = 64;
@@ -43,6 +43,11 @@ impl BTreeNode {
     // Offset 4: left_pid (4 bytes)
     // Offset 8: next_pid (4 bytes)
     pub fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32) -> DbResult<BTreeNode> {
+        #[cfg(debug_assertions)]
+        if page.page_id == 0 {
+            panic!("page id is zero, parent pid: {}", parent_pid);
+        }
+
         let page_type = PageType::BTreeNode;
         let magic = page_type.to_magic();
         if page.data[0..2] != magic {
@@ -54,7 +59,7 @@ impl BTreeNode {
                     indexes: vec![ 0 ],
                 });
             }
-            return Err(DbErr::ParseError);
+            return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_HEADER_FOR_BTREE_PAGE.into()));
         }
 
         let mut left_pid = page.get_u32(4);
@@ -200,6 +205,11 @@ pub(crate) struct BTreePageWrapper<'a> {
 impl<'a> BTreePageWrapper<'a> {
 
     pub fn new(page_handler: &mut PageHandler, root_page_id: u32) -> BTreePageWrapper {
+        #[cfg(debug_assertions)]
+        if root_page_id == 0 {
+            panic!("page id is zero");
+        }
+
         let item_size = (page_handler.page_size - HEADER_SIZE) / ITEM_SIZE;
 
         BTreePageWrapper {

@@ -2,7 +2,7 @@ use std::rc::Rc;
 use super::value;
 use crate::vli;
 use crate::db::DbResult;
-use crate::error::DbErr;
+use crate::error::{DbErr, parse_error_reason};
 use crate::bson::{Document, ObjectId};
 
 #[derive(Debug, Clone)]
@@ -186,7 +186,7 @@ impl Array {
                     arr.data.push(value::Value::Document(Rc::new(sub_doc)));
                 }
 
-                _ => return Err(DbErr::ParseError),
+                _ => return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
             }
             counter += 1;
         }

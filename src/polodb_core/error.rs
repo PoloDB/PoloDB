@@ -3,9 +3,20 @@ use std::fmt;
 use std::num;
 use crate::bson::Value;
 
+pub mod parse_error_reason {
+
+    pub static OBJECT_ID_LEN: &str = "length of ObjectId should be 12";
+    pub static OBJECT_ID_HEX_DECODE_ERROR: &str = "decode error failed for ObjectID";
+    pub static UNEXPECTED_DOCUMENT_FLAG: &str = "unexpected flag for document";
+    pub static UNEXPECTED_PAGE_HEADER: &str = "unexpcted page header";
+    pub static UNEXPECTED_PAGE_TYPE: &str = "unexpected page type";
+    pub static UNEXPECTED_HEADER_FOR_BTREE_PAGE: &str = "unexpected header for btree page";
+
+}
+
 #[derive(Debug)]
 pub enum DbErr {
-    ParseError,
+    ParseError(String),
     ParseIntError(num::ParseIntError),
     IOErr(io::Error),
     TypeNotComparable(String, String),
@@ -21,13 +32,14 @@ pub enum DbErr {
     SaltMismatch,
     ItemSizeGreaterThenExpected,
     CollectionNotFound(String),
+    MetaPageIdError,
 }
 
 impl fmt::Display for DbErr {
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            DbErr::ParseError => write!(f, "ParseError"),
+            DbErr::ParseError(reason) => write!(f, "ParseError: {}", reason),
             DbErr::ParseIntError(parse_int_err) => std::fmt::Display::fmt(&parse_int_err, f),
             DbErr::IOErr(io_err) => std::fmt::Display::fmt(&io_err, f),
             DbErr::TypeNotComparable(expected, actual) =>
@@ -44,6 +56,7 @@ impl fmt::Display for DbErr {
             DbErr::SaltMismatch => write!(f, "SaltMismatch"),
             DbErr::ItemSizeGreaterThenExpected => write!(f, "ItemSizeGreaterThenExpected"),
             DbErr::CollectionNotFound(name) => write!(f, "collection \"{}\" not found", name),
+            DbErr::MetaPageIdError => write!(f, "meta page id should not be zero"),
         }
     }
 

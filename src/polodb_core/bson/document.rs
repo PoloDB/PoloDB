@@ -5,7 +5,7 @@ use super::linked_hash_map::LinkedHashMap;
 use crate::vli;
 use crate::db::DbResult;
 use crate::bson::object_id::{ ObjectIdMaker, ObjectId };
-use crate::error::DbErr;
+use crate::error::{DbErr, parse_error_reason};
 use crate::bson::array::Array;
 
 #[derive(Debug, Clone)]
@@ -165,7 +165,7 @@ impl Document {
                         doc.map.insert(key, value::Value::Document(Rc::new(sub_doc)));
                     }
 
-                    _ => return Err(DbErr::ParseError),
+                    _ => return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
                 }
 
             }
