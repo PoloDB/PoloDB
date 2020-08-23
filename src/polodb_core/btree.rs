@@ -10,6 +10,7 @@ pub(crate) static HEADER_SIZE: u32      = 64;
 pub(crate) static ITEM_SIZE: u32        = 500;
 pub(crate) static ITEM_HEADER_SIZE: u32 = 12;
 
+#[derive(Clone)]
 pub(crate) struct BTreeNode {
     pub parent_pid:  u32,
     pub pid:         u32,
@@ -18,6 +19,17 @@ pub(crate) struct BTreeNode {
 }
 
 impl BTreeNode {
+    //
+    // #[inline]
+    // pub fn is_leaf(&self) -> bool {
+    //     for index in &self.indexes {
+    //         if *index != 0 {
+    //             return false;
+    //         }
+    //     }
+    //
+    //     true
+    // }
 
     pub fn clone_with_content(&self, new_index: usize, new_item: BTreeNodeDataItem) -> BTreeNode {
         let mut content: Vec<BTreeNodeDataItem> = Vec::with_capacity(self.content.capacity());

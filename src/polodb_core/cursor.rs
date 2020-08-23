@@ -114,6 +114,85 @@ impl<'a> Cursor<'a> {
         self.sync_top_btree_node()
     }
 
+    pub fn delete_current(&mut self) -> DbResult<()> {
+        let mut top = self.btree_stack.pop_back().unwrap();
+
+        let top_index = top.index;
+        let next_index = top_index + 1;
+
+        if top.node.indexes[next_index] == 0 {  // no next index, suppose to be leaf
+            self.btree_stack.push_back(top);
+
+            return self.remove_leaf_item(top_index)
+        }
+
+        let top_pid = top.node.pid;
+        let top_parent_pid = top.node.parent_pid;
+        let btree_node = self.recursive_remove_to_leaf(top_parent_pid, top_pid, top_index)?;
+
+        let top = CursorItem {
+            node: Rc::new(btree_node),
+            index: top_index,
+        };
+
+        self.btree_stack.push_back(top);
+
+        Ok(())
+    }
+
+    fn remove_leaf_item(&mut self, index: usize) -> DbResult<()> {
+        let mut top = self.btree_stack.pop_back().unwrap();
+        let mut btree_node = Rc::make_mut(&mut top.node);
+
+        btree_node.indexes.remove(index);
+        btree_node.content.remove(index + 1);
+
+        self.btree_stack.push_back(top);
+
+        return self.sync_top_btree_node()
+    }
+
+    fn recursive_remove_to_leaf(&mut self, parent_pid: u32, page_id: u32, index: usize) -> DbResult<BTreeNode> {
+        let current_page = self.page_handler.pipeline_read_page(page_id)?;
+        let mut btree_node = BTreeNode::from_raw(&current_page, parent_pid, self.item_size)?;
+
+        let next_pid = btree_node.indexes[index + 1];
+        if next_pid == 0 {  // leaf
+            // TODO: refactor with remove_leaf_item
+            btree_node.indexes.remove(index);
+            btree_node.content.remove(index + 1);
+
+            let mut current_page = RawPage::new(current_page.page_id, current_page.len());
+            btree_node.to_raw(&mut current_page)?;
+
+            self.page_handler.pipeline_write_page(&current_page)?;
+
+            return Ok(btree_node);
+        }
+
+        let next_item = self.read_next_item(page_id, next_pid)?;
+
+        btree_node.content[index] = next_item;
+
+        let mut current_page = RawPage::new(current_page.page_id, current_page.len());
+        btree_node.to_raw(&mut current_page)?;
+
+        self.page_handler.pipeline_write_page(&current_page)?;
+
+        let _ = self.recursive_remove_to_leaf(page_id, next_pid, 0)?;
+
+        Ok(btree_node)
+    }
+
+    #[inline]
+    fn read_next_item(&mut self, parent_pid: u32, page_id: u32) -> DbResult<BTreeNodeDataItem> {
+        let page = self.page_handler.pipeline_read_page(page_id)?;
+
+        let btree_node = BTreeNode::from_raw(&page, parent_pid, self.item_size)?;
+
+        Ok(btree_node.content[0].clone())
+    }
+
     #[inline]
     fn sync_top_btree_node(&mut self) -> DbResult<()> {
         let top = self.btree_stack.back().unwrap();
