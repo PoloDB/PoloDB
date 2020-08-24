@@ -4,7 +4,7 @@ use std::rc::Rc;
 use crate::db::DbResult;
 use crate::page::{RawPage, PageHandler, PageType};
 use crate::error::{DbErr, parse_error_reason};
-use crate::bson::Document;
+use crate::bson::{Document, Value};
 
 pub(crate) static HEADER_SIZE: u32      = 64;
 pub(crate) static ITEM_SIZE: u32        = 500;
@@ -176,8 +176,8 @@ impl BTreeNodeDataItem {
 }
 
 pub(crate) struct BackwardItem {
-    content: BTreeNodeDataItem,
-    right_pid: u32,
+    pub content: BTreeNodeDataItem,
+    pub right_pid: u32,
 }
 
 impl BackwardItem {
@@ -201,22 +201,15 @@ impl BackwardItem {
 
 }
 
-// Offset 0:  header(64 bytes)
-// Offset 64: Item(500 bytes) * 8
-//
-// Item struct:
-// Offset 0: right pid(4 bytes)
-// Offset 4: overflow_pid(4 bytes)
-// Offset 8: data
-pub(crate) struct BTreePageWrapper<'a> {
+struct BTreePageWrapperBase<'a> {
     page_handler:       &'a mut PageHandler,
     root_page_id:       u32,
     item_size:          u32,
 }
 
-impl<'a> BTreePageWrapper<'a> {
+impl<'a> BTreePageWrapperBase<'a> {
 
-    pub fn new(page_handler: &mut PageHandler, root_page_id: u32) -> BTreePageWrapper {
+    pub fn new(page_handler: &mut PageHandler, root_page_id: u32) -> BTreePageWrapperBase {
         #[cfg(debug_assertions)]
         if root_page_id == 0 {
             panic!("page id is zero");
@@ -224,15 +217,10 @@ impl<'a> BTreePageWrapper<'a> {
 
         let item_size = (page_handler.page_size - HEADER_SIZE) / ITEM_SIZE;
 
-        BTreePageWrapper {
+        BTreePageWrapperBase {
             page_handler,
             root_page_id, item_size
         }
-    }
-
-    pub fn insert_item(&mut self, doc: Rc<Document>, replace: bool) -> DbResult<Option<BackwardItem>> {
-        // insert to root node
-        self.insert_item_to_page(self.root_page_id, 0, doc, false, replace)
     }
 
     fn get_node(&mut self, pid: u32, parent_pid: u32) -> DbResult<BTreeNode> {
@@ -241,15 +229,47 @@ impl<'a> BTreePageWrapper<'a> {
         BTreeNode::from_raw(&raw_page, parent_pid, self.item_size)
     }
 
+    fn write_btree_node(&mut self, node: &BTreeNode) -> DbResult<()> {
+        let mut raw_page = RawPage::new(node.pid, self.page_handler.page_size);
+
+        node.to_raw(&mut raw_page)?;
+
+        self.page_handler.pipeline_write_page(&raw_page)
+    }
+
+}
+
+// Offset 0:  header(64 bytes)
+// Offset 64: Item(500 bytes) * 8
+//
+// Item struct:
+// Offset 0: right pid(4 bytes)
+// Offset 4: overflow_pid(4 bytes)
+// Offset 8: data
+pub(crate) struct BTreePageInsertWrapper<'a>(BTreePageWrapperBase<'a>);
+
+impl<'a> BTreePageInsertWrapper<'a> {
+
+    pub fn new(page_handler: &mut PageHandler, root_page_id: u32) -> BTreePageInsertWrapper {
+        let base = BTreePageWrapperBase::new(page_handler, root_page_id);
+        BTreePageInsertWrapper(base)
+    }
+
+    #[inline]
+    pub fn insert_item(&mut self, doc: Rc<Document>, replace: bool) -> DbResult<Option<BackwardItem>> {
+        // insert to root node
+        self.insert_item_to_page(self.0.root_page_id, 0, doc, false, replace)
+    }
+
     pub fn insert_item_to_page(&mut self, pid: u32, parent_pid: u32, doc: Rc<Document>, backward: bool, replace: bool) -> DbResult<Option<BackwardItem>> {
-        let mut btree_node: BTreeNode = self.get_node(pid, parent_pid)?;
+        let mut btree_node: BTreeNode = self.0.get_node(pid, parent_pid)?;
 
         if btree_node.content.is_empty() {
             btree_node.content.push(BTreeNodeDataItem::with_doc(doc));
             btree_node.indexes.push(0);
             btree_node.indexes.push(0);
 
-            self.write_btree_node(&btree_node)?;
+            self.0.write_btree_node(&btree_node)?;
 
             return Ok(None);
         }
@@ -268,7 +288,7 @@ impl<'a> BTreePageWrapper<'a> {
                 Ordering::Equal => {
                     return if replace {
                         btree_node.content[index] = BTreeNodeDataItem::with_doc(doc.clone());
-                        self.write_btree_node(&btree_node)?;
+                        self.0.write_btree_node(&btree_node)?;
 
                         Ok(None)
                     } else {
@@ -313,22 +333,14 @@ impl<'a> BTreePageWrapper<'a> {
             }
         }
 
-        if btree_node.content.len() > (self.item_size as usize) {  // need to divide
+        if btree_node.content.len() > (self.0.item_size as usize) {  // need to divide
             return self.divide_and_return_backward(btree_node);
         }
 
         // write page back
-        self.write_btree_node(&btree_node)?;
+        self.0.write_btree_node(&btree_node)?;
 
         Ok(None)
-    }
-
-    fn write_btree_node(&mut self, node: &BTreeNode) -> DbResult<()> {
-        let mut raw_page = RawPage::new(node.pid, self.page_handler.page_size);
-
-        node.to_raw(&mut raw_page)?;
-
-        self.page_handler.pipeline_write_page(&raw_page)
     }
 
     fn divide_and_return_backward(&mut self, btree_node: BTreeNode) -> DbResult<Option<BackwardItem>> {
@@ -346,7 +358,7 @@ impl<'a> BTreePageWrapper<'a> {
             }
         };
 
-        let right_page_id = self.page_handler.alloc_page_id()?;
+        let right_page_id = self.0.page_handler.alloc_page_id()?;
         // alloc new page to store right
         let right = {
             let content = btree_node.content[(middle_index + 1)..].to_vec();
@@ -359,14 +371,89 @@ impl<'a> BTreePageWrapper<'a> {
             }
         };
 
-        self.write_btree_node(&left)?;
-        self.write_btree_node(&right)?;
+        self.0.write_btree_node(&left)?;
+        self.0.write_btree_node(&right)?;
 
         let middle = &btree_node.content[middle_index];
         Ok(Some(BackwardItem {
             content: middle.clone(),
             right_pid: right_page_id,
         }))
+    }
+
+}
+
+pub(crate) struct BTreePageDeleteWrapper<'a>(BTreePageWrapperBase<'a>);
+
+impl<'a> BTreePageDeleteWrapper<'a> {
+
+    pub fn new(page_handler: &mut PageHandler, root_page_id: u32) -> BTreePageDeleteWrapper {
+        let base = BTreePageWrapperBase::new(page_handler, root_page_id);
+        BTreePageDeleteWrapper(base)
+    }
+
+    #[inline]
+    pub fn delete_item(&mut self, id: &Value) -> DbResult<bool> {
+        self.delete_item_by_pid(0, self.0.root_page_id, id)
+    }
+
+    fn read_next_item(&mut self, parent_pid: u32, page_id: u32) -> DbResult<BTreeNodeDataItem> {
+        let page = self.0.page_handler.pipeline_read_page(page_id)?;
+
+        let btree_node = BTreeNode::from_raw(&page, parent_pid, self.0.item_size)?;
+
+        Ok(btree_node.content[0].clone())
+    }
+
+    fn delete_item_by_pid(&mut self, parent_pid: u32, pid: u32, id: &Value) -> DbResult<bool> {
+        let mut btree_node: BTreeNode = self.0.get_node(pid, parent_pid)?;
+
+        let mut begin: usize = 0;
+        let mut end: usize = btree_node.content.len();
+
+        while begin < end {
+            let middle = (begin + end) / 2;
+            let middle_item = &btree_node.content[middle];
+            let middle_item_pkey = middle_item.doc.pkey_id().expect("primary key not found in document");
+
+            let cmp_result = id.value_cmp(&middle_item_pkey)?;
+            match cmp_result {
+                Ordering::Equal => {
+                    begin = middle;
+                    end = middle;
+                    break;
+                }
+
+                Ordering::Less => {  // less than middle item
+                    end = middle;
+                }
+
+                Ordering::Greater => {  // greater than middle item
+                    begin = middle;
+                }
+
+            }
+        }
+
+        if begin == end {  // begin is the one
+            let next_pid = btree_node.indexes[begin + 1];
+            let next_item = self.read_next_item(pid, next_pid)?;
+            btree_node.content[begin] = next_item;
+
+            let mut current_page = RawPage::new(pid, self.0.page_handler.page_size);
+            btree_node.to_raw(&mut current_page)?;
+
+            self.0.page_handler.pipeline_write_page(&current_page)?;
+
+            return Ok(true)
+        }
+
+        let child_id = btree_node.indexes[begin + 1];
+        if child_id == 0 {  // not found
+            return Ok(false)
+        }
+
+        self.delete_item_by_pid(pid, child_id, id)
     }
 
 }

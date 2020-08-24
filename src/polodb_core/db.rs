@@ -17,7 +17,7 @@ use super::page::{ header_page_utils, PageHandler };
 use crate::bson::ObjectIdMaker;
 use crate::overflow_data::{ OverflowDataWrapper, OverflowDataTicket };
 use crate::bson::{ObjectId, Document, Value};
-use crate::btree::BTreePageWrapper;
+use crate::btree::BTreePageInsertWrapper;
 use crate::cursor::Cursor;
 
 pub(crate) mod meta_document_key {
@@ -107,7 +107,7 @@ impl DbContext {
 
         let meta_page_id: u32 = self.get_meta_page_id()?;
 
-        let mut btree_wrapper = BTreePageWrapper::new(&mut self.page_handler, meta_page_id);
+        let mut btree_wrapper = BTreePageInsertWrapper::new(&mut self.page_handler, meta_page_id);
 
         let backward = btree_wrapper.insert_item(Rc::new(doc), false)?;
 
@@ -152,6 +152,13 @@ impl DbContext {
         let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
 
         cursor.insert(col_name, doc)
+    }
+
+    fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<bool> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
+
+        cursor.delete(col_name, key)
     }
 
     fn get_collection_cursor(&mut self, col_name: &str) -> DbResult<Cursor> {
@@ -265,6 +272,14 @@ impl Database {
     }
 
     #[inline]
+    pub fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<bool> {
+        self.ctx.start_transaction()?;
+        let result = self.ctx.delete(col_name, key)?;
+        self.ctx.commit()?;
+        Ok(result)
+    }
+
+    #[inline]
     pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
         self.ctx.query_all_meta()
     }
@@ -277,12 +292,18 @@ mod tests {
     use std::rc::Rc;
     use crate::bson::{ Document, Value };
 
-    #[test]
-    fn test_create_collection() {
+    static TEST_SIZE: usize = 16;
+
+    fn prepare_db() -> Database {
         let _ = std::fs::remove_file("/tmp/test.db");
         let _ = std::fs::remove_file("/tmp/test.db.journal");
 
-        let mut db = Database::open("/tmp/test.db").unwrap();
+        Database::open("/tmp/test.db").unwrap()
+    }
+
+    #[test]
+    fn test_create_collection() {
+        let mut db = prepare_db();
         let result = db.create_collection("test").unwrap();
         println!("object:id {}", result.to_string());
 
@@ -292,7 +313,7 @@ mod tests {
             println!("index: {}, object: {}", index, doc)
         }
 
-        for i in 0..100 {
+        for i in 0..TEST_SIZE {
             let content = i.to_string();
             let mut new_doc = Document::new_without_id();
             new_doc.insert("content".into(), Value::String(content));
@@ -300,10 +321,27 @@ mod tests {
         }
 
         let mut test_col_cursor = db.ctx.get_collection_cursor("test").unwrap();
+        let mut counter = 0;
         while test_col_cursor.has_next() {
             let doc = test_col_cursor.peek().unwrap();
             println!("object: {}", doc);
             let _ = test_col_cursor.next().unwrap();
+            counter += 1;
+        }
+
+        assert_eq!(TEST_SIZE, counter)
+    }
+
+    #[test]
+    fn test_delete_item() {
+        let mut db = prepare_db();
+        let _ = db.create_collection("test").unwrap();
+
+        for i in 0..100 {
+            let content = i.to_string();
+            let mut new_doc = Document::new_without_id();
+            new_doc.insert("content".into(), Value::String(content));
+            db.insert("test", Rc::new(new_doc)).unwrap();
         }
     }
 

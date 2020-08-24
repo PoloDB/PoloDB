@@ -2,7 +2,6 @@ use std::io;
 use std::fmt;
 use std::num;
 use crate::bson::Value;
-use std::intrinsics::write_bytes;
 
 pub mod parse_error_reason {
 
