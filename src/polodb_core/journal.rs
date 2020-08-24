@@ -1,6 +1,6 @@
 // TODO: transaction
 use std::fs::File;
-use std::collections::BTreeMap;
+use std::collections::{LinkedList, BTreeMap};
 use std::io::{Seek, Write, SeekFrom, Read};
 use libc::rand;
 use crate::page::RawPage;
@@ -62,9 +62,10 @@ pub(crate) struct JournalManager {
     page_size:        u32,
     salt1:            u32,
     salt2:            u32,
+    in_transaction:   bool,
 
     // page_id => file_position
-    pub offset_map:       BTreeMap<u32, u64>,
+    pub offset_map_list:       LinkedList<BTreeMap<u32, u64>>,
     count:            u32,
 }
 
@@ -84,13 +85,18 @@ impl JournalManager {
             .open(path)?;
         let meta = journal_file.metadata()?;
 
+        let mut offset_map_list: LinkedList<BTreeMap<u32, u64>> = LinkedList::new();
+        offset_map_list.push_back(BTreeMap::new());
+
         let mut result = JournalManager {
             journal_file,
             version: [0, 0, 1, 0],
             page_size,
             salt1: 0,
             salt2: 0,
-            offset_map: BTreeMap::new(),
+            in_transaction: false,
+
+            offset_map_list,
             count: 0,
         };
 
@@ -242,7 +248,7 @@ impl JournalManager {
             return Err(DbErr::SaltMismatch);
         }
 
-        self.offset_map.insert(frame_header.page_id, current_pos);
+        self.offset_map_list.back_mut().unwrap().insert(frame_header.page_id, current_pos);
         Ok(())
     }
 
@@ -279,6 +285,10 @@ impl JournalManager {
     }
 
     pub(crate) fn append_raw_page(&mut self, raw_page: &RawPage) -> DbResult<()> {
+        if !self.in_transaction {
+            return Err(DbErr::CannotWriteDbWithoutTransaction);
+        }
+
         let start_pos = self.journal_file.seek(SeekFrom::Current(0))?;
 
         let frame_header = FrameHeader {
@@ -295,7 +305,7 @@ impl JournalManager {
 
         self.journal_file.write(&raw_page.data)?;
 
-        self.offset_map.insert(raw_page.page_id, start_pos);
+        self.offset_map_list.back_mut().unwrap().insert(raw_page.page_id, start_pos);
         self.count += 1;
 
         #[cfg(feature = "log")]
@@ -305,7 +315,7 @@ impl JournalManager {
     }
 
     pub(crate) fn read_page(&mut self, page_id: u32) -> std::io::Result<Option<RawPage>> {
-        let offset = match self.offset_map.get(&page_id) {
+        let offset = match self.offset_map_list.back().unwrap().get(&page_id) {
             Some(offset) => *offset,
             None => return Ok(None),
         };
@@ -323,7 +333,7 @@ impl JournalManager {
     }
 
     pub(crate) fn checkpoint_journal(&mut self, db_file: &mut File) -> DbResult<()> {
-        for (page_id, offset) in &self.offset_map {
+        for (page_id, offset) in self.offset_map_list.back().unwrap() {
             let data_offset = offset + (FRAME_HEADER_SIZE as u64);
 
             self.journal_file.seek(SeekFrom::Start(data_offset))?;
@@ -345,12 +355,79 @@ impl JournalManager {
         // clear all data
         self.salt1 += 1;
         self.count = 0;
-        self.offset_map.clear();
+
+        self.offset_map_list.clear();
+        self.offset_map_list.push_back(BTreeMap::new());
 
         self.salt2 = generate_a_salt();
         self.init_header_to_file()?;
 
         Ok(())
+    }
+
+    pub(crate) fn start_transaction(&mut self) -> DbResult<()> {
+        if self.in_transaction {
+            return Err(DbErr::StartTransactionInAnotherTransaction);
+        }
+
+        self.lock_file()?;
+        self.in_transaction = true;
+
+        Ok(())
+    }
+
+    pub(crate) fn commit(&mut self) -> DbResult<()> {
+        if !self.in_transaction {
+            return Err(DbErr::CannotWriteDbWithoutTransaction);
+        }
+
+        self.unlock_file()?;
+        self.in_transaction = false;
+
+        Ok(())
+    }
+
+    pub(crate) fn rollback(&mut self) -> DbResult<()> {
+        if !self.in_transaction {
+            return Err(DbErr::RollbackNotInTransaction);
+        }
+
+        self.unlock_file()?;
+        self.in_transaction = false;
+
+        Ok(())
+    }
+
+    fn lock_file(&mut self) -> DbResult<()> {
+        use std::os::unix::prelude::*;
+        use libc::{flock, LOCK_EX, LOCK_NB};
+
+        let fd = self.journal_file.as_raw_fd();
+        let result = unsafe {
+            flock(fd, LOCK_EX | LOCK_NB)
+        };
+
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(DbErr::Busy)
+        }
+    }
+
+    fn unlock_file(&mut self) -> DbResult<()> {
+        use std::os::unix::prelude::*;
+        use libc::{flock, LOCK_UN, LOCK_NB};
+
+        let fd = self.journal_file.as_raw_fd();
+        let result = unsafe {
+            flock(fd, LOCK_UN | LOCK_NB)
+        };
+
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(DbErr::Busy)
+        }
     }
 
     #[inline]

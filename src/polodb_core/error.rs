@@ -2,6 +2,7 @@ use std::io;
 use std::fmt;
 use std::num;
 use crate::bson::Value;
+use std::intrinsics::write_bytes;
 
 pub mod parse_error_reason {
 
@@ -33,6 +34,10 @@ pub enum DbErr {
     ItemSizeGreaterThenExpected,
     CollectionNotFound(String),
     MetaPageIdError,
+    CannotWriteDbWithoutTransaction,
+    StartTransactionInAnotherTransaction,
+    RollbackNotInTransaction,
+    Busy
 }
 
 impl fmt::Display for DbErr {
@@ -57,6 +62,10 @@ impl fmt::Display for DbErr {
             DbErr::ItemSizeGreaterThenExpected => write!(f, "ItemSizeGreaterThenExpected"),
             DbErr::CollectionNotFound(name) => write!(f, "collection \"{}\" not found", name),
             DbErr::MetaPageIdError => write!(f, "meta page id should not be zero"),
+            DbErr::CannotWriteDbWithoutTransaction => write!(f, "cannot write Db without transaction"),
+            DbErr::StartTransactionInAnotherTransaction => write!(f, "start transaction in another transaction"),
+            DbErr::RollbackNotInTransaction => write!(f, "can not rollback because not int transaction"),
+            DbErr::Busy => write!(f, "database busy"),
         }
     }
 

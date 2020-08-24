@@ -207,6 +207,21 @@ impl DbContext {
         Ok(result)
     }
 
+    #[inline]
+    pub fn start_transaction(&mut self) -> DbResult<()> {
+        self.page_handler.start_transaction()
+    }
+
+    #[inline]
+    pub fn commit(&mut self) -> DbResult<()> {
+        self.page_handler.commit()
+    }
+
+    #[inline]
+    pub fn rollback(&mut self) -> DbResult<()> {
+        self.page_handler.rollback()
+    }
+
 }
 
 impl Drop for DbContext {
@@ -230,7 +245,10 @@ impl Database {
 
     #[inline]
     pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {
-        self.ctx.create_collection(name)
+        self.ctx.start_transaction()?;
+        let oid = self.ctx.create_collection(name)?;
+        self.ctx.commit()?;
+        Ok(oid)
     }
 
     #[inline]
@@ -241,7 +259,9 @@ impl Database {
 
     #[inline]
     pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<()> {
-        self.ctx.insert(col_name, doc)
+        self.ctx.start_transaction()?;
+        self.ctx.insert(col_name, doc)?;
+        self.ctx.commit()
     }
 
     #[inline]

@@ -231,6 +231,21 @@ impl PageHandler {
         Ok(null_page_bar)
     }
 
+    #[inline]
+    pub fn start_transaction(&mut self) -> DbResult<()> {
+        self.journal_manager.start_transaction()
+    }
+
+    #[inline]
+    pub fn commit(&mut self) -> DbResult<()> {
+        self.journal_manager.commit()
+    }
+
+    #[inline]
+    pub fn rollback(&mut self) -> DbResult<()> {
+        self.journal_manager.rollback()
+    }
+
 }
 
 #[derive(Debug)]
