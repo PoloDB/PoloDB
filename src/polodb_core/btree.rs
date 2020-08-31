@@ -25,6 +25,11 @@ pub(crate) struct BTreeNode {
 
 impl BTreeNode {
 
+    #[inline]
+    fn is_leaf(&self) -> bool {
+        self.indexes[0] == 0
+    }
+
     // binary search the content
     // find the content or index
     fn search(&self, key: &Value) -> DbResult<SearchKeyResult> {
@@ -396,63 +401,57 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         self.delete_item_by_pid(0, self.0.root_page_id, id)
     }
 
-    fn read_next_item(&mut self, parent_pid: u32, page_id: u32) -> DbResult<BTreeNodeDataItem> {
-        let page = self.0.page_handler.pipeline_read_page(page_id)?;
-
-        let btree_node = BTreeNode::from_raw(&page, parent_pid, self.0.item_size)?;
-
-        Ok(btree_node.content[0].clone())
-    }
-
     fn delete_item_by_pid(&mut self, parent_pid: u32, pid: u32, id: &Value) -> DbResult<bool> {
         let mut btree_node: BTreeNode = self.0.get_node(pid, parent_pid)?;
 
-        let mut begin: usize = 0;
-        let mut end: usize = btree_node.content.len();
-
-        while begin < end {
-            let middle = (begin + end) / 2;
-            let middle_item = &btree_node.content[middle];
-            let middle_item_pkey = middle_item.doc.pkey_id().expect("primary key not found in document");
-
-            let cmp_result = id.value_cmp(&middle_item_pkey)?;
-            match cmp_result {
-                Ordering::Equal => {
-                    begin = middle;
-                    end = middle;
-                    break;
+        let search_result = btree_node.search(id)?;
+        match search_result {
+            SearchKeyResult::Index(idx) => {
+                let page_id = btree_node.indexes[idx];
+                if page_id == 0 {
+                    return Ok(false)  // not found
                 }
 
-                Ordering::Less => {  // less than middle item
-                    end = middle;
+                self.delete_item_by_pid(pid, page_id, id)  // recursiveley delete
+            }
+
+            // find the target node
+            // use next to replace itself
+            // then remove next
+            SearchKeyResult::Node(idx) => {
+                if btree_node.is_leaf() {
+
+                } else {
+                    let next_item = self.read_next_item(&btree_node, idx)?;
+                    self.erase_item(&btree_node.content[idx])?;
+                    btree_node.content[idx] = next_item;
+
+                    let mut current_page = RawPage::new(pid, self.0.page_handler.page_size);
+                    btree_node.to_raw(&mut current_page)?;
+
+                    self.0.page_handler.pipeline_write_page(&current_page)?;
                 }
 
-                Ordering::Greater => {  // greater than middle item
-                    begin = middle;
-                }
-
+                Ok(true)  // delete successfully
             }
         }
+    }
 
-        if begin == end {  // begin is the one
-            let next_pid = btree_node.indexes[begin + 1];
-            let next_item = self.read_next_item(pid, next_pid)?;
-            btree_node.content[begin] = next_item;
-
-            let mut current_page = RawPage::new(pid, self.0.page_handler.page_size);
-            btree_node.to_raw(&mut current_page)?;
-
-            self.0.page_handler.pipeline_write_page(&current_page)?;
-
-            return Ok(true)
+    fn erase_item(&mut self, item: &BTreeNodeDataItem) -> DbResult<()> {
+        if item.overflow_pid == 0 {
+            Ok(())
+        } else {
+            Err(DbErr::NotImplement)
         }
+    }
 
-        let child_id = btree_node.indexes[begin + 1];
-        if child_id == 0 {  // not found
-            return Ok(false)
-        }
-
-        self.delete_item_by_pid(pid, child_id, id)
+    fn read_next_item(&mut self, btree_node: &BTreeNode, nodex_idx: usize) -> DbResult<BTreeNodeDataItem> {
+        Err(DbErr::NotImplement)
+        // let page = self.0.page_handler.pipeline_read_page(page_id)?;
+        //
+        // let btree_node = BTreeNode::from_raw(&page, parent_pid, self.0.item_size)?;
+        //
+        // Ok(btree_node.content[0].clone())
     }
 
 }
