@@ -146,12 +146,14 @@ impl DbContext {
         }
     }
 
-    fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<()> {
+    fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
         let meta_page_id = self.get_meta_page_id()?;
         let doc = self.fix_doc(doc);
         let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
 
-        cursor.insert(col_name, doc)
+        cursor.insert(col_name, doc.clone())?;
+
+        Ok(doc)
     }
 
     fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<bool> {
@@ -265,10 +267,11 @@ impl Database {
     }
 
     #[inline]
-    pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<()> {
+    pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
         self.ctx.start_transaction()?;
-        self.ctx.insert(col_name, doc)?;
-        self.ctx.commit()
+        let doc = self.ctx.insert(col_name, doc)?;
+        self.ctx.commit()?;
+        Ok(doc)
     }
 
     #[inline]
@@ -337,12 +340,19 @@ mod tests {
         let mut db = prepare_db();
         let _ = db.create_collection("test").unwrap();
 
+        let mut collection  = vec![];
+
         for i in 0..100 {
             let content = i.to_string();
             let mut new_doc = Document::new_without_id();
             new_doc.insert("content".into(), Value::String(content));
-            db.insert("test", Rc::new(new_doc)).unwrap();
+            let ret_doc = db.insert("test", Rc::new(new_doc)).unwrap();
+            collection.push(ret_doc);
         }
+
+        let third = &collection[3];
+        let third_key = third.get("_id").unwrap();
+        db.delete("test", third_key).unwrap();
     }
 
 }
