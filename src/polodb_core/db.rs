@@ -292,7 +292,7 @@ mod tests {
     use std::rc::Rc;
     use crate::bson::{ Document, Value };
 
-    static TEST_SIZE: usize = 16;
+    static TEST_SIZE: usize = 100;
 
     fn prepare_db() -> Database {
         let _ = std::fs::remove_file("/tmp/test.db");

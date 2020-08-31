@@ -328,7 +328,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
                 let tmp = self.insert_item_to_page(right_pid, pid, doc, false, replace)?;
                 tmp.map(|backward_item| {
                     btree_node.content.push(backward_item.content);
-                    btree_node.indexes.push(0);
+                    btree_node.indexes.push(backward_item.right_pid);
                 });
             }
         }
