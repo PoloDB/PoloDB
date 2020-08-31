@@ -10,6 +10,11 @@ pub(crate) static HEADER_SIZE: u32      = 64;
 pub(crate) static ITEM_SIZE: u32        = 500;
 pub(crate) static ITEM_HEADER_SIZE: u32 = 12;
 
+enum SearchKeyResult {
+    Node(usize),
+    Index(usize),
+}
+
 #[derive(Clone)]
 pub(crate) struct BTreeNode {
     pub parent_pid:  u32,
@@ -19,17 +24,36 @@ pub(crate) struct BTreeNode {
 }
 
 impl BTreeNode {
-    //
-    // #[inline]
-    // pub fn is_leaf(&self) -> bool {
-    //     for index in &self.indexes {
-    //         if *index != 0 {
-    //             return false;
-    //         }
-    //     }
-    //
-    //     true
-    // }
+
+    // binary search the content
+    // find the content or index
+    fn search(&self, key: &Value) -> DbResult<SearchKeyResult> {
+        let mut low: usize = 0;
+        let mut high: usize = self.content.len() - 1;
+
+        while low <= high {
+            let middle = (low + high) / 2;
+            let target_key = &self.content[middle].doc.pkey_id().expect("primary key not found in target document");
+
+            let cmp_result = key.value_cmp(target_key)?;
+
+            match cmp_result {
+                Ordering::Equal =>
+                    return Ok(SearchKeyResult::Node(middle)),
+
+                Ordering::Less => {
+                    high = middle - 1;
+                }
+
+                Ordering::Greater => {
+                    low = middle + 1;
+                }
+
+            }
+        }
+
+        Ok(SearchKeyResult::Index(std::cmp::max(low, high)))
+    }
 
     pub fn clone_with_content(&self, new_index: usize, new_item: BTreeNodeDataItem) -> BTreeNode {
         let mut content: Vec<BTreeNodeDataItem> = Vec::with_capacity(self.content.capacity());
@@ -274,63 +298,38 @@ impl<'a> BTreePageInsertWrapper<'a> {
             return Ok(None);
         }
 
-        let mut index: usize = 0;
-        let doc_pkey = doc.pkey_id().expect("primary key not found in document");
+        // let mut index: usize = 0;
+        let doc_pkey = &doc.pkey_id().expect("primary key not found in document");
 
-        while index < btree_node.content.len() {
-            let target = &btree_node.content[index];
-            let target_key = target.doc.pkey_id().expect("primary key not found in target document");
-            let left_pid = btree_node.indexes[index];
+        let serach_result = btree_node.search(doc_pkey)?;
+        match serach_result {
+            SearchKeyResult::Node(index) => {
+                return if replace {
+                    btree_node.content[index] = BTreeNodeDataItem::with_doc(doc.clone());
+                    self.0.write_btree_node(&btree_node)?;
 
-            let cmp_result = doc_pkey.value_cmp(&target_key)?;
-
-            match cmp_result {
-                Ordering::Equal => {
-                    return if replace {
-                        btree_node.content[index] = BTreeNodeDataItem::with_doc(doc.clone());
-                        self.0.write_btree_node(&btree_node)?;
-
-                        Ok(None)
-                    } else {
-                        Err(DbErr::DataExist(doc_pkey))
-                    }
+                    Ok(None)
+                } else {
+                    Err(DbErr::DataExist(doc_pkey.clone()))
                 }
-
-                Ordering::Less => {
-                    if backward || left_pid == 0 {  // left is null, insert in current page
-                        // insert between index - 1 and index
-                        btree_node.content.insert(index, BTreeNodeDataItem::with_doc(doc.clone()));
-                        btree_node.indexes.insert(index + 1, 0);  // null page because left_pid is null
-                        break;
-                    } else {  // left has page
-                        // insert to left page
-                        let tmp = self.insert_item_to_page(left_pid, pid, doc.clone(), false, replace)?;
-                        tmp.map(|backward_item| {
-                            btree_node.content.insert(index, backward_item.content);
-                            btree_node.indexes.insert(index + 1, backward_item.right_pid);
-                        });
-                    }
-                    break;  // finish loop
-                }
-
-                Ordering::Greater => () // next iter
             }
 
-            index += 1;
-        }
-
-        if index >= btree_node.content.len() - 1 {  // greater than the last
-            let right_pid = btree_node.indexes[index];  // index is already equal content.len()
-            if backward || right_pid == 0 {  // right page is null, insert in current page
-                btree_node.content.push(BTreeNodeDataItem::with_doc(doc.clone()));
-                btree_node.indexes.push(0);
-            } else {  // insert to right page
-                let tmp = self.insert_item_to_page(right_pid, pid, doc, false, replace)?;
-                tmp.map(|backward_item| {
-                    btree_node.content.push(backward_item.content);
-                    btree_node.indexes.push(backward_item.right_pid);
-                });
+            SearchKeyResult::Index(index) => {
+                let left_pid = btree_node.indexes[index];
+                if backward || left_pid == 0 {  // left is null, insert in current page
+                    // insert between index - 1 and index
+                    btree_node.content.insert(index, BTreeNodeDataItem::with_doc(doc.clone()));
+                    btree_node.indexes.insert(index + 1, 0);  // null page because left_pid is null
+                } else {  // left has page
+                    // insert to left page
+                    let tmp = self.insert_item_to_page(left_pid, pid, doc.clone(), false, replace)?;
+                    tmp.map(|backward_item| {
+                        btree_node.content.insert(index, backward_item.content);
+                        btree_node.indexes.insert(index + 1, backward_item.right_pid);
+                    });
+                }
             }
+
         }
 
         if btree_node.content.len() > (self.0.item_size as usize) {  // need to divide
