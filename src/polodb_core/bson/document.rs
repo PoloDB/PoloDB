@@ -306,7 +306,7 @@ mod tests {
 
         let parsed_doc = Document::from_bytes(&bytes).expect("deserialize error");
 
-        println!("len: {}", bytes.len())
+        assert_eq!(parsed_doc.len(), doc.len());
     }
 
 }

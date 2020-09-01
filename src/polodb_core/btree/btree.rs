@@ -103,9 +103,9 @@ impl BTreeNode {
             return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_HEADER_FOR_BTREE_PAGE.into()));
         }
 
-        let mut left_pid = page.get_u32(4);
+        let first_left_pid = page.get_u32(4);
         let mut content = vec![];
-        let mut indexes = vec![ left_pid ];
+        let mut indexes = vec![ first_left_pid ];
 
         let len = page.get_u16(2);
 
@@ -128,8 +128,6 @@ impl BTreeNode {
             content.push(BTreeNodeDataItem { doc, overflow_pid });
 
             indexes.push(right_pid);
-
-            left_pid = right_pid;
         }
 
         Ok(BTreeNode {
@@ -217,7 +215,7 @@ impl BTreeNode {
 
     #[inline]
     pub(crate) fn insert_head(&mut self, idx: u32, item: BTreeNodeDataItem) {
-        self.indexes.insert(0, 0);
+        self.indexes.insert(0, idx);
         self.content.insert(0, item);
     }
 

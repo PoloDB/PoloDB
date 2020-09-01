@@ -8,6 +8,7 @@ use crate::error::{DbErr, parse_error_reason};
 static DB_INIT_BLOCK_COUNT: u32 = 16;
 
 #[repr(u8)]
+#[allow(dead_code)]
 pub(crate) enum PageType {
     Undefined = 0,
 
@@ -346,6 +347,7 @@ impl RawPage {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn get_u64(&self, pos: u32) -> u64 {
         let mut buffer: [u8; 8] = [0; 8];
         buffer.copy_from_slice(&self.data[(pos as usize)..((pos as usize) + 8)]);
