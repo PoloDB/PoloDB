@@ -46,6 +46,7 @@ impl LruMap {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn cap(&self) -> usize {
         self.cap
     }
@@ -194,6 +195,7 @@ impl LruMap {
         Some(result)
     }
 
+    #[allow(dead_code)]
     pub fn tail(&self) -> Option<(u32, u32)> {
         unsafe {
             if self.end.is_null() {

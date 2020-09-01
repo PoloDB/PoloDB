@@ -51,20 +51,6 @@ impl Value {
         }
     }
 
-    #[inline]
-    fn ty_int(&self) -> u8 {
-        match self {
-            Value::Null        => 0,
-            Value::Double(_)   => 1,
-            Value::Boolean(_)  => 2,
-            Value::Int(_)      => 3,
-            Value::String(_)   => 4,
-            Value::ObjectId(_) => 5,
-            Value::Array(_)    => 6,
-            Value::Document(_) => 7,
-        }
-    }
-
 }
 
 impl fmt::Display for Value {

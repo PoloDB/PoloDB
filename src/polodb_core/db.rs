@@ -227,6 +227,7 @@ impl DbContext {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn rollback(&mut self) -> DbResult<()> {
         self.page_handler.rollback()
     }

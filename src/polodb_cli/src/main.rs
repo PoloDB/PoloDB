@@ -99,6 +99,7 @@ fn main() {
     {
         context.add_callback("exit",  move || {
             std::process::exit(0);
+            #[allow(unreachable_code)]
             JsValue::Null
         }).unwrap();
     }

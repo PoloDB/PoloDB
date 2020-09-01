@@ -302,11 +302,13 @@ impl RawPage {
         self.pos += str.len() as u32;
     }
 
+    #[allow(dead_code)]
     pub fn get_u8(&self, pos: u32) -> u8 {
         self.data[pos as usize]
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn put_u8(&mut self, data: u8) {
         self.data[self.pos as usize] = data
     }
@@ -368,6 +370,7 @@ impl RawPage {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn len(&self) -> u32 {
         self.data.len() as u32
     }
@@ -548,28 +551,6 @@ pub mod header_page_utils {
             assert_eq!(get_page_size(&raw_page), test_page_size);
         }
 
-    }
-
-}
-
-#[repr(u8)]
-pub enum ContentPageType {
-    Undefined = 0,
-    FileHeader,
-    Collection,
-    BTreeNode,
-}
-
-impl ContentPageType {
-
-    pub fn from_u8(data: u8) -> ContentPageType {
-        match data {
-            0 => ContentPageType::Undefined,
-            1 => ContentPageType::FileHeader,
-            2 => ContentPageType::Collection,
-            3 => ContentPageType::BTreeNode,
-            _ => panic!("unknown content type")
-        }
     }
 
 }

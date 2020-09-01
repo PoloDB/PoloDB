@@ -231,7 +231,7 @@ impl<'a> Cursor<'a> {
         Err(DbErr::CollectionNotFound(col_name.into()))
     }
 
-    fn handle_backward_item(&mut self, mut meta_doc_rc: Rc<Document>, left_pid: u32, backward_item: BackwardItem) -> DbResult<()> {
+    fn handle_backward_item(&mut self, mut meta_doc_rc: Rc<Document>, left_pid: u32, backward_item: InsertBackwardItem) -> DbResult<()> {
         let new_root_id = self.page_handler.alloc_page_id()?;
 
         #[cfg(feature = "log")]

@@ -34,6 +34,7 @@ impl ObjectId {
         Ok(ObjectId { timestamp, counter })
     }
 
+    #[allow(dead_code)]
     fn from_hex(data: &str) -> DbResult<ObjectId> {
         let bytes = match hex::decode(data) {
             Ok(result) => result,
