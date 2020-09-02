@@ -167,11 +167,25 @@ impl PageHandler {
         Ok(result)
     }
 
-    pub fn free_page(&self, pid: u32) -> DbResult<()> {
+    pub fn free_page(&mut self, pid: u32) -> DbResult<()> {
         #[cfg(feature = "log")]
             eprintln!("free page, id: {}", pid);
 
-        Err(DbErr::NotImplement)
+        let mut first_page = self.pipeline_read_page(0)?;
+        let free_list_pid = header_page_utils::get_free_list_page_id(&first_page);
+        if free_list_pid != 0 {
+            return Err(DbErr::NotImplement);
+        }
+
+        let current_size = header_page_utils::get_free_list_size(&first_page);
+        if (current_size as usize) >= header_page_utils::HEADER_FREE_LIST_MAX_SIZE {
+            return Err(DbErr::NotImplement)
+        }
+
+        header_page_utils::set_free_list_content(&mut first_page, current_size, pid);
+        header_page_utils::set_free_list_size(&mut first_page, current_size + 1);
+
+        self.pipeline_write_page(&first_page)
     }
 
     pub fn is_journal_full(&self) -> bool {
@@ -441,6 +455,8 @@ pub mod header_page_utils {
     static NULL_PAGE_BAR_OFFSET: u32 = 48;
     static META_PAGE_ID: u32         = 52;
     pub static FREE_LIST_OFFSET: u32 = 2048;
+    static FREE_LIST_PAGE_LINK_OFFSET: u32 = 2048 + 4;
+    pub static HEADER_FREE_LIST_MAX_SIZE: usize = (2048 - 8) / 4;
 
     pub(crate) fn init(page: &mut RawPage) {
         set_title(page, HEADER_DESP);
@@ -486,54 +502,83 @@ pub mod header_page_utils {
         version
     }
 
+    #[inline]
     pub(crate) fn set_sector_size(page: &mut RawPage, sector_size: u32) {
         page.seek(SECTOR_SIZE_OFFSET);
         let _ = page.put_u32(sector_size);
     }
 
+    #[inline]
     pub(crate) fn get_sector_size(page: &RawPage) -> u32 {
         page.get_u32(SECTOR_SIZE_OFFSET)
     }
 
+    #[inline]
     pub(crate) fn set_page_size(page: &mut RawPage, page_size: u32) {
         page.seek(PAGE_SIZE_OFFSET);
         let _ = page.put_u32(page_size);
     }
 
+    #[inline]
     pub(crate) fn get_page_size(page: &RawPage) -> u32 {
         page.get_u32(PAGE_SIZE_OFFSET)
     }
 
+    #[inline]
     pub(crate) fn get_null_page_bar(page: &RawPage) -> u32 {
         page.get_u32(NULL_PAGE_BAR_OFFSET)
     }
 
+    #[inline]
     pub(crate) fn set_null_page_bar(page: &mut RawPage, data: u32) {
         page.seek(NULL_PAGE_BAR_OFFSET);
         page.put_u32(data)
     }
 
+    #[inline]
     pub(crate) fn get_meta_page_id(page: &RawPage) -> u32 {
         page.get_u32(META_PAGE_ID)
     }
 
+    #[inline]
     pub(crate) fn set_meta_page_id(page: &mut RawPage, data: u32) {
         page.seek(META_PAGE_ID);
         page.put_u32(data)
     }
 
+    #[inline]
     pub(crate) fn get_free_list_size(page: &RawPage) -> u32 {
         page.get_u32(FREE_LIST_OFFSET)
     }
 
+    #[inline]
     pub(crate) fn set_free_list_size(page: &mut RawPage, size: u32) {
         page.seek(FREE_LIST_OFFSET);
         page.put_u32(size)
     }
 
+    #[inline]
     pub(crate) fn get_free_list_content(page: &RawPage, index: u32) -> u32 {
         let offset = index * 4 + FREE_LIST_OFFSET + 8;
         page.get_u32(offset)
+    }
+
+    #[inline]
+    pub(crate) fn set_free_list_content(page: &mut RawPage, index: u32, pid: u32) {
+        let offset = index * 4 + FREE_LIST_OFFSET + 8;
+        page.seek(offset);
+        page.put_u32(pid);
+    }
+
+    #[inline]
+    pub(crate) fn set_free_list_page_id(page: &mut RawPage, pid: u32) {
+        page.seek(FREE_LIST_PAGE_LINK_OFFSET);
+        page.put_u32(pid);
+    }
+
+    #[inline]
+    pub(crate) fn get_free_list_page_id(page: &RawPage) -> u32 {
+        page.get_u32(FREE_LIST_PAGE_LINK_OFFSET)
     }
 
     #[cfg(test)]
