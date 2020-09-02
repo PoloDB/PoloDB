@@ -5,7 +5,6 @@ mod journal;
 mod vm_code;
 mod vm;
 mod crc64;
-mod pagecache;
 mod error;
 mod vli;
 mod overflow_data;

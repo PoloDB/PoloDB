@@ -143,7 +143,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                     self.write_btree(current_btree_node);
 
                     let backward_opt = self.delete_item_on_subtree(current_pid, subtree_pid, &next_item.doc.pkey_id().unwrap())?;
-                    match backward_opt {
+                    return match backward_opt {
                         Some(backward_item) => {
                             if backward_item.is_leaf && !self.is_content_size_satisfied(backward_item.child_size) {
                                 let mut current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
@@ -154,13 +154,13 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                                 self.write_btree(current_btree_node);
                             }
 
-                            return Ok(Some(DeleteBackwardItem {
+                            Ok(Some(DeleteBackwardItem {
                                 is_leaf: false,
                                 child_size: current_item_size,
-                            }));
+                            }))
                         }
 
-                        None => return Ok(None),
+                        None => Ok(None),
                     }
                 }
             }
@@ -250,14 +250,14 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         };
 
         // get min size brother to merge
-        let (min_brother_size, is_brother_right) = match (&left_node_opt, &right_node_opt) {
-            (Some(node), None) => (node.content.len(), false),
-            (None, Some(node)) => (node.content.len(), true),
+        let is_brother_right = match (&left_node_opt, &right_node_opt) {
+            (Some(_), None) => false,
+            (None, Some(_)) => true,
             (Some(node1), Some(node2)) => {
                 if node1.content.len() <= node2.content.len() {
-                    (node1.content.len(), false)
+                    false
                 } else {
-                    (node2.content.len(), true)
+                    true
                 }
             },
             (None, None) => {
@@ -282,7 +282,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
             self.write_btree(left_node);
         } else {  // right
-            let mut right_node = right_node_opt.unwrap();
+            let right_node = right_node_opt.unwrap();
 
             subtree_node.content.push(current_btree_node.content[node_idx + 1].clone());
             subtree_node.content.extend_from_slice(&right_node.content);
