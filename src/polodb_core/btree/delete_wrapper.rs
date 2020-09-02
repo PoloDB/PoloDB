@@ -249,7 +249,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
             None => None,
         };
 
-        // get min size brother to balance
+        // get min size brother to merge
         let (min_brother_size, is_brother_right) = match (&left_node_opt, &right_node_opt) {
             (Some(node), None) => (node.content.len(), false),
             (None, Some(node)) => (node.content.len(), true),
@@ -265,8 +265,40 @@ impl<'a> BTreePageDeleteWrapper<'a> {
             },
         };
 
-        let _subtree_node = self.get_btree_by_pid(subtree_pid, current_pid)?;
-        Err(DbErr::NotImplement)
+        let mut subtree_node = self.get_btree_by_pid(subtree_pid, current_pid)?;
+        if !is_brother_right {  // left
+            let mut left_node = left_node_opt.unwrap();
+
+            left_node.content.push(current_btree_node.content[node_idx].clone());
+            left_node.content.extend_from_slice(&subtree_node.content);
+            while left_node.indexes.len() != left_node.content.len() + 1 {  // fill zero
+                left_node.indexes.push(0);
+            }
+
+            current_btree_node.content.remove(node_idx);
+            current_btree_node.indexes.remove(node_idx + 1);
+
+            self.base.page_handler.free_page(subtree_node.pid)?;
+
+            self.write_btree(left_node);
+        } else {  // right
+            let mut right_node = right_node_opt.unwrap();
+
+            subtree_node.content.push(current_btree_node.content[node_idx + 1].clone());
+            subtree_node.content.extend_from_slice(&right_node.content);
+            while subtree_node.indexes.len() != subtree_node.content.len() + 1 {  // fill zero
+                subtree_node.indexes.push(0);
+            }
+
+            current_btree_node.content.remove(node_idx + 1);
+            current_btree_node.indexes.remove(node_idx + 2);
+
+            self.base.page_handler.free_page(right_node.pid)?;
+
+            self.write_btree(subtree_node);
+        }
+
+        Ok(())
     }
 
     fn erase_item(&mut self, item: &BTreeNodeDataItem) -> DbResult<()> {

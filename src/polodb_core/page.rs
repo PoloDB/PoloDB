@@ -167,6 +167,13 @@ impl PageHandler {
         Ok(result)
     }
 
+    pub fn free_page(&self, pid: u32) -> DbResult<()> {
+        #[cfg(feature = "log")]
+            eprintln!("free page, id: {}", pid);
+
+        Err(DbErr::NotImplement)
+    }
+
     pub fn is_journal_full(&self) -> bool {
         self.journal_manager.len() >= 1000
     }
