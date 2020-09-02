@@ -139,19 +139,27 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                     let subtree_pid = current_btree_node.indexes[idx + 1];
                     let next_item = self.find_min_element_in_subtree(subtree_pid, current_pid)?;
                     current_btree_node.content[idx] = next_item.clone();
-                    let current_item_size = current_btree_node.content.len();
+                    let mut current_item_size = current_btree_node.content.len();
                     self.write_btree(current_btree_node);
 
                     let backward_opt = self.delete_item_on_subtree(current_pid, subtree_pid, &next_item.doc.pkey_id().unwrap())?;
                     return match backward_opt {
                         Some(backward_item) => {
-                            if backward_item.is_leaf && !self.is_content_size_satisfied(backward_item.child_size) {
-                                let mut current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
-                                let borrow_ok = self.try_borrow_brothers(idx, current_btree_node.borrow_mut())?;
-                                if !borrow_ok {
-                                    self.merge_leaves(idx, current_btree_node.borrow_mut())?;
+                            if !self.is_content_size_satisfied(backward_item.child_size) {
+                                if backward_item.is_leaf {  // borrow or merge leaves
+                                    let mut current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
+                                    let borrow_ok = self.try_borrow_brothers(idx, current_btree_node.borrow_mut())?;
+                                    if !borrow_ok {
+                                        self.merge_leaves(idx, current_btree_node.borrow_mut())?;
+                                        current_item_size = current_btree_node.content.len();
+                                    }
+                                    self.write_btree(current_btree_node);
+                                } else {
+                                    let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
+                                    if current_btree_node.content.len() == 1 {
+                                        let _opt = self.try_merge_head(current_btree_node)?;
+                                    }
                                 }
-                                self.write_btree(current_btree_node);
                             }
 
                             Ok(Some(DeleteBackwardItem {
@@ -165,6 +173,10 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                 }
             }
         }
+    }
+
+    fn try_merge_head(&mut self, parent_btree_node: Box<BTreeNode>) -> DbResult<bool> {
+        Err(DbErr::NotImplement)
     }
 
     fn try_borrow_brothers(&mut self, node_idx: usize, current_btree_node: &mut BTreeNode) -> DbResult<bool> {
