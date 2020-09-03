@@ -1,10 +1,9 @@
 use std::collections::{BTreeSet, HashMap};
 use crate::DbResult;
 use crate::bson::Value;
-use crate::page::{RawPage, PageHandler};
+use crate::page::{RawPage, PageHandler, OverflowPageWrapper};
 use super::btree::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;
-use crate::error::DbErr;
 use std::borrow::BorrowMut;
 
 struct DeleteBackwardItem {
@@ -54,7 +53,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         for pid in &self.dirty_set {
             let node = self.cache_btree.remove(pid).unwrap();
             let mut page = RawPage::new(node.pid, self.base.page_handler.page_size);
-            node.to_raw(&mut page)?;
+            node.to_raw(self.base.page_handler, &mut page)?;
 
             self.base.page_handler.pipeline_write_page(&page)?;
         }
@@ -82,6 +81,8 @@ impl<'a> BTreePageDeleteWrapper<'a> {
             }
 
             SearchKeyResult::Node(idx) => {
+                self.erase_item(&root_btree_node.content[idx])?;
+
                 if root_btree_node.is_leaf() {
                     let _ = self.delete_item_on_leaf(root_btree_node, idx)?;
                     self.flush_pages()?;
@@ -133,6 +134,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
             // use next to replace itself
             // then remove next
             SearchKeyResult::Node(idx) => {
+                self.erase_item(&current_btree_node.content[idx])?;
                 if current_btree_node.is_leaf() {
                     self.delete_item_on_leaf(current_btree_node, idx)
                 } else {
@@ -345,7 +347,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         if item.overflow_pid == 0 {
             Ok(())
         } else {
-            Err(DbErr::NotImplement)
+            OverflowPageWrapper::recursively_free_page(self.base.page_handler, item.overflow_pid)
         }
     }
 

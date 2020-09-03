@@ -70,6 +70,7 @@ impl HeaderPageWrapper {
         let _ = self.0.put(version);
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_version(&self) -> [u8; 4] {
         let mut version: [u8; 4] = [0; 4];
         for i in 0..4 {
@@ -85,6 +86,7 @@ impl HeaderPageWrapper {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn get_sector_size(&self) -> u32 {
         self.0.get_u32(SECTOR_SIZE_OFFSET)
     }
@@ -96,6 +98,7 @@ impl HeaderPageWrapper {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn get_page_size(&mut self) -> u32 {
         self.0.get_u32(PAGE_SIZE_OFFSET)
     }
@@ -147,6 +150,7 @@ impl HeaderPageWrapper {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn set_free_list_page_id(&mut self, pid: u32) {
         self.0.seek(FREE_LIST_PAGE_LINK_OFFSET);
         self.0.put_u32(pid);

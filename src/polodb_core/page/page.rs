@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write, Read};
-use super::header_page_wrapper;
 use crate::DbResult;
 use crate::error::{DbErr, parse_error_reason};
 
@@ -13,6 +12,8 @@ pub(crate) enum PageType {
 
     OverflowData,
 
+    Data,
+
 }
 
 impl PageType {
@@ -21,6 +22,7 @@ impl PageType {
         [0xFF, self as u8]
     }
 
+    #[allow(dead_code)]
     pub fn from_magic(magic: [u8; 2]) -> DbResult<PageType> {
         if magic[0] != 0xFF {
             return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_PAGE_HEADER.into()));
@@ -32,6 +34,8 @@ impl PageType {
             1 => Ok(PageType::BTreeNode),
 
             2 => Ok(PageType::OverflowData),
+
+            3 => Ok(PageType::Data),
 
             _ => Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_PAGE_TYPE.into()))
         }
@@ -131,6 +135,7 @@ impl RawPage {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn put_u64(&mut self, data: u64) {
         let data_be = data.to_be_bytes();
         self.put(&data_be)
@@ -167,38 +172,4 @@ impl RawPage {
         self.data.len() as u32
     }
 
-}
-
-struct FreeList {
-    free_list_page_id:   u32,
-    data:                Vec<u32>,
-}
-
-impl FreeList {
-
-    fn new() -> FreeList {
-        FreeList {
-            free_list_page_id: 0,
-            data: Vec::new(),
-        }
-    }
-
-    fn from_raw(raw_page: &RawPage) -> FreeList {
-        let size = raw_page.get_u32(header_page_wrapper::FREE_LIST_OFFSET);
-        let free_list_page_id = raw_page.get_u32(header_page_wrapper::FREE_LIST_OFFSET + 4);
-
-        let mut data: Vec<u32> = Vec::new();
-        data.resize(size as usize, 0);
-
-        for i in 0..size {
-            let offset = header_page_wrapper::FREE_LIST_OFFSET + 8 + (i * 4);
-            data.insert(i as usize, raw_page.get_u32(offset));
-        }
-
-        FreeList {
-            free_list_page_id,
-            data,
-        }
-    }
-    
 }

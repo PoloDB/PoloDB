@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::rc::Rc;
 
 use crate::db::DbResult;
-use crate::page::{RawPage, PageType};
+use crate::page::{RawPage, PageType, PageHandler, OverflowPageWrapper};
 use crate::error::{DbErr, parse_error_reason};
 use crate::bson::{Document, Value};
 
@@ -83,7 +83,7 @@ impl BTreeNode {
     // Offset 2: items_len(2 bytes)
     // Offset 4: left_pid (4 bytes)
     // Offset 8: next_pid (4 bytes)
-    pub(crate) fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32) -> DbResult<BTreeNode> {
+    pub(crate) fn from_raw(page_handler: &mut PageHandler, page: &RawPage, parent_pid: u32, item_size: u32) -> DbResult<BTreeNode> {
         #[cfg(debug_assertions)]
         if page.page_id == 0 {
             panic!("page id is zero, parent pid: {}", parent_pid);
@@ -118,12 +118,22 @@ impl BTreeNode {
 
             let right_pid = page.get_u32(offset);
 
-            let overflow_pid = page.get_u32(4);  // use to parse data
+            let overflow_pid = page.get_u32(offset + 4);  // use to parse data
 
-            let data_offset: usize = (offset + ITEM_HEADER_SIZE) as usize;
+            let data_offset = (offset + ITEM_HEADER_SIZE) as usize;
 
-            let data = page.data[data_offset..(data_offset + ((ITEM_SIZE - ITEM_HEADER_SIZE) as usize))].to_vec();
-            let doc = Rc::new(Document::from_bytes(&data)?);
+            let item_content_size = (ITEM_SIZE - ITEM_HEADER_SIZE) as usize;
+
+            let mut buffer: Vec<u8> = Vec::with_capacity(0);
+            let data: &[u8] = if overflow_pid == 0 {
+                &page.data[data_offset..(data_offset + item_content_size)]
+            } else {
+                buffer.reserve(4096);
+                OverflowPageWrapper::recursively_get_overflow_data(page_handler, &mut buffer, overflow_pid)?;
+                &buffer
+            };
+
+            let doc = Rc::new(Document::from_bytes(data)?);
 
             content.push(BTreeNodeDataItem { doc, overflow_pid });
 
@@ -138,7 +148,7 @@ impl BTreeNode {
         })
     }
 
-    pub(crate) fn to_raw(&self, page: &mut RawPage) -> DbResult<()> {
+    pub(crate) fn to_raw(&self, page_handler: &mut PageHandler, page: &mut RawPage) -> DbResult<()> {
         let items_len = self.content.len() as u16;
 
         let page_type = PageType::BTreeNode;
@@ -163,15 +173,18 @@ impl BTreeNode {
 
             let offset: u32 = HEADER_SIZE + (index as u32) * ITEM_SIZE;
 
+            let doc_bytes = item.doc.to_bytes()?;
+            let item_content_size = (ITEM_SIZE - ITEM_HEADER_SIZE) as usize;
+
+            let (current_page_content, overflow_pid) = OverflowPageWrapper::handle_overflow(page_handler, &doc_bytes, item_content_size)?;
+
             page.seek(offset);
             page.put_u32(right_pid);
 
-            // TODO: overflow pid
-            page.put_u64(0);
+            page.put_u32(overflow_pid);
+            page.put_u32(0);  // reserve
 
-            // TODO: write data
-            let doc_bytes = item.doc.to_bytes()?;
-            page.put(&doc_bytes);
+            page.put(current_page_content);
 
             index += 1;
         }
@@ -194,7 +207,6 @@ impl BTreeNode {
 
         self.indexes.remove(0);
         self.content.remove(0);
-
 
         (first_index, first_content)
     }

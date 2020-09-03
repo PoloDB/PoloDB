@@ -11,11 +11,9 @@
 // ...
 //
 use std::rc::Rc;
-use std::collections::LinkedList;
 use super::error::DbErr;
 use super::page::{header_page_wrapper, PageHandler };
 use crate::bson::ObjectIdMaker;
-use crate::overflow_data::{ OverflowDataWrapper, OverflowDataTicket };
 use crate::bson::{ObjectId, Document, Value};
 use crate::btree::BTreePageInsertWrapper;
 use crate::cursor::Cursor;
@@ -37,8 +35,6 @@ pub type DbResult<T> = Result<T, DbErr>;
 
 pub(crate) struct DbContext {
     page_handler :        Box<PageHandler>,
-    pending_block_offset: u32,
-    overflow_data_pages:  LinkedList<u32>,
 
     pub obj_id_maker: ObjectIdMaker,
 
@@ -56,29 +52,10 @@ impl DbContext {
         let ctx = DbContext {
             page_handler: Box::new(page_handler),
 
-            pending_block_offset: 0,
-            overflow_data_pages: LinkedList::new(),
-
             // first_page,
             obj_id_maker,
         };
         Ok(ctx)
-    }
-
-    fn alloc_overflow_ticker(&mut self, size: u32) -> DbResult<OverflowDataTicket> {
-        let page_id = self.page_handler.alloc_page_id()?;
-
-        self.overflow_data_pages.push_back(page_id);
-
-        let raw_page = self.page_handler.pipeline_read_page(page_id)?;
-
-        let mut overflow = OverflowDataWrapper::from_raw_page(&mut self.page_handler, raw_page)?;
-
-        let ticket = overflow.alloc(size)?;
-
-        Ok(OverflowDataTicket {
-            items: vec![ ticket ],
-        })
     }
 
     #[inline]
@@ -116,7 +93,7 @@ impl DbContext {
             Some(backward_item) => {
                 let new_root_id = self.page_handler.alloc_page_id()?;
 
-                let raw_page = backward_item.write_to_page(new_root_id, meta_page_id, self.page_handler.page_size)?;
+                let raw_page = backward_item.write_to_page(&mut self.page_handler, new_root_id, meta_page_id)?;
 
                 // update head page
                 {
@@ -285,7 +262,7 @@ impl Database {
         Ok(result)
     }
 
-    #[inline]
+    #[allow(dead_code)]
     pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
         self.ctx.query_all_meta()
     }
@@ -307,24 +284,25 @@ mod tests {
         Database::open("/tmp/test.db").unwrap()
     }
 
-    #[test]
-    fn test_create_collection() {
+    fn create_and_return_db_with_items(size: usize) -> Database {
         let mut db = prepare_db();
-        let result = db.create_collection("test").unwrap();
-        println!("object:id {}", result.to_string());
+        let _result = db.create_collection("test").unwrap();
 
-        let meta = db.query_all_meta().unwrap();
+        // let meta = db.query_all_meta().unwrap();
 
-        for (index, doc) in meta.iter().enumerate() {
-            println!("index: {}, object: {}", index, doc)
-        }
-
-        for i in 0..TEST_SIZE {
+        for i in 0..size {
             let content = i.to_string();
             let mut new_doc = Document::new_without_id();
             new_doc.insert("content".into(), Value::String(content));
             db.insert("test", Rc::new(new_doc)).unwrap();
         }
+
+        db
+    }
+
+    #[test]
+    fn test_create_collection() {
+        let mut db = create_and_return_db_with_items(TEST_SIZE);
 
         let mut test_col_cursor = db.ctx.get_collection_cursor("test").unwrap();
         let mut counter = 0;
@@ -339,7 +317,7 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_item() {
+    fn test_one_delete_item() {
         let mut db = prepare_db();
         let _ = db.create_collection("test").unwrap();
 
@@ -357,6 +335,27 @@ mod tests {
         let third_key = third.get("_id").unwrap();
         assert!(db.delete("test", third_key).unwrap());
         assert!(!db.delete("test", third_key).unwrap())
+    }
+
+    #[test]
+    fn test_delete_all_item() {
+        let mut db = prepare_db();
+        let _ = db.create_collection("test").unwrap();
+
+        let mut collection  = vec![];
+
+        for i in 0..100 {
+            let content = i.to_string();
+            let mut new_doc = Document::new_without_id();
+            new_doc.insert("content".into(), Value::String(content));
+            let ret_doc = db.insert("test", Rc::new(new_doc)).unwrap();
+            collection.push(ret_doc);
+        }
+
+        for doc in &collection {
+            let key = doc.get("_id").unwrap();
+            db.delete("test", key).unwrap();
+        }
     }
 
 }

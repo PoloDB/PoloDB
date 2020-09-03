@@ -265,6 +265,7 @@ pub fn encode<T: AsRef<[u8]>>(data: T) -> String {
 /// assert_eq!(hex::encode_upper("Hello world!"), "48656C6C6F20776F726C6421");
 /// assert_eq!(hex::encode_upper(vec![1, 2, 3, 15, 16]), "0102030F10");
 /// ```
+#[allow(dead_code)]
 pub fn encode_upper<T: AsRef<[u8]>>(data: T) -> String {
     let mut s = String::with_capacity(data.as_ref().len() * 2);
 

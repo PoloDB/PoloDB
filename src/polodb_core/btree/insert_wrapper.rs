@@ -13,7 +13,8 @@ pub(crate) struct InsertBackwardItem {
 
 impl InsertBackwardItem {
 
-    pub(crate) fn write_to_page(&self, new_page_id: u32, left_pid: u32, page_size: u32) -> DbResult<RawPage> {
+    pub(crate) fn write_to_page(&self, page_handler: &mut PageHandler, new_page_id: u32, left_pid: u32) -> DbResult<RawPage> {
+        let page_size = page_handler.page_size;
         let mut result = RawPage::new(new_page_id, page_size);
 
         let content = vec![self.content.clone()];
@@ -25,7 +26,7 @@ impl InsertBackwardItem {
             indexes
         };
 
-        node.to_raw(&mut result)?;
+        node.to_raw(page_handler, &mut result)?;
 
         Ok(result)
     }

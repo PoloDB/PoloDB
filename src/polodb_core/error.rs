@@ -20,6 +20,7 @@ pub enum DbErr {
     ParseIntError(num::ParseIntError),
     IOErr(io::Error),
     TypeNotComparable(String, String),
+    DataSizeTooLarge(u32, u32),
     NotImplement,
     DecodeEOF,
     DecodeIntUnknownByte,
@@ -30,6 +31,7 @@ pub enum DbErr {
     ChecksumMismatch,
     JournalPageSizeMismatch(u32, u32),
     SaltMismatch,
+    PageMagicMismatch(u32),
     ItemSizeGreaterThenExpected,
     CollectionNotFound(String),
     MetaPageIdError,
@@ -48,6 +50,8 @@ impl fmt::Display for DbErr {
             DbErr::IOErr(io_err) => std::fmt::Display::fmt(&io_err, f),
             DbErr::TypeNotComparable(expected, actual) =>
                 write!(f, "TypeNotComparable(expected: {}, actual: {})", expected, actual),
+            DbErr::DataSizeTooLarge(expected, actual) =>
+                write!(f, "DataSizeTooLarge(expected: {}, actual: {})", expected, actual),
             DbErr::NotImplement => write!(f, "NotImplement"),
             DbErr::DecodeEOF => write!(f, "DecodeEOF"),
             DbErr::DecodeIntUnknownByte => write!(f, "DecodeIntUnknownByte"),
@@ -58,6 +62,7 @@ impl fmt::Display for DbErr {
             DbErr::ChecksumMismatch => write!(f, "ChecksumMismatch"),
             DbErr::JournalPageSizeMismatch(expect, actual) => write!(f, "JournalPageSizeMismatch(expect={}, actual={})", expect, actual),
             DbErr::SaltMismatch => write!(f, "SaltMismatch"),
+            DbErr::PageMagicMismatch(pid) => write!(f, "PageMagicMismatch({})", pid),
             DbErr::ItemSizeGreaterThenExpected => write!(f, "ItemSizeGreaterThenExpected"),
             DbErr::CollectionNotFound(name) => write!(f, "collection \"{}\" not found", name),
             DbErr::MetaPageIdError => write!(f, "meta page id should not be zero"),

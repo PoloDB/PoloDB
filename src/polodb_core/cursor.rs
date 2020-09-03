@@ -42,7 +42,7 @@ impl<'a> Cursor<'a> {
             let mut tmp = LinkedList::new();
 
             let btree_page = page_handler.pipeline_read_page(root_page_id)?;
-            let btree_node = BTreeNode::from_raw(&btree_page, 0, item_size)?;
+            let btree_node = BTreeNode::from_raw(page_handler, &btree_page, 0, item_size)?;
 
             tmp.push_back(CursorItem {
                 node: Rc::new(btree_node),
@@ -71,7 +71,7 @@ impl<'a> Cursor<'a> {
 
         while left_pid != 0 {
             let btree_page = self.page_handler.pipeline_read_page(left_pid)?;
-            let btree_node = BTreeNode::from_raw(&btree_page, top.node.pid, self.item_size)?;
+            let btree_node = BTreeNode::from_raw(self.page_handler, &btree_page, top.node.pid, self.item_size)?;
 
             self.btree_stack.push_back(CursorItem {
                 node: Rc::new(btree_node),
@@ -119,7 +119,7 @@ impl<'a> Cursor<'a> {
         let top = self.btree_stack.back().unwrap();
 
         let mut page = RawPage::new(top.node.pid, self.page_handler.page_size);
-        top.node.to_raw(&mut page)?;
+        top.node.to_raw(self.page_handler, &mut page)?;
 
         self.page_handler.pipeline_write_page(&page)
     }
@@ -237,7 +237,7 @@ impl<'a> Cursor<'a> {
         #[cfg(feature = "log")]
         eprintln!("handle backward item, left_pid: {}, new_root_id: {}, right_pid: {}", left_pid, new_root_id, backward_item.right_pid);
 
-        let new_root_page = backward_item.write_to_page(new_root_id, left_pid, self.page_handler.page_size)?;
+        let new_root_page = backward_item.write_to_page(self.page_handler, new_root_id, left_pid)?;
 
         let meta_doc = Rc::make_mut(&mut meta_doc_rc);
         meta_doc.insert(meta_document_key::ROOT_PID.into(), Value::Int(new_root_id as i64));

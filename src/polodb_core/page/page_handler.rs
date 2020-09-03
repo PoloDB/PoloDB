@@ -164,7 +164,11 @@ impl PageHandler {
             counter += 1;
         }
 
-        self.pipeline_write_page(&first_page_wrapper.0)
+        self.pipeline_write_page(&first_page_wrapper.0)?;
+
+        self.page_count -= pages.len() as u32;
+
+        Ok(())
     }
 
     pub fn is_journal_full(&self) -> bool {
@@ -198,7 +202,7 @@ impl PageHandler {
     }
 
     pub fn alloc_page_id(&mut self) -> DbResult<u32> {
-        match self.try_get_free_page_id()? {
+        let page_id = match self.try_get_free_page_id()? {
             Some(page_id) =>  {
 
                 #[cfg(feature = "log")]
@@ -210,7 +214,10 @@ impl PageHandler {
             None =>  {
                 self.actual_alloc_page_id()
             }
-        }
+        }?;
+
+        self.page_count += 1;
+        Ok(page_id)
     }
 
     fn actual_alloc_page_id(&mut self) -> DbResult<u32> {
