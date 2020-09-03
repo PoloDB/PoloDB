@@ -353,7 +353,8 @@ mod tests {
 
         let third = &collection[3];
         let third_key = third.get("_id").unwrap();
-        db.delete("test", third_key).unwrap();
+        assert!(db.delete("test", third_key).unwrap());
+        assert!(!db.delete("test", third_key).unwrap())
     }
 
 }

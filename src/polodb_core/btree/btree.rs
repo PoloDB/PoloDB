@@ -33,18 +33,18 @@ impl BTreeNode {
     // binary search the content
     // find the content or index
     pub(crate) fn search(&self, key: &Value) -> DbResult<SearchKeyResult> {
-        let mut low: usize = 0;
-        let mut high: usize = self.content.len() - 1;
+        let mut low: i32 = 0;
+        let mut high: i32 = (self.content.len() - 1) as i32;
 
         while low <= high {
             let middle = (low + high) / 2;
-            let target_key = &self.content[middle].doc.pkey_id().expect("primary key not found in target document");
+            let target_key = &self.content[middle as usize].doc.pkey_id().expect("primary key not found in target document");
 
             let cmp_result = key.value_cmp(target_key)?;
 
             match cmp_result {
                 Ordering::Equal =>
-                    return Ok(SearchKeyResult::Node(middle)),
+                    return Ok(SearchKeyResult::Node(middle as usize)),
 
                 Ordering::Less => {
                     high = middle - 1;
@@ -57,7 +57,7 @@ impl BTreeNode {
             }
         }
 
-        Ok(SearchKeyResult::Index(std::cmp::max(low, high)))
+        Ok(SearchKeyResult::Index(std::cmp::max(low, high) as usize))
     }
 
     pub fn clone_with_content(&self, new_index: usize, new_item: BTreeNodeDataItem) -> BTreeNode {

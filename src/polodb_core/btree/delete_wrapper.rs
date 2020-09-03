@@ -74,7 +74,8 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         let search_result = root_btree_node.search(id)?;
         match search_result {
             SearchKeyResult::Index(idx) => {  // delete item in subtree
-                match self.delete_item_on_subtree(root_btree_node.pid, idx as u32, id)? {
+                let subtree_pid = root_btree_node.indexes[idx];
+                match self.delete_item_on_subtree(root_btree_node.pid, subtree_pid, id)? {
                     Some(_) => Ok(true),
                     None => Ok(false)
                 }
@@ -176,7 +177,34 @@ impl<'a> BTreePageDeleteWrapper<'a> {
     }
 
     fn try_merge_head(&mut self, parent_btree_node: Box<BTreeNode>) -> DbResult<bool> {
-        Err(DbErr::NotImplement)
+        let left_pid = parent_btree_node.indexes[0];
+        let right_pid = parent_btree_node.indexes[1];
+
+        let left_node = self.get_btree_by_pid(left_pid, parent_btree_node.pid)?;
+        let right_node = self.get_btree_by_pid(right_pid, parent_btree_node.pid)?;
+
+        if left_node.content.len() + right_node.content.len() + 1 > self.base.item_size as usize {
+            self.write_btree(left_node);
+            self.write_btree(right_node);
+            return Ok(false);
+        }
+
+        let mut new_content = Vec::with_capacity(self.base.item_size as usize);
+        let mut new_indexes = Vec::with_capacity((self.base.item_size + 1) as usize);
+
+        new_content.extend_from_slice(&left_node.content);
+        new_indexes.extend_from_slice(&left_node.indexes);
+
+        new_content.push(parent_btree_node.content[0].clone());
+
+        new_content.extend_from_slice(&right_node.content);
+        new_indexes.extend_from_slice(&right_node.indexes);
+
+        self.base.page_handler.free_pages(&[left_pid, right_pid])?;
+
+        self.write_btree(parent_btree_node);
+
+        Ok(true)
     }
 
     fn try_borrow_brothers(&mut self, node_idx: usize, current_btree_node: &mut BTreeNode) -> DbResult<bool> {

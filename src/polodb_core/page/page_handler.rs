@@ -133,9 +133,16 @@ impl PageHandler {
         Ok(result)
     }
 
+    #[inline]
     pub fn free_page(&mut self, pid: u32) -> DbResult<()> {
+        self.free_pages(&[pid])
+    }
+
+    pub fn free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
         #[cfg(feature = "log")]
-        eprintln!("free page, id: {}", pid);
+        for pid in pages {
+            eprintln!("free page, id: {}", *pid);
+        }
 
         let mut first_page = self.pipeline_read_page(0)?;
         let free_list_pid = header_page_utils::get_free_list_page_id(&first_page);
@@ -144,12 +151,16 @@ impl PageHandler {
         }
 
         let current_size = header_page_utils::get_free_list_size(&first_page);
-        if (current_size as usize) >= header_page_utils::HEADER_FREE_LIST_MAX_SIZE {
+        if (current_size as usize) + pages.len() >= header_page_utils::HEADER_FREE_LIST_MAX_SIZE {
             return Err(DbErr::NotImplement)
         }
 
-        header_page_utils::set_free_list_content(&mut first_page, current_size, pid);
-        header_page_utils::set_free_list_size(&mut first_page, current_size + 1);
+        header_page_utils::set_free_list_size(&mut first_page, current_size + (pages.len() as u32));
+        let mut counter = 0;
+        for pid in pages {
+            header_page_utils::set_free_list_content(&mut first_page, current_size + counter, *pid);
+            counter += 1;
+        }
 
         self.pipeline_write_page(&first_page)
     }
