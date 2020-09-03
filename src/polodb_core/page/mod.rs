@@ -1,6 +1,6 @@
 
 mod page;
-pub(crate) mod header_page_utils;
+pub(crate) mod header_page_wrapper;
 mod page_handler;
 mod pagecache;
 

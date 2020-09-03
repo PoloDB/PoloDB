@@ -13,7 +13,7 @@
 use std::rc::Rc;
 use std::collections::LinkedList;
 use super::error::DbErr;
-use super::page::{ header_page_utils, PageHandler };
+use super::page::{header_page_wrapper, PageHandler };
 use crate::bson::ObjectIdMaker;
 use crate::overflow_data::{ OverflowDataWrapper, OverflowDataTicket };
 use crate::bson::{ObjectId, Document, Value};
@@ -84,7 +84,8 @@ impl DbContext {
     #[inline]
     fn get_meta_page_id(&mut self) -> DbResult<u32> {
         let head_page = self.page_handler.pipeline_read_page(0)?;
-        let result = header_page_utils::get_meta_page_id(&head_page);
+        let head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
+        let result = head_page_wrapper.get_meta_page_id();
 
         if result == 0 {  // unexpected
             return Err(DbErr::MetaPageIdError);
@@ -119,9 +120,10 @@ impl DbContext {
 
                 // update head page
                 {
-                    let mut head_page = self.page_handler.pipeline_read_page(0)?;
-                    header_page_utils::set_meta_page_id(&mut head_page, new_root_id);
-                    self.page_handler.pipeline_write_page(&head_page)?;
+                    let head_page = self.page_handler.pipeline_read_page(0)?;
+                    let mut head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
+                    head_page_wrapper.set_meta_page_id(new_root_id);
+                    self.page_handler.pipeline_write_page(&head_page_wrapper.0)?;
                 }
 
                 self.page_handler.pipeline_write_page(&raw_page)?;

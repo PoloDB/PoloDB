@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write, Read};
-use super::header_page_utils;
+use super::header_page_wrapper;
 use crate::DbResult;
 use crate::error::{DbErr, parse_error_reason};
 
@@ -184,14 +184,14 @@ impl FreeList {
     }
 
     fn from_raw(raw_page: &RawPage) -> FreeList {
-        let size = raw_page.get_u32(header_page_utils::FREE_LIST_OFFSET);
-        let free_list_page_id = raw_page.get_u32(header_page_utils::FREE_LIST_OFFSET + 4);
+        let size = raw_page.get_u32(header_page_wrapper::FREE_LIST_OFFSET);
+        let free_list_page_id = raw_page.get_u32(header_page_wrapper::FREE_LIST_OFFSET + 4);
 
         let mut data: Vec<u32> = Vec::new();
         data.resize(size as usize, 0);
 
         for i in 0..size {
-            let offset = header_page_utils::FREE_LIST_OFFSET + 8 + (i * 4);
+            let offset = header_page_wrapper::FREE_LIST_OFFSET + 8 + (i * 4);
             data.insert(i as usize, raw_page.get_u32(offset));
         }
 

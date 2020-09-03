@@ -1,7 +1,8 @@
 use std::fs::File;
 use super::page::RawPage;
 use super::pagecache::PageCache;
-use super::header_page_utils;
+use super::header_page_wrapper;
+use super::header_page_wrapper::HeaderPageWrapper;
 use crate::journal::JournalManager;
 use crate::DbResult;
 use crate::error::DbErr;
@@ -29,10 +30,9 @@ impl PageHandler {
 
 
     fn force_write_first_block(file: &mut File, page_size: u32) -> std::io::Result<RawPage> {
-        let mut raw_page = RawPage::new(0, page_size);
-        header_page_utils::init(&mut raw_page);
-        raw_page.sync_to_file(file, 0)?;
-        Ok(raw_page)
+        let wrapper = HeaderPageWrapper::init(0, page_size);
+        wrapper.0.sync_to_file(file, 0)?;
+        Ok(wrapper.0)
     }
 
     fn init_db(file: &mut File, page_size: u32) -> std::io::Result<(RawPage, u32)> {
@@ -144,25 +144,27 @@ impl PageHandler {
             eprintln!("free page, id: {}", *pid);
         }
 
-        let mut first_page = self.pipeline_read_page(0)?;
-        let free_list_pid = header_page_utils::get_free_list_page_id(&first_page);
+        let first_page = self.pipeline_read_page(0)?;
+        let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
+        let free_list_pid = first_page_wrapper.get_free_list_page_id();
         if free_list_pid != 0 {
             return Err(DbErr::NotImplement);
         }
 
-        let current_size = header_page_utils::get_free_list_size(&first_page);
-        if (current_size as usize) + pages.len() >= header_page_utils::HEADER_FREE_LIST_MAX_SIZE {
+        let current_size = first_page_wrapper.get_free_list_size();
+        if (current_size as usize) + pages.len() >= header_page_wrapper::HEADER_FREE_LIST_MAX_SIZE {
             return Err(DbErr::NotImplement)
         }
 
-        header_page_utils::set_free_list_size(&mut first_page, current_size + (pages.len() as u32));
+
+        first_page_wrapper.set_free_list_size(current_size + (pages.len() as u32));
         let mut counter = 0;
         for pid in pages {
-            header_page_utils::set_free_list_content(&mut first_page, current_size + counter, *pid);
+            first_page_wrapper.set_free_list_content(current_size + counter, *pid);
             counter += 1;
         }
 
-        self.pipeline_write_page(&first_page)
+        self.pipeline_write_page(&first_page_wrapper.0)
     }
 
     pub fn is_journal_full(&self) -> bool {
@@ -174,17 +176,18 @@ impl PageHandler {
     }
 
     fn try_get_free_page_id(&mut self) -> DbResult<Option<u32>> {
-        let mut first_page = self.get_first_page()?;
+        let first_page = self.get_first_page()?;
+        let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
 
-        let free_list_size = header_page_utils::get_free_list_size(&first_page);
+        let free_list_size = first_page_wrapper.get_free_list_size();
         if free_list_size == 0 {
             return Ok(None);
         }
 
-        let result = header_page_utils::get_free_list_content(&first_page, free_list_size - 1);
-        header_page_utils::set_free_list_size(&mut first_page, free_list_size - 1);
+        let result = first_page_wrapper.get_free_list_content(free_list_size - 1);
+        first_page_wrapper.set_free_list_size(free_list_size - 1);
 
-        self.pipeline_write_page(&first_page)?;
+        self.pipeline_write_page(&first_page_wrapper.0)?;
 
         Ok(Some(result))
     }
@@ -211,10 +214,11 @@ impl PageHandler {
     }
 
     fn actual_alloc_page_id(&mut self) -> DbResult<u32> {
-        let mut first_page = self.get_first_page()?;
+        let first_page = self.get_first_page()?;
+        let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
 
-        let null_page_bar = header_page_utils::get_null_page_bar(&first_page);
-        header_page_utils::set_null_page_bar(&mut first_page, null_page_bar + 1);
+        let null_page_bar = first_page_wrapper.get_null_page_bar();
+        first_page_wrapper.set_null_page_bar(null_page_bar + 1);
 
         if (null_page_bar as u64) >= self.last_commit_db_size {  // truncate file
             let expected_size = self.last_commit_db_size + (DB_INIT_BLOCK_COUNT * self.page_size) as u64;
@@ -222,7 +226,7 @@ impl PageHandler {
             self.last_commit_db_size = expected_size;
         }
 
-        self.pipeline_write_page(&first_page)?;
+        self.pipeline_write_page(&first_page_wrapper.0)?;
 
         #[cfg(feature = "log")]
         eprintln!("alloc new page_id : {}", null_page_bar);
