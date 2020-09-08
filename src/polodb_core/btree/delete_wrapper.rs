@@ -1,10 +1,11 @@
 use std::collections::{BTreeSet, HashMap};
 use crate::DbResult;
 use crate::bson::Value;
-use crate::page::{RawPage, PageHandler, OverflowPageWrapper};
+use crate::page::{RawPage, PageHandler};
 use super::btree::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;
 use std::borrow::BorrowMut;
+use crate::error::DbErr;
 
 struct DeleteBackwardItem {
     is_leaf: bool,
@@ -53,7 +54,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         for pid in &self.dirty_set {
             let node = self.cache_btree.remove(pid).unwrap();
             let mut page = RawPage::new(node.pid, self.base.page_handler.page_size);
-            node.to_raw(self.base.page_handler, &mut page)?;
+            node.to_raw(&mut page)?;
 
             self.base.page_handler.pipeline_write_page(&page)?;
         }
@@ -96,7 +97,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                 root_btree_node.content[idx] = next_item.clone();
                 self.write_btree(root_btree_node);
 
-                match self.delete_item_on_subtree(current_pid, next_pid, &next_item.doc.pkey_id().unwrap())? {
+                match self.delete_item_on_subtree(current_pid, next_pid, &next_item.key)? {
                     Some(_) => Ok(true),
                     None => Ok(false)
                 }
@@ -145,7 +146,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                     let mut current_item_size = current_btree_node.content.len();
                     self.write_btree(current_btree_node);
 
-                    let backward_opt = self.delete_item_on_subtree(current_pid, subtree_pid, &next_item.doc.pkey_id().unwrap())?;
+                    let backward_opt = self.delete_item_on_subtree(current_pid, subtree_pid, &next_item.key)?;
                     return match backward_opt {
                         Some(backward_item) => {
                             if !self.is_content_size_satisfied(backward_item.child_size) {
@@ -343,12 +344,8 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         Ok(())
     }
 
-    fn erase_item(&mut self, item: &BTreeNodeDataItem) -> DbResult<()> {
-        if item.overflow_pid == 0 {
-            Ok(())
-        } else {
-            OverflowPageWrapper::recursively_free_page(self.base.page_handler, item.overflow_pid)
-        }
+    fn erase_item(&mut self, _item: &BTreeNodeDataItem) -> DbResult<()> {
+        return Err(DbErr::NotImplement)
     }
 
     #[inline]

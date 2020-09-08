@@ -1,5 +1,6 @@
 
 // 6 bytes in store
+#[derive(Clone)]
 pub(crate) struct DataTicket {
     pub pid: u32,
     pub index: u16,
@@ -11,10 +12,10 @@ impl DataTicket {
         let mut result = [0; 6];
 
         let pid_bytes = self.pid.to_be_bytes();
-        let index_bytes = self.pid.to_be_bytes();
+        let index_bytes = self.index.to_be_bytes();
 
-        result.copy_from_slice(&pid_bytes);
-        result[6..].copy_from_slice(&index_bytes);
+        result[0..4].copy_from_slice(&pid_bytes);
+        result[4..6].copy_from_slice(&index_bytes);
 
         result
     }

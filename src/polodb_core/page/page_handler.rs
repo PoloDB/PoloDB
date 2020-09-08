@@ -1,4 +1,7 @@
 use std::fs::File;
+use std::collections::BTreeMap;
+use std::ops::Bound::{Included, Unbounded};
+use std::rc::Rc;
 use super::page::RawPage;
 use super::pagecache::PageCache;
 use super::header_page_wrapper;
@@ -6,6 +9,9 @@ use super::header_page_wrapper::HeaderPageWrapper;
 use crate::journal::JournalManager;
 use crate::DbResult;
 use crate::error::DbErr;
+use crate::page::data_page_wrapper::DataPageWrapper;
+use crate::data_ticket::DataTicket;
+use crate::bson::Document;
 
 static DB_INIT_BLOCK_COUNT: u32 = 16;
 
@@ -18,6 +24,8 @@ pub(crate) struct PageHandler {
     page_count:               u32,
     page_cache:               PageCache,
     journal_manager:          Box<JournalManager>,
+
+    data_page_map: BTreeMap<u32, Vec<u32>>,
 }
 
 impl PageHandler {
@@ -27,7 +35,6 @@ impl PageHandler {
         raw_page.read_from_file(file, 0)?;
         Ok(raw_page)
     }
-
 
     fn force_write_first_block(file: &mut File, page_size: u32) -> std::io::Result<RawPage> {
         let wrapper = HeaderPageWrapper::init(0, page_size);
@@ -77,7 +84,70 @@ impl PageHandler {
             page_count,
             page_cache,
             journal_manager: Box::new(journal_manager),
+
+            data_page_map: BTreeMap::new(),
         })
+    }
+
+    pub(crate) fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper> {
+        let (wrapper, removed_key) = {
+            let mut range = self.data_page_map.range_mut((Included(data_size), Unbounded));
+            match range.next() {
+                Some((key, value)) => {
+                    if value.is_empty() {
+                        println!("empty");
+                    }
+                    let last_index = value[value.len() - 1];
+                    value.remove(value.len() - 1);
+
+                    let mut removed_key = None;
+
+                    if value.is_empty() {
+                        removed_key = Some(*key);
+                    }
+
+                    let raw_page = self.pipeline_read_page(last_index)?;
+                    let wrapper = DataPageWrapper::from_raw(raw_page);
+
+                    (wrapper, removed_key)
+                },
+                None => {
+                    let wrapper = self.force_distribute_new_data_page_wrapper()?;
+                    (wrapper, None)
+                },
+            }
+        };
+
+        removed_key.map(|key| {
+            self.data_page_map.remove(&key);
+        });
+
+        Ok(wrapper)
+    }
+
+    #[inline]
+    fn force_distribute_new_data_page_wrapper(&mut self) -> DbResult<DataPageWrapper> {
+        let new_pid = self.alloc_page_id()?;
+        let new_wrapper = DataPageWrapper::init(new_pid, self.page_size);
+        Ok(new_wrapper)
+    }
+
+    pub(crate) fn return_data_page_wrapper(&mut self, wrapper: DataPageWrapper) {
+        let remain_size = wrapper.remain_size();
+        if remain_size < 32 {
+            return;
+        }
+
+        match self.data_page_map.get_mut(&remain_size) {
+            Some(vector) => {
+                vector.push(wrapper.pid());
+            }
+
+            None => {
+                let vec = vec![ wrapper.pid() ];
+                self.data_page_map.insert(remain_size, vec);
+            }
+        }
     }
 
     // 1. write to journal, if success
@@ -131,6 +201,42 @@ impl PageHandler {
         eprintln!("read page from main file, id: {}", page_id);
 
         Ok(result)
+    }
+
+    pub(crate) fn get_doc_from_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Rc<Document>> {
+        let page = self.pipeline_read_page(data_ticket.pid)?;
+        let wrapper = DataPageWrapper::from_raw(page);
+        let bytes = wrapper.get(data_ticket.index as u32);
+        let doc = Document::from_bytes(bytes)?;
+        Ok(Rc::new(doc))
+    }
+
+    pub(crate) fn store_doc(&mut self, doc: Rc<Document>) -> DbResult<DataTicket> {
+        let bytes = doc.to_bytes()?;
+        let mut wrapper = self.distribute_data_page_wrapper(bytes.len() as u32)?;
+        let index = wrapper.len() as u16;
+        let pid = wrapper.pid();
+        wrapper.put(&bytes);
+
+        self.pipeline_write_page(wrapper.borrow_page())?;
+
+        self.return_data_page_wrapper(wrapper);
+
+        Ok(DataTicket {
+            pid,
+            index,
+        })
+    }
+
+    pub(crate) fn free_data_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<()> {
+        let page = self.pipeline_read_page(data_ticket.pid)?;
+        let mut wrapper = DataPageWrapper::from_raw(page);
+        wrapper.remove(data_ticket.index as u32);
+        if wrapper.is_empty() {
+            self.free_page(data_ticket.pid)?;
+        }
+        let page = wrapper.consume_page();
+        self.pipeline_write_page(&page)
     }
 
     #[inline]

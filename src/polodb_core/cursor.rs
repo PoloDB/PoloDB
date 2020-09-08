@@ -6,6 +6,7 @@ use crate::DbResult;
 use crate::bson::{Document, Value};
 use crate::error::DbErr;
 use crate::db::meta_document_key;
+use crate::data_ticket::DataTicket;
 
 #[derive(Clone)]
 struct CursorItem {
@@ -42,7 +43,7 @@ impl<'a> Cursor<'a> {
             let mut tmp = LinkedList::new();
 
             let btree_page = page_handler.pipeline_read_page(root_page_id)?;
-            let btree_node = BTreeNode::from_raw(page_handler, &btree_page, 0, item_size)?;
+            let btree_node = BTreeNode::from_raw(&btree_page, 0, item_size)?;
 
             tmp.push_back(CursorItem {
                 node: Rc::new(btree_node),
@@ -71,7 +72,7 @@ impl<'a> Cursor<'a> {
 
         while left_pid != 0 {
             let btree_page = self.page_handler.pipeline_read_page(left_pid)?;
-            let btree_node = BTreeNode::from_raw(self.page_handler, &btree_page, top.node.pid, self.item_size)?;
+            let btree_node = BTreeNode::from_raw(&btree_page, top.node.pid, self.item_size)?;
 
             self.btree_stack.push_back(CursorItem {
                 node: Rc::new(btree_node),
@@ -86,7 +87,7 @@ impl<'a> Cursor<'a> {
     }
 
     #[inline]
-    pub fn peek(&self) -> Option<Rc<Document>> {
+    pub fn peek(&mut self) -> Option<DataTicket> {
         if self.btree_stack.is_empty() {
             return None;
         }
@@ -98,15 +99,19 @@ impl<'a> Cursor<'a> {
             panic!("top node content is empty, page_id: {}", top.node.pid);
         }
 
-        Some(top.node.content[top.index].doc.clone())
+        let ticket = top.node.content[top.index].data_ticket.clone();
+        Some(ticket)
     }
 
     pub fn update_current(&mut self, doc: Rc<Document>) -> DbResult<()> {
         let top = self.btree_stack.pop_back().unwrap();
 
+        self.page_handler.free_data_ticket(&top.node.content[top.index].data_ticket)?;
+        let key = doc.pkey_id().unwrap();
+        let new_ticket = self.page_handler.store_doc(doc)?;
         let new_btree_node: BTreeNode = top.node.clone_with_content(top.index, BTreeNodeDataItem {
-            doc,
-            overflow_pid: 0,
+            key,
+            data_ticket: new_ticket,
         });
 
         self.btree_stack.push_back(top.clone_with_new_node(Rc::new(new_btree_node)));
@@ -119,7 +124,7 @@ impl<'a> Cursor<'a> {
         let top = self.btree_stack.back().unwrap();
 
         let mut page = RawPage::new(top.node.pid, self.page_handler.page_size);
-        top.node.to_raw(self.page_handler, &mut page)?;
+        top.node.to_raw(&mut page)?;
 
         self.page_handler.pipeline_write_page(&page)
     }
@@ -135,7 +140,8 @@ impl<'a> Cursor<'a> {
         }
 
         let top = self.btree_stack.pop_back().unwrap();
-        let result = top.node.content[top.index].doc.clone();
+        let result_ticket = &top.node.content[top.index].data_ticket;
+        let result = self.page_handler.get_doc_from_ticket(&result_ticket)?;
 
         let next_index = top.index + 1;
 
@@ -207,7 +213,8 @@ impl<'a> Cursor<'a> {
 
     fn find_collection_root_pid_by_name(&mut self, col_name: &str) -> DbResult<(i64, Rc<Document>)> {
         while self.has_next() {
-            let doc = self.peek().unwrap();
+            let ticket = self.peek().unwrap();
+            let doc = self.page_handler.get_doc_from_ticket(&ticket)?;
             match doc.get(meta_document_key::NAME) {
                 Some(Value::String(name)) => {
                     if name == col_name {  // found
@@ -229,6 +236,11 @@ impl<'a> Cursor<'a> {
         }
 
         Err(DbErr::CollectionNotFound(col_name.into()))
+    }
+
+    #[inline]
+    pub(crate) fn get_doc_from_ticket(&mut self, ticket: &DataTicket) -> DbResult<Rc<Document>> {
+        self.page_handler.get_doc_from_ticket(ticket)
     }
 
     fn handle_backward_item(&mut self, mut meta_doc_rc: Rc<Document>, left_pid: u32, backward_item: InsertBackwardItem) -> DbResult<()> {

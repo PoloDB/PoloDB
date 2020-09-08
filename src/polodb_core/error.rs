@@ -11,6 +11,7 @@ pub mod parse_error_reason {
     pub static UNEXPECTED_PAGE_HEADER: &str = "unexpcted page header";
     pub static UNEXPECTED_PAGE_TYPE: &str = "unexpected page type";
     pub static UNEXPECTED_HEADER_FOR_BTREE_PAGE: &str = "unexpected header for btree page";
+    pub static KEY_TY_SHOULD_NOT_BE_ZERO: &str = "type name of KEY should not be zero";
 
 }
 

@@ -1,14 +1,16 @@
 use std::cmp::Ordering;
-use std::rc::Rc;
 
 use crate::db::DbResult;
-use crate::page::{RawPage, PageType, PageHandler, OverflowPageWrapper};
+use crate::page::{RawPage, PageType};
 use crate::error::{DbErr, parse_error_reason};
-use crate::bson::{Document, Value};
+use crate::bson::{Value, ObjectId};
+use crate::data_ticket::DataTicket;
 
 pub static HEADER_SIZE: u32      = 64;
-pub static ITEM_SIZE: u32        = 500;
-pub static ITEM_HEADER_SIZE: u32 = 12;
+
+// | right_pid | key_ty_int | key content | ticket  |
+// | 4 bytes   | 2 bytes    | 12 bytes    | 6 bytes |
+pub static ITEM_SIZE: u32        = 24;
 
 pub enum SearchKeyResult {
     Node(usize),
@@ -38,7 +40,7 @@ impl BTreeNode {
 
         while low <= high {
             let middle = (low + high) / 2;
-            let target_key = &self.content[middle as usize].doc.pkey_id().expect("primary key not found in target document");
+            let target_key = &self.content[middle as usize].key;
 
             let cmp_result = key.value_cmp(target_key)?;
 
@@ -83,7 +85,7 @@ impl BTreeNode {
     // Offset 2: items_len(2 bytes)
     // Offset 4: left_pid (4 bytes)
     // Offset 8: next_pid (4 bytes)
-    pub(crate) fn from_raw(page_handler: &mut PageHandler, page: &RawPage, parent_pid: u32, item_size: u32) -> DbResult<BTreeNode> {
+    pub(crate) fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32) -> DbResult<BTreeNode> {
         #[cfg(debug_assertions)]
         if page.page_id == 0 {
             panic!("page id is zero, parent pid: {}", parent_pid);
@@ -118,24 +120,27 @@ impl BTreeNode {
 
             let right_pid = page.get_u32(offset);
 
-            let overflow_pid = page.get_u32(offset + 4);  // use to parse data
+            let key_ty_int = page.get_u8(offset + 4 + 1);  // use to parse data
 
-            let data_offset = (offset + ITEM_HEADER_SIZE) as usize;
+            if key_ty_int != 0x07 {
+                if key_ty_int == 0 {
+                    return Err(DbErr::ParseError(parse_error_reason::KEY_TY_SHOULD_NOT_BE_ZERO.into()));
+                }
+                return Err(DbErr::NotImplement);
+            }
 
-            let item_content_size = (ITEM_SIZE - ITEM_HEADER_SIZE) as usize;
+            let oid_bytes_begin = (offset + 6) as usize;
+            let oid_bytes = &page.data[oid_bytes_begin..(oid_bytes_begin + 12)];
+            let oid = ObjectId::deserialize(oid_bytes)?;
 
-            let mut buffer: Vec<u8> = Vec::with_capacity(0);
-            let data: &[u8] = if overflow_pid == 0 {
-                &page.data[data_offset..(data_offset + item_content_size)]
-            } else {
-                buffer.reserve(4096);
-                OverflowPageWrapper::recursively_get_overflow_data(page_handler, &mut buffer, overflow_pid)?;
-                &buffer
-            };
+            let ticket_bytes = (offset + 6 + 12) as usize;
+            let ticket_bytes = &page.data[ticket_bytes..(ticket_bytes + 6)];
+            let ticket = DataTicket::from_bytes(ticket_bytes);
 
-            let doc = Rc::new(Document::from_bytes(data)?);
-
-            content.push(BTreeNodeDataItem { doc, overflow_pid });
+            content.push(BTreeNodeDataItem {
+                key: Value::ObjectId(oid),
+                data_ticket: ticket
+            });
 
             indexes.push(right_pid);
         }
@@ -148,7 +153,7 @@ impl BTreeNode {
         })
     }
 
-    pub(crate) fn to_raw(&self, page_handler: &mut PageHandler, page: &mut RawPage) -> DbResult<()> {
+    pub(crate) fn to_raw(&self, page: &mut RawPage) -> DbResult<()> {
         let items_len = self.content.len() as u16;
 
         let page_type = PageType::BTreeNode;
@@ -173,18 +178,31 @@ impl BTreeNode {
 
             let offset: u32 = HEADER_SIZE + (index as u32) * ITEM_SIZE;
 
-            let doc_bytes = item.doc.to_bytes()?;
-            let item_content_size = (ITEM_SIZE - ITEM_HEADER_SIZE) as usize;
-
-            let (current_page_content, overflow_pid) = OverflowPageWrapper::handle_overflow(page_handler, &doc_bytes, item_content_size)?;
-
+            let key_ty_int = item.key.ty_int();
             page.seek(offset);
+
+            // 4 bytes for right_pid
             page.put_u32(right_pid);
 
-            page.put_u32(overflow_pid);
-            page.put_u32(0);  // reserve
+            // 2 bytes for key ty_int
+            page.put_u8(0);
+            page.put_u8(key_ty_int);
 
-            page.put(current_page_content);
+            // 12 bytes for key content
+            let key_content: Vec<u8> = match &item.key {
+                Value::ObjectId(oid) => {
+                    let mut buffer = Vec::with_capacity(12);
+                    oid.serialize(&mut buffer)?;
+                    buffer
+                }
+
+                _ => return Err(DbErr::NotImplement)
+            };
+            page.put(&key_content);
+
+            // 6 bytes for ticket
+            let ticket_bytes = item.data_ticket.to_bytes();
+            page.put(&ticket_bytes);
 
             index += 1;
         }
@@ -241,17 +259,6 @@ impl BTreeNode {
 
 #[derive(Clone)]
 pub struct BTreeNodeDataItem {
-    pub doc:          Rc<Document>,
-    pub overflow_pid: u32,
-}
-
-impl BTreeNodeDataItem {
-
-    pub(crate) fn with_doc(doc: Rc<Document>) -> BTreeNodeDataItem {
-        BTreeNodeDataItem {
-            doc,
-            overflow_pid: 0,
-        }
-    }
-
+    pub(crate) key:          Value,
+    pub(crate) data_ticket:  DataTicket,
 }

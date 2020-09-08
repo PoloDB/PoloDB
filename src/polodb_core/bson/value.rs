@@ -51,6 +51,20 @@ impl Value {
         }
     }
 
+    #[inline]
+    pub fn ty_int(&self) -> u8 {
+        match self {
+            Value::Null        => 0x0A,
+            Value::Double(_)   => 0x01,
+            Value::Boolean(_)  => 0x08,
+            Value::Int(_)      => 0x16,
+            Value::String(_)   => 0x02,
+            Value::ObjectId(_) => 0x07,
+            Value::Array(_)    => 0x17,
+            Value::Document(_) => 0x13,
+        }
+    }
+
 }
 
 impl fmt::Display for Value {
@@ -77,56 +91,3 @@ impl fmt::Display for Value {
     }
 
 }
-
-// impl DbSerializer for Value {
-//
-//     fn serialize(&self, writer: &mut dyn Write) -> DbResult<()> {
-//         let ty8: u8 = self.ty_int();
-//
-//         writer.write_all(&[ ty8 ])?;
-//
-//         match self {
-//             Value::Undefined => (),
-//
-//             Value::Double(value) => {
-//                 let buffer = value.to_be_bytes();
-//                 writer.write_all(&buffer)?;
-//             }
-//
-//             Value::Boolean(value) => {
-//                 let v8: u8 = if *value { 1 } else { 0 };
-//                 writer.write_all(&[ v8 ])?;
-//             }
-//
-//             Value::Int(int_val) => {
-//                 vli::encode(writer, *int_val)?;
-//             }
-//
-//             Value::String(str) => {
-//                 let len = str.len();
-//                 vli::encode(writer, len as i64)?;
-//                 writer.write_all(str.as_bytes())?;
-//             }
-//
-//             Value::ObjectId(oid) => {
-//                 oid.serialize(writer)?;
-//             }
-//
-//             Value::Array(arr) => {
-//                 let len = arr.len();
-//                 vli::encode(writer, len as i64)?;
-//
-//                 for item in &arr.data {
-//                     item.serialize(writer)?;
-//                 }
-//             }
-//
-//             Value::Document(doc) => {
-//                 doc.serialize(writer)?;
-//             }
-//         }
-//
-//         Ok(())
-//     }
-//
-// }

@@ -5,6 +5,7 @@ use crate::page::{RawPage, PageHandler};
 use super::btree::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;
 use crate::error::DbErr;
+use crate::data_ticket::DataTicket;
 
 pub(crate) struct InsertBackwardItem {
     pub content: BTreeNodeDataItem,
@@ -26,7 +27,7 @@ impl InsertBackwardItem {
             indexes
         };
 
-        node.to_raw(page_handler, &mut result)?;
+        node.to_raw(&mut result)?;
 
         Ok(result)
     }
@@ -55,11 +56,26 @@ impl<'a> BTreePageInsertWrapper<'a> {
         self.insert_item_to_page(self.0.root_page_id, 0, doc, false, replace)
     }
 
+    #[inline]
+    fn store_doc(&mut self, doc: Rc<Document>) -> DbResult<DataTicket> {
+        self.0.page_handler.store_doc(doc)
+    }
+
+    fn doc_to_node_data_item(&mut self, doc: Rc<Document>) -> DbResult<BTreeNodeDataItem> {
+        let pkey = doc.pkey_id().unwrap();
+        let data_ticket = self.store_doc(doc)?;
+
+        Ok(BTreeNodeDataItem {
+            key: pkey,
+            data_ticket,
+        })
+    }
+
     pub(crate) fn insert_item_to_page(&mut self, pid: u32, parent_pid: u32, doc: Rc<Document>, backward: bool, replace: bool) -> DbResult<Option<InsertBackwardItem>> {
         let mut btree_node: BTreeNode = self.0.get_node(pid, parent_pid)?;
 
         if btree_node.content.is_empty() {
-            btree_node.content.push(BTreeNodeDataItem::with_doc(doc));
+            btree_node.content.push(self.doc_to_node_data_item(doc)?);
             btree_node.indexes.push(0);
             btree_node.indexes.push(0);
 
@@ -75,7 +91,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
         match serach_result {
             SearchKeyResult::Node(index) => {
                 return if replace {
-                    btree_node.content[index] = BTreeNodeDataItem::with_doc(doc.clone());
+                    btree_node.content[index] = self.doc_to_node_data_item(doc)?;
                     self.0.write_btree_node(&btree_node)?;
 
                     Ok(None)
@@ -88,7 +104,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
                 let left_pid = btree_node.indexes[index];
                 if backward || left_pid == 0 {  // left is null, insert in current page
                     // insert between index - 1 and index
-                    btree_node.content.insert(index, BTreeNodeDataItem::with_doc(doc.clone()));
+                    btree_node.content.insert(index, self.doc_to_node_data_item(doc.clone())?);
                     btree_node.indexes.insert(index + 1, 0);  // null page because left_pid is null
                 } else {  // left has page
                     // insert to left page

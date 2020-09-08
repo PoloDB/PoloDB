@@ -150,7 +150,8 @@ impl DbContext {
             let mut tmp: i64 = -1;
 
             while cursor.has_next() {
-                let doc = cursor.peek().unwrap();
+                let ticket = cursor.peek().unwrap();
+                let doc = cursor.get_doc_from_ticket(&ticket)?;
 
                 let doc_name = match doc.get(meta_document_key::NAME) {
                     Some(name) => name,
@@ -187,7 +188,9 @@ impl DbContext {
         let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
 
         while cursor.has_next() {
-            result.push(cursor.peek().unwrap());
+            let ticket = cursor.peek().unwrap();
+            let doc = cursor.get_doc_from_ticket(&ticket)?;
+            result.push(doc);
 
             let _ = cursor.next()?;
         }
@@ -275,7 +278,7 @@ mod tests {
     use std::rc::Rc;
     use crate::bson::{ Document, Value };
 
-    static TEST_SIZE: usize = 100;
+    static TEST_SIZE: usize = 1000;
 
     fn prepare_db() -> Database {
         let _ = std::fs::remove_file("/tmp/test.db");
@@ -307,7 +310,8 @@ mod tests {
         let mut test_col_cursor = db.ctx.get_collection_cursor("test").unwrap();
         let mut counter = 0;
         while test_col_cursor.has_next() {
-            let doc = test_col_cursor.peek().unwrap();
+            let ticket = test_col_cursor.peek().unwrap();
+            let doc = test_col_cursor.get_doc_from_ticket(&ticket).unwrap();
             println!("object: {}", doc);
             let _ = test_col_cursor.next().unwrap();
             counter += 1;
