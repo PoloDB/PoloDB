@@ -6,6 +6,7 @@
  */
 use super::page::{RawPage, PageType};
 use std::cell::Cell;
+use std::ptr;
 
 static DATA_PAGE_HEADER_SIZE: u32 = 16;
 static DATA_INDEX_END_PADDING_SIZE: u32 = 2;
@@ -80,6 +81,12 @@ impl DataPageWrapper {
             panic!("index {} is greater than length {}", index, self.data_len);
         }
 
+        let (begin_bar, end_bar) = self.get_bars_by_index(index);
+
+        &self.page.data[(begin_bar as usize)..(end_bar as usize)]
+    }
+
+    fn get_bars_by_index(&self, index: u32) -> (u16, u16) {
         let begin_bar = self.page.get_u16(DATA_PAGE_HEADER_SIZE + index * 2);
         let end_bar = if index == 0 {
             self.page.len() as u16
@@ -87,7 +94,7 @@ impl DataPageWrapper {
             self.page.get_u16(DATA_PAGE_HEADER_SIZE + (index - 1) * 2)
         };
 
-        &self.page.data[(begin_bar as usize)..(end_bar as usize)]
+        (begin_bar, end_bar)
     }
 
     fn append_bar(&mut self, bar: u16) {
@@ -95,6 +102,45 @@ impl DataPageWrapper {
         self.page.seek(index as u32);
         self.page.put_u16(bar);
         self.data_len += 1;
+    }
+
+    pub(crate) fn remove(&mut self, index: u32) {
+        if index >= self.data_len {
+            panic!("index {} is creater than length {}", index, self.data_len);
+        }
+
+        let (begin_bar, end_bar) = self.get_bars_by_index(index);
+
+        let item_len = end_bar - begin_bar;
+
+        let last_bar = self.page.get_u16(DATA_PAGE_HEADER_SIZE + (self.data_len - 1) * 2);
+
+        let copy_len = begin_bar - last_bar;
+
+        // shift data
+        unsafe {
+            let buffer_ptr = self.page.data.as_mut_ptr();
+
+            ptr::copy(buffer_ptr.add(last_bar as usize), buffer_ptr.add((last_bar + item_len) as usize), copy_len as usize);
+        }
+
+        let mut iter_index = index;
+        loop {
+            let next_bar_value = self.page.get_u16(DATA_PAGE_HEADER_SIZE + (iter_index + 1) * 2);
+
+            self.page.seek(DATA_PAGE_HEADER_SIZE + iter_index * 2);
+
+            if next_bar_value == 0 {
+                self.page.put_u16(0);
+                break
+            }
+            self.page.put_u16(next_bar_value + item_len);
+
+            iter_index += 1;
+        }
+
+        self.data_len -= 1;
+        self.remain_size += (item_len as u32) + 2;
     }
 
     fn get_last_bar(&self) -> u16 {
@@ -169,6 +215,40 @@ mod tests {
         let raw_page = wrapper.consume_page();
         let wrapper2 = DataPageWrapper::from_raw(raw_page);
         assert_eq!(wrapper2.len(), 4);
+    }
+
+    #[test]
+    fn test_remove_item() {
+        let mut wrapper = DataPageWrapper::init(1, 4096);
+
+        for i in 0..4 {
+            let mut first_item: [u8; 4] = [0; 4];
+            for j in 0..4 {
+                first_item[j] = (i + j) as u8;
+            }
+            wrapper.put(&first_item);
+        }
+
+        assert_eq!(wrapper.len(), 4);
+
+        wrapper.remove(0);
+        assert_eq!(wrapper.len(), 3);
+
+        let first = wrapper.get(0);
+        assert_eq!(first.len(), 4);
+        let expected: [u8; 4] = [1, 2, 3, 4];
+        for i in 0..4 {
+            assert_eq!(first[i], expected[i]);
+        }
+
+        wrapper.remove(1);
+
+        let second = wrapper.get(1);
+        assert_eq!(wrapper.len(), 2);
+        let expected: [u8; 4] = [3, 4, 5, 6];
+        for i in 0..4 {
+            assert_eq!(second[i], expected[i]);
+        }
     }
 
 }
