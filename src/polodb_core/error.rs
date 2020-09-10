@@ -26,6 +26,7 @@ pub mod validation_error_reason {
 
 #[derive(Debug)]
 pub enum DbErr {
+    NotAValidKeyType(String),
     ValidationError(String),
     ParseError(String),
     ParseIntError(num::ParseIntError),
@@ -56,6 +57,7 @@ impl fmt::Display for DbErr {
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            DbErr::NotAValidKeyType(ty_name) => write!(f, "type {} is not a valid key type", ty_name),
             DbErr::ValidationError(reason) => write!(f, "ValidationError: {}", reason),
             DbErr::ParseError(reason) => write!(f, "ParseError: {}", reason),
             DbErr::ParseIntError(parse_int_err) => std::fmt::Display::fmt(&parse_int_err, f),

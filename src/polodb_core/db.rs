@@ -30,6 +30,7 @@ pub(crate) mod meta_document_key {
         pub(crate) static NAME: &str = "name";
         pub(crate) static V: &str    = "v";
         pub(crate) static UNIQUE: &str = "unique";
+        pub(crate) static ROOT_PID: &str = "root_pid";
 
     }
 

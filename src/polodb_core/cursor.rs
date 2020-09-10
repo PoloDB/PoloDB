@@ -201,23 +201,19 @@ impl<'a> Cursor<'a> {
 
         let mut insert_wrapper = BTreePageInsertWrapper::new(self.page_handler, collection_root_pid as u32);
         let insert_result = insert_wrapper.insert_item(doc_value.borrow(), false)?;
-        match &insert_result.backward_item {
-            Some(backward_item) => {
-                self.handle_backward_item(meta_doc_mut, collection_root_pid as u32, backward_item)?;
-            }
 
-            None => ()
-
+        if let Some(backward_item) = &insert_result.backward_item {
+            self.handle_backward_item(meta_doc_mut, collection_root_pid as u32, backward_item)?;
         }
 
         let index_ctx_opt = IndexCtx::from_meta_doc(meta_doc_mut);
-        match index_ctx_opt {
-            Some(index_ctx) => {
-                index_ctx.insert_index_by_content(doc_value.borrow(), &insert_result.data_ticket)
-            }
-
-            None => Ok(())
+        if let Some(index_ctx) = index_ctx_opt {
+            return index_ctx.insert_index_by_content(
+                doc_value.borrow(),
+                &insert_result.data_ticket);
         }
+
+        Ok(())
     }
 
     pub fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {

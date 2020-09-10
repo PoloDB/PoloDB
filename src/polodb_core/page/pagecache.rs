@@ -106,11 +106,8 @@ impl LruMap {
 
             None => {
                 if self.len() >= self.cap {
-                    match self.remove_tail() {
-                        Some((_, value)) =>
-                            result = Some(value),
-
-                        None => ()
+                    if let Some((_, value)) = self.remove_tail() {
+                        result = Some(value);
                     }
                 }
             }
@@ -363,9 +360,8 @@ mod tests {
         }
 
         for i in 0..3 {
-            match page_cache.get_from_cache(i) {
-                Some(_) => panic!("removed"),
-                None => ()
+            if let Some(_) = page_cache.get_from_cache(i) {
+                panic!("removed");
             };
         }
 

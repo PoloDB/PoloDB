@@ -37,8 +37,7 @@ impl Value {
         }
     }
 
-    #[inline]
-    fn ty_name(&self) -> &str {
+    pub fn ty_name(&self) -> &str {
         match self {
             Value::Null        => "Null",
             Value::Double(_)   => "Double",
@@ -51,7 +50,6 @@ impl Value {
         }
     }
 
-    #[inline]
     pub fn ty_int(&self) -> u8 {
         match self {
             Value::Null        => 0x0A,
@@ -73,6 +71,42 @@ impl Value {
         }
     }
 
+    #[inline]
+    pub fn unwrap_boolean(&self) -> bool {
+        match self {
+            Value::Boolean(bl) => *bl,
+            _ => panic!("unwrap error: boolean expected, but it's {}", self.ty_name()),
+        }
+    }
+
+    #[inline]
+    pub fn unwrap_int(&self) -> i64 {
+        match self {
+            Value::Int(i) => *i,
+            _ => panic!("unwrap error: int expected, but it's {}", self.ty_name()),
+        }
+    }
+
+    #[inline]
+    pub fn unwrap_string(&self) -> &str {
+        match self {
+            Value::String(str) => str,
+            _ => panic!("unwrap error: string expected, but it's {}", self.ty_name()),
+        }
+    }
+
+    pub fn is_valid_key_type(&self) -> bool {
+        match self {
+            Value::String(_) |
+            Value::Int(_) |
+            Value::ObjectId(_) |
+            Value::Boolean(_) => true,
+
+            _ => false
+
+        }
+    }
+
 }
 
 impl fmt::Display for Value {
@@ -83,11 +117,15 @@ impl fmt::Display for Value {
 
             Value::Double(num) => write!(f, "Double({})", num),
 
-            Value::Boolean(bl) => write!(f, "Boolean({})", bl),
+            Value::Boolean(bl) => if *bl {
+                write!(f, "true")
+            } else {
+                write!(f, "false")
+            },
 
-            Value::Int(num) => write!(f, "Int({})", num),
+            Value::Int(num) => write!(f, "{}", num),
 
-            Value::String(str) => write!(f, "String({})", str),
+            Value::String(str) => write!(f, "\"{}\"", str),
 
             Value::ObjectId(oid) => write!(f, "ObjectId({})", oid),
 

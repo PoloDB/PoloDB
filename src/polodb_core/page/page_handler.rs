@@ -175,25 +175,18 @@ impl PageHandler {
     // 2. read from journal, if none
     // 3. read from main db
     pub fn pipeline_read_page(&mut self, page_id: u32) -> Result<RawPage, DbErr> {
-        match self.page_cache.get_from_cache(page_id) {
-            Some(page) => {
-                #[cfg(feature = "log")]
-                eprintln!("read page from cache, page_id: {}", page_id);
+        if let Some(page) = self.page_cache.get_from_cache(page_id) {
+            #[cfg(feature = "log")]
+            eprintln!("read page from cache, page_id: {}", page_id);
 
-                return Ok(page);
-            },
-            None => (), // nothing
+            return Ok(page);
         }
 
-        match self.journal_manager.read_page(page_id)? {
-            Some(page) => {
-                // find in journal, insert to cache
-                self.page_cache.insert_to_cache(&page);
+        if let Some(page) = self.journal_manager.read_page(page_id)? {
+            // find in journal, insert to cache
+            self.page_cache.insert_to_cache(&page);
 
-                return Ok(page);
-            }
-
-            None => (),
+            return Ok(page);
         }
 
         let offset = (page_id as u64) * (self.page_size as u64);

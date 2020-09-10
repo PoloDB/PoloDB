@@ -42,21 +42,14 @@ impl IndexCtx {
     }
 
     pub fn insert_index_by_content(&self, doc: &Document, _data_ticket: &DataTicket) -> DbResult<()> {
-        for (key, _entry) in &self.key_to_entry {
-            match doc.get(key) {
-                Some(_value) => {
-
-                }
-
-                None => {
-
-                }
-
+        for (key, entry) in &self.key_to_entry {
+            if let Some(value) = doc.get(key) {
+                entry.insert_index(value)?;
             }
 
-
         }
-        Err(DbErr::NotImplement)
+
+        Ok(())
     }
 
     pub fn delete_index_by_content(&self, _doc: &Document) -> DbResult<()> {
@@ -66,25 +59,30 @@ impl IndexCtx {
 }
 
 struct IndexEntry {
-    unique: bool,
+    name:     String,
+    unique:   bool,
+    root_pid: u32,
 }
 
 impl IndexEntry {
 
     fn from_option_doc(doc: &Document) -> IndexEntry {
-        let mut unique = false;
-
-        match doc.get(meta_document_key::index::UNIQUE) {
-            Some(Value::Boolean(bl)) => {
-                unique = *bl;
-            }
-
-            _ => ()
-        }
+        let name = doc.get(meta_document_key::index::NAME).unwrap().unwrap_string();
+        let unique = doc.get(meta_document_key::index::UNIQUE).unwrap().unwrap_boolean();
+        let root_pid = doc.get(meta_document_key::index::ROOT_PID).unwrap().unwrap_int();
 
         IndexEntry {
+            name: name.into(),
             unique,
+            root_pid: root_pid as u32,
         }
+    }
+
+    fn insert_index(&self, value: &Value) -> DbResult<()> {
+        if !value.is_valid_key_type() {
+            return Err(DbErr::NotAValidKeyType(value.ty_name().into()));
+        }
+        Err(DbErr::NotImplement)
     }
 
 }
