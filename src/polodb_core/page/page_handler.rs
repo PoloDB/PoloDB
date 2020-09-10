@@ -14,6 +14,7 @@ use crate::data_ticket::DataTicket;
 use crate::bson::Document;
 
 static DB_INIT_BLOCK_COUNT: u32 = 16;
+static PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
 pub(crate) struct PageHandler {
     file:                     File,
@@ -25,7 +26,7 @@ pub(crate) struct PageHandler {
     page_cache:               PageCache,
     journal_manager:          Box<JournalManager>,
 
-    data_page_map: BTreeMap<u32, Vec<u32>>,
+    data_page_map:            BTreeMap<u32, Vec<u32>>,
 }
 
 impl PageHandler {
@@ -134,7 +135,11 @@ impl PageHandler {
 
     pub(crate) fn return_data_page_wrapper(&mut self, wrapper: DataPageWrapper) {
         let remain_size = wrapper.remain_size();
-        if remain_size < 32 {
+        if remain_size < PRESERVE_WRAPPER_MIN_REMAIN_SIZE {
+            return;
+        }
+
+        if wrapper.len() >= (u16::max_value() as u32) / 2 {  // len too large
             return;
         }
 
@@ -211,7 +216,7 @@ impl PageHandler {
         Ok(Rc::new(doc))
     }
 
-    pub(crate) fn store_doc(&mut self, doc: Rc<Document>) -> DbResult<DataTicket> {
+    pub(crate) fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
         let bytes = doc.to_bytes()?;
         let mut wrapper = self.distribute_data_page_wrapper(bytes.len() as u32)?;
         let index = wrapper.len() as u16;
@@ -228,15 +233,17 @@ impl PageHandler {
         })
     }
 
-    pub(crate) fn free_data_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<()> {
+    pub(crate) fn free_data_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> {
         let page = self.pipeline_read_page(data_ticket.pid)?;
         let mut wrapper = DataPageWrapper::from_raw(page);
+        let bytes = wrapper.get(data_ticket.index as u32).to_vec();
         wrapper.remove(data_ticket.index as u32);
         if wrapper.is_empty() {
             self.free_page(data_ticket.pid)?;
         }
         let page = wrapper.consume_page();
-        self.pipeline_write_page(&page)
+        self.pipeline_write_page(&page)?;
+        Ok(bytes)
     }
 
     #[inline]
@@ -363,4 +370,3 @@ impl PageHandler {
     }
 
 }
-

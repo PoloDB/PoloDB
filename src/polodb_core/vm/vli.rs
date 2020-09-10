@@ -155,6 +155,7 @@ pub unsafe fn decode_u64_raw(iter: *const u8) -> DbResult<(u64, *const u8)> {
 }
 
 #[inline]
+#[allow(dead_code)]
 fn decode_u64(content: &[u8]) -> DbResult<u64> {
     unsafe {
         let (result, _) = decode_u64_raw(content.as_ptr())?;
@@ -164,7 +165,7 @@ fn decode_u64(content: &[u8]) -> DbResult<u64> {
 
 #[cfg(test)]
 mod tests {
-    use crate::vli::{encode_u64, decode_u64};
+    use crate::vm::vli::{encode_u64, decode_u64};
 
     #[test]
     fn test_encode_1byte() {

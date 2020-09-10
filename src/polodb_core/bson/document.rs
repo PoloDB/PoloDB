@@ -1,8 +1,8 @@
 use std::rc::Rc;
 use std::fmt;
 use super::value;
-use super::linked_hash_map::LinkedHashMap;
-use crate::vli;
+use super::linked_hash_map::{LinkedHashMap, Iter};
+use crate::vm::vli;
 use crate::db::DbResult;
 use crate::bson::object_id::{ ObjectIdMaker, ObjectId };
 use crate::error::{DbErr, parse_error_reason};
@@ -273,6 +273,11 @@ impl Document {
         result.push(0);
 
         Ok(result)
+    }
+
+    #[inline]
+    pub fn iter(&self) -> Iter<String, value::Value> {
+        self.map.iter()
     }
 
     fn key_to_bytes(key: &str, data: &mut Vec<u8>) {

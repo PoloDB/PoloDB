@@ -23,6 +23,15 @@ pub(crate) mod meta_document_key {
     pub(crate) static ROOT_PID: &str = "root_pid";
     pub(crate) static NAME: &str     = "name";
     pub(crate) static FLAGS: &str    = "flags";
+    pub(crate) static INDEXES: &str  = "indexes";
+
+    pub(crate) mod index {
+        pub(crate) static KEY: &str  = "key";
+        pub(crate) static NAME: &str = "name";
+        pub(crate) static V: &str    = "v";
+        pub(crate) static UNIQUE: &str = "unique";
+
+    }
 
 }
 
@@ -87,9 +96,9 @@ impl DbContext {
 
         let mut btree_wrapper = BTreePageInsertWrapper::new(&mut self.page_handler, meta_page_id);
 
-        let backward = btree_wrapper.insert_item(Rc::new(doc), false)?;
+        let insert_result = btree_wrapper.insert_item(&doc, false)?;
 
-        match backward {
+        match insert_result.backward_item {
             Some(backward_item) => {
                 let new_root_id = self.page_handler.alloc_page_id()?;
 
@@ -135,7 +144,7 @@ impl DbContext {
         Ok(doc)
     }
 
-    fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<bool> {
+    fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
         let meta_page_id = self.get_meta_page_id()?;
         let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
 
@@ -198,6 +207,13 @@ impl DbContext {
         Ok(result)
     }
 
+    pub fn create_index(&mut self, col_name: &str, options: Rc<Document>) -> DbResult<bool> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
+
+        cursor.create_index(col_name, options)
+    }
+
     #[inline]
     pub fn start_transaction(&mut self) -> DbResult<()> {
         self.page_handler.start_transaction()
@@ -258,11 +274,16 @@ impl Database {
     }
 
     #[inline]
-    pub fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<bool> {
+    pub fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
         self.ctx.start_transaction()?;
         let result = self.ctx.delete(col_name, key)?;
         self.ctx.commit()?;
         Ok(result)
+    }
+
+    #[inline]
+    pub fn create_index(&mut self, col_name: &str, options: Rc<Document>) -> DbResult<bool> {
+        self.ctx.create_index(col_name, options)
     }
 
     #[allow(dead_code)]
@@ -310,10 +331,10 @@ mod tests {
         let mut test_col_cursor = db.ctx.get_collection_cursor("test").unwrap();
         let mut counter = 0;
         while test_col_cursor.has_next() {
-            let ticket = test_col_cursor.peek().unwrap();
-            let doc = test_col_cursor.get_doc_from_ticket(&ticket).unwrap();
+            // let ticket = test_col_cursor.peek().unwrap();
+            // let doc = test_col_cursor.get_doc_from_ticket(&ticket).unwrap();
+            let doc = test_col_cursor.next().unwrap().unwrap();
             println!("object: {}", doc);
-            let _ = test_col_cursor.next().unwrap();
             counter += 1;
         }
 
@@ -337,8 +358,8 @@ mod tests {
 
         let third = &collection[3];
         let third_key = third.get("_id").unwrap();
-        assert!(db.delete("test", third_key).unwrap());
-        assert!(!db.delete("test", third_key).unwrap())
+        assert!(db.delete("test", third_key).unwrap().is_some());
+        assert!(db.delete("test", third_key).unwrap().is_none());
     }
 
     #[test]

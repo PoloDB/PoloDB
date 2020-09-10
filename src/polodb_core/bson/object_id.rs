@@ -12,8 +12,8 @@ use crate::error::{DbErr, parse_error_reason};
 
 #[derive(Debug, Clone, Eq)]
 pub struct ObjectId {
-    pub timestamp: u64,
-    pub counter:   u32,
+    timestamp: u64,
+    counter:   u32,
 }
 
 impl ObjectId {
@@ -132,11 +132,21 @@ impl ObjectIdMaker {
             since_the_epoch.subsec_nanos() as u64 / 1_000_000;
 
         let id = self.counter;
-        self.counter += 1;
+        self.plus_counter();
         ObjectId {
             timestamp: in_ms,
             counter : id,
         }
+    }
+
+    // avoid overflow
+    #[inline]
+    pub fn plus_counter(&mut self) {
+        if self.counter == u32::max_value() {
+            self.counter = 0;
+            return;
+        }
+        self.counter += 1;
     }
 
     pub fn value_of(content: &str) -> DbResult<ObjectId> {

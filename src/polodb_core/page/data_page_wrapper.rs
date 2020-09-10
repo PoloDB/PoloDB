@@ -31,7 +31,7 @@ impl DataPageWrapper {
     }
 
     pub(crate) fn from_raw(raw_page: RawPage) -> DataPageWrapper {
-        let mut data_len = raw_page.get_u16(6);
+        let data_len = raw_page.get_u16(6);
 
         let remain_size = DataPageWrapper::get_remain_size(&raw_page, data_len as u32);
 
@@ -91,8 +91,15 @@ impl DataPageWrapper {
         self.set_len(self.len() + 1);
     }
 
+    // to preserve the index referred by other tickets
+    // removing an item will not shift the "bars", and will NOT
+    // reduce the len
+    //
+    // removing an item wll only shift the data
+    // the the bar will be equal to the last
     pub(crate) fn remove(&mut self, index: u32) {
-        if index >= self.len() {
+        let total_len = self.len();
+        if index >= total_len {
             panic!("index {} is creater than length {}", index, self.len());
         }
 
@@ -111,23 +118,33 @@ impl DataPageWrapper {
             ptr::copy(buffer_ptr.add(last_bar as usize), buffer_ptr.add((last_bar + item_len) as usize), copy_len as usize);
         }
 
-        let mut iter_index = index;
-        loop {
-            let next_bar_value = self.page.get_u16(DATA_PAGE_HEADER_SIZE + (iter_index + 1) * 2);
+        // set the current bar to ZERO
+        self.page.seek(DATA_PAGE_HEADER_SIZE + index * 2);
+        self.page.put_u16(if index == 0 {
+            self.page.len() as u16
+        } else {
+            self.get_bar_value(index - 1)
+        });
 
-            self.page.seek(DATA_PAGE_HEADER_SIZE + iter_index * 2);
+        let mut iter_index = index + 1;
+        while iter_index < total_len {
+            let bar_index = DATA_PAGE_HEADER_SIZE + iter_index * 2;
+            let old_value = self.page.get_u16(bar_index);
 
-            if next_bar_value == 0 {
-                self.page.put_u16(0);
-                break
-            }
-            self.page.put_u16(next_bar_value + item_len);
+            self.page.seek(bar_index);
+            self.page.put_u16(old_value + item_len);
 
             iter_index += 1;
         }
 
-        self.set_len(self.len() - 1);
-        self.remain_size += (item_len as u32) + 2;
+        // no need to minus 2bytes for "bar"
+        self.remain_size += item_len as u32;
+    }
+
+    #[inline]
+    fn get_bar_value(&self, index: u32) -> u16 {
+        let index = DATA_PAGE_HEADER_SIZE + index * 2;
+        self.page.get_u16(index)
     }
 
     fn get_last_bar(&self) -> u16 {
@@ -154,6 +171,7 @@ impl DataPageWrapper {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn borrow_page_mut(&mut self) -> &mut RawPage {
         &mut self.page
     }

@@ -15,8 +15,18 @@ pub mod parse_error_reason {
 
 }
 
+pub mod validation_error_reason {
+
+    pub static ILLEGAL_INDEX_OPTIONS_KEY: &str = "illegal key for index options";
+    pub static TYPE_OF_INDEX_NAME_SHOULD_BE_STRING: &str = "type of index name should be string";
+    pub static ORDER_OF_INDEX_CAN_ONLY_BE_ONE: &str = "order of index can only be one";
+    pub static UNIQUE_PROP_SHOULD_BE_BOOLEAN: &str = "unique prop should be boolean";
+
+}
+
 #[derive(Debug)]
 pub enum DbErr {
+    ValidationError(String),
     ParseError(String),
     ParseIntError(num::ParseIntError),
     IOErr(io::Error),
@@ -46,6 +56,7 @@ impl fmt::Display for DbErr {
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            DbErr::ValidationError(reason) => write!(f, "ValidationError: {}", reason),
             DbErr::ParseError(reason) => write!(f, "ParseError: {}", reason),
             DbErr::ParseIntError(parse_int_err) => std::fmt::Display::fmt(&parse_int_err, f),
             DbErr::IOErr(io_err) => std::fmt::Display::fmt(&io_err, f),

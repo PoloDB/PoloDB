@@ -65,6 +65,14 @@ impl Value {
         }
     }
 
+    #[inline]
+    pub fn unwrap_document(&self) -> &Rc<Document> {
+        match self {
+            Value::Document(doc) => doc,
+            _ => panic!("unwrap error: document expected, but it's {}", self.ty_name()),
+        }
+    }
+
 }
 
 impl fmt::Display for Value {

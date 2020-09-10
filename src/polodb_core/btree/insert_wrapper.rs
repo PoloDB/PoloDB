@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use crate::DbResult;
 use crate::bson::Document;
 use crate::page::{RawPage, PageHandler};
@@ -10,6 +9,11 @@ use crate::data_ticket::DataTicket;
 pub(crate) struct InsertBackwardItem {
     pub content: BTreeNodeDataItem,
     pub right_pid: u32,
+}
+
+pub(crate) struct InsertResult {
+    pub backward_item: Option<InsertBackwardItem>,
+    pub data_ticket: DataTicket,
 }
 
 impl InsertBackwardItem {
@@ -51,17 +55,17 @@ impl<'a> BTreePageInsertWrapper<'a> {
     }
 
     #[inline]
-    pub(crate) fn insert_item(&mut self, doc: Rc<Document>, replace: bool) -> DbResult<Option<InsertBackwardItem>> {
+    pub(crate) fn insert_item(&mut self, doc: &Document, replace: bool) -> DbResult<InsertResult> {
         // insert to root node
         self.insert_item_to_page(self.0.root_page_id, 0, doc, false, replace)
     }
 
     #[inline]
-    fn store_doc(&mut self, doc: Rc<Document>) -> DbResult<DataTicket> {
+    fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
         self.0.page_handler.store_doc(doc)
     }
 
-    fn doc_to_node_data_item(&mut self, doc: Rc<Document>) -> DbResult<BTreeNodeDataItem> {
+    fn doc_to_node_data_item(&mut self, doc: &Document) -> DbResult<BTreeNodeDataItem> {
         let pkey = doc.pkey_id().unwrap();
         let data_ticket = self.store_doc(doc)?;
 
@@ -71,30 +75,38 @@ impl<'a> BTreePageInsertWrapper<'a> {
         })
     }
 
-    pub(crate) fn insert_item_to_page(&mut self, pid: u32, parent_pid: u32, doc: Rc<Document>, backward: bool, replace: bool) -> DbResult<Option<InsertBackwardItem>> {
+    pub(crate) fn insert_item_to_page(&mut self, pid: u32, parent_pid: u32, doc: &Document, backward: bool, replace: bool) -> DbResult<InsertResult> {
         let mut btree_node: BTreeNode = self.0.get_node(pid, parent_pid)?;
 
         if btree_node.content.is_empty() {
-            btree_node.content.push(self.doc_to_node_data_item(doc)?);
+            let data_item = self.doc_to_node_data_item(doc)?;
+            btree_node.content.push(data_item.clone());
             btree_node.indexes.push(0);
             btree_node.indexes.push(0);
 
             self.0.write_btree_node(&btree_node)?;
 
-            return Ok(None);
+            return Ok(InsertResult {
+                backward_item: None,
+                data_ticket: data_item.data_ticket,
+            });
         }
 
         // let mut index: usize = 0;
         let doc_pkey = &doc.pkey_id().expect("primary key not found in document");
 
-        let serach_result = btree_node.search(doc_pkey)?;
-        match serach_result {
+        let search_result = btree_node.search(doc_pkey)?;
+        let data_ticket = match search_result {
             SearchKeyResult::Node(index) => {
                 return if replace {
-                    btree_node.content[index] = self.doc_to_node_data_item(doc)?;
+                    let data_item = self.doc_to_node_data_item(doc)?;
+                    btree_node.content[index] = data_item.clone();
                     self.0.write_btree_node(&btree_node)?;
 
-                    Ok(None)
+                    Ok(InsertResult {
+                        backward_item: None,
+                        data_ticket: data_item.data_ticket,
+                    })
                 } else {
                     Err(DbErr::DataExist(doc_pkey.clone()))
                 }
@@ -104,31 +116,37 @@ impl<'a> BTreePageInsertWrapper<'a> {
                 let left_pid = btree_node.indexes[index];
                 if backward || left_pid == 0 {  // left is null, insert in current page
                     // insert between index - 1 and index
-                    btree_node.content.insert(index, self.doc_to_node_data_item(doc.clone())?);
+                    let data_item = self.doc_to_node_data_item(doc)?;
+                    btree_node.content.insert(index, data_item.clone());
                     btree_node.indexes.insert(index + 1, 0);  // null page because left_pid is null
+                    data_item.data_ticket
                 } else {  // left has page
                     // insert to left page
-                    let tmp = self.insert_item_to_page(left_pid, pid, doc.clone(), false, replace)?;
-                    tmp.map(|backward_item| {
+                    let tmp = self.insert_item_to_page(left_pid, pid, doc, false, replace)?;
+                    tmp.backward_item.map(|backward_item| {
                         btree_node.content.insert(index, backward_item.content);
                         btree_node.indexes.insert(index + 1, backward_item.right_pid);
                     });
+                    tmp.data_ticket
                 }
             }
 
-        }
+        };
 
         if btree_node.content.len() > (self.0.item_size as usize) {  // need to divide
-            return self.divide_and_return_backward(btree_node);
+            return self.divide_and_return_backward(btree_node, data_ticket);
         }
 
         // write page back
         self.0.write_btree_node(&btree_node)?;
 
-        Ok(None)
+        Ok(InsertResult {
+            backward_item: None,
+            data_ticket,
+        })
     }
 
-    fn divide_and_return_backward(&mut self, btree_node: BTreeNode) -> DbResult<Option<InsertBackwardItem>> {
+    fn divide_and_return_backward(&mut self, btree_node: BTreeNode, data_ticket: DataTicket) -> DbResult<InsertResult> {
         let middle_index = btree_node.content.len() / 2;
 
         // use current page block to store left
@@ -160,10 +178,15 @@ impl<'a> BTreePageInsertWrapper<'a> {
         self.0.write_btree_node(&right)?;
 
         let middle = &btree_node.content[middle_index];
-        Ok(Some(InsertBackwardItem {
+        let backward_item = InsertBackwardItem {
             content: middle.clone(),
             right_pid: right_page_id,
-        }))
+        };
+
+        Ok(InsertResult {
+            backward_item: Some(backward_item),
+            data_ticket,
+        })
     }
 
 }

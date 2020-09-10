@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use super::value;
-use crate::vli;
+use crate::vm::vli;
 use crate::db::DbResult;
 use crate::error::{DbErr, parse_error_reason};
 use crate::bson::{Document, ObjectId};
