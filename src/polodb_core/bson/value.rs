@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 use super::ObjectId;
 use super::document::Document;
 use super::array::Array;
+use super::hex;
 use crate::db::DbResult;
 use crate::error::DbErr;
 
@@ -22,6 +23,8 @@ pub enum Value {
     ObjectId(ObjectId),
     Array(Rc<Array>),
     Document(Rc<Document>),
+
+    Binary(Vec<u8>),
 }
 
 impl Value {
@@ -47,6 +50,7 @@ impl Value {
             Value::ObjectId(_) => "ObjectId",
             Value::Array(_)    => "Array",
             Value::Document(_) => "Document",
+            Value::Binary(_)   => "Binary",
         }
     }
 
@@ -60,6 +64,7 @@ impl Value {
             Value::ObjectId(_) => 0x07,
             Value::Array(_)    => 0x17,
             Value::Document(_) => 0x13,
+            Value::Binary(_)   => 0x05,
         }
     }
 
@@ -132,6 +137,15 @@ impl fmt::Display for Value {
             Value::Array(arr) => write!(f, "Array(len = {})", arr.len()),
 
             Value::Document(_) => write!(f, "Document(...)"),
+
+            Value::Binary(bin) => {
+                if bin.len() > 64 {
+                    return write!(f, "Binary(...)");
+                }
+
+                let hex_string_content = hex::encode(bin);
+                write!(f, "Binary({})", hex_string_content)
+            }
 
         }
     }
