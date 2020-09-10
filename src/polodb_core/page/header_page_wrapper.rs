@@ -13,13 +13,13 @@
 use super::page::RawPage;
 
 static HEADER_DESP: &str         = "PipeappleDB Format v0.1";
-static SECTOR_SIZE_OFFSET: u32   = 40;
-static PAGE_SIZE_OFFSET: u32     = 44;
-static NULL_PAGE_BAR_OFFSET: u32 = 48;
-static META_PAGE_ID: u32         = 52;
-pub static FREE_LIST_OFFSET: u32 = 2048;
-static FREE_LIST_PAGE_LINK_OFFSET: u32 = 2048 + 4;
-pub static HEADER_FREE_LIST_MAX_SIZE: usize = (2048 - 8) / 4;
+const SECTOR_SIZE_OFFSET: u32   = 40;
+const PAGE_SIZE_OFFSET: u32     = 44;
+const NULL_PAGE_BAR_OFFSET: u32 = 48;
+const META_PAGE_ID: u32         = 52;
+pub const FREE_LIST_OFFSET: u32 = 2048;
+const FREE_LIST_PAGE_LINK_OFFSET: u32 = 2048 + 4;
+pub const HEADER_FREE_LIST_MAX_SIZE: usize = (2048 - 8) / 4;
 
 pub(crate) struct HeaderPageWrapper(pub RawPage);
 

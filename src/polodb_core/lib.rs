@@ -10,5 +10,6 @@ mod cursor;
 pub mod db;
 mod data_ticket;
 mod index_ctx;
+pub mod vli;
 
 pub use db::{Database, DbResult};

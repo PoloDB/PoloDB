@@ -12,9 +12,9 @@
 //
 use std::rc::Rc;
 use super::error::DbErr;
-use super::page::{header_page_wrapper, PageHandler };
+use super::page::{header_page_wrapper, PageHandler};
 use crate::bson::ObjectIdMaker;
-use crate::bson::{ObjectId, Document, Value};
+use crate::bson::{ObjectId, Document, Value, mk_str, mk_object_id};
 use crate::btree::BTreePageInsertWrapper;
 use crate::cursor::Cursor;
 
@@ -84,9 +84,9 @@ impl DbContext {
     pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {
         let oid = self.obj_id_maker.mk_object_id();
         let mut doc = Document::new_without_id();
-        doc.insert(meta_document_key::ID.into(), Value::ObjectId(oid.clone()));
+        doc.insert(meta_document_key::ID.into(), mk_object_id(&oid));
 
-        doc.insert(meta_document_key::NAME.into(), Value::String(name.into()));
+        doc.insert(meta_document_key::NAME.into(), mk_str(name));
 
         let root_pid = self.page_handler.alloc_page_id()?;
         doc.insert(meta_document_key::ROOT_PID.into(), Value::Int(root_pid as i64));
@@ -129,7 +129,7 @@ impl DbContext {
             Some(_) => doc,
             None => {
                 let new_doc = Rc::make_mut(&mut doc);
-                new_doc.insert("_id".into(), Value::ObjectId(self.obj_id_maker.mk_object_id()));
+                new_doc.insert("_id".into(), Value::ObjectId(Rc::new(self.obj_id_maker.mk_object_id())));
                 doc
             }
         }
@@ -169,7 +169,7 @@ impl DbContext {
                 };
 
                 if let Value::String(str_content) = doc_name {
-                    if str_content == col_name {
+                    if str_content.as_ref() == col_name {
                         tmp = match doc.get(meta_document_key::ROOT_PID) {
                             Some(Value::Int(pid)) => *pid,
                             _ => -1,
@@ -298,7 +298,7 @@ impl Database {
 mod tests {
     use crate::Database;
     use std::rc::Rc;
-    use crate::bson::{ Document, Value };
+    use crate::bson::{Document, mk_str};
 
     static TEST_SIZE: usize = 1000;
 
@@ -318,7 +318,7 @@ mod tests {
         for i in 0..size {
             let content = i.to_string();
             let mut new_doc = Document::new_without_id();
-            new_doc.insert("content".into(), Value::String(content));
+            new_doc.insert("content".into(), mk_str(&content));
             db.insert("test", Rc::new(new_doc)).unwrap();
         }
 
@@ -352,7 +352,7 @@ mod tests {
         for i in 0..100 {
             let content = i.to_string();
             let mut new_doc = Document::new_without_id();
-            new_doc.insert("content".into(), Value::String(content));
+            new_doc.insert("content".into(), mk_str(&content));
             let ret_doc = db.insert("test", Rc::new(new_doc)).unwrap();
             collection.push(ret_doc);
         }
@@ -373,7 +373,7 @@ mod tests {
         for i in 0..100 {
             let content = i.to_string();
             let mut new_doc = Document::new_without_id();
-            new_doc.insert("content".into(), Value::String(content));
+            new_doc.insert("content".into(), mk_str(&content));
             let ret_doc = db.insert("test", Rc::new(new_doc)).unwrap();
             collection.push(ret_doc);
         }
@@ -382,6 +382,12 @@ mod tests {
             let key = doc.get("_id").unwrap();
             db.delete("test", key).unwrap();
         }
+    }
+
+    #[test]
+    fn print_value_size() {
+        let size = std::mem::size_of::<crate::bson::Value>();
+        assert_eq!(size, 16);
     }
 
 }

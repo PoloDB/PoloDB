@@ -8,7 +8,7 @@ mod linked_hash_map;
 pub use object_id::{ObjectId, ObjectIdMaker};
 pub use document::Document;
 pub use array::Array;
-pub use value::Value;
+pub use value::*;
 
 #[cfg(test)]
 mod tests {

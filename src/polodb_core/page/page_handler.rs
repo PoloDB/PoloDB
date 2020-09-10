@@ -13,8 +13,8 @@ use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::data_ticket::DataTicket;
 use crate::bson::Document;
 
-static DB_INIT_BLOCK_COUNT: u32 = 16;
-static PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
+const DB_INIT_BLOCK_COUNT: u32 = 16;
+const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
 pub(crate) struct PageHandler {
     file:                     File,

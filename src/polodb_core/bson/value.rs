@@ -9,6 +9,16 @@ use super::hex;
 use crate::db::DbResult;
 use crate::error::DbErr;
 
+#[inline]
+pub fn mk_object_id(content: &ObjectId) -> Value {
+    Value::ObjectId(Rc::new(content.clone()))
+}
+
+#[inline]
+pub fn mk_str(content: &str) -> Value {
+    Value::String(Rc::new(content.into()))
+}
+
 #[derive(Debug, Clone)]
 pub enum Value {
     Null,
@@ -19,12 +29,12 @@ pub enum Value {
     // compress int when store on disk
     Int(i64),
 
-    String(String),
-    ObjectId(ObjectId),
+    String(Rc<String>),
+    ObjectId(Rc<ObjectId>),
     Array(Rc<Array>),
     Document(Rc<Document>),
 
-    Binary(Vec<u8>),
+    Binary(Rc<Vec<u8>>),
 }
 
 impl Value {
@@ -143,7 +153,7 @@ impl fmt::Display for Value {
                     return write!(f, "Binary(...)");
                 }
 
-                let hex_string_content = hex::encode(bin);
+                let hex_string_content = hex::encode(bin.as_ref());
                 write!(f, "Binary({})", hex_string_content)
             }
 

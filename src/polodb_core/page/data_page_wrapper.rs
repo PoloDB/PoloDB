@@ -8,7 +8,7 @@
 use super::page::{RawPage, PageType};
 use std::ptr;
 
-static DATA_PAGE_HEADER_SIZE: u32 = 16;
+const DATA_PAGE_HEADER_SIZE: u32 = 16;
 
 pub(crate) struct DataPageWrapper {
     page: RawPage,

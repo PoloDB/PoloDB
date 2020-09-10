@@ -279,7 +279,7 @@ impl<'a> Cursor<'a> {
             None => {
                 // create indexes
                 let mut doc = Document::new_without_id();
-                doc.insert(index_key.clone(), Value::Document(options));
+                doc.insert(index_key.as_ref().into(), Value::Document(options));
 
                 let mut_meta_doc = Rc::get_mut(&mut meta_doc).unwrap();
                 mut_meta_doc.insert(meta_document_key::INDEXES.into(), Value::Document(Rc::new(doc)));
@@ -334,7 +334,7 @@ impl<'a> Cursor<'a> {
             let doc = self.page_handler.get_doc_from_ticket(&ticket)?;
             match doc.get(meta_document_key::NAME) {
                 Some(Value::String(name)) => {
-                    if name == col_name {  // found
+                    if name.as_ref() == col_name {  // found
                         let page_id = doc.get(meta_document_key::ROOT_PID).unwrap();
                         match page_id {
                             Value::Int(page_id) => {

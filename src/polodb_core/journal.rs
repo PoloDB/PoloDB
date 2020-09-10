@@ -9,8 +9,8 @@ use crate::DbResult;
 use crate::error::DbErr;
 
 static HEADER_DESP: &str       = "PipeappleDB Journal v0.1";
-static JOURNAL_DATA_BEGIN: u32 = 64;
-static FRAME_HEADER_SIZE: u32  = 40;
+const JOURNAL_DATA_BEGIN: u32 = 64;
+const FRAME_HEADER_SIZE: u32  = 40;
 
 // 24 bytes
 pub(crate) struct FrameHeader {

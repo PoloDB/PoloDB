@@ -1,24 +1,24 @@
 use std::rc::Rc;
 use super::value::Value;
-use crate::vm::vli;
+use crate::vli;
 use crate::db::DbResult;
 use crate::error::{DbErr, parse_error_reason};
 use crate::bson::{Document, ObjectId};
+use std::ops;
 
 #[derive(Debug, Clone)]
-pub struct Array {
-    pub data: Vec<Value>,
-}
+pub struct Array(Vec<Value>);
 
 impl Array {
 
     pub fn new() -> Array {
         let data = vec![];
-        Array { data }
+        Array(data)
     }
 
+    #[inline]
     pub fn len(&self) -> u32 {
-        self.data.len() as u32
+        self.0.len() as u32
     }
 
 }
@@ -28,9 +28,9 @@ impl Array {
     pub fn to_bytes(&self) -> DbResult<Vec<u8>> {
         let mut result = vec![];
 
-        vli::encode(&mut result, self.data.len() as i64)?;
+        vli::encode(&mut result, self.0.len() as i64)?;
 
-        for item in &self.data {
+        for item in &self.0 {
             match item {
                 Value::Null => {
                     result.push(0x0A);
@@ -93,7 +93,7 @@ impl Array {
 
                     vli::encode(&mut result, bin.len() as i64)?;
 
-                    result.extend(bin);
+                    result.extend(bin.as_ref());
                 }
 
             }
@@ -119,7 +119,7 @@ impl Array {
 
             match byte {
                 0x0A => {  // null
-                    arr.data.push(Value::Null);
+                    arr.0.push(Value::Null);
                 }
 
                 0x01 => {  // double
@@ -127,7 +127,7 @@ impl Array {
                     ptr.copy_to_nonoverlapping(buffer.as_mut_ptr(), 8);
 
                     let num = f64::from_be_bytes(buffer);
-                    arr.data.push(Value::Double(num));
+                    arr.0.push(Value::Double(num));
 
                     ptr = ptr.add(8);
                 }
@@ -136,7 +136,7 @@ impl Array {
                     let bl_value = ptr.read();
                     ptr = ptr.add(1);
 
-                    arr.data.push(Value::Boolean(if bl_value != 0 {
+                    arr.0.push(Value::Boolean(if bl_value != 0 {
                         true
                     } else {
                         false
@@ -147,14 +147,14 @@ impl Array {
                     let (integer, to_ptr) = vli::decode_u64_raw(ptr)?;
                     ptr = to_ptr;
 
-                    arr.data.push(Value::Int(integer as i64));
+                    arr.0.push(Value::Int(integer as i64));
                 }
 
                 0x02 => {  // String
                     let (value, to_ptr) = Document::parse_key(ptr)?;
                     ptr = to_ptr;
 
-                    arr.data.push(Value::String(value));
+                    arr.0.push(Value::String(Rc::new(value)));
                 }
 
                 0x07 => {
@@ -165,7 +165,7 @@ impl Array {
 
                     let oid = ObjectId::deserialize(&buffer)?;
 
-                    arr.data.push(Value::ObjectId(oid));
+                    arr.0.push(Value::ObjectId(Rc::new(oid)));
                 }
 
                 0x17 => {  // array
@@ -178,7 +178,7 @@ impl Array {
                     ptr = ptr.add(len as usize);
 
                     let sub_arr = Array::from_bytes(&buffer)?;
-                    arr.data.push(Value::Array(Rc::new(sub_arr)));
+                    arr.0.push(Value::Array(Rc::new(sub_arr)));
                 }
 
                 0x13 => {  // document
@@ -191,7 +191,19 @@ impl Array {
                     ptr = ptr.add(len as usize);
 
                     let sub_doc = Document::from_bytes(&buffer)?;
-                    arr.data.push(Value::Document(Rc::new(sub_doc)));
+                    arr.0.push(Value::Document(Rc::new(sub_doc)));
+                }
+
+                0x05 => {
+                    let (len, to_ptr) = vli::decode_u64_raw(ptr)?;
+                    ptr = to_ptr;
+
+                    let mut buffer = Vec::with_capacity(len as usize);
+                    ptr.copy_to(buffer.as_mut_ptr(), len as usize);
+
+                    ptr = ptr.add(len as usize);
+
+                    arr.0.push(Value::Binary(Rc::new(buffer)));
                 }
 
                 _ => return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
@@ -200,6 +212,15 @@ impl Array {
         }
 
         Ok(arr)
+    }
+
+}
+
+impl ops::Index<usize> for Array {
+    type Output = Value;
+
+    fn index(&self, index: usize) -> &Value {
+        &self.0[index]
     }
 
 }

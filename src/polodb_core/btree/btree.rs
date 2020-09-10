@@ -1,16 +1,20 @@
+use std::rc::Rc;
 use std::cmp::Ordering;
 
 use crate::db::DbResult;
+use crate::vli;
 use crate::page::{RawPage, PageType};
 use crate::error::{DbErr, parse_error_reason};
 use crate::bson::{Value, ObjectId};
 use crate::data_ticket::DataTicket;
 
-pub static HEADER_SIZE: u32      = 64;
+pub const HEADER_SIZE: u32      = 64;
 
 // | right_pid | key_ty_int | key content | ticket  |
 // | 4 bytes   | 2 bytes    | 12 bytes    | 6 bytes |
-pub static ITEM_SIZE: u32        = 24;
+pub const ITEM_SIZE: u32        = 24;
+
+const BTREE_ENTRY_KEY_CONTENT_SIZE: usize = 12;
 
 pub enum SearchKeyResult {
     Node(usize),
@@ -120,28 +124,9 @@ impl BTreeNode {
 
             let right_pid = page.get_u32(offset);
 
-            let key_ty_int = page.get_u8(offset + 4 + 1);  // use to parse data
+            let node_data_item = BTreeNode::parse_node_data_item(&page, offset)?;
 
-            if key_ty_int != 0x07 {
-                if key_ty_int == 0 {
-                    return Err(DbErr::ParseError(parse_error_reason::KEY_TY_SHOULD_NOT_BE_ZERO.into()));
-                }
-                return Err(DbErr::NotImplement);
-            }
-
-            let oid_bytes_begin = (offset + 6) as usize;
-            let oid_bytes = &page.data[oid_bytes_begin..(oid_bytes_begin + 12)];
-            let oid = ObjectId::deserialize(oid_bytes)?;
-
-            let ticket_bytes = (offset + 6 + 12) as usize;
-            let ticket_bytes = &page.data[ticket_bytes..(ticket_bytes + 6)];
-            let ticket = DataTicket::from_bytes(ticket_bytes);
-
-            content.push(BTreeNodeDataItem {
-                key: Value::ObjectId(oid),
-                data_ticket: ticket
-            });
-
+            content.push(node_data_item);
             indexes.push(right_pid);
         }
 
@@ -150,6 +135,64 @@ impl BTreeNode {
             parent_pid,
             content,
             indexes,
+        })
+    }
+
+    fn parse_node_data_item(page: &RawPage, begin_offset: u32) -> DbResult<BTreeNodeDataItem> {
+        let is_complex = page.get_u8(begin_offset + 4);
+        if is_complex != 0 {
+            return Err(DbErr::NotImplement);
+        }
+
+        let key_ty_int = page.get_u8(begin_offset + 4 + 1);  // use to parse data
+
+        let key = match key_ty_int {
+            0 => return Err(DbErr::ParseError(parse_error_reason::KEY_TY_SHOULD_NOT_BE_ZERO.into())),
+
+            0x07 => {
+                let oid_bytes_begin = (begin_offset + 6) as usize;
+                let oid_bytes = &page.data[oid_bytes_begin..(oid_bytes_begin + 12)];
+                let oid = ObjectId::deserialize(oid_bytes)?;
+
+                Value::ObjectId(Rc::new(oid))
+            }
+
+            0x08 => {
+                let value_begin_offset = (begin_offset + 6) as usize;
+                let value = page.data[value_begin_offset];
+
+                let bl_value = if value == 0 {
+                    false
+                } else {
+                    true
+                };
+
+                Value::Boolean(bl_value)
+            }
+
+            0x16 => {
+                let value_begin_offset = (begin_offset + 6) as usize;
+
+                let int_value = unsafe {
+                    let buffer_ptr = page.data.as_ptr();
+                    let (result, _) = vli::decode_u64_raw(buffer_ptr.add(value_begin_offset))?;
+                    result
+                };
+
+                Value::Int(int_value as i64)
+            }
+
+            _ => return Err(DbErr::NotImplement),
+
+        };
+
+        let ticket_bytes = (begin_offset + 6 + 12) as usize;
+        let ticket_bytes = &page.data[ticket_bytes..(ticket_bytes + 6)];
+        let data_ticket = DataTicket::from_bytes(ticket_bytes);
+
+        Ok(BTreeNodeDataItem {
+            key,
+            data_ticket,
         })
     }
 
@@ -178,27 +221,13 @@ impl BTreeNode {
 
             let offset: u32 = HEADER_SIZE + (index as u32) * ITEM_SIZE;
 
-            let key_ty_int = item.key.ty_int();
             page.seek(offset);
 
             // 4 bytes for right_pid
             page.put_u32(right_pid);
 
-            // 2 bytes for key ty_int
-            page.put_u8(0);
-            page.put_u8(key_ty_int);
-
-            // 12 bytes for key content
-            let key_content: Vec<u8> = match &item.key {
-                Value::ObjectId(oid) => {
-                    let mut buffer = Vec::with_capacity(12);
-                    oid.serialize(&mut buffer)?;
-                    buffer
-                }
-
-                _ => return Err(DbErr::NotImplement)
-            };
-            page.put(&key_content);
+            // put entry key
+            BTreeNode::entry_key_to_bytes(page, &item.key)?;
 
             // 6 bytes for ticket
             let ticket_bytes = item.data_ticket.to_bytes();
@@ -208,6 +237,98 @@ impl BTreeNode {
         }
 
         Ok(())
+    }
+
+    // | flag   | key_type | key_content |
+    // | 1 byte | 1 byte   | 12 bytes    |
+    //
+    // if the length of key_content is greater than 12
+    // then the flag should be 1, and the key_content should be zero
+    fn entry_key_to_bytes(page: &mut RawPage, key: &Value) -> DbResult<()> {
+        match key {
+            Value::ObjectId(oid) => {
+                BTreeNode::put_standard_content_key(page, key);
+
+                // 12 bytes for key content
+                let mut buffer = Vec::with_capacity(BTREE_ENTRY_KEY_CONTENT_SIZE);
+                oid.serialize(&mut buffer)?;
+
+                page.put(&buffer);
+
+                Ok(())
+            }
+
+            Value::Boolean(bl) => {
+                BTreeNode::put_standard_content_key(page, key);
+
+                let mut buffer: [u8; BTREE_ENTRY_KEY_CONTENT_SIZE] = [0; BTREE_ENTRY_KEY_CONTENT_SIZE];
+                buffer[0] = if *bl {
+                    1
+                } else {
+                    0
+                };
+
+                page.put(&buffer);
+
+                Ok(())
+            }
+
+            Value::Int(int) => {
+                BTreeNode::put_standard_content_key(page, key);
+
+                let mut buffer = Vec::with_capacity(BTREE_ENTRY_KEY_CONTENT_SIZE);
+                vli::encode(&mut buffer, *int)?;
+
+                buffer.resize(BTREE_ENTRY_KEY_CONTENT_SIZE, 0);
+
+                page.put(&buffer);
+
+                Ok(())
+            }
+
+            Value::String(str) => {
+                let str_len = str.len();
+
+                if str_len > BTREE_ENTRY_KEY_CONTENT_SIZE {
+                    return BTreeNode::put_string_complex_key(page, key);
+                }
+
+                BTreeNode::put_standard_content_key(page, key);
+                let mut buffer: [u8; BTREE_ENTRY_KEY_CONTENT_SIZE] = [0; BTREE_ENTRY_KEY_CONTENT_SIZE];
+
+                buffer[0..str_len].copy_from_slice(str.as_bytes());
+
+                page.put(&buffer);
+
+                Ok(())
+            }
+
+            _ => return Err(DbErr::NotAValidKeyType(key.ty_name().into()))
+        }
+    }
+
+    // | 1      | ty_int |
+    // | 1 byte | 1 byte |
+    fn put_string_complex_key(page: &mut RawPage, key: &Value) -> DbResult<()> {
+        let key_ty_int = key.ty_int();
+
+        page.put_u8(1);
+        page.put_u8(key_ty_int);
+
+        let buffer: [u8; 12] = [0; 12];
+        page.put(&buffer);
+
+        Ok(())
+    }
+
+    // | 0      | ty_int |
+    // | 1 byte | 1 byte |
+    fn put_standard_content_key(page: &mut RawPage, key: &Value) {
+        let key_ty_int = key.ty_int();
+
+        // 2 bytes for key ty_int
+        page.put_u8(0);
+        page.put_u8(key_ty_int);
     }
 
     #[allow(dead_code)]

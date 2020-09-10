@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::fmt;
 use super::value::Value;
 use super::linked_hash_map::{LinkedHashMap, Iter};
-use crate::vm::vli;
+use crate::vli;
 use crate::db::DbResult;
 use crate::bson::object_id::{ ObjectIdMaker, ObjectId };
 use crate::error::{DbErr, parse_error_reason};
@@ -20,7 +20,7 @@ impl Document {
         let mut result = Document {
             map: LinkedHashMap::new(),
         };
-        result.map.insert("_id".to_string(), Value::ObjectId(id));
+        result.map.insert("_id".to_string(), Value::ObjectId(Rc::new(id)));
         result
     }
 
@@ -115,7 +115,7 @@ impl Document {
                         let (value, to_ptr) = Document::parse_key(ptr)?;
                         ptr = to_ptr;
 
-                        doc.map.insert(key, Value::String(value));
+                        doc.map.insert(key, Value::String(Rc::new(value)));
                     }
 
                     0x07 => {  // ObjectId
@@ -129,7 +129,7 @@ impl Document {
 
                         let oid = ObjectId::deserialize(&buffer)?;
 
-                        doc.map.insert(key, Value::ObjectId(oid));
+                        doc.map.insert(key, Value::ObjectId(Rc::new(oid)));
                     }
 
                     0x17 => {  // array
@@ -163,6 +163,21 @@ impl Document {
                         let sub_doc = Document::from_bytes(&buffer)?;
 
                         doc.map.insert(key, Value::Document(Rc::new(sub_doc)));
+                    }
+
+                    0x05 => {  // binary
+                        let (key, to_ptr) = Document::parse_key(ptr)?;
+                        ptr = to_ptr;
+
+                        let (len, to_ptr) = vli::decode_u64_raw(ptr)?;
+                        ptr = to_ptr;
+
+                        let mut buffer = Vec::with_capacity(len as usize);
+                        ptr.copy_to(buffer.as_mut_ptr(), len as usize);
+
+                        ptr = ptr.add(len as usize);
+
+                        doc.map.insert(key, Value::Binary(Rc::new(buffer)));
                     }
 
                     _ => return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
@@ -299,7 +314,7 @@ impl Document {
 
 #[cfg(test)]
 mod tests {
-    use crate::bson::value::Value;
+    use crate::bson::value::{Value, mk_str};
     use crate::bson::document::Document;
     use crate::bson::object_id::ObjectIdMaker;
 
@@ -308,10 +323,10 @@ mod tests {
         let mut id_maker = ObjectIdMaker::new();
         let mut doc = Document::new(&mut id_maker);
 
-        doc.map.insert("avater_utl".into(), Value::String("https://doc.rust-lang.org/std/iter/trait.Iterator.html".into()));
-        doc.map.insert("name".into(), Value::String("嘻嘻哈哈".into()));
-        doc.map.insert("groupd_id".into(), Value::String("70xxx80057ba0bba964fxxx1ca3d7252fe075a8b".into()));
-        doc.map.insert("user_id".into(), Value::String("6500xxx139040719xxx".into()));
+        doc.map.insert("avater_utl".into(), mk_str("https://doc.rust-lang.org/std/iter/trait.Iterator.html"));
+        doc.map.insert("name".into(), mk_str("嘻嘻哈哈"));
+        doc.map.insert("groupd_id".into(), mk_str("70xxx80057ba0bba964fxxx1ca3d7252fe075a8b"));
+        doc.map.insert("user_id".into(), mk_str("6500xxx139040719xxx"));
         doc.map.insert("time".into(), Value::Int(6662496067319235000));
         doc.map.insert("can_do_a".into(), Value::Boolean(true));
         doc.map.insert("can_do_b".into(), Value::Boolean(false));
