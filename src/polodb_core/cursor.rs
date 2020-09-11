@@ -1,5 +1,7 @@
 use std::rc::Rc;
 use std::collections::LinkedList;
+use std::borrow::Borrow;
+use std::cell::Cell;
 use crate::page::{PageHandler, RawPage};
 use crate::btree::*;
 use crate::DbResult;
@@ -7,7 +9,6 @@ use crate::bson::{Document, Value};
 use crate::error::{DbErr, validation_error_reason};
 use crate::db::meta_document_key;
 use crate::data_ticket::DataTicket;
-use std::borrow::Borrow;
 use crate::index_ctx::IndexCtx;
 
 #[derive(Clone)]
@@ -206,11 +207,21 @@ impl<'a> Cursor<'a> {
             self.handle_backward_item(meta_doc_mut, collection_root_pid as u32, backward_item)?;
         }
 
-        let index_ctx_opt = IndexCtx::from_meta_doc(meta_doc_mut);
-        if let Some(index_ctx) = index_ctx_opt {
-            return index_ctx.insert_index_by_content(
+        let mut index_ctx_opt = IndexCtx::from_meta_doc(meta_doc_mut);
+        if let Some(index_ctx) = &mut index_ctx_opt {
+            let is_ctx_changed: Cell<bool> = Cell::new(false);
+
+            index_ctx.insert_index_by_content(
                 doc_value.borrow(),
-                &insert_result.data_ticket);
+                &insert_result.data_ticket,
+                &is_ctx_changed,
+                &mut self.page_handler
+            )?;
+
+            if is_ctx_changed.get() {
+                index_ctx.merge_to_meta_doc(meta_doc_mut);
+                return self.update_current(meta_doc_mut)
+            }
         }
 
         Ok(())
@@ -267,7 +278,7 @@ impl<'a> Cursor<'a> {
                         return Ok(false)
                     }
 
-                    Err(DbErr::NotImplement)
+                    unimplemented!()
                 }
 
                 _ => {

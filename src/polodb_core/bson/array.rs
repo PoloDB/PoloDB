@@ -1,10 +1,10 @@
 use std::rc::Rc;
-use super::value::Value;
+use std::ops;
+use super::value::{Value, ty_int};
 use crate::vli;
 use crate::db::DbResult;
 use crate::error::{DbErr, parse_error_reason};
 use crate::bson::{Document, ObjectId};
-use std::ops;
 
 #[derive(Debug, Clone)]
 pub struct Array(Vec<Value>);
@@ -33,17 +33,17 @@ impl Array {
         for item in &self.0 {
             match item {
                 Value::Null => {
-                    result.push(0x0A);
+                    result.push(ty_int::NULL);
                 }
 
                 Value::Double(num) => {
-                    result.push(0x01);
+                    result.push(ty_int::DOUBLE);
 
                     result.extend_from_slice(&num.to_be_bytes());
                 }
 
                 Value::Boolean(bl) => {
-                    result.push(0x08);
+                    result.push(ty_int::BOOLEAN);
 
                     if *bl {
                         result.push(0x00);
@@ -53,25 +53,25 @@ impl Array {
                 }
 
                 Value::Int(int_num) => {
-                    result.push(0x16);  // not standard, use vli
+                    result.push(ty_int::INT);  // not standard, use vli
                     vli::encode(&mut result, *int_num).expect("encode vli error");
                 }
 
                 Value::String(str) => {
-                    result.push(0x02);
+                    result.push(ty_int::STRING);
 
                     result.extend_from_slice(str.as_bytes());
                     result.push(0);
                 }
 
                 Value::ObjectId(oid) => {
-                    result.push(0x07);
+                    result.push(ty_int::OBJECT_ID);
 
                     oid.serialize(&mut result)?;
                 }
 
                 Value::Array(arr) => {
-                    result.push(0x17);
+                    result.push(ty_int::ARRAY);
 
                     let buffer = arr.to_bytes()?;
                     vli::encode(&mut result, buffer.len() as i64)?;
@@ -80,7 +80,7 @@ impl Array {
                 }
 
                 Value::Document(doc) => {
-                    result.push(0x13);
+                    result.push(ty_int::DOCUMENT);
 
                     let buffer = doc.to_bytes()?;
                     vli::encode(&mut result, buffer.len() as i64)?;
@@ -89,7 +89,7 @@ impl Array {
                 }
 
                 Value::Binary(bin) => {
-                    result.push(0x05);
+                    result.push(ty_int::BINARY);
 
                     vli::encode(&mut result, bin.len() as i64)?;
 
@@ -118,11 +118,11 @@ impl Array {
             ptr = ptr.add(1);
 
             match byte {
-                0x0A => {  // null
+                ty_int::NULL => {
                     arr.0.push(Value::Null);
                 }
 
-                0x01 => {  // double
+                ty_int::DOUBLE => {
                     let mut buffer: [u8; 8] = [0; 8];
                     ptr.copy_to_nonoverlapping(buffer.as_mut_ptr(), 8);
 
@@ -132,7 +132,7 @@ impl Array {
                     ptr = ptr.add(8);
                 }
 
-                0x08 => {  // boolean
+                ty_int::BOOLEAN => {
                     let bl_value = ptr.read();
                     ptr = ptr.add(1);
 
@@ -143,21 +143,21 @@ impl Array {
                     }));
                 }
 
-                0x16 => {  // int
+                ty_int::INT => {
                     let (integer, to_ptr) = vli::decode_u64_raw(ptr)?;
                     ptr = to_ptr;
 
                     arr.0.push(Value::Int(integer as i64));
                 }
 
-                0x02 => {  // String
+                ty_int::STRING => {
                     let (value, to_ptr) = Document::parse_key(ptr)?;
                     ptr = to_ptr;
 
                     arr.0.push(Value::String(Rc::new(value)));
                 }
 
-                0x07 => {
+                ty_int::OBJECT_ID => {
                     let mut buffer: [u8; 12] = [0; 12];
                     ptr.copy_to_nonoverlapping(buffer.as_mut_ptr(), 12);
 
@@ -168,7 +168,7 @@ impl Array {
                     arr.0.push(Value::ObjectId(Rc::new(oid)));
                 }
 
-                0x17 => {  // array
+                ty_int::ARRAY => {
                     let (len, to_ptr) = vli::decode_u64_raw(ptr)?;
                     ptr = to_ptr;
 
@@ -181,7 +181,7 @@ impl Array {
                     arr.0.push(Value::Array(Rc::new(sub_arr)));
                 }
 
-                0x13 => {  // document
+                ty_int::DOCUMENT => {
                     let (len, to_ptr) = vli::decode_u64_raw(ptr)?;
                     ptr = to_ptr;
 
@@ -194,7 +194,7 @@ impl Array {
                     arr.0.push(Value::Document(Rc::new(sub_doc)));
                 }
 
-                0x05 => {
+                ty_int::BINARY => {
                     let (len, to_ptr) = vli::decode_u64_raw(ptr)?;
                     ptr = to_ptr;
 
@@ -208,6 +208,7 @@ impl Array {
 
                 _ => return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
             }
+
             counter += 1;
         }
 

@@ -9,6 +9,8 @@ use super::hex;
 use crate::db::DbResult;
 use crate::error::DbErr;
 
+const BINARY_MAX_DISPLAY_LEN: usize = 64;
+
 #[inline]
 pub fn mk_object_id(content: &ObjectId) -> Value {
     Value::ObjectId(Rc::new(content.clone()))
@@ -66,15 +68,16 @@ impl Value {
 
     pub fn ty_int(&self) -> u8 {
         match self {
-            Value::Null        => 0x0A,
-            Value::Double(_)   => 0x01,
-            Value::Boolean(_)  => 0x08,
-            Value::Int(_)      => 0x16,
-            Value::String(_)   => 0x02,
-            Value::ObjectId(_) => 0x07,
-            Value::Array(_)    => 0x17,
-            Value::Document(_) => 0x13,
-            Value::Binary(_)   => 0x05,
+            Value::Null        => ty_int::NULL,
+            Value::Double(_)   => ty_int::DOUBLE,
+            Value::Boolean(_)  => ty_int::BOOLEAN,
+            Value::Int(_)      => ty_int::INT,
+            Value::String(_)   => ty_int::STRING,
+            Value::ObjectId(_) => ty_int::OBJECT_ID,
+            Value::Array(_)    => ty_int::ARRAY,
+            Value::Document(_) => ty_int::DOCUMENT,
+            Value::Binary(_)   => ty_int::BINARY,
+
         }
     }
 
@@ -149,7 +152,7 @@ impl fmt::Display for Value {
             Value::Document(_) => write!(f, "Document(...)"),
 
             Value::Binary(bin) => {
-                if bin.len() > 64 {
+                if bin.len() > BINARY_MAX_DISPLAY_LEN {
                     return write!(f, "Binary(...)");
                 }
 
@@ -159,5 +162,18 @@ impl fmt::Display for Value {
 
         }
     }
+
+}
+
+pub mod ty_int {
+    pub const NULL: u8       = 0x0A;
+    pub const DOUBLE: u8     = 0x01;
+    pub const BOOLEAN: u8    = 0x08;
+    pub const INT: u8        = 0x16;
+    pub const STRING: u8     = 0x02;
+    pub const OBJECT_ID: u8  = 0x07;
+    pub const ARRAY: u8      = 0x17;
+    pub const DOCUMENT: u8   = 0x13;
+    pub const BINARY: u8     = 0x05;
 
 }

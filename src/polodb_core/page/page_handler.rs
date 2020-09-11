@@ -254,14 +254,13 @@ impl PageHandler {
         let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
         let free_list_pid = first_page_wrapper.get_free_list_page_id();
         if free_list_pid != 0 {
-            return Err(DbErr::NotImplement);
+            unimplemented!();
         }
 
         let current_size = first_page_wrapper.get_free_list_size();
         if (current_size as usize) + pages.len() >= header_page_wrapper::HEADER_FREE_LIST_MAX_SIZE {
-            return Err(DbErr::NotImplement)
+            unimplemented!();
         }
-
 
         first_page_wrapper.set_free_list_size(current_size + (pages.len() as u32));
         let mut counter = 0;

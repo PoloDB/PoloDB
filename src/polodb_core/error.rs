@@ -33,7 +33,6 @@ pub enum DbErr {
     IOErr(io::Error),
     TypeNotComparable(String, String),
     DataSizeTooLarge(u32, u32),
-    NotImplement,
     DecodeEOF,
     DecodeIntUnknownByte,
     DataOverflow,
@@ -66,7 +65,6 @@ impl fmt::Display for DbErr {
                 write!(f, "TypeNotComparable(expected: {}, actual: {})", expected, actual),
             DbErr::DataSizeTooLarge(expected, actual) =>
                 write!(f, "DataSizeTooLarge(expected: {}, actual: {})", expected, actual),
-            DbErr::NotImplement => write!(f, "NotImplement"),
             DbErr::DecodeEOF => write!(f, "DecodeEOF"),
             DbErr::DecodeIntUnknownByte => write!(f, "DecodeIntUnknownByte"),
             DbErr::DataOverflow => write!(f, "DataOverflow"),

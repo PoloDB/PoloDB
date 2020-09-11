@@ -5,7 +5,7 @@ use crate::db::DbResult;
 use crate::vli;
 use crate::page::{RawPage, PageType};
 use crate::error::{DbErr, parse_error_reason};
-use crate::bson::{Value, ObjectId};
+use crate::bson::{Value, ObjectId, ty_int};
 use crate::data_ticket::DataTicket;
 
 pub const HEADER_SIZE: u32      = 64;
@@ -141,7 +141,7 @@ impl BTreeNode {
     fn parse_node_data_item(page: &RawPage, begin_offset: u32) -> DbResult<BTreeNodeDataItem> {
         let is_complex = page.get_u8(begin_offset + 4);
         if is_complex != 0 {
-            return Err(DbErr::NotImplement);
+            unimplemented!()
         }
 
         let key_ty_int = page.get_u8(begin_offset + 4 + 1);  // use to parse data
@@ -149,7 +149,7 @@ impl BTreeNode {
         let key = match key_ty_int {
             0 => return Err(DbErr::ParseError(parse_error_reason::KEY_TY_SHOULD_NOT_BE_ZERO.into())),
 
-            0x07 => {
+            ty_int::OBJECT_ID => {
                 let oid_bytes_begin = (begin_offset + 6) as usize;
                 let oid_bytes = &page.data[oid_bytes_begin..(oid_bytes_begin + 12)];
                 let oid = ObjectId::deserialize(oid_bytes)?;
@@ -157,7 +157,7 @@ impl BTreeNode {
                 Value::ObjectId(Rc::new(oid))
             }
 
-            0x08 => {
+            ty_int::BOOLEAN => {
                 let value_begin_offset = (begin_offset + 6) as usize;
                 let value = page.data[value_begin_offset];
 
@@ -170,7 +170,7 @@ impl BTreeNode {
                 Value::Boolean(bl_value)
             }
 
-            0x16 => {
+            ty_int::INT => {
                 let value_begin_offset = (begin_offset + 6) as usize;
 
                 let int_value = unsafe {
@@ -182,7 +182,7 @@ impl BTreeNode {
                 Value::Int(int_value as i64)
             }
 
-            _ => return Err(DbErr::NotImplement),
+            _ => unimplemented!(),
 
         };
 

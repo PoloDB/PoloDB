@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use std::fmt;
-use super::value::Value;
+use super::value::{Value, ty_int};
 use super::linked_hash_map::{LinkedHashMap, Iter};
 use crate::vli;
 use crate::db::DbResult;
@@ -64,14 +64,14 @@ impl Document {
                 ptr = ptr.add(1);
 
                 match byte {
-                    0x0A => {  // null
+                    ty_int::NULL => {
                         let (key, to_ptr) = Document::parse_key(ptr)?;
                         ptr = to_ptr;
 
                         doc.map.insert(key, Value::Null);
                     }
 
-                    0x01 => {  // double
+                    ty_int::DOUBLE => {
                         let (key, to_ptr) = Document::parse_key(ptr)?;
                         ptr = to_ptr;
 
@@ -84,7 +84,7 @@ impl Document {
                         ptr = ptr.add(8);
                     }
 
-                    0x08 => {  // boolean
+                    ty_int::BOOLEAN => {
                         let (key, to_ptr) = Document::parse_key(ptr)?;
                         ptr = to_ptr;
 
@@ -98,7 +98,7 @@ impl Document {
                         }));
                     }
 
-                    0x16 => {  // int
+                    ty_int::INT => {
                         let (key, to_ptr) = Document::parse_key(ptr)?;
                         ptr = to_ptr;
 
@@ -108,7 +108,7 @@ impl Document {
                         doc.map.insert(key, Value::Int(integer as i64));
                     }
 
-                    0x02 => {  // String
+                    ty_int::STRING => {
                         let (key, to_ptr) = Document::parse_key(ptr)?;
                         ptr = to_ptr;
 
@@ -118,7 +118,7 @@ impl Document {
                         doc.map.insert(key, Value::String(Rc::new(value)));
                     }
 
-                    0x07 => {  // ObjectId
+                    ty_int::OBJECT_ID => {
                         let (key, to_ptr) = Document::parse_key(ptr)?;
                         ptr = to_ptr;
 
@@ -132,7 +132,7 @@ impl Document {
                         doc.map.insert(key, Value::ObjectId(Rc::new(oid)));
                     }
 
-                    0x17 => {  // array
+                    ty_int::ARRAY => {
                         let (key, to_ptr) = Document::parse_key(ptr)?;
                         ptr = to_ptr;
 
@@ -148,7 +148,7 @@ impl Document {
                         doc.map.insert(key, Value::Array(Rc::new(sub_arr)));
                     }
 
-                    0x13 => {  // document
+                    ty_int::DOCUMENT => {
                         let (key, to_ptr) = Document::parse_key(ptr)?;
                         ptr = to_ptr;
 
@@ -165,7 +165,7 @@ impl Document {
                         doc.map.insert(key, Value::Document(Rc::new(sub_doc)));
                     }
 
-                    0x05 => {  // binary
+                    ty_int::BINARY => {
                         let (key, to_ptr) = Document::parse_key(ptr)?;
                         ptr = to_ptr;
 
@@ -203,13 +203,13 @@ impl Document {
     fn value_to_bytes(key: &str, value: &Value, buffer: &mut Vec<u8>) -> DbResult<()> {
         match value {
             Value::Null => {
-                buffer.push(0x0A);
+                buffer.push(ty_int::NULL);
 
                 Document::key_to_bytes(&key, buffer);
             }
 
             Value::Double(num) => {
-                buffer.push(0x01);
+                buffer.push(ty_int::DOUBLE);
 
                 Document::key_to_bytes(&key, buffer);
 
@@ -217,7 +217,7 @@ impl Document {
             }
 
             Value::Boolean(bl) => {
-                buffer.push(0x08);
+                buffer.push(ty_int::BOOLEAN);
                 Document::key_to_bytes(&key, buffer);
                 if *bl {
                     buffer.push(0x00);
@@ -227,27 +227,27 @@ impl Document {
             }
 
             Value::Int(int_num) => {
-                buffer.push(0x16);  // not standard, use vli
+                buffer.push(ty_int::INT);  // not standard, use vli
                 Document::key_to_bytes(&key, buffer);
                 vli::encode(buffer, *int_num).expect("encode vli error");
             }
 
             Value::String(str) => {
-                buffer.push(0x02);
+                buffer.push(ty_int::STRING);
                 Document::key_to_bytes(&key, buffer);
 
                 Document::key_to_bytes(&str, buffer);
             }
 
             Value::ObjectId(oid) => {
-                buffer.push(0x07);
+                buffer.push(ty_int::OBJECT_ID);
                 Document::key_to_bytes(&key, buffer);
 
                 oid.serialize(buffer)?;
             }
 
             Value::Array(arr) => {
-                buffer.push(0x17);  // not standard
+                buffer.push(ty_int::ARRAY);  // not standard
                 Document::key_to_bytes(&key, buffer);
 
                 let tmp = arr.to_bytes()?;
@@ -257,7 +257,7 @@ impl Document {
             }
 
             Value::Document(doc) => {
-                buffer.push(0x13);
+                buffer.push(ty_int::DOCUMENT);
                 Document::key_to_bytes(&key, buffer);
 
                 let tmp = doc.to_bytes()?;
@@ -267,7 +267,7 @@ impl Document {
             }
 
             Value::Binary(bin) => {
-                buffer.push(0x05);
+                buffer.push(ty_int::BINARY);
 
                 Document::key_to_bytes(&key, buffer);
 
