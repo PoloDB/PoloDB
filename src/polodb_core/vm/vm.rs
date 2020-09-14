@@ -1,14 +1,15 @@
-use super::bson::Value;
-use super::vm_code::{ VmCode };
 use std::vec::Vec;
+use super::vm_code::VmCode;
+use crate::bson::Value;
 
-static STACK_SIZE: usize = 256;
+const STACK_SIZE: usize = 256;
 
 pub struct SubProgram {
     static_values:    Vec<Value>,
     instructions:     Vec<u8>,
 }
 
+#[repr(i8)]
 pub enum VmState {
     Reject = -1,
     Init = 0,
