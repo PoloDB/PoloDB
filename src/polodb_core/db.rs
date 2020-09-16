@@ -26,7 +26,6 @@ pub(crate) mod meta_document_key {
     pub(crate) static INDEXES: &str  = "indexes";
 
     pub(crate) mod index {
-        pub(crate) static KEY: &str  = "key";
         pub(crate) static NAME: &str = "name";
         pub(crate) static V: &str    = "v";
         pub(crate) static UNIQUE: &str = "unique";
@@ -122,6 +121,23 @@ impl DbContext {
         }
     }
 
+    pub fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+        for (key_name, value_of_key) in keys.iter() {
+            if let Value::Int(1) = value_of_key {
+                // nothing
+            } else {
+                return Err(DbErr::InvalidOrderOfIndex(key_name.into()));
+            }
+
+            let meta_page_id = self.get_meta_page_id()?;
+            let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
+
+            cursor.create_index(col_name, key_name, options)?;
+        }
+
+        Ok(())
+    }
+
     #[inline]
     fn fix_doc(&mut self, mut doc: Rc<Document>) -> Rc<Document> {
         let id = doc.get("_id");
@@ -208,13 +224,6 @@ impl DbContext {
         Ok(result)
     }
 
-    pub fn create_index(&mut self, col_name: &str, options: Rc<Document>) -> DbResult<bool> {
-        let meta_page_id = self.get_meta_page_id()?;
-        let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
-
-        cursor.create_index(col_name, options)
-    }
-
     #[inline]
     pub fn start_transaction(&mut self) -> DbResult<()> {
         self.page_handler.start_transaction()
@@ -283,8 +292,8 @@ impl Database {
     }
 
     #[inline]
-    pub fn create_index(&mut self, col_name: &str, options: Rc<Document>) -> DbResult<bool> {
-        self.ctx.create_index(col_name, options)
+    pub fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+        self.ctx.create_index(col_name, keys, options)
     }
 
     #[allow(dead_code)]
@@ -298,7 +307,7 @@ impl Database {
 mod tests {
     use crate::Database;
     use std::rc::Rc;
-    use crate::bson::{Document, mk_str};
+    use crate::bson::{Document, Value, mk_str};
 
     static TEST_SIZE: usize = 1000;
 
@@ -340,6 +349,30 @@ mod tests {
         }
 
         assert_eq!(TEST_SIZE, counter)
+    }
+
+    #[test]
+    fn test_insert_bigger_key() {
+        let mut db = prepare_db();
+        let _result = db.create_collection("test").unwrap();
+
+        let mut doc = Document::new_without_id();
+
+        let mut new_str: String = String::new();
+        for _i in 0..32 {
+            new_str.push('0');
+        }
+
+        doc.insert("_id".into(), Value::String(Rc::new(new_str.clone())));
+
+        let _ = db.insert("test", Rc::new(doc)).unwrap();
+
+        let mut cursor = db.ctx.get_collection_cursor("test").unwrap();
+
+        let get_one = cursor.next().unwrap().unwrap();
+        let get_one_id = get_one.get("_id").unwrap().unwrap_string();
+
+        assert_eq!(get_one_id, new_str);
     }
 
     #[test]

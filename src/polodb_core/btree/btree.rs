@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 
 use crate::db::DbResult;
 use crate::vli;
-use crate::page::{RawPage, PageType};
+use crate::page::{RawPage, PageType, PageHandler};
 use crate::error::{DbErr, parse_error_reason};
 use crate::bson::{Value, ObjectId, ty_int};
 use crate::data_ticket::DataTicket;
@@ -89,7 +89,7 @@ impl BTreeNode {
     // Offset 2: items_len(2 bytes)
     // Offset 4: left_pid (4 bytes)
     // Offset 8: next_pid (4 bytes)
-    pub(crate) fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32) -> DbResult<BTreeNode> {
+    pub(crate) fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32, page_handler: &mut PageHandler) -> DbResult<BTreeNode> {
         #[cfg(debug_assertions)]
         if page.page_id == 0 {
             panic!("page id is zero, parent pid: {}", parent_pid);
@@ -124,7 +124,7 @@ impl BTreeNode {
 
             let right_pid = page.get_u32(offset);
 
-            let node_data_item = BTreeNode::parse_node_data_item(&page, offset)?;
+            let node_data_item = BTreeNode::parse_node_data_item(&page, offset, page_handler)?;
 
             content.push(node_data_item);
             indexes.push(right_pid);
@@ -138,10 +138,10 @@ impl BTreeNode {
         })
     }
 
-    fn parse_node_data_item(page: &RawPage, begin_offset: u32) -> DbResult<BTreeNodeDataItem> {
+    fn parse_node_data_item(page: &RawPage, begin_offset: u32, page_handler: &mut PageHandler) -> DbResult<BTreeNodeDataItem> {
         let is_complex = page.get_u8(begin_offset + 4);
         if is_complex != 0 {
-            unimplemented!()
+            return BTreeNode::parse_complex_data_item(page, begin_offset, page_handler);
         }
 
         let key_ty_int = page.get_u8(begin_offset + 4 + 1);  // use to parse data
@@ -182,18 +182,36 @@ impl BTreeNode {
                 Value::Int(int_value as i64)
             }
 
-            _ => unimplemented!(),
+            _ => {
+                let error_msg = format!("type {} is not suitable for _id", key_ty_int);
+                return Err(DbErr::ParseError(error_msg));
+            },
 
         };
 
-        let ticket_bytes = (begin_offset + 6 + 12) as usize;
-        let ticket_bytes = &page.data[ticket_bytes..(ticket_bytes + 6)];
-        let data_ticket = DataTicket::from_bytes(ticket_bytes);
+        let data_ticket = BTreeNode::parse_data_item_ticket(page, begin_offset);
 
         Ok(BTreeNodeDataItem {
             key,
             data_ticket,
         })
+    }
+
+    fn parse_complex_data_item(page: &RawPage, begin_offset: u32, page_handler: &mut PageHandler) -> DbResult<BTreeNodeDataItem> {
+        let data_ticket = BTreeNode::parse_data_item_ticket(page, begin_offset);
+        let doc = page_handler.get_doc_from_ticket(&data_ticket)?;
+        let pkey = doc.pkey_id().unwrap();
+        Ok(BTreeNodeDataItem {
+            key: pkey,
+            data_ticket,
+        })
+    }
+
+    #[inline]
+    fn parse_data_item_ticket(page: &RawPage, begin_offset: u32) -> DataTicket {
+        let ticket_bytes = (begin_offset + 6 + 12) as usize;
+        let ticket_bytes = &page.data[ticket_bytes..(ticket_bytes + 6)];
+        DataTicket::from_bytes(ticket_bytes)
     }
 
     pub(crate) fn to_raw(&self, page: &mut RawPage) -> DbResult<()> {

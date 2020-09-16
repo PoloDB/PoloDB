@@ -5,10 +5,10 @@ use std::borrow::Borrow;
 use crate::db::meta_document_key;
 use crate::bson::{Document, Value};
 use crate::DbResult;
-use crate::error::DbErr;
+use crate::error::{DbErr, mk_index_options_type_unexpected};
 use crate::data_ticket::DataTicket;
 use crate::page::PageHandler;
-use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem};
+use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
 
 pub(crate) struct IndexCtx {
     key_to_entry: HashMap<String, IndexEntry>,
@@ -67,8 +67,14 @@ impl IndexCtx {
         Ok(())
     }
 
-    pub fn delete_index_by_content(&self, _doc: &Document) -> DbResult<()> {
-        unimplemented!()
+    pub fn delete_index_by_content(&self, doc: &Document, page_handler: &mut PageHandler) -> DbResult<()> {
+        for (key, entry) in &self.key_to_entry {
+            if let Some(value) = doc.get(key) {
+                entry.remove_index(value, page_handler)?;
+            }
+        }
+
+        Ok(())
     }
 
 }
@@ -150,4 +156,56 @@ impl IndexEntry {
         doc
     }
 
+    fn remove_index(&self, data_value: &Value, page_handler: &mut PageHandler) -> DbResult<()> {
+        let mut delete_wrapper = BTreePageDeleteWrapper::new(page_handler, self.root_pid);
+        let _result = delete_wrapper.delete_item(data_value)?;
+        Ok(())
+    }
+
+}
+
+macro_rules! match_and_merge_option {
+    ($options:expr, $key_name:expr, $target: expr, $val_ty: tt) => {
+        match $options.get($key_name) {
+            Some(Value::$val_ty(val)) => {
+                $target.insert($key_name.into(), Value::$val_ty(val.clone()));
+            }
+
+            Some(val) => {
+                let err = mk_index_options_type_unexpected($key_name, stringify!($val_ty), val.ty_name());
+                return Err(err)
+            }
+
+            None => ()
+
+        }
+    };
+}
+
+#[inline]
+fn mk_default_index_options() -> Document {
+    let mut result = Document::new_without_id();
+
+    result.insert(meta_document_key::index::UNIQUE.into(), Value::Boolean(false));
+    result.insert(meta_document_key::index::V.into(), Value::Int(1));
+
+    result
+}
+
+pub(crate) fn merge_options_into_default(root_pid: u32, options: Option<&Document>) -> DbResult<Document> {
+    let mut doc = mk_default_index_options();
+
+    doc.insert(meta_document_key::index::ROOT_PID.into(), Value::Int(root_pid as i64));
+
+    match options {
+        Some(options) => {
+            match_and_merge_option!(options, meta_document_key::index::NAME, doc, String);
+            match_and_merge_option!(options, meta_document_key::index::V, doc, Int);
+            match_and_merge_option!(options, meta_document_key::index::UNIQUE, doc, Boolean);
+        }
+
+        None => ()
+    }
+
+    Ok(doc)
 }

@@ -8,7 +8,7 @@ pub mod parse_error_reason {
     pub static OBJECT_ID_LEN: &str = "length of ObjectId should be 12";
     pub static OBJECT_ID_HEX_DECODE_ERROR: &str = "decode error failed for ObjectID";
     pub static UNEXPECTED_DOCUMENT_FLAG: &str = "unexpected flag for document";
-    pub static UNEXPECTED_PAGE_HEADER: &str = "unexpcted page header";
+    pub static UNEXPECTED_PAGE_HEADER: &str = "unexpected page header";
     pub static UNEXPECTED_PAGE_TYPE: &str = "unexpected page type";
     pub static UNEXPECTED_HEADER_FOR_BTREE_PAGE: &str = "unexpected header for btree page";
     pub static KEY_TY_SHOULD_NOT_BE_ZERO: &str = "type name of KEY should not be zero";
@@ -25,9 +25,37 @@ pub mod validation_error_reason {
 }
 
 #[derive(Debug)]
+pub struct IndexOptionsTypeUnexpectedStruct {
+    pub option_name: String,
+    pub expected_ty: String,
+    pub actual_ty: String,
+}
+
+impl fmt::Display for IndexOptionsTypeUnexpectedStruct {
+
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "unexpected type for index option '{}', expected: {}, actual: {}",
+               self.option_name, self.expected_ty, self.actual_ty)
+    }
+
+}
+
+#[inline]
+pub(crate) fn mk_index_options_type_unexpected(option_name: &str, expected_ty: &str, actual_ty: &str) -> DbErr {
+    DbErr::IndexOptionsTypeUnexpected(IndexOptionsTypeUnexpectedStruct {
+        option_name: option_name.into(),
+        expected_ty: expected_ty.into(),
+        actual_ty: actual_ty.into(),
+    })
+}
+
+#[derive(Debug)]
 pub enum DbErr {
     NotAValidKeyType(String),
     ValidationError(String),
+    InvalidOrderOfIndex(String),
+    IndexAlreadyExists(String),
+    IndexOptionsTypeUnexpected(IndexOptionsTypeUnexpectedStruct),
     ParseError(String),
     ParseIntError(num::ParseIntError),
     IOErr(io::Error),
@@ -58,6 +86,9 @@ impl fmt::Display for DbErr {
         match self {
             DbErr::NotAValidKeyType(ty_name) => write!(f, "type {} is not a valid key type", ty_name),
             DbErr::ValidationError(reason) => write!(f, "ValidationError: {}", reason),
+            DbErr::InvalidOrderOfIndex(index_key_name) => write!(f, "invalid order of index: {}", index_key_name),
+            DbErr::IndexAlreadyExists(index_key_name) => write!(f, "index for {} already exists", index_key_name),
+            DbErr::IndexOptionsTypeUnexpected(st) => write!(f, "{}", st),
             DbErr::ParseError(reason) => write!(f, "ParseError: {}", reason),
             DbErr::ParseIntError(parse_int_err) => std::fmt::Display::fmt(&parse_int_err, f),
             DbErr::IOErr(io_err) => std::fmt::Display::fmt(&io_err, f),
