@@ -1,3 +1,26 @@
+/*
+ * Copyright (c) 2020 Vincent Chan
+ *
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free Software
+ * Foundation; either version 3, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+use std::rc::Rc;
+use super::error::DbErr;
+use super::page::{header_page_wrapper, PageHandler};
+use crate::bson::ObjectIdMaker;
+use crate::bson::{ObjectId, Document, Value, mk_str, mk_object_id};
+use crate::btree::BTreePageInsertWrapper;
+use crate::cursor::Cursor;
+
 // root_btree schema
 // {
 //   _id: ObjectId,
@@ -10,13 +33,6 @@
 // key_ty: 1byte
 // ...
 //
-use std::rc::Rc;
-use super::error::DbErr;
-use super::page::{header_page_wrapper, PageHandler};
-use crate::bson::ObjectIdMaker;
-use crate::bson::{ObjectId, Document, Value, mk_str, mk_object_id};
-use crate::btree::BTreePageInsertWrapper;
-use crate::cursor::Cursor;
 
 pub(crate) mod meta_document_key {
     pub(crate) static ID: &str       = "_id";

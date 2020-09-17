@@ -1,14 +1,17 @@
-/**
- * Offset 0 (32 bytes) : "PipeappleDB Format v0.1";
- * Offset 32 (8 bytes) : Version 0.0.0.0;
- * Offset 40 (4 bytes) : SectorSize;
- * Offset 44 (4 bytes) : PageSize;
- * Offset 48 (4 bytes) : NullPageBarId;
- * Offset 52 (4 bytes) : MetaPageId(usually 1);
+/*
+ * Copyright (c) 2020 Vincent Chan
  *
- * Free list offset: 2048;
- * | 4b   | 4b                  | 4b     | 4b    | ... |
- * | size | free list page link | free 1 | free2 | ... |
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free Software
+ * Foundation; either version 3, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 use super::page::RawPage;
 
@@ -21,6 +24,18 @@ pub const FREE_LIST_OFFSET: u32 = 2048;
 const FREE_LIST_PAGE_LINK_OFFSET: u32 = 2048 + 4;
 pub const HEADER_FREE_LIST_MAX_SIZE: usize = (2048 - 8) / 4;
 
+/**
+ * Offset 0 (32 bytes) : "PipeappleDB Format v0.1";
+ * Offset 32 (8 bytes) : Version 0.0.0.0;
+ * Offset 40 (4 bytes) : SectorSize;
+ * Offset 44 (4 bytes) : PageSize;
+ * Offset 48 (4 bytes) : NullPageBarId;
+ * Offset 52 (4 bytes) : MetaPageId(usually 1);
+ *
+ * Free list offset: 2048;
+ * | 4b   | 4b                  | 4b     | 4b    | ... |
+ * | size | free list page link | free 1 | free2 | ... |
+ */
 pub(crate) struct HeaderPageWrapper(pub RawPage);
 
 impl HeaderPageWrapper {
