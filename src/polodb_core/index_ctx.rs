@@ -17,7 +17,7 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::cell::Cell;
 use std::borrow::Borrow;
-use crate::db::meta_document_key;
+use crate::meta_doc_helper::meta_doc_key;
 use crate::bson::{Document, Value};
 use crate::DbResult;
 use crate::error::{DbErr, mk_index_options_type_unexpected};
@@ -40,7 +40,7 @@ impl IndexCtx {
     // indexes:
     //     key -> index_entry
     pub fn from_meta_doc(doc: &Document) -> Option<IndexCtx> {
-        let indexes_opt = doc.get(meta_document_key::INDEXES);
+        let indexes_opt = doc.get(meta_doc_key::INDEXES);
         if indexes_opt.is_none() {  // no indexes
             return None;
         }
@@ -68,7 +68,7 @@ impl IndexCtx {
             new_back_doc.insert(key.clone(), Value::Document(index_meta_doc));
         }
 
-        meta_doc.insert(meta_document_key::INDEXES.into(), Value::Document(Rc::new(new_back_doc)));
+        meta_doc.insert(meta_doc_key::INDEXES.into(), Value::Document(Rc::new(new_back_doc)));
     }
 
     pub fn insert_index_by_content(&mut self, doc: &Document, data_ticket: &DataTicket, is_ctx_changed: &Cell<bool>, page_handler: &mut PageHandler) -> DbResult<()> {
@@ -103,9 +103,9 @@ struct IndexEntry {
 impl IndexEntry {
 
     fn from_option_doc(doc: &Document) -> IndexEntry {
-        let name = doc.get(meta_document_key::index::NAME).unwrap().unwrap_string();
-        let unique = doc.get(meta_document_key::index::UNIQUE).unwrap().unwrap_boolean();
-        let root_pid = doc.get(meta_document_key::index::ROOT_PID).unwrap().unwrap_int();
+        let name = doc.get(meta_doc_key::index::NAME).unwrap().unwrap_string();
+        let unique = doc.get(meta_doc_key::index::UNIQUE).unwrap().unwrap_boolean();
+        let root_pid = doc.get(meta_doc_key::index::ROOT_PID).unwrap().unwrap_int();
 
         IndexEntry {
             name: name.into(),
@@ -116,9 +116,9 @@ impl IndexEntry {
 
     fn to_doc(&self) -> Document {
         let mut result = Document::new_without_id();
-        result.insert(meta_document_key::index::NAME.into(), Value::String(Rc::new(self.name.clone())));
-        result.insert(meta_document_key::index::UNIQUE.into(), Value::Boolean(self.unique));
-        result.insert(meta_document_key::index::ROOT_PID.into(), Value::Int(self.root_pid as i64));
+        result.insert(meta_doc_key::index::NAME.into(), Value::String(Rc::new(self.name.clone())));
+        result.insert(meta_doc_key::index::UNIQUE.into(), Value::Boolean(self.unique));
+        result.insert(meta_doc_key::index::ROOT_PID.into(), Value::Int(self.root_pid as i64));
         result
     }
 
@@ -154,7 +154,7 @@ impl IndexEntry {
 
         let new_root_page = backward_item.write_to_page(page_handler, new_root_id, self.root_pid)?;
 
-        meta_doc.insert(meta_document_key::index::ROOT_PID.into(), Value::Int(new_root_id as i64));
+        meta_doc.insert(meta_doc_key::index::ROOT_PID.into(), Value::Int(new_root_id as i64));
 
         self.root_pid = new_root_id;
 
@@ -201,8 +201,8 @@ macro_rules! match_and_merge_option {
 fn mk_default_index_options() -> Document {
     let mut result = Document::new_without_id();
 
-    result.insert(meta_document_key::index::UNIQUE.into(), Value::Boolean(false));
-    result.insert(meta_document_key::index::V.into(), Value::Int(1));
+    result.insert(meta_doc_key::index::UNIQUE.into(), Value::Boolean(false));
+    result.insert(meta_doc_key::index::V.into(), Value::Int(1));
 
     result
 }
@@ -210,16 +210,12 @@ fn mk_default_index_options() -> Document {
 pub(crate) fn merge_options_into_default(root_pid: u32, options: Option<&Document>) -> DbResult<Document> {
     let mut doc = mk_default_index_options();
 
-    doc.insert(meta_document_key::index::ROOT_PID.into(), Value::Int(root_pid as i64));
+    doc.insert(meta_doc_key::index::ROOT_PID.into(), Value::Int(root_pid as i64));
 
-    match options {
-        Some(options) => {
-            match_and_merge_option!(options, meta_document_key::index::NAME, doc, String);
-            match_and_merge_option!(options, meta_document_key::index::V, doc, Int);
-            match_and_merge_option!(options, meta_document_key::index::UNIQUE, doc, Boolean);
-        }
-
-        None => ()
+    if let Some(options) = options {
+        match_and_merge_option!(options, meta_doc_key::index::NAME, doc, String);
+        match_and_merge_option!(options, meta_doc_key::index::V, doc, Int);
+        match_and_merge_option!(options, meta_doc_key::index::UNIQUE, doc, Boolean);
     }
 
     Ok(doc)

@@ -196,6 +196,35 @@ impl BTreeNode {
                 Value::Int(int_value as i64)
             }
 
+            ty_int::STRING => {
+                let value_begin_offset = (begin_offset + 6) as usize;
+
+                let mut buffer = Vec::new();
+
+                let mut offset = 0;
+                loop {
+                    if offset >= BTREE_ENTRY_KEY_CONTENT_SIZE {
+                        break;
+                    }
+
+                    let ch = page.data[value_begin_offset + offset];
+
+                    if ch == 0 {
+                        break;
+                    }
+
+                    buffer.push(ch);
+
+                    offset += 1;
+                }
+
+                let str = unsafe {
+                    String::from_utf8_unchecked(buffer)
+                };
+
+                Value::String(Rc::new(str))
+            }
+
             _ => {
                 let error_msg = format!("type {} is not suitable for _id", key_ty_int);
                 return Err(DbErr::ParseError(error_msg));

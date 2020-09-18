@@ -11,5 +11,6 @@ pub mod db;
 mod data_ticket;
 mod index_ctx;
 pub mod vli;
+mod meta_doc_helper;
 
 pub use db::{Database, DbResult};
