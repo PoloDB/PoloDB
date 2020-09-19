@@ -41,7 +41,6 @@ impl CursorItem {
 
 pub(crate) struct Cursor<'a> {
     page_handler:       &'a mut PageHandler,
-    root_page_id:       u32,
     item_size:          u32,
     btree_stack:        LinkedList<CursorItem>,
     current:            Option<Rc<Document>>,
@@ -51,28 +50,10 @@ impl<'a> Cursor<'a> {
 
     pub fn new(page_handler: &mut PageHandler, root_page_id: u32) -> DbResult<Cursor> {
         let item_size = (page_handler.page_size - HEADER_SIZE) / ITEM_SIZE;
-
-        let btree_stack = {
-            let mut tmp = LinkedList::new();
-
-            let btree_page = page_handler.pipeline_read_page(root_page_id)?;
-            let btree_node = BTreeNode::from_raw(
-                &btree_page, 0,
-                item_size,
-                page_handler
-            )?;
-
-            tmp.push_back(CursorItem {
-                node: Rc::new(btree_node),
-                index: 0,
-            });
-
-            tmp
-        };
+        let btree_stack = Cursor::mk_initial_btree(page_handler, root_page_id, item_size)?;
 
         let mut result = Cursor {
             page_handler,
-            root_page_id,
             item_size,
             btree_stack,
             current: None,
@@ -81,6 +62,24 @@ impl<'a> Cursor<'a> {
         result.push_all_left_nodes()?;
 
         Ok(result)
+    }
+
+    fn mk_initial_btree(page_handler: &mut PageHandler, root_page_id: u32, item_size: u32) -> DbResult<LinkedList<CursorItem>> {
+        let mut tmp = LinkedList::new();
+
+        let btree_page = page_handler.pipeline_read_page(root_page_id)?;
+        let btree_node = BTreeNode::from_raw(
+            &btree_page, 0,
+            item_size,
+            page_handler
+        )?;
+
+        tmp.push_back(CursorItem {
+            node: Rc::new(btree_node),
+            index: 0,
+        });
+
+        Ok(tmp)
     }
 
     fn push_all_left_nodes(&mut self) -> DbResult<()> {

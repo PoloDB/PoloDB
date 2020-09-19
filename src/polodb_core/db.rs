@@ -62,7 +62,6 @@ impl DbContext {
         Ok(ctx)
     }
 
-    #[inline]
     fn get_meta_page_id(&mut self) -> DbResult<u32> {
         let head_page = self.page_handler.pipeline_read_page(0)?;
         let head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
@@ -96,22 +95,22 @@ impl DbContext {
                 let new_root_id = self.page_handler.alloc_page_id()?;
 
                 let raw_page = backward_item.write_to_page(&mut self.page_handler, new_root_id, meta_page_id)?;
-
-                // update head page
-                {
-                    let head_page = self.page_handler.pipeline_read_page(0)?;
-                    let mut head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
-                    head_page_wrapper.set_meta_page_id(new_root_id);
-                    self.page_handler.pipeline_write_page(&head_page_wrapper.0)?;
-                }
-
                 self.page_handler.pipeline_write_page(&raw_page)?;
+
+                self.update_meta_page_id_of_db(new_root_id)?;
 
                 Ok(oid)
             }
 
             None => Ok(oid)
         }
+    }
+
+    fn update_meta_page_id_of_db(&mut self, new_meta_page_root_pid: u32) -> DbResult<()> {
+        let head_page = self.page_handler.pipeline_read_page(0)?;
+        let mut head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
+        head_page_wrapper.set_meta_page_id(new_meta_page_root_pid);
+        self.page_handler.pipeline_write_page(&head_page_wrapper.0)
     }
 
     #[inline]
@@ -192,15 +191,13 @@ impl DbContext {
 
     #[inline]
     fn fix_doc(&mut self, mut doc: Rc<Document>) -> Rc<Document> {
-        let id = doc.get("_id");
-        match id {
-            Some(_) => doc,
-            None => {
-                let new_doc = Rc::make_mut(&mut doc);
-                new_doc.insert("_id".into(), Value::ObjectId(Rc::new(self.obj_id_maker.mk_object_id())));
-                doc
-            }
+        if doc.get(meta_doc_key::ID).is_some() {
+            return doc;
         }
+
+        let new_doc = Rc::make_mut(&mut doc);
+        new_doc.insert(meta_doc_key::ID.into(), Value::ObjectId(Rc::new(self.obj_id_maker.mk_object_id())));
+        doc
     }
 
     fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
@@ -230,6 +227,7 @@ impl DbContext {
             is_meta_changed = true;
         }
 
+        // insert index begin
         let mut index_ctx_opt = IndexCtx::from_meta_doc(meta_doc_mut);
         if let Some(index_ctx) = &mut index_ctx_opt {
             let mut is_ctx_changed = false;
@@ -246,7 +244,9 @@ impl DbContext {
                 is_meta_changed = true;
             }
         }
+        // insert index end
 
+        // update meta begin
         if is_meta_changed {
             let key = Value::String(Rc::new(col_name.to_string()));
             let updated= self.update_by_root_pid(0, meta_page_id, &key, meta_doc_mut)?;
@@ -254,6 +254,7 @@ impl DbContext {
                 panic!("unexpected: update meta page failed")
             }
         }
+        // update meta end
 
         Ok(doc_value)
     }
