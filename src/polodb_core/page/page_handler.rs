@@ -106,6 +106,7 @@ impl PageHandler {
     }
 
     pub(crate) fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper> {
+        let data_size = data_size + 2;  // preserve 2 bytes
         let (wrapper, removed_key) = {
             let mut range = self.data_page_map.range_mut((Included(data_size), Unbounded));
             match range.next() {

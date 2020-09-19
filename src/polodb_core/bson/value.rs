@@ -190,4 +190,19 @@ pub mod ty_int {
     pub const DOCUMENT: u8   = 0x13;
     pub const BINARY: u8     = 0x05;
 
+    pub fn to_str(i: u8) -> &'static str {
+        match i {
+            NULL => "Null",
+            BOOLEAN => "Boolean",
+            INT => "Int",
+            STRING => "String",
+            OBJECT_ID => "ObjectId",
+            ARRAY => "Array",
+            DOCUMENT => "Document",
+            BINARY => "Binary",
+
+            _ => "<unknown>"
+        }
+    }
+
 }

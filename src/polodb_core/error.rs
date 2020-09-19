@@ -16,7 +16,7 @@
 use std::io;
 use std::fmt;
 use std::num;
-use crate::bson::Value;
+use crate::bson::{Value, ty_int};
 
 pub mod parse_error_reason {
 
@@ -66,6 +66,7 @@ pub(crate) fn mk_index_options_type_unexpected(option_name: &str, expected_ty: &
 
 #[derive(Debug)]
 pub enum DbErr {
+    UnexpectedIdType(u8, u8),
     NotAValidKeyType(String),
     ValidationError(String),
     InvalidOrderOfIndex(String),
@@ -99,6 +100,13 @@ impl fmt::Display for DbErr {
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            DbErr::UnexpectedIdType(expected_ty, actual_ty) => {
+                let expected = ty_int::to_str(*expected_ty);
+                let actual = ty_int::to_str(*actual_ty);
+
+                write!(f, "UnexpectedIdType(expected: {}, actual: {})", expected, actual)
+            }
+
             DbErr::NotAValidKeyType(ty_name) => write!(f, "type {} is not a valid key type", ty_name),
             DbErr::ValidationError(reason) => write!(f, "ValidationError: {}", reason),
             DbErr::InvalidOrderOfIndex(index_key_name) => write!(f, "invalid order of index: {}", index_key_name),

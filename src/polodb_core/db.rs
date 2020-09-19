@@ -14,7 +14,6 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 use std::rc::Rc;
-use std::cell::Cell;
 use std::borrow::Borrow;
 use super::error::DbErr;
 use super::page::{header_page_wrapper, PageHandler};
@@ -28,10 +27,7 @@ use crate::page::RawPage;
 
 #[inline]
 fn index_already_exists(index_doc: &Document, key: &str) -> bool {
-    match index_doc.get(key) {
-        Some(_) => true,
-        _ => false,
-    }
+    index_doc.get(key).is_some()
 }
 
 // #[derive(Clone)]
@@ -211,8 +207,11 @@ impl DbContext {
         let meta_page_id = self.get_meta_page_id()?;
         let doc_value = self.fix_doc(doc);
 
-        let (collection_meta, mut meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let (mut collection_meta, mut meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
         let meta_doc_mut = Rc::get_mut(&mut meta_doc).unwrap();
+
+        let mut is_pkey_check_skipped = false;
+        collection_meta.check_pkey_ty(&doc_value, &mut is_pkey_check_skipped)?;
 
         let mut insert_wrapper = BTreePageInsertWrapper::new(
             &mut self.page_handler, collection_meta.root_pid as u32);
@@ -225,18 +224,24 @@ impl DbContext {
             is_meta_changed = true;
         }
 
+        // insert succesfully
+        if is_pkey_check_skipped {
+            collection_meta.merge_pkey_ty_to_meta(meta_doc_mut, doc_value.borrow());
+            is_meta_changed = true;
+        }
+
         let mut index_ctx_opt = IndexCtx::from_meta_doc(meta_doc_mut);
         if let Some(index_ctx) = &mut index_ctx_opt {
-            let is_ctx_changed: Cell<bool> = Cell::new(false);
+            let mut is_ctx_changed = false;
 
             index_ctx.insert_index_by_content(
                 doc_value.borrow(),
                 &insert_result.data_ticket,
-                &is_ctx_changed,
+                &mut is_ctx_changed,
                 &mut self.page_handler
             )?;
 
-            if is_ctx_changed.get() {
+            if is_ctx_changed {
                 index_ctx.merge_to_meta_doc(meta_doc_mut);
                 is_meta_changed = true;
             }
@@ -477,6 +482,17 @@ mod tests {
         }
 
         assert_eq!(TEST_SIZE, counter)
+    }
+
+    #[test]
+    fn test_pkey_type_check() {
+        let mut db = create_and_return_db_with_items(TEST_SIZE);
+
+        let mut doc = Document::new_without_id();
+        doc.insert("_id".into(), Value::Int(10));
+        doc.insert("value".into(), mk_str("something"));
+
+        db.insert("test", Rc::new(doc)).expect_err("should not succuess");
     }
 
     #[test]

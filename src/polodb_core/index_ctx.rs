@@ -15,7 +15,6 @@
  */
 use std::rc::Rc;
 use std::collections::HashMap;
-use std::cell::Cell;
 use std::borrow::Borrow;
 use crate::meta_doc_helper::meta_doc_key;
 use crate::bson::{Document, Value};
@@ -71,7 +70,7 @@ impl IndexCtx {
         meta_doc.insert(meta_doc_key::INDEXES.into(), Value::Document(Rc::new(new_back_doc)));
     }
 
-    pub fn insert_index_by_content(&mut self, doc: &Document, data_ticket: &DataTicket, is_ctx_changed: &Cell<bool>, page_handler: &mut PageHandler) -> DbResult<()> {
+    pub fn insert_index_by_content(&mut self, doc: &Document, data_ticket: &DataTicket, is_ctx_changed: &mut bool, page_handler: &mut PageHandler) -> DbResult<()> {
         for (key, entry) in &mut self.key_to_entry {
             if let Some(value) = doc.get(key) {
                 // index exist, and value exist
@@ -125,7 +124,7 @@ impl IndexEntry {
     // store (data_value -> data_ticket)
     fn insert_index(
         &mut self, data_value: &Value, data_ticket: &DataTicket,
-        is_changed: &Cell<bool>,
+        is_changed: &mut bool,
         page_handler: &mut PageHandler) -> DbResult<()> {
 
         if !data_value.is_valid_key_type() {
@@ -139,7 +138,7 @@ impl IndexEntry {
         let insert_result = insert_wrapper.insert_item(&index_entry_doc, false)?;
 
         if let Some(backward_item) = &insert_result.backward_item {
-            is_changed.set(true);
+            *is_changed = true;
             return self.handle_backward_item(&mut index_entry_doc, backward_item, page_handler)
         }
 

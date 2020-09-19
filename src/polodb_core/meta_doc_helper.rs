@@ -13,7 +13,9 @@
  * You should have received a copy of the GNU Lesser General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-use crate::bson::Document;
+use crate::bson::{Document, Value};
+use crate::DbResult;
+use crate::error::DbErr;
 
 // root_btree schema
 // {
@@ -32,6 +34,8 @@ pub(crate) struct MetaDocEntry {
     flags: u32,
 }
 
+pub(crate) const KEY_TY_FLAG: u32 = 0b11111111;
+
 impl MetaDocEntry {
 
     pub(crate) fn from_doc(doc: &Document) -> MetaDocEntry {
@@ -45,8 +49,32 @@ impl MetaDocEntry {
         }
     }
 
+    #[inline]
     fn key_ty(&self) -> u8 {
-        (self.flags & 0x01) as u8
+        (self.flags & KEY_TY_FLAG) as u8
+    }
+
+    pub(crate) fn check_pkey_ty(&self, doc: &Document, skipped: &mut bool) -> DbResult<()> {
+        let expected = self.key_ty();
+        if expected == 0 {
+            *skipped = true;
+            return Ok(())
+        }
+
+        let pkey = &doc.pkey_id().unwrap();
+        let actual_ty = pkey.ty_int();
+
+        if expected != actual_ty {
+            return Err(DbErr::UnexpectedIdType(expected, actual_ty))
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn merge_pkey_ty_to_meta(&mut self, meta_doc: &mut Document, value_doc: &Document) {
+        let pkey_ty = value_doc.pkey_id().unwrap().ty_int();
+        self.flags = self.flags | ((pkey_ty as u32) & KEY_TY_FLAG);
+        meta_doc.insert(meta_doc_key::FLAGS.into(), Value::Int(self.flags as i64));
     }
 
 }
