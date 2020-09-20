@@ -145,6 +145,10 @@ impl DbContext {
     }
 
     pub fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let (_, mut meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let mut_meta_doc = Rc::get_mut(&mut meta_doc).unwrap();
+
         for (key_name, value_of_key) in keys.iter() {
             if let Value::Int(1) = value_of_key {
                 // nothing
@@ -152,10 +156,7 @@ impl DbContext {
                 return Err(DbErr::InvalidOrderOfIndex(key_name.into()));
             }
 
-            let meta_page_id = self.get_meta_page_id()?;
-
-            let (_, mut meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
-            match meta_doc.get(meta_doc_key::INDEXES) {
+            match mut_meta_doc.get(meta_doc_key::INDEXES) {
                 Some(indexes_obj) => match indexes_obj {
                     Value::Document(index_doc) => {
                         if index_already_exists(index_doc.borrow(), key_name) {
@@ -179,11 +180,16 @@ impl DbContext {
                     let options_doc = merge_options_into_default(root_pid, options)?;
                     doc.insert(key_name.into(), Value::Document(Rc::new(options_doc)));
 
-                    let mut_meta_doc = Rc::get_mut(&mut meta_doc).unwrap();
                     mut_meta_doc.insert(meta_doc_key::INDEXES.into(), Value::Document(Rc::new(doc)));
                 }
 
             }
+        }
+
+        let key_col = Value::String(Rc::new(col_name.into()));
+        let inserted = self.update_by_root_pid(0, meta_page_id, &key_col, mut_meta_doc)?;
+        if !inserted {
+            panic!("update failed");
         }
 
         Ok(())
@@ -221,7 +227,7 @@ impl DbContext {
             is_meta_changed = true;
         }
 
-        // insert succesfully
+        // insert successfully
         if is_pkey_check_skipped {
             collection_meta.merge_pkey_ty_to_meta(meta_doc_mut, doc_value.borrow());
             is_meta_changed = true;
@@ -537,6 +543,12 @@ mod tests {
             data.insert("user_id".into(), Value::String(str.clone()));
             db.insert("test", Rc::new(data)).unwrap();
         }
+
+        let mut data = Document::new_without_id();
+        // let str = Rc::new("ggg".into());
+        data.insert("name".into(), Value::String(Rc::new("what".into())));
+        data.insert("user_id".into(), Value::Int(3));
+        db.insert("test", Rc::new(data)).expect_err("not comparable");
     }
 
     #[test]

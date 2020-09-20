@@ -299,11 +299,15 @@ impl Document {
         let mut result: Vec<u8> = vec![];
 
         // insert id first
-        let id = self.map.get("_id").ok_or(DbErr::DataHasNoPrimaryKey)?;
-        Document::value_to_bytes("_id", id, &mut result)?;
+        let mut is_id_inserted = false;
+
+        if let Some(id_value) = self.map.get("_id") {
+            Document::value_to_bytes("_id", id_value, &mut result)?;
+            is_id_inserted = true;
+        }
 
         for (key, value) in &self.map {
-            if key == "_id" {
+            if is_id_inserted && key == "_id" {
                 continue;
             }
 

@@ -94,7 +94,7 @@ impl IndexCtx {
 }
 
 struct IndexEntry {
-    name:     String,
+    name:     Option<String>,
     unique:   bool,
     root_pid: u32,
 }
@@ -102,12 +102,14 @@ struct IndexEntry {
 impl IndexEntry {
 
     fn from_option_doc(doc: &Document) -> IndexEntry {
-        let name = doc.get(meta_doc_key::index::NAME).unwrap().unwrap_string();
+        let name = doc.get(meta_doc_key::index::NAME).map(|val| {
+            val.unwrap_string().to_string()
+        });
         let unique = doc.get(meta_doc_key::index::UNIQUE).unwrap().unwrap_boolean();
         let root_pid = doc.get(meta_doc_key::index::ROOT_PID).unwrap().unwrap_int();
 
         IndexEntry {
-            name: name.into(),
+            name,
             unique,
             root_pid: root_pid as u32,
         }
@@ -115,7 +117,9 @@ impl IndexEntry {
 
     fn to_doc(&self) -> Document {
         let mut result = Document::new_without_id();
-        result.insert(meta_doc_key::index::NAME.into(), Value::String(Rc::new(self.name.clone())));
+        if let Some(name_val) = &self.name {
+            result.insert(meta_doc_key::index::NAME.into(), Value::String(Rc::new(name_val.clone())));
+        }
         result.insert(meta_doc_key::index::UNIQUE.into(), Value::Boolean(self.unique));
         result.insert(meta_doc_key::index::ROOT_PID.into(), Value::Int(self.root_pid as i64));
         result

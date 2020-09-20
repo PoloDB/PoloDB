@@ -27,17 +27,17 @@ struct CursorItem {
     index:        usize,  // pointer point to the current node
 }
 
-impl CursorItem {
-
-    #[inline]
-    fn clone_with_new_node(&self, new_node: Rc<BTreeNode>) -> CursorItem {
-        CursorItem {
-            node: new_node,
-            index: self.index,
-        }
-    }
-
-}
+// impl CursorItem {
+//
+//     #[inline]
+//     fn clone_with_new_node(&self, new_node: Rc<BTreeNode>) -> CursorItem {
+//         CursorItem {
+//             node: new_node,
+//             index: self.index,
+//         }
+//     }
+//
+// }
 
 pub(crate) struct Cursor<'a> {
     page_handler:       &'a mut PageHandler,
