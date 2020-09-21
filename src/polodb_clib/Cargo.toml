@@ -1,0 +1,13 @@
+[package]
+name = "polodb_clib"
+version = "0.0.1"
+authors = ["Vincent Chan <okcdz@diverse.space>"]
+edition = "2018"
+
+[lib]
+name="polodb_clib"
+path="lib.rs"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+polodb_core = { path = "../polodb_core" }

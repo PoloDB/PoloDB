@@ -232,6 +232,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "polodb_clib"
+version = "0.0.1"
+dependencies = [
+ "polodb_core",
+]
+
+[[package]]
 name = "polodb_core"
 version = "0.0.1"
 dependencies = [

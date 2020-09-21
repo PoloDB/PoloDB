@@ -14,3 +14,5 @@ pub mod vli;
 mod meta_doc_helper;
 
 pub use db::{Database, DbResult};
+pub use error::DbErr;
+pub use vm::bytecode_builder::ByteCodeBuilder;

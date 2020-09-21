@@ -45,7 +45,7 @@ The feature will be implemented one by on in order.
   - [ ] Go
   - [ ] Objective-C
   - [ ] Swift
-  - [ ] Python
+  - [x] Python
   - [ ] Ruby
   - [ ] Elixir
   - [ ] Node.js

@@ -411,7 +411,7 @@ impl Database {
         Ok(oid)
     }
 
-    pub fn get_version(&self) -> String {
+    pub fn get_version() -> String {
         const VERSION: &'static str = env!("CARGO_PKG_VERSION");
         return VERSION.into();
     }
