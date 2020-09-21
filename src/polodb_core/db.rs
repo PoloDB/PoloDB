@@ -20,7 +20,7 @@ use super::page::{header_page_wrapper, PageHandler};
 use crate::index_ctx::{IndexCtx, merge_options_into_default};
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::bson::ObjectIdMaker;
-use crate::bson::{ObjectId, Document, Value, mk_str};
+use crate::bson::{Document, Value, mk_str};
 use crate::btree::*;
 use crate::cursor::Cursor;
 use crate::page::RawPage;
@@ -74,8 +74,7 @@ impl DbContext {
         Ok(result)
     }
 
-    pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {
-        let oid = self.obj_id_maker.mk_object_id();
+    pub fn create_collection(&mut self, name: &str) -> DbResult<()> {
         let mut doc = Document::new_without_id();
         doc.insert(meta_doc_key::ID.into(), mk_str(name));
 
@@ -99,10 +98,10 @@ impl DbContext {
 
                 self.update_meta_page_id_of_db(new_root_id)?;
 
-                Ok(oid)
+                Ok(())
             }
 
-            None => Ok(oid)
+            None => Ok(())
         }
     }
 
@@ -404,11 +403,10 @@ impl Database {
         })
     }
 
-    pub fn create_collection(&mut self, name: &str) -> DbResult<ObjectId> {
+    pub fn create_collection(&mut self, name: &str) -> DbResult<()> {
         self.ctx.start_transaction()?;
-        let oid = self.ctx.create_collection(name)?;
-        self.ctx.commit()?;
-        Ok(oid)
+        self.ctx.create_collection(name)?;
+        self.ctx.commit()
     }
 
     pub fn get_version() -> String {

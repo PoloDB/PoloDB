@@ -27,7 +27,9 @@ ffi.cdef("""
     
     int PLDB_exec(struct Database* db, unsigned char* bytes, unsigned int size);
     
-    const char* PLDB_error_msg();
+    int PLDB_create_collection(struct Database* db, const char* name);
+    
+    char* PLDB_error_msg();
     
     int PLDB_version(char* buffer, unsigned int buffer_size);
     
@@ -94,6 +96,13 @@ class PoloDB:
             error_msg = ffi.string(C.PLDB_error_msg())
             raise RuntimeError("open db error: " + error_msg)
 
+    def create_collection(self, name):
+        name_raw = ffi.new("char[]", bytes(name, 'utf-8'))
+        ret = C.PLDB_create_collection(self.db, name_raw)
+        if ret != 0:
+            error_msg = ffi.string(C.PLDB_error_msg()).decode('utf-8')
+            raise RuntimeError("create collection failed: " + error_msg)
+
     def close(self):
         if self.db == ffi.NULL:
             return
@@ -106,7 +115,7 @@ class BytecodeBuilder:
     def __init__(self):
         self.builder = C.PLDB_new_bytecode_builder()
         if self.builder == ffi.NULL:
-            error_msg = ffi.string(C.PLDB_error_msg())
+            error_msg = ffi.string(C.PLDB_error_msg()).decode('utf-8')
             raise RuntimeError("create builder failed: " + error_msg)
 
     def __del__(self):
@@ -118,3 +127,4 @@ class BytecodeBuilder:
 
 print(polodb_version())
 db = PoloDB("/tmp/test-python.db")
+db.create_collection("name")

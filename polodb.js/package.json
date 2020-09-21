@@ -1,0 +1,26 @@
+{
+  "name": "polodb",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "install": "cmake-js compile",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vincentdchan/PoloDB.git"
+  },
+  "keywords": [
+    "database"
+  ],
+  "author": "Vincent Chan",
+  "license": "LGPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/vincentdchan/PoloDB/issues"
+  },
+  "homepage": "https://github.com/vincentdchan/PoloDB#readme",
+  "dependencies": {
+    "bindings": "^1.5.0"
+  }
+}

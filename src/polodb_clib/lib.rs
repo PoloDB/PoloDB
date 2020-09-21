@@ -13,21 +13,25 @@
  * You should have received a copy of the GNU Lesser General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::os::raw::{c_char, c_uint, c_int, c_double, c_uchar};
-use std::ptr::{null_mut, null, write_bytes};
+use std::ptr::{null_mut, write_bytes};
 use std::ffi::{CStr, CString};
 use polodb_core::{Database, DbErr, ByteCodeBuilder};
-use polodb_core::bson::{Value, ObjectId};
+use polodb_core::bson::{Value, ObjectId, Document};
 
 const DB_ERROR_MSG_SIZE: usize = 512;
-static mut DB_GLOBAL_ERROR: Option<DbErr> = None;
-static mut DB_GLOBAL_ERROR_MSG: [c_char; DB_ERROR_MSG_SIZE] = [0; DB_ERROR_MSG_SIZE];
+
+thread_local! {
+    static DB_GLOBAL_ERROR: RefCell<Option<DbErr>> = RefCell::new(None);
+    static DB_GLOBAL_ERROR_MSG: RefCell<[c_char; DB_ERROR_MSG_SIZE]> = RefCell::new([0; DB_ERROR_MSG_SIZE]);
+}
 
 fn set_global_error(err: DbErr) {
-    unsafe {
-        DB_GLOBAL_ERROR = Some(err)
-    }
+    DB_GLOBAL_ERROR.with(|f| {
+        *f.borrow_mut() = Some(err);
+    });
 }
 
 #[no_mangle]
@@ -48,15 +52,50 @@ pub extern "C" fn PLDB_open(path: *const c_char) -> *mut Database {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_error_code() -> c_int {
+pub extern "C" fn PLDB_create_collection(db: *mut Database, name: *const c_char) -> c_int {
     unsafe {
-        if let Some(err) = &DB_GLOBAL_ERROR {
+        let name_str= CStr::from_ptr(name);
+        let name_utf8 = name_str.to_str().unwrap();
+        let oid_result = db.as_mut().unwrap().create_collection(name_utf8);
+        if let Err(err) = oid_result {
+            set_global_error(err);
+            return -1;
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_insert(db: *mut Database, name: *const c_char, doc: *const Document) -> c_int {
+    unsafe {
+        let local_db = db.as_mut().unwrap();
+        let name_str = CStr::from_ptr(name);
+        let name_utf8 = name_str.to_str().unwrap();
+        let local_doc: &Document = doc.as_ref().unwrap();
+        let insert_result = local_db.insert(name_utf8, Rc::new(local_doc.clone()));
+        if let Err(err) = insert_result {
+            set_global_error(err);
+            return -1;
+        }
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_find(_db: *mut Database, _val: *mut Value) -> c_int {
+    println!("find");
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_error_code() -> c_int {
+    return DB_GLOBAL_ERROR.with(|f| {
+        if let Some(err) = f.borrow().as_ref() {
             let code = error_code_of_db_err(err) * -1;
             return code
         }
-    }
-
-    0
+        0
+    });
 }
 
 #[no_mangle]
@@ -66,22 +105,25 @@ pub extern "C" fn PLDB_exec(_db: *mut Database, _bytes: *const u8, size: c_uint)
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_error_msg() -> *const c_char {
+pub extern "C" fn PLDB_error_msg() -> *mut c_char {
     unsafe {
-        if let Some(err) = &DB_GLOBAL_ERROR {
-            write_bytes(DB_GLOBAL_ERROR_MSG.as_mut_ptr(), 0, DB_ERROR_MSG_SIZE);
+        return DB_GLOBAL_ERROR.with(|f| {
+            if let Some(err) = f.borrow_mut().as_ref() {
+                return DB_GLOBAL_ERROR_MSG.with(|msg| {
+                    write_bytes(msg.borrow_mut().as_mut_ptr(), 0, DB_ERROR_MSG_SIZE);
+                    let err_msg = err.to_string();
+                    let str_size = err_msg.len();
+                    let err_cstring = CString::new(err_msg).unwrap();
+                    let expected_size: usize = std::cmp::min(str_size, DB_ERROR_MSG_SIZE - 1);
+                    err_cstring.as_ptr().copy_to(msg.borrow_mut().as_mut_ptr(), expected_size);
 
-            let err_msg = err.to_string();
-            let str_size = err_msg.len();
-            let err_cstring = CString::new(err_msg).unwrap();
-            let expected_size: usize = std::cmp::min(str_size, DB_ERROR_MSG_SIZE - 1);
-            err_cstring.as_ptr().copy_to(DB_GLOBAL_ERROR_MSG.as_mut_ptr(), expected_size);
+                    return msg.borrow_mut().as_mut_ptr();
+                });
+            }
 
-            return DB_GLOBAL_ERROR_MSG.as_ptr();
-        }
+            return null_mut();
+        });
     }
-
-    null()
 }
 
 #[no_mangle]
@@ -106,6 +148,22 @@ pub extern "C" fn PLDB_close(db: *mut Database) {
 pub extern "C" fn PLDB_new_bytecode_builder() -> *mut ByteCodeBuilder {
     let builder = Box::new(ByteCodeBuilder::new());
     Box::into_raw(builder)
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_bcb_add_static_val(builder: *mut ByteCodeBuilder, val: *mut Value) -> c_uint {
+    unsafe {
+        let copy = val.as_ref().unwrap().clone();
+
+        builder.as_mut().unwrap().add_static_values(copy) as c_uint
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_bcb_add_divider(builder: *mut ByteCodeBuilder) {
+    unsafe {
+        builder.as_mut().unwrap().add_divider();
+    }
 }
 
 #[no_mangle]
@@ -148,6 +206,46 @@ pub extern "C" fn PLDB_mk_str(str: *mut c_char) -> *mut Value {
         }
     };
     let val = Box::new(Value::String(Rc::new(rust_str.to_string())));
+    Box::into_raw(val)
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_mk_doc() -> *mut Rc<Document> {
+    let result = Box::new(Rc::new(Document::new_without_id()));
+    Box::into_raw(result)
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char, value: *const Value) -> c_int {
+    unsafe {
+        let mut local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let local_value = value.as_ref().unwrap();
+        let key = key_str.to_str().unwrap();
+        let local_doc_mut = Rc::get_mut(&mut local_doc).unwrap();
+        let result = local_doc_mut.insert(key.to_string(), local_value.clone());
+        if let Some(_) = result {
+            1
+        } else {
+            0
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_free_doc(doc: *mut Rc<Document>) {
+    unsafe {
+        let _ptr = Box::from_raw(doc);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_into_value(doc: *mut Rc<Document>) -> *mut Value {
+    let doc: Rc<Document> = unsafe {
+        doc.as_ref().unwrap().clone()
+    };
+
+    let val = Box::new(Value::Document(doc));
     Box::into_raw(val)
 }
 
