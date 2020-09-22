@@ -47,6 +47,8 @@ void PLDB_free_doc(struct DbDocument* doc);
 
 int PLDB_doc_set(struct DbDocument* doc, const char* key, struct DbValue* val);
 
+int PLDB_doc_get(struct DbDocument* dc, const char* key, struct DbValue** out_val);
+
 struct DbValue* PLDB_doc_into_value(struct DbDocument* db);
 
 struct DbValue* PLDB_mk_null();

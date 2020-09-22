@@ -61,6 +61,14 @@ class Document {
     addon.documentSet(this.__doc, key, value.__val);
   }
 
+  get(key) {
+    const raw = addon.documentGet(this.__doc, key);
+    if (typeof raw === 'undefined') {
+      return raw;
+    }
+    return new Value(raw);
+  }
+
 }
 
 class ObjectId {

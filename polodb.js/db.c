@@ -267,6 +267,60 @@ clean:
   return NULL;
 }
 
+static napi_value DocGet(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 2;
+  napi_value args[2];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!CheckType(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "the first argument should be an external object");
+    return NULL;
+  }
+
+  if (!CheckType(env, args[1], napi_string)) {
+    napi_throw_type_error(env, NULL, "the second argument should be a string");
+    return NULL;
+  }
+
+  void* raw_doc;
+  status = napi_get_value_external(env, args[0], &raw_doc);
+  assert(status == napi_ok);
+
+  size_t key_size = 0;
+  status = napi_get_value_string_utf8(env, args[1], NULL, 0, &key_size);
+  assert(status == napi_ok);
+
+  char* key_buffer = (char*)malloc(sizeof(char) * (key_size + 1));
+  memset(key_buffer, 0, key_size + 1);
+
+  status = napi_get_value_string_utf8(env, args[1], key_buffer, key_size + 1, &key_size);
+  assert(status == napi_ok);
+
+  napi_value result = NULL;
+
+  struct DbValue* out_val = NULL;
+  int ec = PLDB_doc_get((struct DbDocument*)raw_doc, key_buffer, &out_val);
+  if (ec < 0) {
+    napi_throw_type_error(env, NULL, PLDB_error_msg());
+    goto clean;
+  }
+
+  // not found
+  if (out_val == NULL) {
+    goto clean;
+  }
+
+  status = napi_create_external(env, (void*)out_val, DbValueFinalize, NULL, &result);
+  assert(status == napi_ok);
+
+clean:
+  free(key_buffer);
+  return result;
+}
+
 static napi_value CreateCollection(napi_env env, napi_callback_info info) {
   napi_status status;
 
@@ -352,6 +406,7 @@ static napi_value Init(napi_env env, napi_value exports) {
   REGISTER_CALLBACK("close", Close);
   REGISTER_CALLBACK("makeDocument", MkDocument);
   REGISTER_CALLBACK("documentSet", DocSet);
+  REGISTER_CALLBACK("documentGet", DocGet);
   REGISTER_CALLBACK("mkNull", MkNull);
   REGISTER_CALLBACK("mkInt", MkInt);
   REGISTER_CALLBACK("mkBool", MkBool);
