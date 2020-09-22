@@ -16,7 +16,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::os::raw::{c_char, c_uint, c_int, c_double, c_uchar};
-use std::ptr::{null_mut, write_bytes};
+use std::ptr::{null_mut, write_bytes, null};
 use std::ffi::{CStr, CString};
 use polodb_core::{Database, DbErr, ByteCodeBuilder};
 use polodb_core::bson::{Value, ObjectId, Document};
@@ -26,6 +26,18 @@ const DB_ERROR_MSG_SIZE: usize = 512;
 thread_local! {
     static DB_GLOBAL_ERROR: RefCell<Option<DbErr>> = RefCell::new(None);
     static DB_GLOBAL_ERROR_MSG: RefCell<[c_char; DB_ERROR_MSG_SIZE]> = RefCell::new([0; DB_ERROR_MSG_SIZE]);
+}
+
+macro_rules! try_read_utf8 {
+    ($action:expr, $ret:expr) => {
+        match $action {
+            Ok(str) => str,
+            Err(err) => {
+                set_global_error(DbErr::UTF8Err(err));
+                return $ret;
+            }
+        }
+    }
 }
 
 fn set_global_error(err: DbErr) {
@@ -39,7 +51,7 @@ pub extern "C" fn PLDB_open(path: *const c_char) -> *mut Database {
     let cstr = unsafe {
         CStr::from_ptr(path)
     };
-    let str = cstr.to_str().unwrap();
+    let str = try_read_utf8!(cstr.to_str(), null_mut());
     let db = match Database::open(str) {
         Ok(db) => db,
         Err(err) => {
@@ -55,7 +67,7 @@ pub extern "C" fn PLDB_open(path: *const c_char) -> *mut Database {
 pub extern "C" fn PLDB_create_collection(db: *mut Database, name: *const c_char) -> c_int {
     unsafe {
         let name_str= CStr::from_ptr(name);
-        let name_utf8 = name_str.to_str().unwrap();
+        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
         let oid_result = db.as_mut().unwrap().create_collection(name_utf8);
         if let Err(err) = oid_result {
             set_global_error(err);
@@ -70,7 +82,7 @@ pub extern "C" fn PLDB_insert(db: *mut Database, name: *const c_char, doc: *cons
     unsafe {
         let local_db = db.as_mut().unwrap();
         let name_str = CStr::from_ptr(name);
-        let name_utf8 = name_str.to_str().unwrap();
+        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
         let local_doc: &Document = doc.as_ref().unwrap();
         let insert_result = local_db.insert(name_utf8, Rc::new(local_doc.clone()));
         if let Err(err) = insert_result {
@@ -105,7 +117,7 @@ pub extern "C" fn PLDB_exec(_db: *mut Database, _bytes: *const u8, size: c_uint)
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_error_msg() -> *mut c_char {
+pub extern "C" fn PLDB_error_msg() -> *const c_char {
     unsafe {
         return DB_GLOBAL_ERROR.with(|f| {
             if let Some(err) = f.borrow_mut().as_ref() {
@@ -117,11 +129,11 @@ pub extern "C" fn PLDB_error_msg() -> *mut c_char {
                     let expected_size: usize = std::cmp::min(str_size, DB_ERROR_MSG_SIZE - 1);
                     err_cstring.as_ptr().copy_to(msg.borrow_mut().as_mut_ptr(), expected_size);
 
-                    return msg.borrow_mut().as_mut_ptr();
+                    return msg.borrow().as_ptr();
                 });
             }
 
-            return null_mut();
+            return null();
         });
     }
 }
@@ -198,13 +210,7 @@ pub extern "C" fn PLDB_mk_int(val: i64) -> *mut Value {
 #[no_mangle]
 pub extern "C" fn PLDB_mk_str(str: *mut c_char) -> *mut Value {
     let str = unsafe { CString::from_raw(str) };
-    let rust_str = match str.to_str() {
-        Ok(str) => str,
-        Err(err) => {
-            eprint!("decoding utf8 error: {}", err.to_string());
-            return null_mut();
-        }
-    };
+    let rust_str = try_read_utf8!(str.to_str(), null_mut());
     let val = Box::new(Value::String(Rc::new(rust_str.to_string())));
     Box::into_raw(val)
 }
@@ -221,7 +227,7 @@ pub extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char, value
         let mut local_doc = doc.as_mut().unwrap();
         let key_str = CStr::from_ptr(key);
         let local_value = value.as_ref().unwrap();
-        let key = key_str.to_str().unwrap();
+        let key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
         let local_doc_mut = Rc::get_mut(&mut local_doc).unwrap();
         let result = local_doc_mut.insert(key.to_string(), local_value.clone());
         if let Some(_) = result {
@@ -229,6 +235,22 @@ pub extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char, value
         } else {
             0
         }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_get(doc: *mut Rc<Document>, key: *const c_char, result: *mut *mut Value) -> c_int {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+        let get_result = local_doc.get(utf8_key);
+        if let Some(value) = get_result {
+            let out_box = Box::new(value.clone());
+            result.write(Box::into_raw(out_box));
+            return 1;
+        }
+        return 0;
     }
 }
 
@@ -293,25 +315,26 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::ParseError(_) => 7,
         DbErr::ParseIntError(_) => 8,
         DbErr::IOErr(_) => 9,
-        DbErr::TypeNotComparable(_, _) => 10,
-        DbErr::DataSizeTooLarge(_, _) => 11,
-        DbErr::DecodeEOF => 12,
-        DbErr::DecodeIntUnknownByte => 13,
-        DbErr::DataOverflow => 14,
-        DbErr::DataExist(_) => 15,
-        DbErr::PageSpaceNotEnough => 16,
-        DbErr::DataHasNoPrimaryKey => 17,
-        DbErr::ChecksumMismatch => 18,
-        DbErr::JournalPageSizeMismatch(_, _) => 19,
-        DbErr::SaltMismatch => 20,
-        DbErr::PageMagicMismatch(_) => 21,
-        DbErr::ItemSizeGreaterThenExpected => 22,
-        DbErr::CollectionNotFound(_) => 23,
-        DbErr::MetaPageIdError => 24,
-        DbErr::CannotWriteDbWithoutTransaction => 25,
-        DbErr::StartTransactionInAnotherTransaction => 26,
-        DbErr::RollbackNotInTransaction => 27,
-        DbErr::Busy => 28
+        DbErr::UTF8Err(_) => 10,
+        DbErr::TypeNotComparable(_, _) => 11,
+        DbErr::DataSizeTooLarge(_, _) => 12,
+        DbErr::DecodeEOF => 13,
+        DbErr::DecodeIntUnknownByte => 14,
+        DbErr::DataOverflow => 15,
+        DbErr::DataExist(_) => 16,
+        DbErr::PageSpaceNotEnough => 17,
+        DbErr::DataHasNoPrimaryKey => 18,
+        DbErr::ChecksumMismatch => 19,
+        DbErr::JournalPageSizeMismatch(_, _) => 20,
+        DbErr::SaltMismatch => 21,
+        DbErr::PageMagicMismatch(_) => 22,
+        DbErr::ItemSizeGreaterThenExpected => 23,
+        DbErr::CollectionNotFound(_) => 24,
+        DbErr::MetaPageIdError => 25,
+        DbErr::CannotWriteDbWithoutTransaction => 26,
+        DbErr::StartTransactionInAnotherTransaction => 27,
+        DbErr::RollbackNotInTransaction => 28,
+        DbErr::Busy => 29
 
     }
 }

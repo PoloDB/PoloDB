@@ -31,7 +31,7 @@ int PLDB_exec(struct Database* db, unsigned char* bytes, unsigned int size);
 
 int PLDB_create_collection(struct Database* db, const char* name);
 
-char* PLDB_error_msg();
+const char* PLDB_error_msg();
 
 int PLDB_version(char* buffer, unsigned int buffer_size);
 

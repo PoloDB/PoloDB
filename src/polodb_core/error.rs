@@ -75,6 +75,7 @@ pub enum DbErr {
     ParseError(String),
     ParseIntError(num::ParseIntError),
     IOErr(io::Error),
+    UTF8Err(std::str::Utf8Error),
     TypeNotComparable(String, String),
     DataSizeTooLarge(u32, u32),
     DecodeEOF,
@@ -115,6 +116,7 @@ impl fmt::Display for DbErr {
             DbErr::ParseError(reason) => write!(f, "ParseError: {}", reason),
             DbErr::ParseIntError(parse_int_err) => std::fmt::Display::fmt(&parse_int_err, f),
             DbErr::IOErr(io_err) => std::fmt::Display::fmt(&io_err, f),
+            DbErr::UTF8Err(utf8_err) => std::fmt::Display::fmt(&utf8_err, f),
             DbErr::TypeNotComparable(expected, actual) =>
                 write!(f, "TypeNotComparable(expected: {}, actual: {})", expected, actual),
             DbErr::DataSizeTooLarge(expected, actual) =>
@@ -153,6 +155,14 @@ impl From<num::ParseIntError> for DbErr {
 
     fn from(error: num::ParseIntError) -> Self {
         DbErr::ParseIntError(error)
+    }
+
+}
+
+impl From<std::str::Utf8Error> for DbErr {
+
+    fn from(error: std::str::Utf8Error) -> Self {
+        DbErr::UTF8Err(error)
     }
 
 }
