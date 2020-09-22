@@ -45,6 +45,10 @@ class Value {
     this.__val = internal;
   }
 
+  typeName() {
+    return addon.valueTypeName(this.__val);
+  }
+
 }
 
 class Document {

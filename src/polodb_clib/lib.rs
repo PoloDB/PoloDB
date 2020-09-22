@@ -208,8 +208,23 @@ pub extern "C" fn PLDB_mk_int(val: i64) -> *mut Value {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_mk_str(str: *mut c_char) -> *mut Value {
-    let str = unsafe { CString::from_raw(str) };
+pub extern "C" fn PLDB_value_type_name(val: *const Value, buffer: *mut c_char, buffer_size: c_uint) -> c_int {
+    unsafe {
+        let local_val = val.as_ref().unwrap();
+        let rust_name = local_val.ty_name();
+        let actual_size = rust_name.len();
+        let cstr = CString::new(rust_name).unwrap();
+        let result_size = std::cmp::min(actual_size, buffer_size as usize);
+
+        cstr.as_ptr().copy_to_nonoverlapping(buffer, result_size);
+
+        result_size as c_int
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_mk_str(str: *const c_char) -> *mut Value {
+    let str = unsafe { CStr::from_ptr(str) };
     let rust_str = try_read_utf8!(str.to_str(), null_mut());
     let val = Box::new(Value::String(Rc::new(rust_str.to_string())));
     Box::into_raw(val)

@@ -4,6 +4,7 @@
 #include <node_api.h>
 
 #define BUFFER_SIZE 512
+#define VALUE_NAME_BUFFER_SIZE 64
 
 #include "./polodb.h"
 
@@ -162,6 +163,35 @@ static napi_value MkStr(napi_env env, napi_callback_info info) {
 
 clean:
   free(buffer);
+  return result;
+}
+
+static napi_value ValueTypeName(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!CheckType(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments");
+    return NULL;
+  }
+
+  void* raw_value;
+  status = napi_get_value_external(env, args[0], &raw_value);
+  assert(status == napi_ok);
+
+  static char buffer[VALUE_NAME_BUFFER_SIZE];
+  memset(buffer, 0, VALUE_NAME_BUFFER_SIZE);
+
+  int size = PLDB_value_type_name((struct DbValue*)raw_value, buffer, VALUE_NAME_BUFFER_SIZE);
+
+  napi_value result = NULL;
+  status = napi_create_string_utf8(env, buffer, size, &result);
+  assert(status == napi_ok);
+
   return result;
 }
 
@@ -412,6 +442,7 @@ static napi_value Init(napi_env env, napi_value exports) {
   REGISTER_CALLBACK("mkBool", MkBool);
   REGISTER_CALLBACK("mkDouble", MkDouble);
   REGISTER_CALLBACK("mkString", MkStr);
+  REGISTER_CALLBACK("valueTypeName", ValueTypeName);
   REGISTER_CALLBACK("createCollection", CreateCollection);
   REGISTER_CALLBACK("version", Version);
 

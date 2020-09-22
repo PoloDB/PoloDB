@@ -1,6 +1,7 @@
 const { Database, Document, Value } = require("./index");
 
 const three = Value.makeInt(3);
+console.log(three.typeName());
 
 const doc = new Document();
 doc.set("hello", three);

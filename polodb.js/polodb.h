@@ -59,11 +59,13 @@ struct DbValue* PLDB_mk_bool(int bl);
 
 struct DbValue* PLDB_mk_int(long long value);
 
-struct DbValue* PLDB_mk_str(char* content);
+struct DbValue* PLDB_mk_str(const char* content);
 
 struct DbValue* PLDB_mk_binary(unsigned char* content, unsigned int size);
 
 struct DbValue* PLDB_mk_object_id(unsigned char* bytes);
+
+int PLDB_value_type_name(struct DbValue* value, char* buffer, unsigned int size);
 
 void PLDB_free_value(struct DbValue* val);
 
