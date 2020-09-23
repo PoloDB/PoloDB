@@ -18,8 +18,8 @@ use std::rc::Rc;
 use std::os::raw::{c_char, c_uint, c_int, c_double, c_uchar};
 use std::ptr::{null_mut, write_bytes, null};
 use std::ffi::{CStr, CString};
-use polodb_core::{Database, DbErr, ByteCodeBuilder};
-use polodb_core::bson::{Value, ObjectId, Document};
+use polodb_core::{Database, DbErr};
+use polodb_core::bson::{Value, ObjectId, Document, Array};
 
 const DB_ERROR_MSG_SIZE: usize = 512;
 
@@ -157,33 +157,6 @@ pub extern "C" fn PLDB_close(db: *mut Database) {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_new_bytecode_builder() -> *mut ByteCodeBuilder {
-    let builder = Box::new(ByteCodeBuilder::new());
-    Box::into_raw(builder)
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_bcb_add_static_val(builder: *mut ByteCodeBuilder, val: *mut Value) -> c_uint {
-    unsafe {
-        let copy = val.as_ref().unwrap().clone();
-
-        builder.as_mut().unwrap().add_static_values(copy) as c_uint
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_bcb_add_divider(builder: *mut ByteCodeBuilder) {
-    unsafe {
-        builder.as_mut().unwrap().add_divider();
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_free_byte_code_builder(builder: *mut ByteCodeBuilder) {
-    let _ptr = unsafe { Box::from_raw(builder) };
-}
-
-#[no_mangle]
 pub extern "C" fn PLDB_mk_null() -> *mut Value {
     let val = Box::new(Value::Null);
     Box::into_raw(val)
@@ -228,6 +201,57 @@ pub extern "C" fn PLDB_mk_str(str: *const c_char) -> *mut Value {
     let rust_str = try_read_utf8!(str.to_str(), null_mut());
     let val = Box::new(Value::String(Rc::new(rust_str.to_string())));
     Box::into_raw(val)
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_mk_arr() -> *mut Rc<Array> {
+    let result = Box::new(Rc::new(Array::new()));
+    Box::into_raw(result)
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_free_arr(arr: *mut Rc<Array>) {
+    let _ptr = unsafe { Box::from_raw(arr) };
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_into_value(arr: *mut Rc<Array>) -> *mut Value {
+    let boxed_value = unsafe {
+        let local_arr = arr.as_ref().unwrap();
+        let local_value = Value::Array(local_arr.clone());
+        Box::new(local_value)
+    };
+    Box::into_raw(boxed_value)
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_push(arr: *mut Rc<Array>, val: *const Value) {
+    unsafe {
+        let local_arr = arr.as_mut().unwrap();
+        let arr_mut = Rc::get_mut(local_arr).unwrap();
+        let local_val = val.as_ref().unwrap();
+        arr_mut.push(local_val.clone())
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_get(arr: *mut Rc<Array>, index: c_uint, out_val: *mut *mut Value) -> c_int {
+    unsafe {
+        let local_arr = arr.as_mut().unwrap();
+        let val = &local_arr[index as usize];
+        let out_box = Box::new(val.clone());
+        out_val.write(Box::into_raw(out_box));
+        0
+    }
+
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_len(arr: *mut Rc<Array>) -> c_uint {
+    unsafe {
+        let local_arr = arr.as_ref().unwrap();
+        local_arr.len()
+    }
 }
 
 #[no_mangle]
@@ -298,20 +322,40 @@ pub extern "C" fn PLDB_mk_binary(data: *mut c_uchar, size: c_uint) -> *mut Value
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_mk_object_id(bytes: *mut c_uchar) -> *mut Value {
-    let mut data: [u8; 12] = [0; 12];
+pub extern "C" fn PLDB_mk_object_id(db: *mut Database) -> *mut ObjectId {
+    let rust_db = unsafe { db.as_mut().unwrap() };
+    let oid = Box::new(rust_db.mk_object_id());
+    Box::into_raw(oid)
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_free_object_id(oid: *mut ObjectId) {
     unsafe {
-        bytes.copy_to(data.as_mut_ptr(), 12);
+        let _ptr = Box::from_raw(oid);
     }
-    let oid = match ObjectId::deserialize(&data) {
-        Ok(oid) => oid,
-        Err(err) => {
-            eprintln!("parse object oid error: {}", err);
-            return null_mut();
-        }
-    };
-    let val = Box::new(Value::ObjectId(Rc::new(oid)));
-    Box::into_raw(val)
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_object_id_into_value(oid: *const ObjectId) -> *mut Value {
+    unsafe {
+        let rust_oid = oid.as_ref().unwrap();
+        let value = Value::ObjectId(Rc::new(rust_oid.clone()));
+        let boxed_value = Box::new(value);
+        Box::into_raw(boxed_value)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_object_id_to_hex(oid: *const ObjectId, buffer: *mut c_char, buffer_size: c_uint) -> c_int {
+    unsafe  {
+        let rust_oid = oid.as_ref().unwrap();
+        let oid_hex = rust_oid.to_hex();
+        let size = oid_hex.len();
+        let cstr = CString::new(oid_hex).unwrap();
+        let real_size = std::cmp::min(size, buffer_size as usize);
+        cstr.as_ptr().copy_to_nonoverlapping(buffer, real_size);
+        real_size as c_int
+    }
 }
 
 #[no_mangle]

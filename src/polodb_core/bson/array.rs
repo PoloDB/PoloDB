@@ -31,6 +31,10 @@ impl Array {
         Array(data)
     }
 
+    pub fn push(&mut self, elm: Value) {
+        self.0.push(elm)
+    }
+
     #[inline]
     pub fn len(&self) -> u32 {
         self.0.len() as u32

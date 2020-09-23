@@ -127,6 +127,12 @@ impl JournalManager {
     }
 
     fn init_header_to_file(&mut self) -> DbResult<()> {
+        self.salt1 = generate_a_salt();
+        self.salt2 = generate_a_salt();
+        self.write_header_to_file()
+    }
+
+    fn write_header_to_file(&mut self) -> DbResult<()> {
         let mut header48: Vec<u8> = vec![];
         header48.resize(48, 0);
 
@@ -141,14 +147,13 @@ impl JournalManager {
         let page_size_be = self.page_size.to_be_bytes();
         header48[36..40].copy_from_slice(&page_size_be);
 
-        self.salt1 = generate_a_salt();
         let salt_1_be = self.salt1.to_be_bytes();
         header48[40..44].copy_from_slice(&salt_1_be);
 
-        self.salt2 = generate_a_salt();
         let salt_2_be = self.salt2.to_be_bytes();
         header48[44..48].copy_from_slice(&salt_2_be);
 
+        self.journal_file.seek(SeekFrom::Start(0))?;
         self.journal_file.write(&header48)?;
 
         let checksum = crc64(0, &header48);
@@ -363,20 +368,26 @@ impl JournalManager {
         self.checkpoint_finished()
     }
 
+    fn plus_salt1(&mut self) {
+        if self.salt1 == u32::max_value() {
+            self.salt1 = 0;
+            return;
+        }
+        self.salt1 += 1;
+    }
+
     fn checkpoint_finished(&mut self) -> DbResult<()> {
         self.journal_file.set_len(64)?;  // truncate file to 64 bytes
 
         // clear all data
-        self.salt1 += 1;
         self.count = 0;
 
         self.offset_map_list.clear();
         self.offset_map_list.push_back(BTreeMap::new());
 
+        self.plus_salt1();
         self.salt2 = generate_a_salt();
-        self.init_header_to_file()?;
-
-        Ok(())
+        self.write_header_to_file()
     }
 
     pub(crate) fn start_transaction(&mut self) -> DbResult<()> {

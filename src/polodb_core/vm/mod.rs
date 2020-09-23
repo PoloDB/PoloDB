@@ -1,3 +1,6 @@
 mod vm_code;
 mod vm;
-pub mod bytecode_builder;
+mod subprogram;
+
+pub(crate) use vm::VM;
+pub(crate) use subprogram::SubProgram;

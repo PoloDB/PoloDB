@@ -58,7 +58,7 @@ impl ObjectId {
         ObjectId::deserialize(&bytes)
     }
 
-    fn to_hex(&self) -> String {
+    pub fn to_hex(&self) -> String {
         let mut bytes = vec![];
 
         self.serialize(&mut bytes).expect("object id serializing failed");

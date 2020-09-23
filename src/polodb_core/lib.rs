@@ -12,7 +12,7 @@ mod data_ticket;
 mod index_ctx;
 pub mod vli;
 mod meta_doc_helper;
+mod context;
 
 pub use db::{Database, DbResult};
 pub use error::DbErr;
-pub use vm::bytecode_builder::ByteCodeBuilder;

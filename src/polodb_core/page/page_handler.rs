@@ -112,7 +112,7 @@ impl PageHandler {
             match range.next() {
                 Some((key, value)) => {
                     if value.is_empty() {
-                        println!("empty");
+                        panic!("unexpected: distributed vector is empty");
                     }
                     let last_index = value[value.len() - 1];
                     value.remove(value.len() - 1);

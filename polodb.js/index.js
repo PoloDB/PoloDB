@@ -75,10 +75,44 @@ class Document {
 
 }
 
+class DbArray {
+
+  constructor() {
+    this.__arr = addon.mkArray();
+  }
+
+  get(index) {
+    return addon.arrayGet(this.__arr);
+  }
+
+  push(val) {
+    if (!(val instanceof Value)) {
+      throw new TypeErr("not a Value");
+    }
+    addon.arrayPush(this.__arr, val.__val);
+  }
+
+  length() {
+    return addon.arrayLen(this.__arr);
+  }
+
+}
+
 class ObjectId {
 
   constructor(ext) {
     this[ObjectIdExt] = ext;
+  }
+
+  toValue() {
+    const raw = this[ObjectIdExt];
+    const valueRaw = addon.objectIdToValue(raw);
+    return new Value(valueRaw);
+  }
+
+  hex() {
+    const raw = this[ObjectIdExt];
+    return addon.objectIdToHex(raw);
   }
 
 }
@@ -105,6 +139,11 @@ class Database {
 
   [ExecSymbol]() {
 
+  }
+
+  makeObjectId() {
+    const raw = addon.mkObjectId(this.__db);
+    return new ObjectId(raw);
   }
 
   createCollection(name) {
@@ -136,6 +175,7 @@ class BytecodeBuilder {
 module.exports = {
   Database,
   Document,
+  DbArray,
   Value,
   mkNull,
   mkDouble,

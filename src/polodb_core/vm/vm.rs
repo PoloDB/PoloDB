@@ -15,14 +15,10 @@
  */
 use std::vec::Vec;
 use super::vm_code::VmCode;
+use super::subprogram::SubProgram;
 use crate::bson::Value;
 
 const STACK_SIZE: usize = 256;
-
-pub struct SubProgram {
-    static_values:    Vec<Value>,
-    instructions:     Vec<u8>,
-}
 
 #[repr(i8)]
 pub enum VmState {
@@ -40,7 +36,7 @@ pub struct VM {
 
 impl VM {
 
-    fn new(program: Box<SubProgram>) -> VM {
+    pub(crate) fn new(program: Box<SubProgram>) -> VM {
         let mut stack = Vec::new();
         stack.resize(STACK_SIZE, Value::Null);
         VM {
@@ -50,7 +46,7 @@ impl VM {
         }
     }
 
-    fn execute(&mut self) {
+    pub(crate) fn execute(&mut self) {
         // let pc: *mut u8 = self.pro
         unsafe {
             let mut pc: *const u8 = self.program.instructions.as_ptr();
