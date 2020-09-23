@@ -14,7 +14,7 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 use std::vec::Vec;
-use super::op::DbOp;
+// use super::op::DbOp;
 use super::subprogram::SubProgram;
 use crate::bson::Value;
 use std::ptr::null;

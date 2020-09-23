@@ -363,6 +363,11 @@ impl PageHandler {
     }
 
     #[inline]
+    pub fn journal_file_path(&self) -> &str {
+        self.journal_manager.path()
+    }
+
+    #[inline]
     pub fn start_transaction(&mut self) -> DbResult<()> {
         self.journal_manager.start_transaction()
     }

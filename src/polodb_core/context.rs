@@ -387,7 +387,11 @@ impl DbContext {
 impl Drop for DbContext {
 
     fn drop(&mut self) {
-        let _ = self.page_handler.checkpoint_journal();  // ignored
+        let path = self.page_handler.journal_file_path().to_string();
+        let checkpoint_result = self.page_handler.checkpoint_journal();  // ignored
+        if let Ok(_) = checkpoint_result {
+            let _ = std::fs::remove_file(path);  // ignore the result
+        }
     }
 
 }

@@ -71,6 +71,7 @@ impl FrameHeader {
 // checksum before 48:   8bytes(offset 48)
 // data begin: 64 bytes
 pub(crate) struct JournalManager {
+    file_path:             String,
     journal_file:     File,
     version:          [u8; 4],
     page_size:        u32,
@@ -103,6 +104,7 @@ impl JournalManager {
         offset_map_list.push_back(BTreeMap::new());
 
         let mut result = JournalManager {
+            file_path: path.to_string(),
             journal_file,
             version: [0, 0, 1, 0],
             page_size,
@@ -453,6 +455,11 @@ impl JournalManager {
         } else {
             Err(DbErr::Busy)
         }
+    }
+
+    #[inline]
+    pub(crate) fn path(&self) -> &str {
+        self.file_path.as_str()
     }
 
     #[inline]
