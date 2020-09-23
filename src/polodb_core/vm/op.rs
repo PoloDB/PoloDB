@@ -73,8 +73,9 @@ pub enum DbOp {
     // compare top 2 values on the stack
     //
     // REJECT when not comparable
-    // 0 for not equal
-    // 1 for equal
+    // -1 for less
+    // 0 for equal
+    // 1 for great
     Cmp,
 
     // open a cursor with op0 as root_pid

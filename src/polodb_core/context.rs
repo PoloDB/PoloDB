@@ -42,7 +42,7 @@ impl DbContext {
         Ok(ctx)
     }
 
-    fn get_meta_page_id(&mut self) -> DbResult<u32> {
+    pub(crate) fn get_meta_page_id(&mut self) -> DbResult<u32> {
         let head_page = self.page_handler.pipeline_read_page(0)?;
         let head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
         let result = head_page_wrapper.get_meta_page_id();
@@ -97,7 +97,12 @@ impl DbContext {
         (self.page_handler.page_size - HEADER_SIZE) / ITEM_SIZE
     }
 
-    fn find_collection_root_pid_by_name(&mut self, parent_pid: u32, root_pid: u32, col_name: &str) -> DbResult<(MetaDocEntry, Rc<Document>)> {
+    pub(crate) fn execute_program(&mut self, program: SubProgram) -> VM {
+        let vm = VM::new(&mut self.page_handler, Box::new(program));
+        vm
+    }
+
+    pub(crate) fn find_collection_root_pid_by_name(&mut self, parent_pid: u32, root_pid: u32, col_name: &str) -> DbResult<(MetaDocEntry, Rc<Document>)> {
         let raw_page = self.page_handler.pipeline_read_page(root_pid)?;
         let item_size = self.item_size();
         let btree_node = BTreeNode::from_raw(&raw_page, parent_pid, item_size, &mut self.page_handler)?;
@@ -249,7 +254,7 @@ impl DbContext {
         let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
 
         let subprogram = Box::new(SubProgram::compile_query(&collection_meta, meta_doc.borrow(), query)?);
-        let mut vm = VM::new(subprogram);
+        let mut vm = VM::new(&mut self.page_handler, subprogram);
         vm.execute();
         Ok(())
     }
@@ -259,7 +264,7 @@ impl DbContext {
         let (_collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
 
         let subprogram = Box::new(SubProgram::compile_update(meta_doc.borrow(), query, update)?);
-        let mut vm = VM::new(subprogram);
+        let mut vm = VM::new(&mut self.page_handler, subprogram);
         vm.execute();
         Ok(())
     }
@@ -340,30 +345,32 @@ impl DbContext {
     }
 
     pub(crate) fn get_collection_cursor(&mut self, col_name: &str) -> DbResult<Cursor> {
-        let root_page_id: u32 = {
-            let meta_page_id = self.get_meta_page_id()?;
-            let (meta_entry, _) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
-            meta_entry.root_pid
-        };
-
-        Ok(Cursor::new(&mut self.page_handler, root_page_id as u32)?)
+        unimplemented!()
+        // let root_page_id: u32 = {
+        //     let meta_page_id = self.get_meta_page_id()?;
+        //     let (meta_entry, _) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        //     meta_entry.root_pid
+        // };
+        //
+        // Ok(Cursor::new(&mut self.page_handler, root_page_id as u32)?)
     }
 
     pub fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
-        let meta_page_id = self.get_meta_page_id()?;
-
-        let mut result = vec![];
-        let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
-
-        while cursor.has_next() {
-            let ticket = cursor.peek().unwrap();
-            let doc = cursor.get_doc_from_ticket(&ticket)?;
-            result.push(doc);
-
-            let _ = cursor.next()?;
-        }
-
-        Ok(result)
+        // let meta_page_id = self.get_meta_page_id()?;
+        //
+        // let mut result = vec![];
+        // let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
+        //
+        // while cursor.has_next() {
+        //     let ticket = cursor.peek().unwrap();
+        //     let doc = cursor.get_doc_from_ticket(&ticket)?;
+        //     result.push(doc);
+        //
+        //     let _ = cursor.next()?;
+        // }
+        //
+        // Ok(result)
+        unimplemented!()
     }
 
     #[inline]

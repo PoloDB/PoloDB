@@ -38,6 +38,14 @@ pub(crate) const KEY_TY_FLAG: u32 = 0b11111111;
 
 impl MetaDocEntry {
 
+    pub fn new(id: String, root_pid: u32) -> MetaDocEntry {
+        MetaDocEntry {
+            id,
+            root_pid,
+            flags: 0
+        }
+    }
+
     pub(crate) fn from_doc(doc: &Document) -> MetaDocEntry {
         let id = doc.get(meta_doc_key::ID.into()).unwrap().unwrap_string();
         let root_pid = doc.get(meta_doc_key::ROOT_PID.into()).unwrap().unwrap_int();

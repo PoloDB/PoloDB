@@ -17,6 +17,7 @@ use std::rc::Rc;
 use super::error::DbErr;
 use crate::bson::{Document, ObjectId, Value};
 use crate::context::DbContext;
+use crate::vm::{SubProgram, VmState};
 
 // #[derive(Clone)]
 pub struct Database {
@@ -50,6 +51,28 @@ impl Database {
     pub fn get_version() -> String {
         const VERSION: &'static str = env!("CARGO_PKG_VERSION");
         return VERSION.into();
+    }
+
+    pub fn find_all(&mut self, col_name: &str) -> DbResult<Vec<Rc<Document>>> {
+        let meta_page_id = self.ctx.get_meta_page_id()?;
+        let (collection_meta, _meta_doc) = self.ctx.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let program = SubProgram::compile_query_all(&collection_meta)?;
+        let mut vm = self.ctx.execute_program(program);
+
+        let mut result = Vec::new();
+
+        while vm.state != VmState::Halt {
+            vm.execute();
+            if vm.state == VmState::HasRow {
+                let doc = vm.stack_top().unwrap_document();
+                result.push(doc.clone());
+            }
+            if vm.error.is_some() {
+                return Err(vm.error.unwrap());
+            }
+        }
+
+        Ok(result)
     }
 
     #[inline]
@@ -124,17 +147,13 @@ mod tests {
     fn test_create_collection() {
         let mut db = create_and_return_db_with_items(TEST_SIZE);
 
-        let mut test_col_cursor = db.ctx.get_collection_cursor("test").unwrap();
-        let mut counter = 0;
-        while test_col_cursor.has_next() {
-            // let ticket = test_col_cursor.peek().unwrap();
-            // let doc = test_col_cursor.get_doc_from_ticket(&ticket).unwrap();
-            let doc = test_col_cursor.next().unwrap().unwrap();
+        let all = db.find_all("test").unwrap();
+
+        for doc in &all {
             println!("object: {}", doc);
-            counter += 1;
         }
 
-        assert_eq!(TEST_SIZE, counter)
+        assert_eq!(TEST_SIZE, all.len())
     }
 
     #[test]
@@ -175,12 +194,12 @@ mod tests {
 
         let _ = db.insert("test", Rc::new(doc)).unwrap();
 
-        let mut cursor = db.ctx.get_collection_cursor("test").unwrap();
+        let cursor = db.ctx.get_collection_cursor("test").unwrap();
 
-        let get_one = cursor.next().unwrap().unwrap();
-        let get_one_id = get_one.get("_id").unwrap().unwrap_string();
+        // let get_one = cursor.next().unwrap().unwrap();
+        // let get_one_id = get_one.get("_id").unwrap().unwrap_string();
 
-        assert_eq!(get_one_id, new_str);
+        // assert_eq!(get_one_id, new_str);
     }
 
     #[test]

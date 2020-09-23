@@ -39,33 +39,32 @@ struct CursorItem {
 //
 // }
 
-pub(crate) struct Cursor<'a> {
-    page_handler:       &'a mut PageHandler,
+pub(crate) struct Cursor {
+    root_pid:           u32,
     item_size:          u32,
     btree_stack:        LinkedList<CursorItem>,
     current:            Option<Rc<Document>>,
 }
 
-impl<'a> Cursor<'a> {
+impl Cursor {
 
-    pub fn new(page_handler: &mut PageHandler, root_page_id: u32) -> DbResult<Cursor> {
-        let item_size = (page_handler.page_size - HEADER_SIZE) / ITEM_SIZE;
-        let btree_stack = Cursor::mk_initial_btree(page_handler, root_page_id, item_size)?;
-
-        let mut result = Cursor {
-            page_handler,
+    pub fn new(item_size: u32, root_pid: u32) -> Cursor {
+        Cursor {
+            root_pid,
             item_size,
-            btree_stack,
+            btree_stack: LinkedList::new(),
             current: None,
-        };
-
-        result.push_all_left_nodes()?;
-
-        Ok(result)
+        }
     }
 
-    fn mk_initial_btree(page_handler: &mut PageHandler, root_page_id: u32, item_size: u32) -> DbResult<LinkedList<CursorItem>> {
-        let mut tmp = LinkedList::new();
+    pub fn reset(&mut self, page_handler: &mut PageHandler) -> DbResult<()> {
+        self.mk_initial_btree(page_handler, self.root_pid, self.item_size)?;
+
+        self.push_all_left_nodes(page_handler)
+    }
+
+    fn mk_initial_btree(&mut self, page_handler: &mut PageHandler, root_page_id: u32, item_size: u32) -> DbResult<()> {
+        self.btree_stack.clear();
 
         let btree_page = page_handler.pipeline_read_page(root_page_id)?;
         let btree_node = BTreeNode::from_raw(
@@ -74,25 +73,25 @@ impl<'a> Cursor<'a> {
             page_handler
         )?;
 
-        tmp.push_back(CursorItem {
+        self.btree_stack.push_back(CursorItem {
             node: Rc::new(btree_node),
             index: 0,
         });
 
-        Ok(tmp)
+        Ok(())
     }
 
-    fn push_all_left_nodes(&mut self) -> DbResult<()> {
+    fn push_all_left_nodes(&mut self, page_handler: &mut PageHandler) -> DbResult<()> {
         let mut top = self.btree_stack.back().unwrap().clone();
         let mut left_pid = top.node.indexes[top.index];
 
         while left_pid != 0 {
-            let btree_page = self.page_handler.pipeline_read_page(left_pid)?;
+            let btree_page = page_handler.pipeline_read_page(left_pid)?;
             let btree_node = BTreeNode::from_raw(
                 &btree_page,
                 top.node.pid,
                 self.item_size,
-                self.page_handler
+                page_handler
             )?;
 
             self.btree_stack.push_back(CursorItem {
@@ -156,14 +155,14 @@ impl<'a> Cursor<'a> {
         !self.btree_stack.is_empty()
     }
 
-    pub fn next(&mut self) -> DbResult<Option<Rc<Document>>> {
+    pub fn next(&mut self, page_handler: &mut PageHandler) -> DbResult<Option<Rc<Document>>> {
         if self.btree_stack.is_empty() {
             return Ok(None);
         }
 
         let top = self.btree_stack.pop_back().unwrap();
         let result_ticket = &top.node.content[top.index].data_ticket;
-        let result = self.page_handler.get_doc_from_ticket(&result_ticket)?;
+        let result = page_handler.get_doc_from_ticket(&result_ticket)?;
 
         let next_index = top.index + 1;
 
@@ -176,7 +175,7 @@ impl<'a> Cursor<'a> {
                     index: next_index,
                 });
 
-                self.push_all_left_nodes()?;
+                self.push_all_left_nodes(page_handler)?;
 
                 return Ok(Some(result));
             }
@@ -192,7 +191,7 @@ impl<'a> Cursor<'a> {
             index: next_index,
         });
 
-        self.push_all_left_nodes()?;
+        self.push_all_left_nodes(page_handler)?;
 
         self.current = Some(result.clone());
         Ok(Some(result))
@@ -338,11 +337,6 @@ impl<'a> Cursor<'a> {
     //
     //     Err(DbErr::CollectionNotFound(col_name.into()))
     // }
-
-    #[inline]
-    pub(crate) fn get_doc_from_ticket(&mut self, ticket: &DataTicket) -> DbResult<Rc<Document>> {
-        self.page_handler.get_doc_from_ticket(ticket)
-    }
 
     // fn handle_backward_item(&mut self,
     //                         meta_doc_mut: &mut Document,
