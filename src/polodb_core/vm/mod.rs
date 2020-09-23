@@ -1,4 +1,4 @@
-mod vm_code;
+mod op;
 mod vm;
 mod subprogram;
 

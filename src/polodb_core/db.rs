@@ -15,7 +15,6 @@
  */
 use std::rc::Rc;
 use super::error::DbErr;
-use crate::vm::{SubProgram, VM};
 use crate::bson::{Document, ObjectId, Value};
 use crate::context::DbContext;
 
@@ -53,18 +52,14 @@ impl Database {
         return VERSION.into();
     }
 
-    pub fn find(&mut self, _col_name: &str, query: &Document) -> DbResult<()> {
-        let subprogram = Box::new(SubProgram::compile_query(query)?);
-        let mut vm = VM::new(subprogram);
-        vm.execute();
-        Ok(())
+    #[inline]
+    pub fn find(&mut self, col_name: &str, query: &Document) -> DbResult<()> {
+        self.ctx.find(col_name, query)
     }
 
-    pub fn update(&mut self, _col_name: &str, query: &Document, update: &Document) -> DbResult<()> {
-        let subprogram = Box::new(SubProgram::compile_update(query, update)?);
-        let mut vm = VM::new(subprogram);
-        vm.execute();
-        Ok(())
+    #[inline]
+    pub fn update(&mut self, col_name: &str, query: &Document, update: &Document) -> DbResult<()> {
+        self.ctx.update(col_name, query, update)
     }
 
     pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {

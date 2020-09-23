@@ -2,6 +2,7 @@ use std::rc::Rc;
 use std::borrow::Borrow;
 use super::page::{header_page_wrapper, PageHandler};
 use super::error::DbErr;
+use crate::vm::{SubProgram, VM};
 use crate::bson::{Document, Value, mk_str};
 use crate::bson::ObjectIdMaker;
 use crate::db::DbResult;
@@ -241,6 +242,26 @@ impl DbContext {
         // update meta end
 
         Ok(doc_value)
+    }
+
+    pub(crate) fn find(&mut self, col_name: &str, query: &Document) -> DbResult<()> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+
+        let subprogram = Box::new(SubProgram::compile_query(&collection_meta, meta_doc.borrow(), query)?);
+        let mut vm = VM::new(subprogram);
+        vm.execute();
+        Ok(())
+    }
+
+    pub(crate) fn update(&mut self, col_name: &str, query: &Document, update: &Document) -> DbResult<()> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let (_collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+
+        let subprogram = Box::new(SubProgram::compile_update(meta_doc.borrow(), query, update)?);
+        let mut vm = VM::new(subprogram);
+        vm.execute();
+        Ok(())
     }
 
     fn update_by_root_pid(&mut self, parent_pid: u32, root_pid: u32, key: &Value, doc: &Document) -> DbResult<bool> {
