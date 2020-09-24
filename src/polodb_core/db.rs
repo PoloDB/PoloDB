@@ -17,9 +17,10 @@ use std::rc::Rc;
 use super::error::DbErr;
 use crate::bson::{Document, ObjectId, Value};
 use crate::context::DbContext;
-use crate::vm::{SubProgram, VmState};
 
-// #[derive(Clone)]
+/*
+ * API wrapper for Rust-level
+ */
 pub struct Database {
     ctx: Box<DbContext>,
 }
@@ -30,7 +31,7 @@ impl Database {
 
     #[inline]
     pub fn mk_object_id(&mut self) -> ObjectId {
-        self.ctx.obj_id_maker.mk_object_id()
+        self.ctx.object_id_maker().mk_object_id()
     }
 
     pub fn open(path: &str) -> DbResult<Database>  {
@@ -54,22 +55,22 @@ impl Database {
     }
 
     pub fn find_all(&mut self, col_name: &str) -> DbResult<Vec<Rc<Document>>> {
-        let meta_page_id = self.ctx.get_meta_page_id()?;
-        let (collection_meta, _meta_doc) = self.ctx.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
-        let program = SubProgram::compile_query_all(&collection_meta)?;
-        let mut vm = self.ctx.execute_program(program);
+        let mut handle = self.ctx.find_all(col_name)?;
 
         let mut result = Vec::new();
 
-        while vm.state != VmState::Halt {
-            vm.execute();
-            if vm.state == VmState::HasRow {
-                let doc = vm.stack_top().unwrap_document();
-                result.push(doc.clone());
+        handle.step();
+
+        while handle.has_row() {
+            let doc = handle.get().unwrap_document();
+            result.push(doc.clone());
+
+            if handle.has_error() {
+                let err = handle.take_error();
+                return Err(err.unwrap());
             }
-            if vm.error.is_some() {
-                return Err(vm.error.unwrap());
-            }
+
+            handle.step();
         }
 
         Ok(result)
@@ -159,11 +160,11 @@ mod tests {
     #[test]
     fn test_reopen_db() {
         {
-            let db1 = create_and_return_db_with_items(5);
+            let _db1 = create_and_return_db_with_items(5);
         }
 
         {
-            let db2 = Database::open("/tmp/test.db").unwrap();
+            let _db2 = Database::open("/tmp/test.db").unwrap();
         }
     }
 

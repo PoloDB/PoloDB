@@ -61,7 +61,7 @@ pub struct VM<'a> {
 impl<'a> VM<'a> {
 
     pub(crate) fn new(page_handler: &mut PageHandler, program: Box<SubProgram>) -> VM {
-        let mut stack = Vec::with_capacity(STACK_SIZE);
+        let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         VM {
             state: VmState::Init,
@@ -112,6 +112,13 @@ impl<'a> VM<'a> {
         &self.stack[self.stack.len() - 1]
     }
 
+    #[inline]
+    fn reset_location(&mut self, location: u32) {
+        unsafe {
+            self.pc = self.program.instructions.as_ptr().add(location as usize);
+        }
+    }
+
     pub(crate) fn execute(&mut self) {
         if self.state == VmState::Halt {
             panic!("vm is halt, can not execute");
@@ -123,13 +130,13 @@ impl<'a> VM<'a> {
                 match op {
                     DbOp::Goto => {
                         let location = self.pc.add(1).cast::<u32>().read();
-                        self.pc = self.program.instructions.as_ptr().add(location as usize);
+                        self.reset_location(location);
                     }
 
                     DbOp::TrueJump => {
                         let location = self.pc.add(1).cast::<u32>().read();
                         if self.r0 != 0 {  // true
-                            self.pc = self.program.instructions.as_ptr().add(location as usize);
+                            self.reset_location(location);
                         } else {
                             self.pc = self.pc.add(5);
                         }
@@ -138,7 +145,7 @@ impl<'a> VM<'a> {
                     DbOp::FalseJump => {
                         let location = self.pc.add(1).cast::<u32>().read();
                         if self.r0 == 0 {  // false
-                            self.pc = self.program.instructions.as_ptr().add(location as usize);
+                            self.reset_location(location);
                         } else {
                             self.pc = self.pc.add(5);
                         }
@@ -159,7 +166,7 @@ impl<'a> VM<'a> {
                         }
                         if self.r0 != 0 {
                             let location = self.pc.add(1).cast::<u32>().read();
-                            self.pc = self.program.instructions.as_ptr().add(location as usize);
+                            self.reset_location(location);
                         } else {
                             self.pc = self.pc.add(5);
                         }
@@ -172,7 +179,25 @@ impl<'a> VM<'a> {
                     }
 
                     DbOp::GetField => {
-                        unimplemented!()
+                        let key_stat_id = self.pc.add(1).cast::<u32>().read();
+                        let location = self.pc.add(5).cast::<u32>().read();
+
+                        let key = self.program.static_values[key_stat_id as usize].unwrap_string();
+                        let top = self.stack[self.stack.len()].clone();
+                        let doc = top.unwrap_document();
+
+                        match doc.get(key) {
+                            Some(val) => {
+                                self.stack.push(val.clone());
+                                self.pc = self.pc.add(9);
+                            }
+
+                            None => {
+                                self.reset_location(location);
+                            }
+
+                        }
+
                     }
 
                     DbOp::Pop => {
@@ -259,6 +284,7 @@ impl<'a> VM<'a> {
 
                     DbOp::_EOF |
                     DbOp::Halt => {
+                        self.r1 = None;
                         self.state = VmState::Halt;
                         return;
                     }

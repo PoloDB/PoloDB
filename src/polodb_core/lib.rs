@@ -13,6 +13,7 @@ mod index_ctx;
 pub mod vli;
 mod meta_doc_helper;
 mod context;
+mod db_handle;
 
 pub use db::{Database, DbResult};
 pub use error::DbErr;

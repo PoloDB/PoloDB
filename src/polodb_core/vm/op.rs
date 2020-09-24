@@ -43,6 +43,8 @@ pub enum DbOp {
     // if no next element, pass
     // otherwise, jump to location
     //
+    // push current value to the stack
+    //
     // 5 bytes
     // op1. location: 4bytes
     Next,
@@ -56,8 +58,11 @@ pub enum DbOp {
     // get the field of top of the stack
     // push the value to the stack
     //
-    // 5 bytes
+    // if failed, goto op2
+    //
+    // 9 bytes
     // op1. value_index: 4bytes
+    // op2. location: 4bytes
     GetField,
 
     Pop,
@@ -93,6 +98,7 @@ pub enum DbOp {
     Close,
 
     // Exit
+    // Close cursor automatically
     Halt,
 
 }

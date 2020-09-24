@@ -11,16 +11,20 @@ use crate::index_ctx::{IndexCtx, merge_options_into_default};
 use crate::btree::*;
 use crate::cursor::Cursor;
 use crate::page::RawPage;
+use crate::db_handle::DbHandle;
 
 #[inline]
 fn index_already_exists(index_doc: &Document, key: &str) -> bool {
     index_doc.get(key).is_some()
 }
 
+/**
+ * API for all platforms
+ */
 pub(crate) struct DbContext {
     page_handler :        Box<PageHandler>,
 
-    pub obj_id_maker:     ObjectIdMaker,
+    obj_id_maker:         ObjectIdMaker,
 
 }
 
@@ -97,9 +101,9 @@ impl DbContext {
         (self.page_handler.page_size - HEADER_SIZE) / ITEM_SIZE
     }
 
-    pub(crate) fn execute_program(&mut self, program: SubProgram) -> VM {
+    pub(crate) fn make_handle(&mut self, program: SubProgram) -> DbHandle {
         let vm = VM::new(&mut self.page_handler, Box::new(program));
-        vm
+        DbHandle::new(vm)
     }
 
     pub(crate) fn find_collection_root_pid_by_name(&mut self, parent_pid: u32, root_pid: u32, col_name: &str) -> DbResult<(MetaDocEntry, Rc<Document>)> {
@@ -259,6 +263,15 @@ impl DbContext {
         Ok(())
     }
 
+    pub(crate) fn find_all(&mut self, col_name: &str) -> DbResult<DbHandle> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let program = SubProgram::compile_query_all(&collection_meta)?;
+        let handle = self.make_handle(program);
+
+        Ok(handle)
+    }
+
     pub(crate) fn update(&mut self, col_name: &str, query: &Document, update: &Document) -> DbResult<()> {
         let meta_page_id = self.get_meta_page_id()?;
         let (_collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
@@ -387,6 +400,11 @@ impl DbContext {
     #[allow(dead_code)]
     pub fn rollback(&mut self) -> DbResult<()> {
         self.page_handler.rollback()
+    }
+
+    #[inline]
+    pub fn object_id_maker(&mut self) -> &mut ObjectIdMaker {
+        &mut self.obj_id_maker
     }
 
 }

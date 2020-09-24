@@ -1,4 +1,5 @@
 use std::fmt;
+use std::rc::Rc;
 use crate::bson::{Value, Document};
 use crate::DbResult;
 use crate::meta_doc_helper::{MetaDocEntry, meta_doc_key};
@@ -26,22 +27,58 @@ impl SubProgram {
         }
     }
 
-    pub(crate) fn compile_query(entry: &MetaDocEntry, meta_doc: &Document, doc: &Document) -> DbResult<SubProgram> {
+    pub(crate) fn compile_query(entry: &MetaDocEntry, meta_doc: &Document, query: &Document) -> DbResult<SubProgram> {
         let _indexes = meta_doc.get(meta_doc_key::INDEXES);
-        let _tuples = doc_to_tuples(doc);
+        // let _tuples = doc_to_tuples(doc);
 
-        let mut result = SubProgram::new();
-        result.add_open_read(entry.root_pid);
+        let mut program = SubProgram::new();
+        program.add_open_read(entry.root_pid);
+        program.add(DbOp::Rewind);
 
-        let current_loc = result.current_location();
-        result.add_next(current_loc);
+        let next_preserve_location = program.current_location();
+        program.add_next(0);
 
-        result.add(DbOp::ResultRow);
+        program.add(DbOp::Close);
+        program.add(DbOp::Halt);
 
-        result.add(DbOp::Close);
-        result.add(DbOp::Halt);
+        // let result_location = program.current_location();
 
-        Ok(result)
+        let not_found_branch_preserve_location = program.current_location();
+        program.add(DbOp::Pop);
+        program.add(DbOp::Pop);
+        program.add(DbOp::Pop);  // pop the current value;
+        program.add_goto(next_preserve_location);
+
+        let get_field_failed_location = program.current_location();
+        program.add(DbOp::Pop);
+        program.add_goto(next_preserve_location);
+
+        let compare_location: u32 = program.current_location();
+
+        for (key, value) in query.iter() {
+            let key_static_id = program.push_static(Value::String(Rc::new(key.clone())));
+            let value_static_id = program.push_static(value.clone());
+
+            program.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+            program.add_push_value(value_static_id);  // push a value2
+
+            program.add(DbOp::Equal);
+            // if not equal，go to next
+            program.add_false_jump(not_found_branch_preserve_location);
+
+            program.add(DbOp::Pop); // pop a value2
+            program.add(DbOp::Pop); // pop a value1
+        }
+
+        program.update_next_location(next_preserve_location as usize, compare_location);
+
+        program.add(DbOp::ResultRow);
+
+        program.add(DbOp::Pop);
+
+        program.add_goto(next_preserve_location);
+
+        Ok(program)
     }
 
     pub(crate) fn compile_update(meta_doc: &Document, _query: &Document, _update: &Document) -> DbResult<SubProgram> {
@@ -49,25 +86,26 @@ impl SubProgram {
     }
 
     pub(crate) fn compile_query_all(entry: &MetaDocEntry) -> DbResult<SubProgram> {
-        let mut result = SubProgram::new();
+        let mut program = SubProgram::new();
 
-        result.add_open_read(entry.root_pid);
-        result.add(DbOp::Rewind);
+        program.add_open_read(entry.root_pid);
+        program.add(DbOp::Rewind);
 
-        let location = result.instructions.len() as u32;
-        result.add_next(0);
+        let location = program.current_location();
+        program.add_next(0);
 
-        result.add(DbOp::Close);
-        result.add(DbOp::Halt);
+        program.add(DbOp::Close);
+        program.add(DbOp::Halt);
 
-        let result_location = result.instructions.len() as u32;
-        result.update_next_location(location as usize, result_location);
-        result.add(DbOp::ResultRow);
-        result.add(DbOp::Pop);
+        let result_location = program.instructions.len() as u32;
+        program.update_next_location(location as usize, result_location);
 
-        result.add_goto(location);
+        program.add(DbOp::ResultRow);
+        program.add(DbOp::Pop);
 
-        Ok(result)
+        program.add_goto(location);
+
+        Ok(program)
     }
 
     #[inline]
@@ -94,6 +132,26 @@ impl SubProgram {
         self.instructions.extend_from_slice(&bytes);
     }
 
+    fn add_push_value(&mut self, static_id: u32) {
+        self.add(DbOp::PushValue);
+        let bytes = static_id.to_le_bytes();
+        self.instructions.extend_from_slice(&bytes);
+    }
+
+    fn add_false_jump(&mut self, location: u32) {
+        self.add(DbOp::FalseJump);
+        let bytes = location.to_le_bytes();
+        self.instructions.extend_from_slice(&bytes);
+    }
+
+    fn add_get_field(&mut self, static_id: u32, failed_location: u32) {
+        self.add(DbOp::GetField);
+        let bytes = static_id.to_le_bytes();
+        self.instructions.extend_from_slice(&bytes);
+        let bytes = failed_location.to_le_bytes();
+        self.instructions.extend_from_slice(&bytes);
+    }
+
     #[inline]
     fn add(&mut self, op: DbOp) {
         self.instructions.push(op as u8);
@@ -102,6 +160,13 @@ impl SubProgram {
     #[inline]
     fn current_location(&self) -> u32 {
         self.instructions.len() as u32
+    }
+
+    #[inline]
+    fn push_static(&mut self, value: Value) -> u32 {
+        let pos = self.static_values.len() as u32;
+        self.static_values.push(value);
+        pos
     }
 
 }
@@ -146,7 +211,8 @@ impl fmt::Display for SubProgram {
 
                     DbOp::PushValue => {
                         let index = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: PushValue({})\n", pc, index)?;
+                        let val = &self.static_values[index as usize];
+                        write!(f, "{}: PushValue({})\n", pc, val)?;
                         pc += 5;
                     }
 
@@ -186,6 +252,14 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::GetField => {
+                        let static_id = begin.add(pc + 1).cast::<u32>().read();
+                        let val = &self.static_values[static_id as usize];
+                        let location = begin.add(pc + 5).cast::<u32>().read();
+                        write!(f, "{}: GetField({}, {})\n", pc, val, location)?;
+                        pc += 9;
+                    }
+
                     _ => {
                         write!(f, "{}: Unknown\n", pc)?;
                         break;
@@ -200,13 +274,26 @@ impl fmt::Display for SubProgram {
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
     use crate::vm::SubProgram;
     use crate::meta_doc_helper::MetaDocEntry;
+    use crate::bson::{Document, Value};
 
     #[test]
     fn print_program() {
         let meta_entry = MetaDocEntry::new("test".into(), 100);
         let program = SubProgram::compile_query_all(&meta_entry).unwrap();
+        println!("Program: \n\n{}", program);
+    }
+
+    #[test]
+    fn print_query() {
+        let mut meta_doc = Document::new_without_id();
+        let mut test_doc = Document::new_without_id();
+        test_doc.insert("name".into(), Value::String(Rc::new("Vincent Chan".into())));
+        test_doc.insert("age".into(), Value::Int(32));
+        let meta_entry = MetaDocEntry::new("test".into(), 100);
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
         println!("Program: \n\n{}", program);
     }
 
