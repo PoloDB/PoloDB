@@ -61,8 +61,7 @@ pub struct VM<'a> {
 impl<'a> VM<'a> {
 
     pub(crate) fn new(page_handler: &mut PageHandler, program: Box<SubProgram>) -> VM {
-        let mut stack = Vec::new();
-        stack.resize(STACK_SIZE, Value::Null);
+        let mut stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         VM {
             state: VmState::Init,
@@ -91,10 +90,15 @@ impl<'a> VM<'a> {
 
     fn next(&mut self) {
         let result = try_vm!(self, self.r1.as_mut().unwrap().next(self.page_handler));
-        self.r0 = if result.is_some() {
-            1
-        } else {
-            0
+        match &result {
+            Some(doc) => {
+                self.stack.push(Value::Document(doc.clone()));
+                self.r0 = 1;
+            }
+
+            None => {
+                self.r0 = 0;
+            }
         }
     }
 
@@ -242,7 +246,6 @@ impl<'a> VM<'a> {
                     }
 
                     DbOp::ResultRow => {
-                        self.result_row();
                         self.pc = self.pc.add(1);
                         self.state = VmState::HasRow;
                         return;
@@ -256,6 +259,7 @@ impl<'a> VM<'a> {
 
                     DbOp::_EOF |
                     DbOp::Halt => {
+                        self.state = VmState::Halt;
                         return;
                     }
 
