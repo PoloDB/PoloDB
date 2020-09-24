@@ -93,6 +93,12 @@ impl<'a> VM<'a> {
         match &result {
             Some(doc) => {
                 self.stack.push(Value::Document(doc.clone()));
+
+                #[cfg(debug_assertions)]
+                if self.stack.len() > 64 {
+                    eprintln!("stack too large: {}", self.stack.len());
+                }
+
                 self.r0 = 1;
             }
 
@@ -100,12 +106,6 @@ impl<'a> VM<'a> {
                 self.r0 = 0;
             }
         }
-    }
-
-    fn result_row(&mut self) {
-        let data_ticket = self.r1.as_mut().unwrap().peek().unwrap();
-        let doc = try_vm!(self, self.page_handler.get_doc_from_ticket(&data_ticket));
-        self.stack.push(Value::Document(doc));
     }
 
     pub(crate) fn stack_top(&mut self) -> &Value {
