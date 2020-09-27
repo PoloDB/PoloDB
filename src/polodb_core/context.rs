@@ -21,7 +21,7 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
 /**
  * API for all platforms
  */
-pub(crate) struct DbContext {
+pub struct DbContext {
     page_handler :        Box<PageHandler>,
 
     obj_id_maker:         ObjectIdMaker,
@@ -30,7 +30,7 @@ pub(crate) struct DbContext {
 
 impl DbContext {
 
-    pub(crate) fn new(path: &str) -> DbResult<DbContext> {
+    pub fn new(path: &str) -> DbResult<DbContext> {
         let page_size = 4096;
 
         let page_handler = PageHandler::new(path, page_size)?;
@@ -194,7 +194,7 @@ impl DbContext {
         doc
     }
 
-    pub(crate) fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
+    pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
         let meta_page_id = self.get_meta_page_id()?;
         let doc_value = self.fix_doc(doc);
 
@@ -405,6 +405,11 @@ impl DbContext {
     #[inline]
     pub fn object_id_maker(&mut self) -> &mut ObjectIdMaker {
         &mut self.obj_id_maker
+    }
+
+    pub fn get_version() -> String {
+        const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+        return VERSION.into();
     }
 
 }

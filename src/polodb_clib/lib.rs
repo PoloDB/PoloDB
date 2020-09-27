@@ -18,7 +18,7 @@ use std::rc::Rc;
 use std::os::raw::{c_char, c_uint, c_int, c_double, c_uchar};
 use std::ptr::{null_mut, write_bytes, null};
 use std::ffi::{CStr, CString};
-use polodb_core::{Database, DbErr};
+use polodb_core::{DbContext, DbErr};
 use polodb_core::bson::{Value, ObjectId, Document, Array};
 
 const DB_ERROR_MSG_SIZE: usize = 512;
@@ -47,12 +47,12 @@ fn set_global_error(err: DbErr) {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_open(path: *const c_char) -> *mut Database {
+pub extern "C" fn PLDB_open(path: *const c_char) -> *mut DbContext {
     let cstr = unsafe {
         CStr::from_ptr(path)
     };
     let str = try_read_utf8!(cstr.to_str(), null_mut());
-    let db = match Database::open(str) {
+    let db = match DbContext::new(str) {
         Ok(db) => db,
         Err(err) => {
             set_global_error(err);
@@ -64,7 +64,7 @@ pub extern "C" fn PLDB_open(path: *const c_char) -> *mut Database {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_create_collection(db: *mut Database, name: *const c_char) -> c_int {
+pub extern "C" fn PLDB_create_collection(db: *mut DbContext, name: *const c_char) -> c_int {
     unsafe {
         let name_str= CStr::from_ptr(name);
         let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
@@ -78,7 +78,7 @@ pub extern "C" fn PLDB_create_collection(db: *mut Database, name: *const c_char)
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_insert(db: *mut Database, name: *const c_char, doc: *const Document) -> c_int {
+pub extern "C" fn PLDB_insert(db: *mut DbContext, name: *const c_char, doc: *const Document) -> c_int {
     unsafe {
         let local_db = db.as_mut().unwrap();
         let name_str = CStr::from_ptr(name);
@@ -94,7 +94,7 @@ pub extern "C" fn PLDB_insert(db: *mut Database, name: *const c_char, doc: *cons
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_find(_db: *mut Database, _val: *mut Value) -> c_int {
+pub extern "C" fn PLDB_find(_db: *mut DbContext, _val: *mut Value) -> c_int {
     println!("find");
     0
 }
@@ -111,7 +111,7 @@ pub extern "C" fn PLDB_error_code() -> c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_exec(_db: *mut Database, _bytes: *const u8, size: c_uint) -> c_int {
+pub extern "C" fn PLDB_exec(_db: *mut DbContext, _bytes: *const u8, size: c_uint) -> c_int {
     print!("exec byte codes with size: {}", size);
     0
 }
@@ -140,7 +140,7 @@ pub extern "C" fn PLDB_error_msg() -> *const c_char {
 
 #[no_mangle]
 pub extern "C" fn PLDB_version(buffer: *mut c_char, buffer_size: c_uint) -> c_uint {
-    let version_str = Database::get_version();
+    let version_str = DbContext::get_version();
     let str_size = version_str.len();
     let cstring = CString::new(version_str).unwrap();
     unsafe {
@@ -152,7 +152,7 @@ pub extern "C" fn PLDB_version(buffer: *mut c_char, buffer_size: c_uint) -> c_ui
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_close(db: *mut Database) {
+pub extern "C" fn PLDB_close(db: *mut DbContext) {
     let _ptr = unsafe { Box::from_raw(db) };
 }
 
@@ -322,9 +322,10 @@ pub extern "C" fn PLDB_mk_binary(data: *mut c_uchar, size: c_uint) -> *mut Value
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_mk_object_id(db: *mut Database) -> *mut ObjectId {
+pub extern "C" fn PLDB_mk_object_id(db: *mut DbContext) -> *mut ObjectId {
     let rust_db = unsafe { db.as_mut().unwrap() };
-    let oid = Box::new(rust_db.mk_object_id());
+    let oid = rust_db.object_id_maker().mk_object_id();
+    let oid = Box::new(oid);
     Box::into_raw(oid)
 }
 

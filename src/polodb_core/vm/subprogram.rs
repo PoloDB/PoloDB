@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn print_query() {
-        let mut meta_doc = Document::new_without_id();
+        let meta_doc = Document::new_without_id();
         let mut test_doc = Document::new_without_id();
         test_doc.insert("name".into(), Value::String(Rc::new("Vincent Chan".into())));
         test_doc.insert("age".into(), Value::Int(32));

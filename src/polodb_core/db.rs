@@ -49,9 +49,9 @@ impl Database {
         self.ctx.commit()
     }
 
+    #[inline]
     pub fn get_version() -> String {
-        const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-        return VERSION.into();
+        DbContext::get_version()
     }
 
     pub fn find_all(&mut self, col_name: &str) -> DbResult<Vec<Rc<Document>>> {

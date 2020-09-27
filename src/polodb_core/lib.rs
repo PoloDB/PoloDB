@@ -16,4 +16,6 @@ mod context;
 mod db_handle;
 
 pub use db::{Database, DbResult};
+pub use context::DbContext;
+pub use db_handle::DbHandle;
 pub use error::DbErr;

@@ -2,13 +2,7 @@ const addon = require('bindings')('polodb-js');
 
 console.log(addon.version()); // 'world'
 
-const ObjectIdExt = Symbol("ObjextIdExt");
-const ExecSymbol = Symbol("exec");
-
-function compile(obj) {
-  new BytecodeBuilder();
-  return new ArrayBuffer();
-}
+const NativeExt = Symbol("NativeExt");
 
 const { mkNull, mkDouble } = addon;
 
@@ -22,6 +16,12 @@ class Value {
 
       case "string":
         return new Value(addon.mkString(value));
+
+      case "object":
+        if (Array.isArray(value)) {
+          return DbArray.fromRaw(value);
+        }
+        return new Document.fromRaw(value);
 
       default:
         throw new TypeError("uknown type");
@@ -42,19 +42,38 @@ class Value {
   }
 
   constructor(internal) {
-    this.__val = internal;
+    this[NativeExt] = internal;
   }
 
   typeName() {
-    return addon.valueTypeName(this.__val);
+    return addon.valueTypeName(this[NativeExt]);
   }
 
 }
 
+/**
+ * equivalent to Object in JavaScript
+ */
 class Document {
 
+  /**
+   * TODO: check cyclic references
+   * @param {Object} doc 
+   */
+  static fromRaw(doc) {
+    const result = new Document();
+
+    for (key in doc) {
+      const jsValue = doc[key];
+      const dbValue = Value.fromRaw(jsValue);
+      result.set(key, dbValue);
+    }
+
+    return result;
+  }
+
   constructor() {
-    this.__doc = addon.makeDocument();
+    this[NativeExt] = addon.makeDocument();
   }
 
   set(key, value) {
@@ -62,11 +81,11 @@ class Document {
       throw new TypeError("second param should be a DbValue");
     }
 
-    addon.documentSet(this.__doc, key, value.__val);
+    addon.documentSet(this[NativeExt], key, value[NativeExt]);
   }
 
   get(key) {
-    const raw = addon.documentGet(this.__doc, key);
+    const raw = addon.documentGet(this[NativeExt], key);
     if (typeof raw === 'undefined') {
       return raw;
     }
@@ -77,23 +96,42 @@ class Document {
 
 class DbArray {
 
+  /**
+   * 
+   * @param {Array} arr 
+   */
+  static fromRaw(arr) {
+    if (!Array.isArray(arr)) {
+      throw new TypeError("Object must be an array");
+    }
+
+    const result = new DbArray();
+
+    for (const elm in arr) {
+      const dbElm = Value.fromRaw(elm);
+      result.push(dbElm);
+    }
+
+    return result;
+  }
+
   constructor() {
-    this.__arr = addon.mkArray();
+    this[NativeExt] = addon.mkArray();
   }
 
   get(index) {
-    return addon.arrayGet(this.__arr);
+    return addon.arrayGet(this[NativeExt], index);
   }
 
   push(val) {
     if (!(val instanceof Value)) {
       throw new TypeErr("not a Value");
     }
-    addon.arrayPush(this.__arr, val.__val);
+    addon.arrayPush(this[NativeExt], val[NativeExt]);
   }
 
   length() {
-    return addon.arrayLen(this.__arr);
+    return addon.arrayLen(this[NativeExt]);
   }
 
 }
@@ -125,8 +163,7 @@ class Collection {
   }
 
   find(query_obj) {
-    const byte_code = compile(query_obj);
-    this.__db[ExecSymbol](byte_code);
+    console.log(query_obj);
   }
 
 }
@@ -134,20 +171,16 @@ class Collection {
 class Database {
 
   constructor(path) {
-    this.__db = addon.open(path);
-  }
-
-  [ExecSymbol]() {
-
+    this[NativeExt] = addon.open(path);
   }
 
   makeObjectId() {
-    const raw = addon.mkObjectId(this.__db);
+    const raw = addon.mkObjectId(this[NativeExt]);
     return new ObjectId(raw);
   }
 
   createCollection(name) {
-    addon.createCollection(this.__db, name);
+    addon.createCollection(this[NativeExt], name);
   }
 
   collection(name) {
@@ -155,19 +188,7 @@ class Database {
   }
 
   close() {
-    addon.close(this.__db);
-  }
-
-}
-
-class BytecodeBuilder {
-
-  constructor() {
-
-  }
-
-  addCommandQuery() {
-    console.log('addCommandQuery');
+    addon.close(this[NativeExt]);
   }
 
 }
