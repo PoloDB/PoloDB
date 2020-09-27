@@ -28,24 +28,25 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
 
 以下特性会按计划一个一个来：
 
-- [ ] MongoDB 的 API
+- [x] 基本数据库功能
 - [x] 命令行工具
 - [ ] 移动平台的编译
   - [ ] iOS
   - [ ] Android
   - [ ] Flutter
 - [ ] 语言绑定
-  - [ ] C
+  - [x] C
   - [ ] Go
   - [ ] Objective-C
   - [ ] Swift
-  - [ ] Python
+  - [x] Python
   - [ ] Ruby
   - [ ] Elixir
-  - [ ] Node.js
+  - [x] Node.js
   - [ ] Java
   - [ ] Kotlin
   - [ ] Dart
+- [ ] 大量测试
 - [ ] 多线程支持
 - [ ] 拓展 API
   - [ ] 数据加密

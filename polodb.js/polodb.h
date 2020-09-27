@@ -17,11 +17,13 @@
 struct Database;
 struct DbHandle;
 struct DbDocument;
+struct DbDocumentIter;
 struct DbArray;
 struct DbObjectId;
 struct DbValue;
 
 typedef struct DbDocument DbDocument;
+typedef struct DbDocumentIter DbDocumentIter;
 typedef struct DbArray DbArray;
 typedef struct Database Database;
 typedef struct DbHandle DbHandle;
@@ -37,15 +39,32 @@ Database* PLDB_open(const char* path);
 
 int PLDB_error_code();
 
-int PLDB_exec(Database* db, unsigned char* bytes, unsigned int size);
+int PLDB_start_transaction(Database*db, int flags);
+
+int PLDB_commit(Database* db);
+
+int PLDB_rollback(Database* db);
 
 int PLDB_create_collection(Database* db, const char* name);
+
+int PLDB_insert(Database* db, const char* col_name, const DbDocument* doc);
+
+int PLDB_find_all(Database* db, const char* col_name, DbHandle** out_handle);
+
+int PLDB_find(Database* db, const char* col_name, const DbDocument* query, DbHandle** out_handle);
 
 const char* PLDB_error_msg();
 
 int PLDB_version(char* buffer, unsigned int buffer_size);
 
 void PLDB_close(Database* db);
+// }
+
+// DbHandle {
+int PLDB_handle_step(DbHandle* handle);
+int PLDB_handle_state(DbHandle* handle);
+void PLDB_handle_get(DbHandle* handle, DbValue** out_val);
+void PLDB_free_handle(DbHandle* handle);
 // }
 
 // DbArray {
@@ -69,7 +88,17 @@ void PLDB_free_doc(DbDocument* doc);
 
 int PLDB_doc_set(DbDocument* doc, const char* key, DbValue* val);
 
-int PLDB_doc_get(DbDocument* dc, const char* key, DbValue** out_val);
+int PLDB_doc_get(DbDocument* doc, const char* key, DbValue** out_val);
+
+int PLDB_doc_len(DbDocument* doc);
+
+DbDocumentIter* PLDB_doc_iter(DbDocument* doc);
+
+int PLDB_doc_iter_next(DbDocumentIter* iter,
+  char* key_buffer, unsigned int key_buffer_size, DbValue** out_val);
+
+void PLDB_free_doc_iter(DbDocumentIter* iter);
+
 // }
 
 // DbValue {
@@ -87,7 +116,21 @@ DbValue* PLDB_mk_str(const char* content);
 
 DbValue* PLDB_mk_binary(unsigned char* content, unsigned int size);
 
-int PLDB_value_type_name(DbValue* value, char* buffer, unsigned int size);
+int PLDB_value_type(const DbValue* value);
+
+int PLDB_value_get_i64(const DbValue* value, long long* out_value);
+
+int PLDB_value_get_string_utf8(const DbValue* value, const char** content);
+
+int PLDB_value_get_bool(const DbValue* value);
+
+int PLDB_value_get_double(const DbValue* value, double* out);
+
+int PLDB_value_get_array(const DbValue* value, DbArray** arr);
+
+int PLDB_value_get_object_id(const DbValue* value, DbObjectId** oid);
+
+int PLDB_value_get_document(const DbValue* value, DbDocument** doc);
 
 void PLDB_free_value(DbValue* val);
 // }

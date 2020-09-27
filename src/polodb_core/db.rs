@@ -17,6 +17,7 @@ use std::rc::Rc;
 use super::error::DbErr;
 use crate::bson::{Document, ObjectId, Value};
 use crate::context::DbContext;
+use crate::DbHandle;
 
 /*
  * API wrapper for Rust-level
@@ -59,26 +60,40 @@ impl Database {
 
         let mut result = Vec::new();
 
+        Database::consume_handle_to_vec(&mut handle, &mut result)?;
+
+        Ok(result)
+    }
+
+    pub fn find(&mut self, col_name: &str, query: &Document) -> DbResult<Vec<Rc<Document>>> {
+        let mut handle = self.ctx.find(col_name, query)?;
+
+        let mut result = Vec::new();
+
+        Database::consume_handle_to_vec(&mut handle, &mut result)?;
+
+        Ok(result)
+    }
+
+    fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
         handle.step();
+        if handle.has_error() {
+            let err = handle.take_error();
+            return Err(err.unwrap());
+        }
 
         while handle.has_row() {
             let doc = handle.get().unwrap_document();
             result.push(doc.clone());
 
+            handle.step();
             if handle.has_error() {
                 let err = handle.take_error();
                 return Err(err.unwrap());
             }
-
-            handle.step();
         }
 
-        Ok(result)
-    }
-
-    #[inline]
-    pub fn find(&mut self, col_name: &str, query: &Document) -> DbResult<()> {
-        self.ctx.find(col_name, query)
+        Ok(())
     }
 
     #[inline]
@@ -195,7 +210,7 @@ mod tests {
 
         let _ = db.insert("test", Rc::new(doc)).unwrap();
 
-        let cursor = db.ctx.get_collection_cursor("test").unwrap();
+        // let cursor = db.ctx.get_collection_cursor("test").unwrap();
 
         // let get_one = cursor.next().unwrap().unwrap();
         // let get_one_id = get_one.get("_id").unwrap().unwrap_string();

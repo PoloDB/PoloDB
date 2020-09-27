@@ -1,10 +1,30 @@
+/*
+ * Copyright (c) 2020 Vincent Chan
+ *
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU Lesser General Public License as published by the Free Software
+ * Foundation; either version 3, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more
+ * details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License along with
+ * this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 const addon = require('bindings')('polodb-js');
+const { typeName } = require('./typeName');
 
-console.log(addon.version()); // 'world'
+function version() {
+  return addon.version();
+}
 
 const NativeExt = Symbol("NativeExt");
 
 const { mkNull, mkDouble } = addon;
+
+const DB_HANDLE_STATE_HAS_ROW = 2;
 
 class Value {
 
@@ -45,8 +65,71 @@ class Value {
     this[NativeExt] = internal;
   }
 
+  asNumber() {
+    if (this.typeName() === "Int") {
+      return addon.valueGetNumber(this[NativeExt]);
+    }
+    return addon.valueGetDouble(this[NativeExt]);
+  }
+
+  asBool() {
+    return addon.valueGetBool(this[NativeExt]);
+  }
+
+  asString() {
+    return addon.valueGetString(this[NativeExt]);
+  }
+
+  asArray() {
+    const raw = addon.valueGetArray(this[NativeExt]);
+    return new DbArray(raw);
+  }
+
+  asDocument() {
+    const doc = addon.valueGetDocument(this[NativeExt]);
+    return new Document(doc);
+  }
+
+  asObjectId() {
+    const raw = addon.valueGetObjectId(this[NativeExt]);
+    return new ObjectId(raw);
+  }
+
   typeName() {
-    return addon.valueTypeName(this[NativeExt]);
+    const tyInt = addon.valueType(this[NativeExt]);
+    return typeName(tyInt);
+  }
+
+  toJsObject() {
+    switch (this.typeName()) {
+      case "Null":
+        return null;
+
+      case "Dobule":
+      case "Int":
+        return this.asNumber();
+
+      case "Boolean":
+        return this.asBool();
+
+      case "String":
+        return this.asString();
+
+      case "ObjectId":
+        return this.asObjectId();
+
+      case "Array":
+        return this.asArray();
+
+      case "Document": {
+        let doc = this.asDocument();
+        return doc.toJsObject();
+      }
+
+      default:
+        return undefined;
+
+    }
   }
 
 }
@@ -72,8 +155,12 @@ class Document {
     return result;
   }
 
-  constructor() {
-    this[NativeExt] = addon.makeDocument();
+  constructor(ext) {
+    if (typeof ext === 'undefined') {
+      this[NativeExt] = addon.makeDocument();
+    } else {
+      this[NativeExt] = ext;
+    }
   }
 
   set(key, value) {
@@ -90,6 +177,49 @@ class Document {
       return raw;
     }
     return new Value(raw);
+  }
+
+  iter() {
+    const rawIter = addon.mkDocIter(this[NativeExt]);
+    return new DocumentIter(rawIter);
+  }
+
+  toJsObject() {
+    const result = {};
+    const iterator = this.iter();
+    let next = iterator.next();
+
+    while (typeof next !== 'undefined') {
+      const [key, value] = next;
+
+      result[key] = value.toJsObject();
+
+      next = iterator.next();
+    }
+
+    return result;
+  }
+
+  get length() {
+    const len = addon.documentLen(this[NativeExt]);
+    return len;
+  }
+
+}
+
+class DocumentIter {
+
+  constructor(ext) {
+    this[NativeExt] = ext;
+  }
+
+  next() {
+    const result = addon.docIterNext(this[NativeExt]);
+    if (typeof result === 'undefined') {
+      return undefined;
+    }
+    const [key, raw] = result;
+    return [key, new Value(raw)];
   }
 
 }
@@ -115,8 +245,12 @@ class DbArray {
     return result;
   }
 
-  constructor() {
-    this[NativeExt] = addon.mkArray();
+  constructor(ext) {
+    if (typeof ext === 'undefined') {
+      this[NativeExt] = addon.mkArray();
+    } else {
+      this[NativeExt] = ext;
+    }
   }
 
   get(index) {
@@ -139,18 +273,22 @@ class DbArray {
 class ObjectId {
 
   constructor(ext) {
-    this[ObjectIdExt] = ext;
+    this[NativeExt] = ext;
   }
 
   toValue() {
-    const raw = this[ObjectIdExt];
+    const raw = this[NativeExt];
     const valueRaw = addon.objectIdToValue(raw);
     return new Value(valueRaw);
   }
 
   hex() {
-    const raw = this[ObjectIdExt];
+    const raw = this[NativeExt];
     return addon.objectIdToHex(raw);
+  }
+
+  toString() {
+    return this.hex();
   }
 
 }
@@ -162,8 +300,59 @@ class Collection {
     this.__name = name;
   }
 
+  findAll() {
+    const handleRaw = addon.dbFindAll(this.__db[NativeExt], this.__name);
+    const handle = new DbHandle(handleRaw);
+    handle.step();
+
+    const result = [];
+    while (handle.hasRow()) {
+      const value = handle.get();
+      const doc = value.asDocument();
+      result.push(value.toJsObject());
+
+      handle.step();
+    }
+
+    return result;
+  }
+
+  insert(doc) {
+    if (!(doc instanceof Document)) {
+      throw new TypeError("type of insert value should be a Document");
+    }
+    this.__db.startTransaction();
+    addon.insert(this.__db[NativeExt], this.__name, doc[NativeExt]);
+    this.__db.commit();
+  }
+
   find(query_obj) {
     console.log(query_obj);
+  }
+
+}
+
+class DbHandle {
+
+  constructor(ext) {
+    this[NativeExt] = ext;
+  }
+
+  step() {
+    addon.dbHandleStep(this[NativeExt]);
+  }
+
+  state() {
+    return addon.dbHandleState(this[NativeExt]);
+  }
+
+  get() {
+    const rawValue = addon.dbHandleGet(this[NativeExt]);
+    return new Value(rawValue);
+  }
+
+  hasRow() {
+    return this.state() == DB_HANDLE_STATE_HAS_ROW;
   }
 
 }
@@ -180,7 +369,12 @@ class Database {
   }
 
   createCollection(name) {
-    addon.createCollection(this[NativeExt], name);
+    try {
+      this.startTransaction();
+      addon.createCollection(this[NativeExt], name);
+    } finally {
+      this.commit();
+    }
   }
 
   collection(name) {
@@ -189,6 +383,18 @@ class Database {
 
   close() {
     addon.close(this[NativeExt]);
+  }
+
+  startTransaction() {
+    addon.startTransaction(this[NativeExt], 0);
+  }
+
+  rollback() {
+    addon.rollback(this[NativeExt]);
+  }
+
+  commit() {
+    addon.commit(this[NativeExt]);
   }
 
 }
@@ -200,4 +406,5 @@ module.exports = {
   Value,
   mkNull,
   mkDouble,
+  version,
 };

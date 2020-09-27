@@ -18,8 +18,10 @@ use std::rc::Rc;
 use std::os::raw::{c_char, c_uint, c_int, c_double, c_uchar};
 use std::ptr::{null_mut, write_bytes, null};
 use std::ffi::{CStr, CString};
-use polodb_core::{DbContext, DbErr};
+use polodb_core::{DbContext, DbErr, DbHandle};
 use polodb_core::bson::{Value, ObjectId, Document, Array};
+use polodb_core::bson::linked_hash_map::Iter;
+use std::borrow::Borrow;
 
 const DB_ERROR_MSG_SIZE: usize = 512;
 
@@ -64,6 +66,48 @@ pub extern "C" fn PLDB_open(path: *const c_char) -> *mut DbContext {
 }
 
 #[no_mangle]
+pub extern "C" fn PLDB_start_transaction(db: *mut DbContext, _flags: c_int) -> c_int {
+    unsafe {
+        let rust_db = db.as_mut().unwrap();
+        match rust_db.start_transaction() {
+            Ok(()) => 0,
+            Err(err) => {
+                set_global_error(err);
+                PLDB_error_code()
+            }
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_rollback(db: *mut DbContext) -> c_int {
+    unsafe {
+        let rust_db = db.as_mut().unwrap();
+        match rust_db.rollback() {
+            Ok(()) => 0,
+            Err(err) => {
+                set_global_error(err);
+                PLDB_error_code()
+            }
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_commit(db: *mut DbContext) -> c_int {
+    unsafe {
+        let rust_db = db.as_mut().unwrap();
+        match rust_db.commit() {
+            Ok(()) => 0,
+            Err(err) => {
+                set_global_error(err);
+                PLDB_error_code()
+            }
+        }
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn PLDB_create_collection(db: *mut DbContext, name: *const c_char) -> c_int {
     unsafe {
         let name_str= CStr::from_ptr(name);
@@ -71,32 +115,115 @@ pub extern "C" fn PLDB_create_collection(db: *mut DbContext, name: *const c_char
         let oid_result = db.as_mut().unwrap().create_collection(name_utf8);
         if let Err(err) = oid_result {
             set_global_error(err);
-            return -1;
+            return PLDB_error_code();
         }
     }
     0
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_insert(db: *mut DbContext, name: *const c_char, doc: *const Document) -> c_int {
+pub extern "C" fn PLDB_insert(db: *mut DbContext, name: *const c_char, doc: *const Rc<Document>) -> c_int {
     unsafe {
         let local_db = db.as_mut().unwrap();
         let name_str = CStr::from_ptr(name);
         let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
-        let local_doc: &Document = doc.as_ref().unwrap();
-        let insert_result = local_db.insert(name_utf8, Rc::new(local_doc.clone()));
+        let local_doc = doc.as_ref().unwrap().clone();
+        let insert_result = local_db.insert(name_utf8, local_doc);
         if let Err(err) = insert_result {
             set_global_error(err);
-            return -1;
+            return PLDB_error_code();
         }
     }
     0
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_find(_db: *mut DbContext, _val: *mut Value) -> c_int {
-    println!("find");
-    0
+pub extern "C" fn PLDB_find(db: *mut DbContext, name: *const c_char, query: *const Rc<Document>, out_handle: *mut *mut DbHandle) -> c_int {
+    unsafe {
+        let rust_db = db.as_mut().unwrap();
+        let name_str = CStr::from_ptr(name);
+        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
+
+        let query_doc = query.as_ref().unwrap();
+
+        let handle = match rust_db.find(name_utf8, query_doc.borrow()) {
+            Ok(handle) => handle,
+            Err(err) => {
+                set_global_error(err);
+                return PLDB_error_code();
+            }
+        };
+
+        let boxed_handle = Box::new(handle);
+        let raw_handle = Box::into_raw(boxed_handle);
+
+        out_handle.write(raw_handle);
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_find_all(db: *mut DbContext, name: *const c_char, out_handle: *mut *mut DbHandle) -> c_int {
+    unsafe {
+        let rust_db = db.as_mut().unwrap();
+        let name_str = CStr::from_ptr(name);
+        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
+
+        let handle = match rust_db.find_all(name_utf8) {
+            Ok(handle) => handle,
+            Err(err) => {
+                set_global_error(err);
+                return PLDB_error_code();
+            }
+        };
+
+        let boxed_handle = Box::new(handle);
+        let raw_handle = Box::into_raw(boxed_handle);
+
+        out_handle.write(raw_handle);
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_handle_step(handle: *mut DbHandle) -> c_int {
+    unsafe {
+        let rust_handle = handle.as_mut().unwrap();
+        rust_handle.step();
+
+        if rust_handle.has_error() {
+            let err = rust_handle.take_error().unwrap();
+            set_global_error(err);
+            return PLDB_error_code();
+        }
+
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_handle_state(handle: *mut DbHandle) -> c_int {
+    unsafe {
+        let rust_handle = handle.as_mut().unwrap();
+        rust_handle.state() as c_int
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_handle_get(handle: *mut DbHandle, out_val: *mut *mut Value) {
+    unsafe {
+        let rust_handle = handle.as_mut().unwrap();
+        let boxed_handle = Box::new(rust_handle.get().clone());
+        let handle_ptr = Box::into_raw(boxed_handle);
+        out_val.write(handle_ptr);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_free_handle(handle: *mut DbHandle) {
+    unsafe {
+        let _ptr = Box::from_raw(handle);
+    }
 }
 
 #[no_mangle]
@@ -108,12 +235,6 @@ pub extern "C" fn PLDB_error_code() -> c_int {
         }
         0
     });
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_exec(_db: *mut DbContext, _bytes: *const u8, size: c_uint) -> c_int {
-    print!("exec byte codes with size: {}", size);
-    0
 }
 
 #[no_mangle]
@@ -181,17 +302,133 @@ pub extern "C" fn PLDB_mk_int(val: i64) -> *mut Value {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_value_type_name(val: *const Value, buffer: *mut c_char, buffer_size: c_uint) -> c_int {
+pub extern "C" fn PLDB_value_type(val: *const Value) -> c_int {
     unsafe {
         let local_val = val.as_ref().unwrap();
-        let rust_name = local_val.ty_name();
-        let actual_size = rust_name.len();
-        let cstr = CString::new(rust_name).unwrap();
-        let result_size = std::cmp::min(actual_size, buffer_size as usize);
+        let ty = local_val.ty_int();
 
-        cstr.as_ptr().copy_to_nonoverlapping(buffer, result_size);
+        ty as c_int
+    }
+}
 
-        result_size as c_int
+#[no_mangle]
+pub extern "C" fn PLDB_value_get_i64(val: *const Value, out_val: *mut i64) -> c_int {
+    unsafe {
+        let local_val = val.as_ref().unwrap();
+        match local_val {
+            Value::Int(i) => {
+                out_val.write(*i);
+                0
+            }
+
+            _ => -1
+
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_value_get_bool(val: *const Value) -> c_int {
+    unsafe {
+        let local_val = val.as_ref().unwrap();
+        match local_val {
+            Value::Boolean(bl) =>{
+                if *bl {
+                    1
+                } else {
+                    0
+                }
+            }
+
+            _ => -1,
+
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_value_get_double(val: *const Value, out: *mut f64) -> c_int {
+    unsafe {
+        let local_val = val.as_ref().unwrap();
+        match local_val {
+            Value::Double(num) => {
+                out.write(*num);
+                0
+            }
+
+            _ => -1,
+
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_value_get_array(val: *const Value, out: *mut *mut Rc<Array>) -> c_int {
+    unsafe {
+        let local_val = val.as_ref().unwrap();
+        match local_val {
+            Value::Array(arr) => {
+                let boxed_array = Box::new(arr.clone());
+                out.write(Box::into_raw(boxed_array));
+                0
+            }
+
+            _ => -1,
+
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_value_get_object_id(val: *const Value, out: *mut *mut Rc<ObjectId>) -> c_int {
+    unsafe {
+        let local_val = val.as_ref().unwrap();
+        match local_val {
+            Value::ObjectId(oid) => {
+                let boxed_oid = Box::new(oid.clone());
+                out.write(Box::into_raw(boxed_oid));
+                0
+            }
+
+            _ => -1,
+
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_value_get_document(val: *const Value, out: *mut *mut Rc<Document>) -> c_int {
+    unsafe {
+        let local_val = val.as_ref().unwrap();
+        match local_val {
+            Value::Document(doc) => {
+                let boxed_doc = Box::new(doc.clone());
+                out.write(Box::into_raw(boxed_doc));
+                0
+            }
+
+            _ => -1,
+
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_value_get_string_utf8(val: *const Value, out_str: *mut *const c_char) -> c_int {
+    unsafe {
+        let local_val = val.as_ref().unwrap();
+        match local_val {
+            Value::String(str) => {
+                let len = str.len();
+                let str_ptr = str.as_ptr().cast::<c_char>();
+
+                out_str.write(str_ptr);
+
+                len as c_int
+            }
+
+            _ => -1,
+        }
     }
 }
 
@@ -290,6 +527,62 @@ pub extern "C" fn PLDB_doc_get(doc: *mut Rc<Document>, key: *const c_char, resul
             return 1;
         }
         return 0;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_len(doc: *mut Rc<Document>) -> c_int {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let len = local_doc.len();
+        len as c_int
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_iter(doc: *mut Rc<Document>) -> *mut Iter<'static, String, Value> {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let iter = local_doc.iter();
+        Box::into_raw(Box::new(iter))
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, String, Value>,
+                                     key_buffer: *mut c_char, key_buffer_size: c_uint, out_val: *mut *mut Value) -> c_int {
+
+    unsafe {
+        let local_iter = iter.as_mut().unwrap();
+        let tuple = local_iter.next();
+        match tuple {
+            Some((key, value)) => {
+                let key_len = key.len();
+                if key_len > (key_buffer_size as usize) {
+                    return -1;
+                }
+                let real_size = std::cmp::min(key_len, key_buffer_size as usize);
+
+                let cstr = CString::new(key.clone()).unwrap();
+                cstr.as_ptr().copy_to_nonoverlapping(key_buffer, real_size);
+
+                let boxed_value = Box::new(value.clone());
+                out_val.write(Box::into_raw(boxed_value));
+                real_size as c_int
+            }
+
+            None => {
+                0
+            }
+
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_free_doc_iter(iter: *mut Iter<'static, String, Value>) {
+    unsafe {
+        let _ptr = Box::from_raw(iter);
     }
 }
 
@@ -394,7 +687,8 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::CannotWriteDbWithoutTransaction => 26,
         DbErr::StartTransactionInAnotherTransaction => 27,
         DbErr::RollbackNotInTransaction => 28,
-        DbErr::Busy => 29
+        DbErr::IllegalCollectionName(_) => 29,
+        DbErr::Busy => 30,
 
     }
 }

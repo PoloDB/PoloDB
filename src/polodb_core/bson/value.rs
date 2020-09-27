@@ -161,9 +161,9 @@ impl fmt::Display for Value {
 
             Value::ObjectId(oid) => write!(f, "ObjectId({})", oid),
 
-            Value::Array(arr) => write!(f, "Array(len = {})", arr.len()),
+            Value::Array(arr) => write!(f, "Array(len={})", arr.len()),
 
-            Value::Document(_) => write!(f, "Document(...)"),
+            Value::Document(doc) => write!(f, "Document(len={}, ...)", doc.len()),
 
             Value::Binary(bin) => {
                 if bin.len() > BINARY_MAX_DISPLAY_LEN {

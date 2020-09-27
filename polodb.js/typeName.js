@@ -13,28 +13,40 @@
  * You should have received a copy of the GNU Lesser General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-mod hex;
-mod object_id;
-mod document;
-mod array;
-mod value;
-pub mod linked_hash_map;
 
-pub use object_id::{ObjectId, ObjectIdMaker};
-pub use document::Document;
-pub use array::Array;
-pub use value::*;
+function typeName(ty) {
+  switch (ty) {
+    case 0x0A:
+      return "Null";
 
-#[cfg(test)]
-mod tests {
-    use crate::bson::document::Document;
-    use crate::bson::object_id::ObjectIdMaker;
+    case 0x01:
+      return "Double";
 
-    #[test]
-    fn document_basic() {
-        let mut id_maker = ObjectIdMaker::new();
-        let _doc = Document::new(&mut id_maker);
-        assert_eq!(2 + 2, 4);
-    }
+    case 0x08:
+      return "Boolean";
 
+    case 0x16:
+      return "Int";
+
+    case 0x02:
+      return "String";
+
+    case 0x07:
+      return "ObjectId";
+
+    case 0x17:
+      return "Array";
+
+    case 0x13:
+      return "Document";
+
+    case 0x05:
+      return "Binary";
+
+    default:
+      return "<unknown: " + ty +">";
+
+  }
 }
+
+module.exports = { typeName };

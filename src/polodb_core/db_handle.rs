@@ -19,7 +19,13 @@ impl<'a> DbHandle<'a> {
     }
 
     #[inline]
-    pub fn get(&mut self) -> &Value {
+    pub fn state(&self) -> i8 {
+        let state = self.0.state;
+        state as i8
+    }
+
+    #[inline]
+    pub fn get(&self) -> &Value {
         self.0.stack_top()
     }
 

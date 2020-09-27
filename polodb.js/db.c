@@ -24,7 +24,14 @@
 
 #include "./polodb.h"
 
-static napi_value Version(napi_env env, napi_callback_info info) {
+#define STD_CALL(EXPR) \
+  ec = (EXPR); \
+  if (ec < 0) { \
+    napi_throw_type_error(env, NULL, PLDB_error_msg()); \
+    return NULL; \
+  }
+
+static napi_value db_version(napi_env env, napi_callback_info info) {
   static char buffer[BUFFER_SIZE];
   memset(buffer, 0, BUFFER_SIZE);
   PLDB_version(buffer, BUFFER_SIZE);
@@ -36,24 +43,32 @@ static napi_value Version(napi_env env, napi_callback_info info) {
   return world;
 }
 
-static void DbValueFinalize(napi_env env, void* finalize_data, void* finalize_hint) {
+static void DbValue_finalize(napi_env env, void* finalize_data, void* finalize_hint) {
   DbValue* val = (DbValue*)finalize_data;
   PLDB_free_value(val);
 }
 
-static void DbDocumentFinalize(napi_env env, void* data, void* hint) {
+static void DbDocument_finalize(napi_env env, void* data, void* hint) {
   PLDB_free_doc((DbDocument*)data);
 }
 
-static void DbObjectIdFinalize(napi_env env, void* data, void* hint) {
+static void DbObjectId_finalize(napi_env env, void* data, void* hint) {
   PLDB_free_object_id((DbObjectId*)data);
 }
 
-static void DbArrayFinalize(napi_env env, void* data, void* hint) {
+static void DbArray_finalize(napi_env env, void* data, void* hint) {
   PLDB_free_arr((DbArray*)data);
 }
 
-static int CheckType(napi_env env, napi_value value, napi_valuetype expected) {
+static void DbHandle_finalize(napi_env env, void* data, void* hint) {
+  PLDB_free_handle((DbHandle*)data);
+}
+
+static void DbDocumentIter_finalize(napi_env env, void* data, void* hint) {
+  PLDB_free_doc_iter((DbDocumentIter*)data);
+}
+
+static int check_type(napi_env env, napi_value value, napi_valuetype expected) {
   napi_status status;
   napi_valuetype actual;
 
@@ -63,18 +78,18 @@ static int CheckType(napi_env env, napi_value value, napi_valuetype expected) {
   return actual == expected;
 }
 
-static napi_value MkNull(napi_env env, napi_callback_info info) {
+static napi_value js_mk_null(napi_env env, napi_callback_info info) {
   napi_status status;
 
   napi_value result;
   DbValue* val = PLDB_mk_null();
-  status = napi_create_external(env, (void*)val, DbValueFinalize, NULL, &result);
+  status = napi_create_external(env, (void*)val, DbValue_finalize, NULL, &result);
   assert(status == napi_ok);
 
   return result;
 }
 
-static napi_value MkDouble(napi_env env, napi_callback_info info) {
+static napi_value js_mk_double(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 1;
@@ -82,7 +97,7 @@ static napi_value MkDouble(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_number)) {
+  if (!check_type(env, args[0], napi_number)) {
     napi_throw_type_error(env, NULL, "Wrong arguments");
     return NULL;
   }
@@ -94,13 +109,13 @@ static napi_value MkDouble(napi_env env, napi_callback_info info) {
   napi_value result;
   DbValue* val = PLDB_mk_double(num);
 
-  status = napi_create_external(env, (void*)val, DbValueFinalize, NULL, &result);
+  status = napi_create_external(env, (void*)val, DbValue_finalize, NULL, &result);
   assert(status == napi_ok);
 
   return result;
 }
 
-static napi_value MkInt(napi_env env, napi_callback_info info) {
+static napi_value js_mk_int(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 1;
@@ -108,7 +123,7 @@ static napi_value MkInt(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_number)) {
+  if (!check_type(env, args[0], napi_number)) {
     napi_throw_type_error(env, NULL, "Wrong arguments");
     return NULL;
   }
@@ -120,13 +135,13 @@ static napi_value MkInt(napi_env env, napi_callback_info info) {
   napi_value result;
   DbValue* val = PLDB_mk_int(num);
 
-  status = napi_create_external(env, (void*)val, DbValueFinalize, NULL, &result);
+  status = napi_create_external(env, (void*)val, DbValue_finalize, NULL, &result);
   assert(status == napi_ok);
 
   return result;
 }
 
-static napi_value MkBool(napi_env env, napi_callback_info info) {
+static napi_value js_mk_bool(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 1;
@@ -134,7 +149,7 @@ static napi_value MkBool(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_boolean)) {
+  if (!check_type(env, args[0], napi_boolean)) {
     napi_throw_type_error(env, NULL, "Wrong arguments");
     return NULL;
   }
@@ -146,13 +161,13 @@ static napi_value MkBool(napi_env env, napi_callback_info info) {
   napi_value result;
   DbValue* val = PLDB_mk_bool((int)bl);
 
-  status = napi_create_external(env, (void*)val, DbValueFinalize, NULL, &result);
+  status = napi_create_external(env, (void*)val, DbValue_finalize, NULL, &result);
   assert(status == napi_ok);
 
   return result;
 }
 
-static napi_value MkStr(napi_env env, napi_callback_info info) {
+static napi_value js_mk_str(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 1;
@@ -160,7 +175,7 @@ static napi_value MkStr(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_string)) {
+  if (!check_type(env, args[0], napi_string)) {
     napi_throw_type_error(env, NULL, "Wrong arguments");
     return NULL;
   }
@@ -182,7 +197,7 @@ static napi_value MkStr(napi_env env, napi_callback_info info) {
     goto clean;
   }
 
-  status = napi_create_external(env, (void*)val, DbValueFinalize, NULL, &result);
+  status = napi_create_external(env, (void*)val, DbValue_finalize, NULL, &result);
   assert(status == napi_ok);
 
 clean:
@@ -190,7 +205,7 @@ clean:
   return result;
 }
 
-static napi_value ValueTypeName(napi_env env, napi_callback_info info) {
+static napi_value js_mk_doc_iter(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 1;
@@ -198,28 +213,314 @@ static napi_value ValueTypeName(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_external)) {
+  if (!check_type(env, args[0], napi_external)) {
     napi_throw_type_error(env, NULL, "Wrong arguments");
     return NULL;
   }
 
-  void* raw_value;
-  status = napi_get_value_external(env, args[0], &raw_value);
+  DbDocument* doc = NULL;
+  status = napi_get_value_external(env, args[0], (void**)&doc);
   assert(status == napi_ok);
 
-  static char buffer[VALUE_NAME_BUFFER_SIZE];
-  memset(buffer, 0, VALUE_NAME_BUFFER_SIZE);
-
-  int size = PLDB_value_type_name((DbValue*)raw_value, buffer, VALUE_NAME_BUFFER_SIZE);
-
+  DbDocumentIter* iter = PLDB_doc_iter(doc);
   napi_value result = NULL;
-  status = napi_create_string_utf8(env, buffer, size, &result);
+
+  status = napi_create_external(env, (void*)iter, DbDocumentIter_finalize, NULL, &result);
   assert(status == napi_ok);
 
   return result;
 }
 
-static napi_value Open(napi_env env, napi_callback_info info) {
+static napi_value js_doc_iter_next(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments");
+    return NULL;
+  }
+
+  DbDocumentIter* iter = NULL;
+  status = napi_get_value_external(env, args[0], (void**)&iter);
+  assert(status == napi_ok);
+  
+  static char KEY_BUFFER[BUFFER_SIZE];
+  memset(KEY_BUFFER, 0, BUFFER_SIZE);
+
+  DbValue* out_val;
+  int copied_size = PLDB_doc_iter_next(iter, KEY_BUFFER, BUFFER_SIZE, &out_val);
+  if (copied_size < 0) {
+    napi_throw_type_error(env, NULL, "buffer not enough");
+    return NULL;
+  }
+
+  if (copied_size == 0) { // no next
+    return NULL;
+  }
+
+  napi_value js_key = NULL;
+  napi_value js_value = NULL;
+
+  status = napi_create_string_utf8(env, KEY_BUFFER, copied_size, &js_key);
+  assert(status == napi_ok);
+
+  status = napi_create_external(env, (void*)out_val, DbValue_finalize, NULL, &js_value);
+  assert(status == napi_ok);
+
+  napi_value arr;
+  status = napi_create_array(env, &arr);
+  assert(status == napi_ok);
+
+  napi_set_element(env, arr, 0, js_key);
+  napi_set_element(env, arr, 1, js_value);
+
+  return arr;
+}
+
+static napi_value js_value_type(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments");
+    return NULL;
+  }
+
+  DbValue* raw_value;
+  status = napi_get_value_external(env, args[0], (void**)&raw_value);
+  assert(status == napi_ok);
+
+  int ty = PLDB_value_type(raw_value);
+
+  napi_value result = NULL;
+  status = napi_create_int32(env, ty, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_value_get_i64(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments");
+    return NULL;
+  }
+
+  DbValue *val;
+  status = napi_get_value_external(env, args[0], (void**)&val);
+  assert(status == napi_ok);
+
+  long long out = 0;
+  if (PLDB_value_get_i64(val, &out) != 0) {
+    napi_throw_type_error(env, NULL, "DbValue is not an integer");
+    return NULL;
+  }
+
+  napi_value result;
+  status = napi_create_int64(env, out, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_value_get_bool(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments");
+    return NULL;
+  }
+
+  DbValue *val;
+  status = napi_get_value_external(env, args[0], (void**)&val);
+  assert(status == napi_ok);
+
+  int result = PLDB_value_get_bool(val);
+  if (result < 0) {
+    napi_throw_type_error(env, NULL, "value is not a boolean");
+    return NULL;
+  }
+
+  napi_value num;
+  status = napi_create_int32(env ,result, &num);
+  assert(status == napi_ok);
+
+  napi_value bl;
+  status = napi_coerce_to_bool(env, num, &bl);
+  assert(status == napi_ok);
+
+  return bl;
+}
+
+static napi_value js_value_get_double(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments");
+    return NULL;
+  }
+
+  DbValue *val;
+  status = napi_get_value_external(env, args[0], (void**)&val);
+  assert(status == napi_ok);
+
+  double num = 0;
+  status = PLDB_value_get_double(val, &num);
+  assert(status == napi_ok);
+
+  napi_value result;
+  status = napi_create_double(env, num, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_value_get_array(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments");
+    return NULL;
+  }
+
+  DbValue *val = NULL;
+  status = napi_get_value_external(env, args[0], (void**)&val);
+  assert(status == napi_ok);
+
+  DbArray* arr = NULL;
+  if (PLDB_value_get_array(val, &arr) < 0) {
+    napi_throw_type_error(env, NULL, "value is not an array");
+    return NULL;
+  }
+
+  napi_value result;
+  status = napi_create_external(env, (void*)arr, DbArray_finalize, NULL, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_value_get_doc(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments");
+    return NULL;
+  }
+
+  DbValue *val = NULL;
+  status = napi_get_value_external(env, args[0], (void**)&val);
+  assert(status == napi_ok);
+
+  DbDocument* doc = NULL;
+  if (PLDB_value_get_document(val, &doc) < 0) {
+    napi_throw_type_error(env, NULL, "value is not a array");
+    return NULL;
+  }
+
+  napi_value result;
+  status = napi_create_external(env, (void*)doc, DbDocument_finalize, NULL, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_value_get_object_id(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments");
+    return NULL;
+  }
+
+  DbValue *val = NULL;
+  status = napi_get_value_external(env, args[0], (void**)&val);
+  assert(status == napi_ok);
+
+  DbObjectId* oid = NULL;
+  if (PLDB_value_get_object_id(val, &oid) < 0) {
+    napi_throw_type_error(env, NULL, "value is not an ObjectId");
+    return NULL;
+  }
+
+  napi_value result;
+  status = napi_create_external(env, (void*)oid, DbObjectId_finalize, NULL, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_value_get_string(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments");
+    return NULL;
+  }
+
+  DbValue *val;
+  status = napi_get_value_external(env, args[0], (void**)&val);
+  assert(status == napi_ok);
+
+  const char* content = NULL;
+  int len = PLDB_value_get_string_utf8(val, &content);
+  if (len < 0) {
+    napi_throw_type_error(env, NULL, "DbValue is not a string");
+    return NULL;
+  }
+
+  napi_value result;
+  status = napi_create_string_utf8(env, content, len, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_open(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 1;
@@ -257,7 +558,7 @@ static napi_value Open(napi_env env, napi_callback_info info) {
   return result;
 }
 
-static napi_value MkArray(napi_env env, napi_callback_info info) {
+static napi_value js_mk_array(napi_env env, napi_callback_info info) {
   napi_status status;
 
   DbArray* arr = PLDB_mk_arr();
@@ -267,13 +568,13 @@ static napi_value MkArray(napi_env env, napi_callback_info info) {
   }
 
   napi_value result;
-  status = napi_create_external(env, (void*)arr, &DbArrayFinalize, NULL, &result);
+  status = napi_create_external(env, (void*)arr, &DbArray_finalize, NULL, &result);
   assert(status == napi_ok);
 
   return result;
 }
 
-static napi_value ArrayLen(napi_env env, napi_callback_info info) {
+static napi_value js_array_len(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 1;
@@ -281,7 +582,7 @@ static napi_value ArrayLen(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_external)) {
+  if (!check_type(env, args[0], napi_external)) {
     napi_throw_type_error(env, NULL, "the first argument should be an external object");
     return NULL;
   }
@@ -299,7 +600,7 @@ static napi_value ArrayLen(napi_env env, napi_callback_info info) {
   return result;
 }
 
-static napi_value ArrayGet(napi_env env, napi_callback_info info) {
+static napi_value js_array_get(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 2;
@@ -307,12 +608,12 @@ static napi_value ArrayGet(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_external)) {
+  if (!check_type(env, args[0], napi_external)) {
     napi_throw_type_error(env, NULL, "the first argument should be an external object");
     return NULL;
   }
 
-  if (!CheckType(env, args[1], napi_number)) {
+  if (!check_type(env, args[1], napi_number)) {
     napi_throw_type_error(env, NULL, "the second argument should be a number");
     return NULL;
   }
@@ -331,7 +632,7 @@ static napi_value ArrayGet(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
-static napi_value ArrayPush(napi_env env, napi_callback_info info) {
+static napi_value js_array_push(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 2;
@@ -339,12 +640,12 @@ static napi_value ArrayPush(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_external)) {
+  if (!check_type(env, args[0], napi_external)) {
     napi_throw_type_error(env, NULL, "the first argument should be an external object");
     return NULL;
   }
 
-  if (!CheckType(env, args[1], napi_external)) {
+  if (!check_type(env, args[1], napi_external)) {
     napi_throw_type_error(env, NULL, "the second argument should be an external");
     return NULL;
   }
@@ -363,7 +664,7 @@ static napi_value ArrayPush(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
-static napi_value MkDocument(napi_env env, napi_callback_info info) {
+static napi_value js_mk_document(napi_env env, napi_callback_info info) {
   napi_status status;
 
   DbDocument* doc = PLDB_mk_doc();
@@ -373,13 +674,13 @@ static napi_value MkDocument(napi_env env, napi_callback_info info) {
   }
 
   napi_value result;
-  status = napi_create_external(env, (void*)doc, &DbDocumentFinalize, NULL, &result);
+  status = napi_create_external(env, (void*)doc, &DbDocument_finalize, NULL, &result);
   assert(status == napi_ok);
 
   return result;
 }
 
-static napi_value MkObjectId(napi_env env, napi_callback_info info) {
+static napi_value js_mk_object_id(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 1;
@@ -387,7 +688,7 @@ static napi_value MkObjectId(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_external)) {
+  if (!check_type(env, args[0], napi_external)) {
     napi_throw_type_error(env, NULL, "the first argument should be an external object");
     return NULL;
   }
@@ -403,14 +704,14 @@ static napi_value MkObjectId(napi_env env, napi_callback_info info) {
     goto clean;
   }
 
-  status = napi_create_external(env, (void*)oid, &DbObjectIdFinalize, NULL, &result);
+  status = napi_create_external(env, (void*)oid, &DbObjectId_finalize, NULL, &result);
   assert(status == napi_ok);
 
 clean:
   return result;
 }
 
-static napi_value ObjectIdToValue(napi_env env, napi_callback_info info) {
+static napi_value js_oid2value(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 1;
@@ -418,7 +719,7 @@ static napi_value ObjectIdToValue(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_external)) {
+  if (!check_type(env, args[0], napi_external)) {
     napi_throw_type_error(env, NULL, "the first argument should be an external object");
     return NULL;
   }
@@ -432,13 +733,13 @@ static napi_value ObjectIdToValue(napi_env env, napi_callback_info info) {
 
   napi_value result = NULL;
 
-  status = napi_create_external(env, (void*)val, &DbValueFinalize, NULL, &result);
+  status = napi_create_external(env, (void*)val, &DbValue_finalize, NULL, &result);
   assert(status == napi_ok);
 
   return result;
 }
 
-static napi_value ObjectIdToHex(napi_env env, napi_callback_info info) {
+static napi_value js_oid2hex(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 1;
@@ -446,7 +747,7 @@ static napi_value ObjectIdToHex(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_external)) {
+  if (!check_type(env, args[0], napi_external)) {
     napi_throw_type_error(env, NULL, "the first argument should be an external object");
     return NULL;
   }
@@ -469,7 +770,7 @@ static napi_value ObjectIdToHex(napi_env env, napi_callback_info info) {
   return result;
 }
 
-static napi_value DocSet(napi_env env, napi_callback_info info) {
+static napi_value js_doc_set(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 3;
@@ -477,17 +778,17 @@ static napi_value DocSet(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_external)) {
+  if (!check_type(env, args[0], napi_external)) {
     napi_throw_type_error(env, NULL, "the first argument should be an external object");
     return NULL;
   }
 
-  if (!CheckType(env, args[1], napi_string)) {
+  if (!check_type(env, args[1], napi_string)) {
     napi_throw_type_error(env, NULL, "the second argument should be a string");
     return NULL;
   }
 
-  if (!CheckType(env, args[2], napi_external)) {
+  if (!check_type(env, args[2], napi_external)) {
     napi_throw_type_error(env, NULL, "the third argument should be an external object");
     return NULL;
   }
@@ -517,7 +818,7 @@ clean:
   return NULL;
 }
 
-static napi_value DocGet(napi_env env, napi_callback_info info) {
+static napi_value js_doc_get(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 2;
@@ -525,12 +826,12 @@ static napi_value DocGet(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_external)) {
+  if (!check_type(env, args[0], napi_external)) {
     napi_throw_type_error(env, NULL, "the first argument should be an external object");
     return NULL;
   }
 
-  if (!CheckType(env, args[1], napi_string)) {
+  if (!check_type(env, args[1], napi_string)) {
     napi_throw_type_error(env, NULL, "the second argument should be a string");
     return NULL;
   }
@@ -563,7 +864,7 @@ static napi_value DocGet(napi_env env, napi_callback_info info) {
     goto clean;
   }
 
-  status = napi_create_external(env, (void*)out_val, DbValueFinalize, NULL, &result);
+  status = napi_create_external(env, (void*)out_val, DbValue_finalize, NULL, &result);
   assert(status == napi_ok);
 
 clean:
@@ -571,7 +872,33 @@ clean:
   return result;
 }
 
-static napi_value CreateCollection(napi_env env, napi_callback_info info) {
+static napi_value js_doc_len(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 0");
+    return NULL;
+  }
+
+  DbDocument* doc = NULL;
+  status = napi_get_value_external(env, args[0], (void**)&doc);
+  assert(status == napi_ok);
+
+  int len = PLDB_doc_len(doc);
+
+  napi_value result;
+  status = napi_create_int32(env, len, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_create_collection(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 2;
@@ -579,29 +906,60 @@ static napi_value CreateCollection(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_external)) {
+  if (!check_type(env, args[0], napi_external)) {
     napi_throw_type_error(env, NULL, "Wrong arguments 0");
     return NULL;
   }
 
-  if (!CheckType(env, args[1], napi_string)) {
+  if (!check_type(env, args[1], napi_string)) {
     napi_throw_type_error(env, NULL, "Wrong arguments 1");
     return NULL;
   }
 
-  void* db_raw;
-  status = napi_get_value_external(env, args[0], &db_raw);
+  Database* db;
+  status = napi_get_value_external(env, args[0], (void**)&db);
   assert(status == napi_ok);
 
   static char name_buffer[BUFFER_SIZE];
   memset(name_buffer, 0, BUFFER_SIZE);
 
   size_t written_count = 0;
-  status = napi_get_value_string_utf8(env, args[0], name_buffer, BUFFER_SIZE, &written_count);
+  status = napi_get_value_string_utf8(env, args[1], name_buffer, BUFFER_SIZE, &written_count);
   assert(status == napi_ok);
 
-  Database* db = (Database*)db_raw;
-  int ec = PLDB_create_collection(db, name_buffer);
+  int ec = 0;
+  STD_CALL(PLDB_create_collection(db, name_buffer));
+
+  return NULL;
+}
+
+static napi_value js_start_transaction(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 2;
+  napi_value args[2];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 0");
+    return NULL;
+  }
+
+  if (!check_type(env, args[1], napi_number)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 1");
+    return NULL;
+  }
+
+  Database* db;
+  status = napi_get_value_external(env, args[0], (void**)&db);
+  assert(status == napi_ok);
+
+  int flags = 0;
+  status = napi_get_value_int32(env, args[1], &flags);
+  assert(status == napi_ok);
+
+  int ec = PLDB_start_transaction(db, flags);
   if (ec != 0) {
     napi_throw_type_error(env, NULL, PLDB_error_msg());
     return NULL;
@@ -610,7 +968,7 @@ static napi_value CreateCollection(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
-static napi_value Close(napi_env env, napi_callback_info info) {
+static napi_value js_commit(napi_env env, napi_callback_info info) {
   napi_status status;
 
   size_t argc = 1;
@@ -618,19 +976,260 @@ static napi_value Close(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
-  if (!CheckType(env, args[0], napi_external)) {
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 0");
+    return NULL;
+  }
+
+  Database* db;
+  status = napi_get_value_external(env, args[0], (void**)&db);
+  assert(status == napi_ok);
+
+  int ec = PLDB_commit(db);
+  if (ec != 0) {
+    napi_throw_type_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
+
+  return NULL;
+}
+
+static napi_value js_rollback(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 0");
+    return NULL;
+  }
+
+  Database* db;
+  status = napi_get_value_external(env, args[0], (void**)&db);
+  assert(status == napi_ok);
+
+  int ec = PLDB_rollback(db);
+  if (ec != 0) {
+    napi_throw_type_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
+
+  return NULL;
+}
+
+static napi_value js_insert(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 3;
+  napi_value args[3];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  // database
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 0");
+    return NULL;
+  }
+
+  // col name
+  if (!check_type(env, args[1], napi_string)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 1");
+    return NULL;
+  }
+
+  // doc
+  if (!check_type(env, args[2], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 2");
+    return NULL;
+  }
+
+  Database* db = NULL;
+  status = napi_get_value_external(env, args[0], (void**)&db);
+  assert(status == napi_ok);
+
+  static char name_buffer[BUFFER_SIZE];
+  memset(name_buffer, 0, BUFFER_SIZE);
+
+  size_t count = 0;
+  status = napi_get_value_string_utf8(env, args[1], name_buffer, BUFFER_SIZE, &count);
+  assert(status == napi_ok);
+
+  DbDocument* doc = NULL;
+  status = napi_get_value_external(env ,args[2], (void**)&doc);
+  assert(status == napi_ok);
+
+  int ec = 0;
+  STD_CALL(PLDB_insert(db, name_buffer, doc));
+
+  return NULL;
+}
+
+static napi_value js_find_all(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 2;
+  napi_value args[2];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 0");
+    return NULL;
+  }
+
+  if (!check_type(env, args[1], napi_string)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 1");
+    return NULL;
+  }
+
+  Database* db;
+  status = napi_get_value_external(env, args[0], (void**)&db);
+  assert(status == napi_ok);
+
+  static char name_buffer[BUFFER_SIZE];
+  memset(name_buffer, 0, BUFFER_SIZE);
+
+  size_t written_count = 0;
+  status = napi_get_value_string_utf8(env, args[1], name_buffer, BUFFER_SIZE, &written_count);
+  assert(status == napi_ok);
+
+  DbHandle* handle = NULL;
+  int ec = 0;
+  STD_CALL(PLDB_find_all(db, name_buffer, &handle));
+
+  napi_value result = NULL;
+  status = napi_create_external(env, (void*)handle, &DbHandle_finalize, NULL, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_find(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 3;
+  napi_value args[3];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 0");
+    return NULL;
+  }
+
+  if (!check_type(env, args[1], napi_string)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 1");
+    return NULL;
+  }
+
+  if (!check_type(env, args[2], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 2");
+    return NULL;
+  }
+
+  return NULL;
+}
+
+static napi_value js_handle_step(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
     napi_throw_type_error(env, NULL, "The first argument should be Database");
     return NULL;
   }
 
-  void* db;
-  status = napi_get_value_external(env, args[0], &db);
+  DbHandle* handle;
+  status = napi_get_value_external(env, args[0], (void**)&handle);
   assert(status == napi_ok);
 
-
-  PLDB_close((Database*)db);
+  int ec = 0;
+  STD_CALL(PLDB_handle_step(handle));
 
   return NULL;
+}
+
+static napi_value js_handle_get(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "The first argument should be Database");
+    return NULL;
+  }
+
+  DbHandle* handle = NULL;
+  status = napi_get_value_external(env, args[0], (void**)&handle);
+  assert(status == napi_ok);
+
+  DbValue* value = NULL;
+  PLDB_handle_get(handle, &value);
+
+  napi_value result = NULL;
+
+  status = napi_create_external(env, (void*)value, &DbValue_finalize, NULL, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_close(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "The first argument should be Database");
+    return NULL;
+  }
+
+  Database* db;
+  status = napi_get_value_external(env, args[0], (void**)&db);
+  assert(status == napi_ok);
+
+  PLDB_close(db);
+
+  return NULL;
+}
+
+static napi_value js_handle_state(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "The first argument should be Database");
+    return NULL;
+  }
+
+  DbHandle* handle;
+  status = napi_get_value_external(env, args[0], (void**)&handle);
+  assert(status == napi_ok);
+
+  napi_value result = NULL;
+
+  int state = PLDB_handle_state(handle);
+  status = napi_create_int32(env, state, &result);
+  assert(status == napi_ok);
+
+  return result;
 }
 
 #define DECLARE_NAPI_METHOD(name, func)                                        \
@@ -652,26 +1251,44 @@ static napi_value Init(napi_env env, napi_value exports) {
     status = SetCallbackProp(env, exports, NAME, FUN); \
     assert(status == napi_ok)
 
-  REGISTER_CALLBACK("open", Open);
-  REGISTER_CALLBACK("close", Close);
-  REGISTER_CALLBACK("makeDocument", MkDocument);
-  REGISTER_CALLBACK("documentSet", DocSet);
-  REGISTER_CALLBACK("documentGet", DocGet);
-  REGISTER_CALLBACK("arrayLen", ArrayLen);
-  REGISTER_CALLBACK("arrayGet", ArrayGet);
-  REGISTER_CALLBACK("arrayPush", ArrayPush);
-  REGISTER_CALLBACK("mkNull", MkNull);
-  REGISTER_CALLBACK("mkInt", MkInt);
-  REGISTER_CALLBACK("mkBool", MkBool);
-  REGISTER_CALLBACK("mkDouble", MkDouble);
-  REGISTER_CALLBACK("mkString", MkStr);
-  REGISTER_CALLBACK("mkObjectId", MkObjectId);
-  REGISTER_CALLBACK("mkArray", MkArray);
-  REGISTER_CALLBACK("objectIdToValue", ObjectIdToValue);
-  REGISTER_CALLBACK("objectIdToHex", ObjectIdToHex);
-  REGISTER_CALLBACK("valueTypeName", ValueTypeName);
-  REGISTER_CALLBACK("createCollection", CreateCollection);
-  REGISTER_CALLBACK("version", Version);
+  REGISTER_CALLBACK("open", js_open);
+  REGISTER_CALLBACK("close", js_close);
+  REGISTER_CALLBACK("makeDocument", js_mk_document);
+  REGISTER_CALLBACK("documentSet", js_doc_set);
+  REGISTER_CALLBACK("documentGet", js_doc_get);
+  REGISTER_CALLBACK("documentLen", js_doc_len);
+  REGISTER_CALLBACK("arrayLen", js_array_len);
+  REGISTER_CALLBACK("arrayGet", js_array_get);
+  REGISTER_CALLBACK("arrayPush", js_array_push);
+  REGISTER_CALLBACK("mkNull", js_mk_null);
+  REGISTER_CALLBACK("mkInt", js_mk_int);
+  REGISTER_CALLBACK("mkBool", js_mk_bool);
+  REGISTER_CALLBACK("mkDouble", js_mk_double);
+  REGISTER_CALLBACK("mkString", js_mk_str);
+  REGISTER_CALLBACK("mkObjectId", js_mk_object_id);
+  REGISTER_CALLBACK("mkArray", js_mk_array);
+  REGISTER_CALLBACK("mkDocIter", js_mk_doc_iter);
+  REGISTER_CALLBACK("docIterNext", js_doc_iter_next);
+  REGISTER_CALLBACK("objectIdToValue", js_oid2value);
+  REGISTER_CALLBACK("objectIdToHex", js_oid2hex);
+  REGISTER_CALLBACK("valueType", js_value_type);
+  REGISTER_CALLBACK("valueGetNumber", js_value_get_i64);
+  REGISTER_CALLBACK("valueGetString", js_value_get_string);
+  REGISTER_CALLBACK("valueGetBool", js_value_get_bool);
+  REGISTER_CALLBACK("valueGetDouble", js_value_get_double);
+  REGISTER_CALLBACK("valueGetArray", js_value_get_array);
+  REGISTER_CALLBACK("valueGetDocument", js_value_get_doc);
+  REGISTER_CALLBACK("valueGetObjectId", js_value_get_object_id);
+  REGISTER_CALLBACK("createCollection", js_create_collection);
+  REGISTER_CALLBACK("startTransaction", js_start_transaction);
+  REGISTER_CALLBACK("commit", js_commit);
+  REGISTER_CALLBACK("rollback", js_rollback);
+  REGISTER_CALLBACK("insert", js_insert);
+  REGISTER_CALLBACK("dbFindAll", js_find_all);
+  REGISTER_CALLBACK("dbHandleStep", js_handle_step);
+  REGISTER_CALLBACK("dbHandleState", js_handle_state);
+  REGISTER_CALLBACK("dbHandleGet", js_handle_get);
+  REGISTER_CALLBACK("version", db_version);
 
   return exports;
 }

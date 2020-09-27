@@ -39,7 +39,7 @@ macro_rules! try_vm {
 }
 
 #[repr(i8)]
-#[derive(PartialEq)]
+#[derive(PartialEq, Copy, Clone)]
 pub enum VmState {
     Halt = -1,
     Init = 0,
@@ -108,7 +108,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub(crate) fn stack_top(&mut self) -> &Value {
+    pub(crate) fn stack_top(&self) -> &Value {
         &self.stack[self.stack.len() - 1]
     }
 

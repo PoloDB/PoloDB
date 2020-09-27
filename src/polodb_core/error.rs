@@ -94,6 +94,7 @@ pub enum DbErr {
     CannotWriteDbWithoutTransaction,
     StartTransactionInAnotherTransaction,
     RollbackNotInTransaction,
+    IllegalCollectionName(String),
     Busy
 }
 
@@ -124,7 +125,7 @@ impl fmt::Display for DbErr {
             DbErr::DecodeEOF => write!(f, "DecodeEOF"),
             DbErr::DecodeIntUnknownByte => write!(f, "DecodeIntUnknownByte"),
             DbErr::DataOverflow => write!(f, "DataOverflow"),
-            DbErr::DataExist(value) => write!(f, "DataExist(pkey = {})", value.to_string()),
+            DbErr::DataExist(value) => write!(f, "DataExist(pkey = {})", value),
             DbErr::PageSpaceNotEnough => write!(f, "PageSpaceNotEnough"),
             DbErr::DataHasNoPrimaryKey => write!(f, "DataHasNoPrimaryKey"),
             DbErr::ChecksumMismatch => write!(f, "ChecksumMismatch"),
@@ -137,6 +138,7 @@ impl fmt::Display for DbErr {
             DbErr::CannotWriteDbWithoutTransaction => write!(f, "cannot write Db without transaction"),
             DbErr::StartTransactionInAnotherTransaction => write!(f, "start transaction in another transaction"),
             DbErr::RollbackNotInTransaction => write!(f, "can not rollback because not int transaction"),
+            DbErr::IllegalCollectionName(name) => write!(f, "collection name \"{}\" is illegal", name),
             DbErr::Busy => write!(f, "database busy"),
         }
     }

@@ -9,7 +9,6 @@ use crate::db::DbResult;
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::index_ctx::{IndexCtx, merge_options_into_default};
 use crate::btree::*;
-use crate::cursor::Cursor;
 use crate::page::RawPage;
 use crate::db_handle::DbHandle;
 
@@ -59,6 +58,9 @@ impl DbContext {
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<()> {
+        if name.is_empty() {
+            return Err(DbErr::IllegalCollectionName(name.into()));
+        }
         let mut doc = Document::new_without_id();
         doc.insert(meta_doc_key::ID.into(), mk_str(name));
 
@@ -253,17 +255,17 @@ impl DbContext {
         Ok(doc_value)
     }
 
-    pub(crate) fn find(&mut self, col_name: &str, query: &Document) -> DbResult<()> {
+    pub fn find(&mut self, col_name: &str, query: &Document) -> DbResult<DbHandle> {
         let meta_page_id = self.get_meta_page_id()?;
         let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
 
-        let subprogram = Box::new(SubProgram::compile_query(&collection_meta, meta_doc.borrow(), query)?);
-        let mut vm = VM::new(&mut self.page_handler, subprogram);
-        vm.execute();
-        Ok(())
+        let subprogram = SubProgram::compile_query(&collection_meta, meta_doc.borrow(), query)?;
+        let handle = self.make_handle(subprogram);
+
+        Ok(handle)
     }
 
-    pub(crate) fn find_all(&mut self, col_name: &str) -> DbResult<DbHandle> {
+    pub fn find_all(&mut self, col_name: &str) -> DbResult<DbHandle> {
         let meta_page_id = self.get_meta_page_id()?;
         let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
         let program = SubProgram::compile_query_all(&collection_meta)?;
@@ -355,17 +357,6 @@ impl DbContext {
         }
 
         Ok(None)
-    }
-
-    pub(crate) fn get_collection_cursor(&mut self, col_name: &str) -> DbResult<Cursor> {
-        unimplemented!()
-        // let root_page_id: u32 = {
-        //     let meta_page_id = self.get_meta_page_id()?;
-        //     let (meta_entry, _) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
-        //     meta_entry.root_pid
-        // };
-        //
-        // Ok(Cursor::new(&mut self.page_handler, root_page_id as u32)?)
     }
 
     pub fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
