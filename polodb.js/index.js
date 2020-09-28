@@ -22,8 +22,6 @@ function version() {
 
 const NativeExt = Symbol("NativeExt");
 
-const { mkNull, mkDouble } = addon;
-
 const DB_HANDLE_STATE_HAS_ROW = 2;
 
 class Value {
@@ -31,6 +29,13 @@ class Value {
   static fromRaw(value) {
     let ty = typeof value;
     switch(ty) {
+      case "number":
+        if (Number.isInteger(value)) {
+          return Value.makeInt(value);
+        } else {
+          return value.makeDouble(value);
+        }
+
       case "boolean":
         return new Value(addon.mkBool(value));
 
@@ -44,7 +49,7 @@ class Value {
         return new Document.fromRaw(value);
 
       default:
-        throw new TypeError("uknown type");
+        throw new TypeError("uknown type: " + ty);
 
     }
   }
@@ -146,7 +151,7 @@ class Document {
   static fromRaw(doc) {
     const result = new Document();
 
-    for (key in doc) {
+    for (const key in doc) {
       const jsValue = doc[key];
       const dbValue = Value.fromRaw(jsValue);
       result.set(key, dbValue);
@@ -264,7 +269,7 @@ class DbArray {
     addon.arrayPush(this[NativeExt], val[NativeExt]);
   }
 
-  length() {
+  get length() {
     return addon.arrayLen(this[NativeExt]);
   }
 
@@ -301,19 +306,7 @@ class Collection {
   }
 
   findAll() {
-    const handleRaw = addon.dbFind(this.__db[NativeExt], this.__name, null);
-    const handle = new DbHandle(handleRaw);
-    handle.step();
-
-    const result = [];
-    while (handle.hasRow()) {
-      const value = handle.get();
-      result.push(value.toJsObject());
-
-      handle.step();
-    }
-
-    return result;
+    return this.find(null);
   }
 
   insert(doc) {
@@ -325,10 +318,18 @@ class Collection {
     this.__db.commit();
   }
 
-  find(query_obj) {
-    const query_doc = Document.fromRaw(query_obj);
+  find(queryObj) {
+    let nativeExt = null;
+    if (queryObj instanceof Document) {
+      nativeExt = queryObj[NativeExt];
+    } else if (typeof queryObj === 'object') {
+      const queryDoc = Document.fromRaw(queryObj);
+      nativeExt = queryDoc[NativeExt];
+    } else if (nativeExt !== null && typeof nativeExt !== 'undefined') {
+      throw new TypeError("illegal param");
+    }
 
-    const handleRaw = addon.dbFindAll(this.__db[NativeExt], this.__name, query_doc[NativeExt]);
+    const handleRaw = addon.dbFind(this.__db[NativeExt], this.__name, nativeExt);
     const handle = new DbHandle(handleRaw);
     handle.step();
 
@@ -368,6 +369,10 @@ class DbHandle {
     return this.state() == DB_HANDLE_STATE_HAS_ROW;
   }
 
+  toString() {
+    return addon.dbHandleToStr(this[NativeExt]);
+  }
+
 }
 
 class Database {
@@ -385,8 +390,10 @@ class Database {
     try {
       this.startTransaction();
       addon.createCollection(this[NativeExt], name);
-    } finally {
       this.commit();
+    } catch(err) {
+      this.rollback();
+      throw err;
     }
   }
 
@@ -417,7 +424,5 @@ module.exports = {
   Document,
   DbArray,
   Value,
-  mkNull,
-  mkDouble,
   version,
 };

@@ -54,7 +54,7 @@ pub struct VM<'a> {
     r1:       Option<Box<Cursor>>,
     page_handler: &'a mut PageHandler,
     stack:    Vec<Value>,
-    program:  Box<SubProgram>,
+    pub(crate) program:  Box<SubProgram>,
     pub(crate) error:    Option<DbErr>,
 }
 

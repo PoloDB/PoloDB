@@ -61,8 +61,13 @@ void PLDB_close(Database* db);
 
 // DbHandle {
 int PLDB_handle_step(DbHandle* handle);
+
 int PLDB_handle_state(DbHandle* handle);
+
 void PLDB_handle_get(DbHandle* handle, DbValue** out_val);
+
+int PLDB_handle_to_str(DbHandle* handle, char* buffer, unsigned int buffer_size);
+
 void PLDB_free_handle(DbHandle* handle);
 // }
 

@@ -138,7 +138,10 @@ pub extern "C" fn PLDB_insert(db: *mut DbContext, name: *const c_char, doc: *con
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_find(db: *mut DbContext, name: *const c_char, query: *const Rc<Document>, out_handle: *mut *mut DbHandle) -> c_int {
+pub extern "C" fn PLDB_find(db: *mut DbContext,
+                            name: *const c_char,
+                            query: *const Rc<Document>,
+                            out_handle: *mut *mut DbHandle) -> c_int {
     unsafe {
         let rust_db = db.as_mut().unwrap();
         let name_str = CStr::from_ptr(name);
@@ -178,6 +181,28 @@ pub extern "C" fn PLDB_find(db: *mut DbContext, name: *const c_char, query: *con
         }
 
         0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_handle_to_str(handle: *mut DbHandle, buffer: *mut c_char, buffer_size: c_uint) -> c_int {
+    unsafe {
+        let rust_handle = handle.as_mut().unwrap();
+        let str_content = format!("{}", rust_handle);
+        let length = str_content.len();
+
+        if buffer.is_null() {
+            return (length + 1) as c_int;
+        }
+
+        if (buffer_size as usize) < length + 1 {
+            return -1;
+        }
+
+        let cstring = CString::new(str_content).unwrap();
+        cstring.as_ptr().copy_to_nonoverlapping(buffer, length);
+
+        length as c_int
     }
 }
 

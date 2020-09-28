@@ -1147,6 +1147,39 @@ static napi_value js_handle_step(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
+static napi_value js_handle_to_str(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "The first argument should be Database");
+    return NULL;
+  }
+
+  DbHandle* handle;
+  status = napi_get_value_external(env, args[0], (void**)&handle);
+  assert(status == napi_ok);
+
+  static char buffer[BUFFER_SIZE];
+  memset(buffer, 0, BUFFER_SIZE);
+
+  int ec = PLDB_handle_to_str(handle, buffer, BUFFER_SIZE);
+  if (ec < 0) {
+    napi_throw_type_error(env, NULL, "buffer not enough");
+    return NULL;
+  }
+
+  napi_value result;
+  status = napi_create_string_utf8(env, buffer, ec, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
 static napi_value js_handle_get(napi_env env, napi_callback_info info) {
   napi_status status;
 
@@ -1279,6 +1312,7 @@ static napi_value Init(napi_env env, napi_value exports) {
   REGISTER_CALLBACK("dbHandleStep", js_handle_step);
   REGISTER_CALLBACK("dbHandleState", js_handle_state);
   REGISTER_CALLBACK("dbHandleGet", js_handle_get);
+  REGISTER_CALLBACK("dbHandleToStr", js_handle_to_str);
   REGISTER_CALLBACK("version", db_version);
 
   return exports;

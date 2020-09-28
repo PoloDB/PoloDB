@@ -1,3 +1,4 @@
+use std::fmt;
 use crate::vm::{VM, VmState};
 use crate::bson::Value;
 use crate::DbErr;
@@ -42,6 +43,14 @@ impl<'a> DbHandle<'a> {
     #[inline]
     pub fn step(&mut self) {
         self.0.execute()
+    }
+
+}
+
+impl<'a> fmt::Display for DbHandle<'a> {
+
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Program: \n\n{}", self.0.program)
     }
 
 }
