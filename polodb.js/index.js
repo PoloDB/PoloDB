@@ -301,14 +301,13 @@ class Collection {
   }
 
   findAll() {
-    const handleRaw = addon.dbFindAll(this.__db[NativeExt], this.__name);
+    const handleRaw = addon.dbFind(this.__db[NativeExt], this.__name, null);
     const handle = new DbHandle(handleRaw);
     handle.step();
 
     const result = [];
     while (handle.hasRow()) {
       const value = handle.get();
-      const doc = value.asDocument();
       result.push(value.toJsObject());
 
       handle.step();
@@ -327,7 +326,21 @@ class Collection {
   }
 
   find(query_obj) {
-    console.log(query_obj);
+    const query_doc = Document.fromRaw(query_obj);
+
+    const handleRaw = addon.dbFindAll(this.__db[NativeExt], this.__name, query_doc[NativeExt]);
+    const handle = new DbHandle(handleRaw);
+    handle.step();
+
+    const result = [];
+    while (handle.hasRow()) {
+      const value = handle.get();
+      result.push(value.toJsObject());
+
+      handle.step();
+    }
+
+    return result;
   }
 
 }

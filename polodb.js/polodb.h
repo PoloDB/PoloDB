@@ -49,8 +49,7 @@ int PLDB_create_collection(Database* db, const char* name);
 
 int PLDB_insert(Database* db, const char* col_name, const DbDocument* doc);
 
-int PLDB_find_all(Database* db, const char* col_name, DbHandle** out_handle);
-
+// <query> is nullable
 int PLDB_find(Database* db, const char* col_name, const DbDocument* query, DbHandle** out_handle);
 
 const char* PLDB_error_msg();

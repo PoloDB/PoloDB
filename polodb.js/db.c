@@ -1067,11 +1067,11 @@ static napi_value js_insert(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
-static napi_value js_find_all(napi_env env, napi_callback_info info) {
+static napi_value js_find(napi_env env, napi_callback_info info) {
   napi_status status;
 
-  size_t argc = 2;
-  napi_value args[2];
+  size_t argc = 3;
+  napi_value args[3];
   status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
   assert(status == napi_ok);
 
@@ -1096,41 +1096,32 @@ static napi_value js_find_all(napi_env env, napi_callback_info info) {
   status = napi_get_value_string_utf8(env, args[1], name_buffer, BUFFER_SIZE, &written_count);
   assert(status == napi_ok);
 
+  napi_valuetype query_doc_type;
+
+  status = napi_typeof(env, args[2], &query_doc_type);
+  assert(status == napi_ok);
+
+  DbDocument* query_doc;
+
+  if (query_doc_type == napi_undefined || query_doc_type == napi_null) {
+    query_doc = NULL;
+  } else if (query_doc_type == napi_external) {
+    status = napi_get_value_external(env, args[2], (void**)&query_doc);
+    assert(status == napi_ok);
+  } else {
+    napi_throw_type_error(env, NULL, "Wrong arguments 2");
+    return NULL;
+  }
+
   DbHandle* handle = NULL;
   int ec = 0;
-  STD_CALL(PLDB_find_all(db, name_buffer, &handle));
+  STD_CALL(PLDB_find(db, name_buffer, query_doc, &handle));
 
   napi_value result = NULL;
   status = napi_create_external(env, (void*)handle, &DbHandle_finalize, NULL, &result);
   assert(status == napi_ok);
 
   return result;
-}
-
-static napi_value js_find(napi_env env, napi_callback_info info) {
-  napi_status status;
-
-  size_t argc = 3;
-  napi_value args[3];
-  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
-  assert(status == napi_ok);
-
-  if (!check_type(env, args[0], napi_external)) {
-    napi_throw_type_error(env, NULL, "Wrong arguments 0");
-    return NULL;
-  }
-
-  if (!check_type(env, args[1], napi_string)) {
-    napi_throw_type_error(env, NULL, "Wrong arguments 1");
-    return NULL;
-  }
-
-  if (!check_type(env, args[2], napi_external)) {
-    napi_throw_type_error(env, NULL, "Wrong arguments 2");
-    return NULL;
-  }
-
-  return NULL;
 }
 
 static napi_value js_handle_step(napi_env env, napi_callback_info info) {
@@ -1284,7 +1275,7 @@ static napi_value Init(napi_env env, napi_value exports) {
   REGISTER_CALLBACK("commit", js_commit);
   REGISTER_CALLBACK("rollback", js_rollback);
   REGISTER_CALLBACK("insert", js_insert);
-  REGISTER_CALLBACK("dbFindAll", js_find_all);
+  REGISTER_CALLBACK("dbFind", js_find);
   REGISTER_CALLBACK("dbHandleStep", js_handle_step);
   REGISTER_CALLBACK("dbHandleState", js_handle_state);
   REGISTER_CALLBACK("dbHandleGet", js_handle_get);

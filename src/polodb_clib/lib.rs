@@ -144,43 +144,39 @@ pub extern "C" fn PLDB_find(db: *mut DbContext, name: *const c_char, query: *con
         let name_str = CStr::from_ptr(name);
         let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
 
-        let query_doc = query.as_ref().unwrap();
+        match query.as_ref() {
+            Some(query_doc) => {
+                let handle = match rust_db.find(name_utf8, query_doc.borrow()) {
+                    Ok(handle) => handle,
+                    Err(err) => {
+                        set_global_error(err);
+                        return PLDB_error_code();
+                    }
+                };
 
-        let handle = match rust_db.find(name_utf8, query_doc.borrow()) {
-            Ok(handle) => handle,
-            Err(err) => {
-                set_global_error(err);
-                return PLDB_error_code();
+                let boxed_handle = Box::new(handle);
+                let raw_handle = Box::into_raw(boxed_handle);
+
+                out_handle.write(raw_handle);
             }
-        };
 
-        let boxed_handle = Box::new(handle);
-        let raw_handle = Box::into_raw(boxed_handle);
+            None => {
+                let handle = match rust_db.find_all(name_utf8) {
+                    Ok(handle) => handle,
+                    Err(err) => {
+                        set_global_error(err);
+                        return PLDB_error_code();
+                    }
+                };
 
-        out_handle.write(raw_handle);
-        0
-    }
-}
+                let boxed_handle = Box::new(handle);
+                let raw_handle = Box::into_raw(boxed_handle);
 
-#[no_mangle]
-pub extern "C" fn PLDB_find_all(db: *mut DbContext, name: *const c_char, out_handle: *mut *mut DbHandle) -> c_int {
-    unsafe {
-        let rust_db = db.as_mut().unwrap();
-        let name_str = CStr::from_ptr(name);
-        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
-
-        let handle = match rust_db.find_all(name_utf8) {
-            Ok(handle) => handle,
-            Err(err) => {
-                set_global_error(err);
-                return PLDB_error_code();
+                out_handle.write(raw_handle);
             }
-        };
 
-        let boxed_handle = Box::new(handle);
-        let raw_handle = Box::into_raw(boxed_handle);
+        }
 
-        out_handle.write(raw_handle);
         0
     }
 }
