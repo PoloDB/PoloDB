@@ -20,19 +20,14 @@ use super::ObjectId;
 use super::document::Document;
 use super::array::Array;
 use super::hex;
-use crate::db::DbResult;
-use crate::error::DbErr;
+use crate::BsonResult;
+use crate::error::BsonErr;
 
 const BINARY_MAX_DISPLAY_LEN: usize = 64;
 
 #[inline]
 pub fn mk_object_id(content: &ObjectId) -> Value {
     Value::ObjectId(Rc::new(content.clone()))
-}
-
-#[inline]
-pub fn mk_str(content: &str) -> Value {
-    Value::String(Rc::new(content.into()))
 }
 
 #[derive(Debug, Clone)]
@@ -55,14 +50,14 @@ pub enum Value {
 
 impl Value {
 
-    pub fn value_cmp(&self, other: &Value) -> DbResult<Ordering> {
+    pub fn value_cmp(&self, other: &Value) -> BsonResult<Ordering> {
         match (self, other) {
             (Value::Null, Value::Null) => Ok(Ordering::Equal),
             (Value::Int(i1), Value::Int(i2)) => Ok(i1.cmp(i2)),
             (Value::String(str1), Value::String(str2)) => Ok(str1.cmp(str2)),
             (Value::ObjectId(oid1), Value::ObjectId(oid2)) => Ok(oid1.cmp(oid2)),
             _ =>
-                return Err(DbErr::TypeNotComparable(self.ty_name().into(), other.ty_name().into()))
+                return Err(BsonErr::TypeNotComparable(self.ty_name().into(), other.ty_name().into()))
         }
     }
 
@@ -203,6 +198,95 @@ pub mod ty_int {
 
             _ => "<unknown>"
         }
+    }
+
+}
+
+impl From<i32> for Value {
+
+    fn from(int: i32) -> Self {
+        Value::Int(int as i64)
+    }
+
+}
+
+impl From<u32> for Value {
+
+    fn from(int: u32) -> Self {
+        Value::Int(int as i64)
+    }
+
+}
+
+impl From<i64> for Value {
+
+    fn from(int: i64) -> Self {
+        Value::Int(int)
+    }
+
+}
+
+impl From<u64> for Value {
+
+    fn from(int: u64) -> Self {
+        Value::Int(int as i64)
+    }
+
+}
+
+impl From<&str> for Value {
+
+    fn from(string: &str) -> Self {
+        let str: Rc<String> = Rc::new(string.into());
+        Value::String(str)
+    }
+
+}
+
+impl From<String> for Value {
+
+    fn from(string: String) -> Self {
+        Value::String(Rc::new(string))
+    }
+
+}
+
+impl From<Rc<String>> for Value {
+
+    fn from(str: Rc<String>) -> Self {
+        Value::String(str)
+    }
+
+}
+
+impl From<bool> for Value {
+
+    fn from(bl: bool) -> Self {
+        Value::Boolean(bl)
+    }
+
+}
+
+impl From<f64> for Value {
+
+    fn from(float: f64) -> Self {
+        Value::Double(float)
+    }
+
+}
+
+impl From<Document> for Value {
+
+    fn from(doc: Document) -> Self {
+        Value::Document(Rc::new(doc))
+    }
+
+}
+
+impl From<Array> for Value {
+
+    fn from(arr: Array) -> Self {
+        Value::Array(Rc::new(arr))
     }
 
 }

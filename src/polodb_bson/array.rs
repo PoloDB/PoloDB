@@ -17,9 +17,10 @@ use std::rc::Rc;
 use std::ops;
 use super::value::{Value, ty_int};
 use crate::vli;
-use crate::db::DbResult;
-use crate::error::{DbErr, parse_error_reason};
-use crate::bson::{Document, ObjectId};
+use crate::BsonResult;
+use crate::error::{BsonErr, parse_error_reason};
+use crate::document::Document;
+use crate::object_id::ObjectId;
 
 #[derive(Debug, Clone)]
 pub struct Array(Vec<Value>);
@@ -44,7 +45,7 @@ impl Array {
 
 impl Array {
 
-    pub fn to_bytes(&self) -> DbResult<Vec<u8>> {
+    pub fn to_bytes(&self) -> BsonResult<Vec<u8>> {
         let mut result = vec![];
 
         vli::encode(&mut result, self.0.len() as i64)?;
@@ -123,7 +124,7 @@ impl Array {
         Ok(result)
     }
 
-    pub unsafe fn from_bytes(bytes: &[u8]) -> DbResult<Array> {
+    pub unsafe fn from_bytes(bytes: &[u8]) -> BsonResult<Array> {
         let mut arr = Array::new();
 
         let mut ptr = bytes.as_ptr();
@@ -225,7 +226,7 @@ impl Array {
                     arr.0.push(Value::Binary(Rc::new(buffer)));
                 }
 
-                _ => return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
+                _ => return Err(BsonErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
             }
 
             counter += 1;

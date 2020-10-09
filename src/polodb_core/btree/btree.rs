@@ -15,11 +15,10 @@
  */
 use std::rc::Rc;
 use std::cmp::Ordering;
+use polodb_bson::{vli, Value, ObjectId, ty_int};
 use crate::db::DbResult;
-use crate::vli;
 use crate::page::{RawPage, PageType, PageHandler};
-use crate::error::{DbErr, parse_error_reason};
-use crate::bson::{Value, ObjectId, ty_int};
+use crate::error::DbErr;
 use crate::data_ticket::DataTicket;
 
 pub const HEADER_SIZE: u32      = 64;
@@ -120,7 +119,7 @@ impl BTreeNode {
                     indexes: vec![ 0 ],
                 });
             }
-            return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_HEADER_FOR_BTREE_PAGE.into()));
+            return Err(DbErr::UnexpectedHeaderForBtreePage);
         }
 
         let first_left_pid = page.get_u32(4);
@@ -130,7 +129,7 @@ impl BTreeNode {
         let len = page.get_u16(2);
 
         if (len as u32) > item_size {  // data error
-            return Err(DbErr::ItemSizeGreaterThenExpected);
+            return Err(DbErr::ItemSizeGreaterThanExpected);
         }
 
         for i in 0..len {
@@ -161,7 +160,7 @@ impl BTreeNode {
         let key_ty_int = page.get_u8(begin_offset + 4 + 1);  // use to parse data
 
         let key = match key_ty_int {
-            0 => return Err(DbErr::ParseError(parse_error_reason::KEY_TY_SHOULD_NOT_BE_ZERO.into())),
+            0 => return Err(DbErr::KeyTypeOfBtreeShouldNotBeZero),
 
             ty_int::OBJECT_ID => {
                 let oid_bytes_begin = (begin_offset + 6) as usize;

@@ -1,6 +1,6 @@
 use std::fmt;
 use std::rc::Rc;
-use crate::bson::{Value, Document};
+use polodb_bson::{Value, Document};
 use crate::DbResult;
 use crate::meta_doc_helper::{MetaDocEntry, meta_doc_key};
 use super::op::DbOp;
@@ -275,9 +275,9 @@ impl fmt::Display for SubProgram {
 #[cfg(test)]
 mod tests {
     use std::rc::Rc;
+    use polodb_bson::{Document, Value};
     use crate::vm::SubProgram;
     use crate::meta_doc_helper::MetaDocEntry;
-    use crate::bson::{Document, Value};
 
     #[test]
     fn print_program() {

@@ -15,9 +15,10 @@
  */
 use std::vec::Vec;
 use std::cmp::Ordering;
+use polodb_bson::Value;
+use polodb_bson::error::BsonErr;
 use super::subprogram::SubProgram;
 use super::op::DbOp;
-use crate::bson::Value;
 use crate::cursor::Cursor;
 use crate::page::PageHandler;
 use crate::btree::{HEADER_SIZE, ITEM_SIZE};
@@ -218,12 +219,12 @@ impl<'a> VM<'a> {
                                 self.r0 = 0;
                             }
 
-                            Err(DbErr::TypeNotComparable(_, _)) => {
+                            Err(BsonErr::TypeNotComparable(_, _)) => {
                                 self.r0 = -1;
                             }
 
                             Err(err) => {
-                                self.error = Some(err);
+                                self.error = Some(DbErr::BsonErr(err));
                                 return;
                             }
 
@@ -250,7 +251,7 @@ impl<'a> VM<'a> {
                             }
 
                             Err(err) => {
-                                self.error = Some(err);
+                                self.error = Some(DbErr::BsonErr(err));
                                 return;
                             }
                         }

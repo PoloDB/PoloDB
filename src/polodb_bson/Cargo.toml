@@ -1,0 +1,12 @@
+[package]
+name = "polodb_bson"
+version = "0.0.1"
+authors = ["Vincent Chan <okcdz@diverse.space>"]
+edition = "2018"
+
+[lib]
+name="polodb_bson"
+path="lib.rs"
+
+[dependencies]
+libc = "0.2"

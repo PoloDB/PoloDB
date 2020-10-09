@@ -222,7 +222,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b631f7e854af39a1739f401cf34a8a013dfe09eac4fa4dba91e9768bd28168d"
 
 [[package]]
-name = "polodb-cli"
+name = "polodb_bson"
+version = "0.0.1"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "polodb_cli"
 version = "0.1.0"
 dependencies = [
  "clap",
@@ -235,6 +242,7 @@ dependencies = [
 name = "polodb_clib"
 version = "0.0.1"
 dependencies = [
+ "polodb_bson",
  "polodb_core",
 ]
 
@@ -243,6 +251,7 @@ name = "polodb_core"
 version = "0.0.1"
 dependencies = [
  "libc",
+ "polodb_bson",
 ]
 
 [[package]]

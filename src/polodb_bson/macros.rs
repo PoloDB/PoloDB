@@ -13,28 +13,35 @@
  * You should have received a copy of the GNU Lesser General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-mod hex;
-mod object_id;
-mod document;
-mod array;
-mod value;
-pub mod linked_hash_map;
 
-pub use object_id::{ObjectId, ObjectIdMaker};
-pub use document::Document;
-pub use array::Array;
-pub use value::*;
+#[macro_export]
+macro_rules! mk_document(
+    {} => (
+        $crate::Document::new_without_id()
+    );
+    { $($key:literal : $value:expr),+ $(,)? } => {
+        {
+            let mut m = $crate::Document::new_without_id();
+            $(
+                m.insert(String::from($key), $crate::Value::from($value));
+            )+
+            m
+        }
+     };
+);
 
-#[cfg(test)]
-mod tests {
-    use crate::bson::document::Document;
-    use crate::bson::object_id::ObjectIdMaker;
-
-    #[test]
-    fn document_basic() {
-        let mut id_maker = ObjectIdMaker::new();
-        let _doc = Document::new(&mut id_maker);
-        assert_eq!(2 + 2, 4);
+#[macro_export]
+macro_rules! mk_array(
+    [] => (
+        $crate::Array::new()
+    );
+    [ $($elem:expr),+ $(,)? ] => {
+        {
+            let mut arr = $crate::Array::new();
+            $(
+                arr.push($crate::Value::from($elem));
+            )+
+            arr
+        }
     }
-
-}
+);

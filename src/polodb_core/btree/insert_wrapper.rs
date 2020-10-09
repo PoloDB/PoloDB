@@ -13,8 +13,8 @@
  * You should have received a copy of the GNU Lesser General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+use polodb_bson::Document;
 use crate::DbResult;
-use crate::bson::Document;
 use crate::page::{RawPage, PageHandler};
 use super::btree::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;

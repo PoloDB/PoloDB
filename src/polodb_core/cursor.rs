@@ -15,10 +15,10 @@
  */
 use std::rc::Rc;
 use std::collections::LinkedList;
+use polodb_bson::Document;
 use crate::page::PageHandler;
 use crate::btree::*;
 use crate::DbResult;
-use crate::bson::Document;
 use crate::data_ticket::DataTicket;
 
 #[derive(Clone)]

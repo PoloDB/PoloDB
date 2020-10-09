@@ -15,20 +15,8 @@
  */
 use std::io;
 use std::fmt;
-use std::num;
-use crate::bson::{Value, ty_int};
-
-pub mod parse_error_reason {
-
-    pub static OBJECT_ID_LEN: &str = "length of ObjectId should be 12";
-    pub static OBJECT_ID_HEX_DECODE_ERROR: &str = "decode error failed for ObjectID";
-    pub static UNEXPECTED_DOCUMENT_FLAG: &str = "unexpected flag for document";
-    pub static UNEXPECTED_PAGE_HEADER: &str = "unexpected page header";
-    pub static UNEXPECTED_PAGE_TYPE: &str = "unexpected page type";
-    pub static UNEXPECTED_HEADER_FOR_BTREE_PAGE: &str = "unexpected header for btree page";
-    pub static KEY_TY_SHOULD_NOT_BE_ZERO: &str = "type name of KEY should not be zero";
-
-}
+use polodb_bson::{Value, ty_int};
+use polodb_bson::error::BsonErr;
 
 pub mod validation_error_reason {
 
@@ -73,13 +61,11 @@ pub enum DbErr {
     IndexAlreadyExists(String),
     IndexOptionsTypeUnexpected(IndexOptionsTypeUnexpectedStruct),
     ParseError(String),
-    ParseIntError(num::ParseIntError),
     IOErr(io::Error),
     UTF8Err(std::str::Utf8Error),
-    TypeNotComparable(String, String),
+    BsonErr(BsonErr),
     DataSizeTooLarge(u32, u32),
     DecodeEOF,
-    DecodeIntUnknownByte,
     DataOverflow,
     DataExist(Value),
     PageSpaceNotEnough,
@@ -88,13 +74,17 @@ pub enum DbErr {
     JournalPageSizeMismatch(u32, u32),
     SaltMismatch,
     PageMagicMismatch(u32),
-    ItemSizeGreaterThenExpected,
+    ItemSizeGreaterThanExpected,
     CollectionNotFound(String),
     MetaPageIdError,
     CannotWriteDbWithoutTransaction,
     StartTransactionInAnotherTransaction,
     RollbackNotInTransaction,
     IllegalCollectionName(String),
+    UnexpectedHeaderForBtreePage,
+    KeyTypeOfBtreeShouldNotBeZero,
+    UnexpectedPageHeader,
+    UnexpectedPageType,
     Busy
 }
 
@@ -115,32 +105,41 @@ impl fmt::Display for DbErr {
             DbErr::IndexAlreadyExists(index_key_name) => write!(f, "index for {} already exists", index_key_name),
             DbErr::IndexOptionsTypeUnexpected(st) => write!(f, "{}", st),
             DbErr::ParseError(reason) => write!(f, "ParseError: {}", reason),
-            DbErr::ParseIntError(parse_int_err) => std::fmt::Display::fmt(&parse_int_err, f),
-            DbErr::IOErr(io_err) => std::fmt::Display::fmt(&io_err, f),
-            DbErr::UTF8Err(utf8_err) => std::fmt::Display::fmt(&utf8_err, f),
-            DbErr::TypeNotComparable(expected, actual) =>
-                write!(f, "TypeNotComparable(expected: {}, actual: {})", expected, actual),
+            DbErr::IOErr(io_err) => io_err.fmt(f),
+            DbErr::UTF8Err(utf8_err) => utf8_err.fmt(f),
+            DbErr::BsonErr(bson_err) => write!(f, "bson error: {}", bson_err),
             DbErr::DataSizeTooLarge(expected, actual) =>
                 write!(f, "DataSizeTooLarge(expected: {}, actual: {})", expected, actual),
             DbErr::DecodeEOF => write!(f, "DecodeEOF"),
-            DbErr::DecodeIntUnknownByte => write!(f, "DecodeIntUnknownByte"),
             DbErr::DataOverflow => write!(f, "DataOverflow"),
             DbErr::DataExist(value) => write!(f, "DataExist(pkey = {})", value),
-            DbErr::PageSpaceNotEnough => write!(f, "PageSpaceNotEnough"),
+            DbErr::PageSpaceNotEnough => write!(f, "the space of page is not enough"),
             DbErr::DataHasNoPrimaryKey => write!(f, "DataHasNoPrimaryKey"),
             DbErr::ChecksumMismatch => write!(f, "ChecksumMismatch"),
             DbErr::JournalPageSizeMismatch(expect, actual) => write!(f, "JournalPageSizeMismatch(expect={}, actual={})", expect, actual),
             DbErr::SaltMismatch => write!(f, "SaltMismatch"),
             DbErr::PageMagicMismatch(pid) => write!(f, "PageMagicMismatch({})", pid),
-            DbErr::ItemSizeGreaterThenExpected => write!(f, "ItemSizeGreaterThenExpected"),
+            DbErr::ItemSizeGreaterThanExpected => write!(f, "the size of the item is greater than expected"),
             DbErr::CollectionNotFound(name) => write!(f, "collection \"{}\" not found", name),
             DbErr::MetaPageIdError => write!(f, "meta page id should not be zero"),
             DbErr::CannotWriteDbWithoutTransaction => write!(f, "cannot write Db without transaction"),
             DbErr::StartTransactionInAnotherTransaction => write!(f, "start transaction in another transaction"),
             DbErr::RollbackNotInTransaction => write!(f, "can not rollback because not int transaction"),
             DbErr::IllegalCollectionName(name) => write!(f, "collection name \"{}\" is illegal", name),
+            DbErr::UnexpectedHeaderForBtreePage => write!(f, "unexpected header for btree page"),
+            DbErr::KeyTypeOfBtreeShouldNotBeZero => write!(f, "key type of btree should not be zero"),
+            DbErr::UnexpectedPageHeader => write!(f, "unexpected page header"),
+            DbErr::UnexpectedPageType => write!(f, "unexpected page type"),
             DbErr::Busy => write!(f, "database busy"),
         }
+    }
+
+}
+
+impl From<BsonErr> for DbErr {
+
+    fn from(error: BsonErr) -> Self {
+        DbErr::BsonErr(error)
     }
 
 }
@@ -149,14 +148,6 @@ impl From<io::Error> for DbErr {
 
     fn from(error: io::Error) -> Self {
         DbErr::IOErr(error)
-    }
-
-}
-
-impl From<num::ParseIntError> for DbErr {
-
-    fn from(error: num::ParseIntError) -> Self {
-        DbErr::ParseIntError(error)
     }
 
 }

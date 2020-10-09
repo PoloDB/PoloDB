@@ -14,8 +14,8 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 use std::rc::Rc;
+use polodb_bson::{Document, ObjectId, Value};
 use super::error::DbErr;
-use crate::bson::{Document, ObjectId, Value};
 use crate::context::DbContext;
 use crate::DbHandle;
 
@@ -130,21 +130,31 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
-    use crate::Database;
     use std::rc::Rc;
-    use crate::bson::{Document, Value, mk_str};
+    use std::env;
+    use polodb_bson::{Document, Value, mk_document};
+    use crate::Database;
 
     static TEST_SIZE: usize = 1000;
 
-    fn prepare_db() -> Database {
-        let _ = std::fs::remove_file("/tmp/test.db");
-        let _ = std::fs::remove_file("/tmp/test.db.journal");
+    fn prepare_db(db_name: &str) -> Database {
+        let mut db_path = env::temp_dir();
+        let mut journal_path = env::temp_dir();
 
-        Database::open("/tmp/test.db").unwrap()
+        let db_filename = String::from(db_name) + ".db";
+        let journal_filename = String::from(db_name) + ".db.journal";
+
+        db_path.push(db_filename);
+        journal_path.push(journal_filename);
+
+        let _ = std::fs::remove_file(db_path.as_path());
+        let _ = std::fs::remove_file(journal_path);
+
+        Database::open(db_path.as_path().to_str().unwrap()).unwrap()
     }
 
-    fn create_and_return_db_with_items(size: usize) -> Database {
-        let mut db = prepare_db();
+    fn create_and_return_db_with_items(db_name: &str, size: usize) -> Database {
+        let mut db = prepare_db(db_name);
         let _result = db.create_collection("test").unwrap();
 
         // let meta = db.query_all_meta().unwrap();
@@ -152,7 +162,7 @@ mod tests {
         for i in 0..size {
             let content = i.to_string();
             let mut new_doc = Document::new_without_id();
-            new_doc.insert("content".into(), mk_str(&content));
+            new_doc.insert("content".into(), Value::from(content.as_str()));
             db.insert("test", Rc::new(new_doc)).unwrap();
         }
 
@@ -160,8 +170,8 @@ mod tests {
     }
 
     #[test]
-    fn test_create_collection() {
-        let mut db = create_and_return_db_with_items(TEST_SIZE);
+    fn test_create_collection_and_find_all() {
+        let mut db = create_and_return_db_with_items("test-collection", TEST_SIZE);
 
         let all = db.find_all("test").unwrap();
 
@@ -175,28 +185,31 @@ mod tests {
     #[test]
     fn test_reopen_db() {
         {
-            let _db1 = create_and_return_db_with_items(5);
+            let _db1 = create_and_return_db_with_items("test-reopen", 5);
         }
 
         {
-            let _db2 = Database::open("/tmp/test.db").unwrap();
+            let mut db_path = env::temp_dir();
+            db_path.push("test-reopen.db");
+            let _db2 = Database::open(db_path.as_path().to_str().unwrap()).unwrap();
         }
     }
 
     #[test]
     fn test_pkey_type_check() {
-        let mut db = create_and_return_db_with_items(TEST_SIZE);
+        let mut db = create_and_return_db_with_items("test-type-check", TEST_SIZE);
 
-        let mut doc = Document::new_without_id();
-        doc.insert("_id".into(), Value::Int(10));
-        doc.insert("value".into(), mk_str("something"));
+        let doc = mk_document! {
+            "_id": 10,
+            "value": "something",
+        };
 
         db.insert("test", Rc::new(doc)).expect_err("should not succuess");
     }
 
     #[test]
     fn test_insert_bigger_key() {
-        let mut db = prepare_db();
+        let mut db = prepare_db("test-insert-bigger-key");
         let _result = db.create_collection("test").unwrap();
 
         let mut doc = Document::new_without_id();
@@ -220,40 +233,45 @@ mod tests {
 
     #[test]
     fn test_create_index() {
-        let mut db = prepare_db();
+        let mut db = prepare_db("test-create-index");
         let _result = db.create_collection("test").unwrap();
 
-        let mut keys = Document::new_without_id();
-        keys.insert("user_id".into(), Value::Int(1));
+        let keys = mk_document! {
+            "user_id": 1,
+        };
 
         db.create_index("test", &keys, None).unwrap();
 
         for i in 0..10 {
-            let mut data = Document::new_without_id();
             let str = Rc::new(i.to_string());
-            data.insert("name".into(), Value::String(str.clone()));
-            data.insert("user_id".into(), Value::String(str.clone()));
+            let data = mk_document! {
+                "name": str.clone(),
+                "user_id": str.clone(),
+            };
             db.insert("test", Rc::new(data)).unwrap();
         }
 
-        let mut data = Document::new_without_id();
-        // let str = Rc::new("ggg".into());
-        data.insert("name".into(), Value::String(Rc::new("what".into())));
-        data.insert("user_id".into(), Value::Int(3));
+        let data = mk_document! {
+            "name": "what",
+            "user_id": 3,
+        };
         db.insert("test", Rc::new(data)).expect_err("not comparable");
     }
 
     #[test]
     fn test_one_delete_item() {
-        let mut db = prepare_db();
+        let mut db = prepare_db("test-delete-item");
         let _ = db.create_collection("test").unwrap();
 
         let mut collection  = vec![];
 
         for i in 0..100 {
             let content = i.to_string();
-            let mut new_doc = Document::new_without_id();
-            new_doc.insert("content".into(), mk_str(&content));
+
+            let new_doc = mk_document! {
+                "content": content,
+            };
+
             let ret_doc = db.insert("test", Rc::new(new_doc)).unwrap();
             collection.push(ret_doc);
         }
@@ -265,16 +283,17 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_all_item() {
-        let mut db = prepare_db();
+    fn test_delete_all_items() {
+        let mut db = prepare_db("test-delete-all-items");
         let _ = db.create_collection("test").unwrap();
 
         let mut collection  = vec![];
 
         for i in 0..100 {
             let content = i.to_string();
-            let mut new_doc = Document::new_without_id();
-            new_doc.insert("content".into(), mk_str(&content));
+            let new_doc = mk_document! {
+                "content": content,
+            };
             let ret_doc = db.insert("test", Rc::new(new_doc)).unwrap();
             collection.push(ret_doc);
         }
@@ -283,12 +302,6 @@ mod tests {
             let key = doc.get("_id").unwrap();
             db.delete("test", key).unwrap();
         }
-    }
-
-    #[test]
-    fn print_value_size() {
-        let size = std::mem::size_of::<crate::bson::Value>();
-        assert_eq!(size, 16);
     }
 
 }

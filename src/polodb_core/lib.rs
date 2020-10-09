@@ -1,4 +1,3 @@
-pub mod bson;
 mod btree;
 mod page;
 mod journal;
@@ -10,7 +9,6 @@ mod cursor;
 pub mod db;
 mod data_ticket;
 mod index_ctx;
-pub mod vli;
 mod meta_doc_helper;
 mod context;
 mod db_handle;

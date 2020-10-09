@@ -1,10 +1,9 @@
 use std::rc::Rc;
 use std::borrow::Borrow;
+use polodb_bson::{Document, Value, ObjectIdMaker};
 use super::page::{header_page_wrapper, PageHandler};
 use super::error::DbErr;
 use crate::vm::{SubProgram, VM};
-use crate::bson::{Document, Value, mk_str};
-use crate::bson::ObjectIdMaker;
 use crate::db::DbResult;
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::index_ctx::{IndexCtx, merge_options_into_default};
@@ -62,7 +61,7 @@ impl DbContext {
             return Err(DbErr::IllegalCollectionName(name.into()));
         }
         let mut doc = Document::new_without_id();
-        doc.insert(meta_doc_key::ID.into(), mk_str(name));
+        doc.insert(meta_doc_key::ID.into(), Value::from(name));
 
         let root_pid = self.page_handler.alloc_page_id()?;
         doc.insert(meta_doc_key::ROOT_PID.into(), Value::Int(root_pid as i64));

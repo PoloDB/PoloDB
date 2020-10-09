@@ -13,8 +13,8 @@
  * You should have received a copy of the GNU Lesser General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-use crate::db::DbResult;
-use crate::error::DbErr;
+use crate::BsonResult;
+use crate::error::BsonErr;
 use std::io::Write;
 
 // http://www.dlugosz.com/ZIP2/VLI.html
@@ -36,12 +36,12 @@ static BYTE_MARK2: u8 = 0b11000000;
 static BYTE_MARK3: u8 = 0b11100000;
 static BYTE_MARK5: u8 = 0b11111000;
 
-pub fn encode(writer: &mut dyn Write, num: i64) -> DbResult<()> {
+pub fn encode(writer: &mut dyn Write, num: i64) -> BsonResult<()> {
     encode_u64(writer, num as u64)
 }
 
 #[inline]
-fn encode_u64(writer: &mut dyn Write, num: u64) -> DbResult<()> {
+fn encode_u64(writer: &mut dyn Write, num: u64) -> BsonResult<()> {
     if num <= 127 {
         writer.write_all(&[ (num as u8) ])?;
     } else if num <= 16383 {  // 2 bytes
@@ -82,7 +82,7 @@ macro_rules! read_byte_plus {
 }
 
 #[inline]
-pub unsafe fn decode_u64_raw(iter: *const u8) -> DbResult<(u64, *const u8)> {
+pub unsafe fn decode_u64_raw(iter: *const u8) -> BsonResult<(u64, *const u8)> {
     let mut ptr = iter;
     let first_byte = read_byte_plus!(ptr);
 
@@ -166,12 +166,12 @@ pub unsafe fn decode_u64_raw(iter: *const u8) -> DbResult<(u64, *const u8)> {
         return Ok((u64::from_be_bytes(tmp), ptr));
     }
 
-    Err(DbErr::DecodeIntUnknownByte)
+    Err(BsonErr::DecodeIntUnknownByte)
 }
 
 #[inline]
 #[allow(dead_code)]
-fn decode_u64(content: &[u8]) -> DbResult<u64> {
+fn decode_u64(content: &[u8]) -> BsonResult<u64> {
     unsafe {
         let (result, _) = decode_u64_raw(content.as_ptr())?;
         Ok(result)

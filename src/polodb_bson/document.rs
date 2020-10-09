@@ -18,10 +18,10 @@ use std::fmt;
 use super::value::{Value, ty_int};
 use super::linked_hash_map::{LinkedHashMap, Iter};
 use crate::vli;
-use crate::db::DbResult;
-use crate::bson::object_id::{ ObjectIdMaker, ObjectId };
-use crate::error::{DbErr, parse_error_reason};
-use crate::bson::array::Array;
+use crate::BsonResult;
+use crate::error::{BsonErr, parse_error_reason};
+use crate::array::Array;
+use crate::object_id::{ ObjectIdMaker, ObjectId };
 
 #[derive(Debug, Clone)]
 pub struct Document {
@@ -69,7 +69,7 @@ impl Document {
         self.map.get("_id".into()).map(|id| { id.clone() })
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> DbResult<Document> {
+    pub fn from_bytes(bytes: &[u8]) -> BsonResult<Document> {
         let mut doc = Document::new_without_id();
 
         unsafe {
@@ -195,7 +195,7 @@ impl Document {
                         doc.map.insert(key, Value::Binary(Rc::new(buffer)));
                     }
 
-                    _ => return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
+                    _ => return Err(BsonErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
                 }
 
             }
@@ -204,7 +204,7 @@ impl Document {
         Ok(doc)
     }
 
-    pub unsafe fn parse_key(ptr: *const u8) -> DbResult<(String, *const u8)> {
+    pub unsafe fn parse_key(ptr: *const u8) -> BsonResult<(String, *const u8)> {
         let mut ptr = ptr;
         let mut buffer = Vec::with_capacity(128);
         while ptr.read() != 0 {
@@ -215,7 +215,7 @@ impl Document {
         Ok((String::from_utf8_unchecked(buffer), ptr.add(1)))
     }
 
-    fn value_to_bytes(key: &str, value: &Value, buffer: &mut Vec<u8>) -> DbResult<()> {
+    fn value_to_bytes(key: &str, value: &Value, buffer: &mut Vec<u8>) -> BsonResult<()> {
         match value {
             Value::Null => {
                 buffer.push(ty_int::NULL);
@@ -295,7 +295,7 @@ impl Document {
         Ok(())
     }
 
-    pub fn to_bytes(&self) -> DbResult<Vec<u8>> {
+    pub fn to_bytes(&self) -> BsonResult<Vec<u8>> {
         let mut result: Vec<u8> = vec![];
 
         // insert id first
@@ -333,23 +333,24 @@ impl Document {
 
 #[cfg(test)]
 mod tests {
-    use crate::bson::value::{Value, mk_str};
-    use crate::bson::document::Document;
-    use crate::bson::object_id::ObjectIdMaker;
+    use crate::document::Document;
+    // use crate::object_id::ObjectIdMaker;
 
     #[test]
     fn test_serialize() {
-        let mut id_maker = ObjectIdMaker::new();
-        let mut doc = Document::new(&mut id_maker);
+        // let mut id_maker = ObjectIdMaker::new();
 
-        doc.map.insert("avater_utl".into(), mk_str("https://doc.rust-lang.org/std/iter/trait.Iterator.html"));
-        doc.map.insert("name".into(), mk_str("嘻嘻哈哈"));
-        doc.map.insert("groupd_id".into(), mk_str("70xxx80057ba0bba964fxxx1ca3d7252fe075a8b"));
-        doc.map.insert("user_id".into(), mk_str("6500xxx139040719xxx"));
-        doc.map.insert("time".into(), Value::Int(6662496067319235000));
-        doc.map.insert("can_do_a".into(), Value::Boolean(true));
-        doc.map.insert("can_do_b".into(), Value::Boolean(false));
-        doc.map.insert("can_do_c".into(), Value::Boolean(false));
+        let doc = mk_document! {
+            "avater_utl": "https://doc.rust-lang.org/std/iter/trait.Iterator.html",
+            "name": "嘻嘻哈哈",
+            "group_id": "70xxx80057ba0bba964fxxx1ca3d7252fe075a8b",
+            "user_id": "6500xxx139040719xxx",
+            "time": 6662496067319235000_i64,
+            "can_do_a": true,
+            "can_do_b": false,
+            "can_do_c": false,
+            "permissions": mk_array![ 1, 2, 3 ],
+        };
 
         let bytes = doc.to_bytes().expect("serial error");
 

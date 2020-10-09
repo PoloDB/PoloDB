@@ -17,6 +17,7 @@ use std::fs::File;
 use std::collections::BTreeMap;
 use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
+use polodb_bson::Document;
 use super::page::RawPage;
 use super::pagecache::PageCache;
 use super::header_page_wrapper;
@@ -26,7 +27,6 @@ use crate::DbResult;
 use crate::error::DbErr;
 use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::data_ticket::DataTicket;
-use crate::bson::Document;
 
 const DB_INIT_BLOCK_COUNT: u32 = 16;
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;

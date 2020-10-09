@@ -13,7 +13,7 @@
  * You should have received a copy of the GNU Lesser General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-use crate::bson::{Document, Value};
+use polodb_bson::{Document, Value};
 use crate::DbResult;
 use crate::error::DbErr;
 

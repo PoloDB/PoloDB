@@ -21,8 +21,8 @@ use std::ptr::null_mut;
 use std::os::raw::c_uint;
 use libc;
 use super::hex;
-use crate::db::DbResult;
-use crate::error::{DbErr, parse_error_reason};
+use crate::BsonResult;
+use crate::error::{BsonErr, parse_error_reason};
 
 #[derive(Debug, Clone, Eq)]
 pub struct ObjectId {
@@ -32,9 +32,9 @@ pub struct ObjectId {
 
 impl ObjectId {
 
-    pub fn deserialize(bytes: &[u8]) -> DbResult<ObjectId> {
+    pub fn deserialize(bytes: &[u8]) -> BsonResult<ObjectId> {
         if bytes.len() != 12 {
-            return Err(DbErr::ParseError(parse_error_reason::OBJECT_ID_LEN.into()));
+            return Err(BsonErr::ParseError(parse_error_reason::OBJECT_ID_LEN.into()));
         }
 
         let mut timestamp_buffer: [u8; 8] = [0; 8];
@@ -49,10 +49,10 @@ impl ObjectId {
     }
 
     #[allow(dead_code)]
-    fn from_hex(data: &str) -> DbResult<ObjectId> {
+    fn from_hex(data: &str) -> BsonResult<ObjectId> {
         let bytes = match hex::decode(data) {
             Ok(result) => result,
-            Err(_) => return Err(DbErr::ParseError(parse_error_reason::OBJECT_ID_HEX_DECODE_ERROR.into()))
+            Err(_) => return Err(BsonErr::ParseError(parse_error_reason::OBJECT_ID_HEX_DECODE_ERROR.into()))
         };
 
         ObjectId::deserialize(&bytes)
@@ -66,7 +66,7 @@ impl ObjectId {
         hex::encode(bytes)
     }
 
-    pub fn serialize(&self, writer: &mut dyn Write) -> DbResult<()> {
+    pub fn serialize(&self, writer: &mut dyn Write) -> BsonResult<()> {
         let timestamp_le: [u8; 8] = self.timestamp.to_be_bytes();
         let counter_le: [u8; 4] = self.counter.to_be_bytes();
 
@@ -163,9 +163,9 @@ impl ObjectIdMaker {
         self.counter += 1;
     }
 
-    pub fn value_of(content: &str) -> DbResult<ObjectId> {
+    pub fn value_of(content: &str) -> BsonResult<ObjectId> {
         if content.len() != 12 {
-            return Err(DbErr::ParseError(parse_error_reason::OBJECT_ID_HEX_DECODE_ERROR.into()));
+            return Err(BsonErr::ParseError(parse_error_reason::OBJECT_ID_HEX_DECODE_ERROR.into()));
         }
 
         let timestamp_str = &content[0..8];
@@ -184,7 +184,7 @@ impl ObjectIdMaker {
 
 #[cfg(test)]
 mod tests {
-    use crate::bson::object_id::{ ObjectIdMaker, ObjectId };
+    use crate::object_id::{ ObjectIdMaker, ObjectId };
 
     #[test]
     fn object_id_not_zero() {

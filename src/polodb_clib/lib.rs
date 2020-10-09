@@ -13,14 +13,14 @@
  * You should have received a copy of the GNU Lesser General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+use polodb_core::{DbContext, DbErr, DbHandle};
+use polodb_bson::{Value, ObjectId, Document, Array};
+use polodb_bson::linked_hash_map::Iter;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::os::raw::{c_char, c_uint, c_int, c_double, c_uchar};
 use std::ptr::{null_mut, write_bytes, null};
 use std::ffi::{CStr, CString};
-use polodb_core::{DbContext, DbErr, DbHandle};
-use polodb_core::bson::{Value, ObjectId, Document, Array};
-use polodb_core::bson::linked_hash_map::Iter;
 use std::borrow::Borrow;
 
 const DB_ERROR_MSG_SIZE: usize = 512;
@@ -687,13 +687,11 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::IndexAlreadyExists(_) => 5,
         DbErr::IndexOptionsTypeUnexpected(_) => 6,
         DbErr::ParseError(_) => 7,
-        DbErr::ParseIntError(_) => 8,
         DbErr::IOErr(_) => 9,
         DbErr::UTF8Err(_) => 10,
-        DbErr::TypeNotComparable(_, _) => 11,
         DbErr::DataSizeTooLarge(_, _) => 12,
         DbErr::DecodeEOF => 13,
-        DbErr::DecodeIntUnknownByte => 14,
+        DbErr::BsonErr(_) => 14,
         DbErr::DataOverflow => 15,
         DbErr::DataExist(_) => 16,
         DbErr::PageSpaceNotEnough => 17,
@@ -702,14 +700,18 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::JournalPageSizeMismatch(_, _) => 20,
         DbErr::SaltMismatch => 21,
         DbErr::PageMagicMismatch(_) => 22,
-        DbErr::ItemSizeGreaterThenExpected => 23,
+        DbErr::ItemSizeGreaterThanExpected => 23,
         DbErr::CollectionNotFound(_) => 24,
         DbErr::MetaPageIdError => 25,
         DbErr::CannotWriteDbWithoutTransaction => 26,
         DbErr::StartTransactionInAnotherTransaction => 27,
         DbErr::RollbackNotInTransaction => 28,
         DbErr::IllegalCollectionName(_) => 29,
-        DbErr::Busy => 30,
+        DbErr::UnexpectedHeaderForBtreePage => 30,
+        DbErr::KeyTypeOfBtreeShouldNotBeZero => 31,
+        DbErr::UnexpectedPageHeader => 32,
+        DbErr::UnexpectedPageType => 33,
+        DbErr::Busy => 34,
 
     }
 }

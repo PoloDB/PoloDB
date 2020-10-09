@@ -16,7 +16,7 @@
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write, Read};
 use crate::DbResult;
-use crate::error::{DbErr, parse_error_reason};
+use crate::error::{DbErr};
 
 #[repr(u8)]
 #[allow(dead_code)]
@@ -40,7 +40,7 @@ impl PageType {
     #[allow(dead_code)]
     pub fn from_magic(magic: [u8; 2]) -> DbResult<PageType> {
         if magic[0] != 0xFF {
-            return Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_PAGE_HEADER.into()));
+            return Err(DbErr::UnexpectedPageHeader);
         }
 
         match magic[1] {
@@ -52,7 +52,7 @@ impl PageType {
 
             3 => Ok(PageType::Data),
 
-            _ => Err(DbErr::ParseError(parse_error_reason::UNEXPECTED_PAGE_TYPE.into()))
+            _ => Err(DbErr::UnexpectedPageType)
         }
     }
 
