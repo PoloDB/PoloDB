@@ -52,6 +52,13 @@ int PLDB_insert(Database* db, const char* col_name, const DbDocument* doc);
 // <query> is nullable
 int PLDB_find(Database* db, const char* col_name, const DbDocument* query, DbHandle** out_handle);
 
+// <query> is nullable
+long long PLDB_update(Database* db, const char* col_name, const DbDocument* query, const DbDocument* update);
+
+long long PLDB_delete(Database* db, const char* col_name, const DbDocument* query);
+
+long long PLDB_delete_all(Database* db, const char* col_name);
+
 const char* PLDB_error_msg();
 
 int PLDB_version(char* buffer, unsigned int buffer_size);

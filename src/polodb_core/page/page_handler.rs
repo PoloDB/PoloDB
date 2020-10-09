@@ -17,6 +17,7 @@ use std::fs::File;
 use std::collections::BTreeMap;
 use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
+use std::path::{Path, PathBuf};
 use polodb_bson::Document;
 use super::page::RawPage;
 use super::pagecache::PageCache;
@@ -72,7 +73,15 @@ impl PageHandler {
         }
     }
 
-    pub fn new(path: &str, page_size: u32) -> DbResult<PageHandler> {
+    fn mk_journal_path(db_path: &Path) -> PathBuf {
+        let mut buf = db_path.to_path_buf();
+        let filename = buf.file_name().unwrap().to_str().unwrap();
+        let new_filename = String::from(filename) + ".journal";
+        buf.set_file_name(new_filename);
+        buf
+    }
+
+    pub fn new(path: &Path, page_size: u32) -> DbResult<PageHandler> {
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -81,7 +90,7 @@ impl PageHandler {
 
         let (_, page_count) = PageHandler::init_db(&mut file, page_size)?;
 
-        let journal_file_path: String = format!("{}.journal", &path);
+        let journal_file_path: PathBuf = PageHandler::mk_journal_path(path);
         let journal_manager = JournalManager::open(&journal_file_path, page_size)?;
 
         let page_cache = PageCache::new_default(page_size);
@@ -363,7 +372,7 @@ impl PageHandler {
     }
 
     #[inline]
-    pub fn journal_file_path(&self) -> &str {
+    pub fn journal_file_path(&self) -> &Path {
         self.journal_manager.path()
     }
 

@@ -14,6 +14,7 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::collections::{LinkedList, BTreeMap};
 use std::io::{Seek, Write, SeekFrom, Read};
 use libc::rand;
@@ -71,7 +72,7 @@ impl FrameHeader {
 // checksum before 48:   8bytes(offset 48)
 // data begin: 64 bytes
 pub(crate) struct JournalManager {
-    file_path:             String,
+    file_path:        PathBuf,
     journal_file:     File,
     version:          [u8; 4],
     page_size:        u32,
@@ -92,7 +93,7 @@ fn generate_a_salt() -> u32 {
 
 impl JournalManager {
 
-    pub fn open(path: &str, page_size: u32) -> DbResult<JournalManager> {
+    pub fn open(path: &Path, page_size: u32) -> DbResult<JournalManager> {
         let journal_file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -103,8 +104,9 @@ impl JournalManager {
         let mut offset_map_list: LinkedList<BTreeMap<u32, u64>> = LinkedList::new();
         offset_map_list.push_back(BTreeMap::new());
 
+        let file_path: PathBuf = path.to_path_buf();
         let mut result = JournalManager {
-            file_path: path.to_string(),
+            file_path,
             journal_file,
             version: [0, 0, 1, 0],
             page_size,
@@ -458,8 +460,8 @@ impl JournalManager {
     }
 
     #[inline]
-    pub(crate) fn path(&self) -> &str {
-        self.file_path.as_str()
+    pub(crate) fn path(&self) -> &Path {
+        self.file_path.as_path()
     }
 
     #[inline]
@@ -491,7 +493,7 @@ mod tests {
     #[test]
     fn test_journal() {
         let _ = std::fs::remove_file("/tmp/test-journal");
-        let mut journal_manager = JournalManager::open("/tmp/test-journal", 4096).unwrap();
+        let mut journal_manager = JournalManager::open("/tmp/test-journal".as_ref(), 4096).unwrap();
 
         let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);
 

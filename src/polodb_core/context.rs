@@ -1,5 +1,6 @@
 use std::rc::Rc;
 use std::borrow::Borrow;
+use std::path::Path;
 use polodb_bson::{Document, Value, ObjectIdMaker};
 use super::page::{header_page_wrapper, PageHandler};
 use super::error::DbErr;
@@ -28,7 +29,7 @@ pub struct DbContext {
 
 impl DbContext {
 
-    pub fn new(path: &str) -> DbResult<DbContext> {
+    pub fn new(path: &Path) -> DbResult<DbContext> {
         let page_size = 4096;
 
         let page_handler = PageHandler::new(path, page_size)?;
@@ -254,33 +255,58 @@ impl DbContext {
         Ok(doc_value)
     }
 
-    pub fn find(&mut self, col_name: &str, query: &Document) -> DbResult<DbHandle> {
+    /// query: None for findAll
+    pub fn find(&mut self, col_name: &str, query: Option<&Document>) -> DbResult<DbHandle> {
         let meta_page_id = self.get_meta_page_id()?;
         let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
 
-        let subprogram = SubProgram::compile_query(&collection_meta, meta_doc.borrow(), query)?;
+        let subprogram = match query {
+            Some(query) => SubProgram::compile_query(&collection_meta, meta_doc.borrow(), query),
+            None => SubProgram::compile_query_all(&collection_meta),
+        }?;
+
         let handle = self.make_handle(subprogram);
 
         Ok(handle)
     }
 
-    pub fn find_all(&mut self, col_name: &str) -> DbResult<DbHandle> {
+    pub fn update(&mut self, col_name: &str, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         let meta_page_id = self.get_meta_page_id()?;
         let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
-        let program = SubProgram::compile_query_all(&collection_meta)?;
-        let handle = self.make_handle(program);
 
-        Ok(handle)
+        let subprogram = match query {
+            Some(query) => SubProgram::compile_update(&collection_meta, query, update),
+            None => SubProgram::compile_update_all(&collection_meta, update),
+        }?;
+
+        let mut vm = VM::new(&mut self.page_handler, Box::new(subprogram));
+        vm.execute();
+
+        if vm.error.is_some() {
+            return Err(vm.error.take().unwrap());
+        }
+
+        Ok(vm.r2 as usize)
     }
 
-    pub(crate) fn update(&mut self, col_name: &str, query: &Document, update: &Document) -> DbResult<()> {
+    pub fn delete(&mut self, col_name: &str, query: &Document) -> DbResult<usize> {
         let meta_page_id = self.get_meta_page_id()?;
-        let (_collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
 
-        let subprogram = Box::new(SubProgram::compile_update(meta_doc.borrow(), query, update)?);
-        let mut vm = VM::new(&mut self.page_handler, subprogram);
+        let subprogram = SubProgram::compile_delete(&collection_meta, query)?;
+
+        let mut vm = VM::new(&mut self.page_handler, Box::new(subprogram));
         vm.execute();
-        Ok(())
+
+        if vm.error.is_some() {
+            return Err(vm.error.take().unwrap());
+        }
+
+        Ok(vm.r2 as usize)
+    }
+
+    pub fn delete_all(&mut self, _col_name: &str) -> DbResult<usize> {
+        unimplemented!()
     }
 
     fn update_by_root_pid(&mut self, parent_pid: u32, root_pid: u32, key: &Value, doc: &Document) -> DbResult<bool> {
@@ -336,7 +362,7 @@ impl DbContext {
         Ok(())
     }
 
-    pub(crate) fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
+    pub(crate) fn delete_by_pkey(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
         let meta_page_id = self.get_meta_page_id()?;
         let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
 
@@ -407,7 +433,7 @@ impl DbContext {
 impl Drop for DbContext {
 
     fn drop(&mut self) {
-        let path = self.page_handler.journal_file_path().to_string();
+        let path = self.page_handler.journal_file_path().to_path_buf();
         let checkpoint_result = self.page_handler.checkpoint_journal();  // ignored
         if let Ok(_) = checkpoint_result {
             let _ = std::fs::remove_file(path);  // ignore the result

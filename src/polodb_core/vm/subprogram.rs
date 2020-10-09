@@ -81,7 +81,16 @@ impl SubProgram {
         Ok(program)
     }
 
-    pub(crate) fn compile_update(meta_doc: &Document, _query: &Document, _update: &Document) -> DbResult<SubProgram> {
+    pub(crate) fn compile_update(entry: &MetaDocEntry, _query: &Document, _update: &Document) -> DbResult<SubProgram> {
+        let mut program = SubProgram::new();
+
+        program.add_open_write(entry.root_pid);
+        program.add(DbOp::Rewind);
+
+        Ok(program)
+    }
+
+    pub(crate) fn compile_update_all(_entry: &MetaDocEntry, _update: &Document) -> DbResult<SubProgram> {
         unimplemented!()
     }
 
@@ -108,6 +117,15 @@ impl SubProgram {
         Ok(program)
     }
 
+    pub(crate) fn compile_delete(entry: &MetaDocEntry, _query: &Document) -> DbResult<SubProgram> {
+        let mut program = SubProgram::new();
+
+        program.add_open_write(entry.root_pid);
+        program.add(DbOp::Rewind);
+
+        Ok(program)
+    }
+
     #[inline]
     fn update_next_location(&mut self, pos: usize, location: u32) {
         let loc_be = location.to_le_bytes();
@@ -122,6 +140,12 @@ impl SubProgram {
 
     fn add_open_read(&mut self, root_pid: u32) {
         self.add(DbOp::OpenRead);
+        let bytes = root_pid.to_le_bytes();
+        self.instructions.extend_from_slice(&bytes);
+    }
+
+    fn add_open_write(&mut self, root_pid: u32) {
+        self.add(DbOp::OpenWrite);
         let bytes = root_pid.to_le_bytes();
         self.instructions.extend_from_slice(&bytes);
     }
@@ -237,6 +261,12 @@ impl fmt::Display for SubProgram {
                         pc += 5;
                     }
 
+                    DbOp::OpenWrite => {
+                        let root_pid = begin.add(pc + 1).cast::<u32>().read();
+                        write!(f, "{}: OpenWrite({})\n", pc, root_pid)?;
+                        pc += 5;
+                    }
+
                     DbOp::ResultRow => {
                         write!(f, "{}: ResultRow\n", pc)?;
                         pc += 1;
@@ -274,8 +304,7 @@ impl fmt::Display for SubProgram {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-    use polodb_bson::{Document, Value};
+    use polodb_bson::mk_document;
     use crate::vm::SubProgram;
     use crate::meta_doc_helper::MetaDocEntry;
 
@@ -288,12 +317,28 @@ mod tests {
 
     #[test]
     fn print_query() {
-        let meta_doc = Document::new_without_id();
-        let mut test_doc = Document::new_without_id();
-        test_doc.insert("name".into(), Value::String(Rc::new("Vincent Chan".into())));
-        test_doc.insert("age".into(), Value::Int(32));
+        let meta_doc = mk_document! {};
+        let test_doc = mk_document! {
+            "name": "Vincent Chan",
+            "age": 32,
+        };
         let meta_entry = MetaDocEntry::new("test".into(), 100);
         let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
+        println!("Program: \n\n{}", program);
+    }
+
+    #[test]
+    fn print_update() {
+        let meta_entry = MetaDocEntry::new("test".into(), 100);
+        let query_doc = mk_document! {
+            "name": "Vincent Chan",
+            "age": 32,
+        };
+        let update_doc = mk_document! {
+            "name": "Vincent Chan",
+            "age": 32,
+        };
+        let program = SubProgram::compile_update(&meta_entry, &query_doc, &update_doc).unwrap();
         println!("Program: \n\n{}", program);
     }
 

@@ -73,15 +73,20 @@ impl Cursor {
             page_handler
         )?;
 
-        self.btree_stack.push_back(CursorItem {
-            node: Rc::new(btree_node),
-            index: 0,
-        });
+        if !btree_node.content.is_empty() {
+            self.btree_stack.push_back(CursorItem {
+                node: Rc::new(btree_node),
+                index: 0,
+            });
+        }
 
         Ok(())
     }
 
     fn push_all_left_nodes(&mut self, page_handler: &mut PageHandler) -> DbResult<()> {
+        if self.btree_stack.is_empty() {
+            return Ok(());
+        }
         let mut top = self.btree_stack.back().unwrap().clone();
         let mut left_pid = top.node.indexes[top.index];
 

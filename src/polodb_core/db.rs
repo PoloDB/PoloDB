@@ -14,6 +14,7 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 use std::rc::Rc;
+use std::path::Path;
 use polodb_bson::{Document, ObjectId, Value};
 use super::error::DbErr;
 use crate::context::DbContext;
@@ -35,8 +36,8 @@ impl Database {
         self.ctx.object_id_maker().mk_object_id()
     }
 
-    pub fn open(path: &str) -> DbResult<Database>  {
-        let ctx = DbContext::new(path)?;
+    pub fn open<P: AsRef<Path>>(path: P) -> DbResult<Database>  {
+        let ctx = DbContext::new(path.as_ref())?;
         let rc_ctx = Box::new(ctx);
 
         Ok(Database {
@@ -55,17 +56,7 @@ impl Database {
         DbContext::get_version()
     }
 
-    pub fn find_all(&mut self, col_name: &str) -> DbResult<Vec<Rc<Document>>> {
-        let mut handle = self.ctx.find_all(col_name)?;
-
-        let mut result = Vec::new();
-
-        Database::consume_handle_to_vec(&mut handle, &mut result)?;
-
-        Ok(result)
-    }
-
-    pub fn find(&mut self, col_name: &str, query: &Document) -> DbResult<Vec<Rc<Document>>> {
+    pub fn find(&mut self, col_name: &str, query: Option<&Document>) -> DbResult<Vec<Rc<Document>>> {
         let mut handle = self.ctx.find(col_name, query)?;
 
         let mut result = Vec::new();
@@ -97,7 +88,7 @@ impl Database {
     }
 
     #[inline]
-    pub fn update(&mut self, col_name: &str, query: &Document, update: &Document) -> DbResult<()> {
+    pub fn update(&mut self, col_name: &str, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         self.ctx.update(col_name, query, update)
     }
 
@@ -110,7 +101,7 @@ impl Database {
 
     pub fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
         self.ctx.start_transaction()?;
-        let result = self.ctx.delete(col_name, key)?;
+        let result = self.ctx.delete_by_pkey(col_name, key)?;
         self.ctx.commit()?;
         Ok(result)
     }
@@ -134,6 +125,7 @@ mod tests {
     use std::env;
     use polodb_bson::{Document, Value, mk_document};
     use crate::Database;
+    use std::borrow::Borrow;
 
     static TEST_SIZE: usize = 1000;
 
@@ -161,8 +153,9 @@ mod tests {
 
         for i in 0..size {
             let content = i.to_string();
-            let mut new_doc = Document::new_without_id();
-            new_doc.insert("content".into(), Value::from(content.as_str()));
+            let new_doc = mk_document! {
+                "content": content,
+            };
             db.insert("test", Rc::new(new_doc)).unwrap();
         }
 
@@ -173,13 +166,30 @@ mod tests {
     fn test_create_collection_and_find_all() {
         let mut db = create_and_return_db_with_items("test-collection", TEST_SIZE);
 
-        let all = db.find_all("test").unwrap();
+        let all = db.find("test", None).unwrap();
 
         for doc in &all {
             println!("object: {}", doc);
         }
 
         assert_eq!(TEST_SIZE, all.len())
+    }
+
+    #[test]
+    fn test_find() {
+        let mut db = create_and_return_db_with_items("test-find", TEST_SIZE);
+
+        let result = db.find(
+            "test",
+            Some(mk_document! {
+                "content": "3",
+            }.borrow())
+        ).unwrap();
+
+        assert_eq!(result.len(), 1);
+
+        let one = result[0].clone();
+        assert_eq!(one.get("content").unwrap().unwrap_string(), "3");
     }
 
     #[test]

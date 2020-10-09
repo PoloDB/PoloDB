@@ -89,6 +89,12 @@ pub enum DbOp {
     // op1. root_id: 4 bytes
     OpenRead,
 
+    // open a cursor with op0 as root_pid
+    //
+    // 5 byes
+    // op1. root_id: 4 bytes
+    OpenWrite,
+
     // Pause the db
     // The top value of the stack
     // is the result

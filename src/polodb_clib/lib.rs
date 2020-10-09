@@ -18,7 +18,7 @@ use polodb_bson::{Value, ObjectId, Document, Array};
 use polodb_bson::linked_hash_map::Iter;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::os::raw::{c_char, c_uint, c_int, c_double, c_uchar};
+use std::os::raw::{c_char, c_uint, c_int, c_double, c_uchar, c_longlong};
 use std::ptr::{null_mut, write_bytes, null};
 use std::ffi::{CStr, CString};
 use std::borrow::Borrow;
@@ -54,7 +54,7 @@ pub extern "C" fn PLDB_open(path: *const c_char) -> *mut DbContext {
         CStr::from_ptr(path)
     };
     let str = try_read_utf8!(cstr.to_str(), null_mut());
-    let db = match DbContext::new(str) {
+    let db = match DbContext::new(str.as_ref()) {
         Ok(db) => db,
         Err(err) => {
             set_global_error(err);
@@ -137,6 +137,7 @@ pub extern "C" fn PLDB_insert(db: *mut DbContext, name: *const c_char, doc: *con
     0
 }
 
+/// query is nullable
 #[no_mangle]
 pub extern "C" fn PLDB_find(db: *mut DbContext,
                             name: *const c_char,
@@ -147,40 +148,93 @@ pub extern "C" fn PLDB_find(db: *mut DbContext,
         let name_str = CStr::from_ptr(name);
         let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
 
+        let handle_result = match query.as_ref() {
+            Some(query_doc) => rust_db.find(name_utf8, Some(query_doc.borrow())),
+            None => rust_db.find(name_utf8, None),
+        };
+
+        let handle = match handle_result {
+            Ok(handle) => handle,
+            Err(err) => {
+                set_global_error(err);
+                return PLDB_error_code();
+            }
+        };
+
+        let boxed_handle = Box::new(handle);
+        let raw_handle = Box::into_raw(boxed_handle);
+
+        out_handle.write(raw_handle);
+    }
+
+    0
+}
+
+/// query is nullable
+#[no_mangle]
+pub extern "C" fn PLDB_update(db: *mut DbContext,
+                              name: *const c_char,
+                              query: *const Rc<Document>,
+                              update: *const Rc<Document>) -> c_longlong {
+    let result = unsafe {
+        let rust_db = db.as_mut().unwrap();
+        let name_str = CStr::from_ptr(name);
+        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code() as c_longlong);
+
+        let update_doc = update.as_ref().unwrap();
+
         match query.as_ref() {
-            Some(query_doc) => {
-                let handle = match rust_db.find(name_utf8, query_doc.borrow()) {
-                    Ok(handle) => handle,
-                    Err(err) => {
-                        set_global_error(err);
-                        return PLDB_error_code();
-                    }
-                };
-
-                let boxed_handle = Box::new(handle);
-                let raw_handle = Box::into_raw(boxed_handle);
-
-                out_handle.write(raw_handle);
-            }
-
-            None => {
-                let handle = match rust_db.find_all(name_utf8) {
-                    Ok(handle) => handle,
-                    Err(err) => {
-                        set_global_error(err);
-                        return PLDB_error_code();
-                    }
-                };
-
-                let boxed_handle = Box::new(handle);
-                let raw_handle = Box::into_raw(boxed_handle);
-
-                out_handle.write(raw_handle);
-            }
-
+            Some(query) => rust_db.update(name_utf8, Some(query.as_ref()), update_doc),
+            None => rust_db.update(name_utf8, None, update_doc),
         }
+    };
 
-        0
+    match result {
+        Ok(result) => result as c_longlong,
+        Err(err) => {
+            set_global_error(err);
+            PLDB_error_code() as c_longlong
+        }
+    }
+}
+
+/// return value represents how many rows are deleted
+#[no_mangle]
+pub extern "C" fn PLDB_delete(db: *mut DbContext, name: *const c_char, query: *const Rc<Document>) -> c_longlong {
+    let result = unsafe {
+        let rust_db = db.as_mut().unwrap();
+        let name_str = CStr::from_ptr(name);
+        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code() as c_longlong);
+
+        let query_doc = query.as_ref().unwrap();
+
+        rust_db.delete(name_utf8, query_doc.as_ref())
+    };
+
+    match result {
+        Ok(size) => size as c_longlong,
+        Err(err) => {
+            set_global_error(err);
+            PLDB_error_code() as c_longlong
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_delete_all(db: *mut DbContext, name: *const c_char) -> c_longlong {
+    let result = unsafe {
+        let rust_db = db.as_mut().unwrap();
+        let name_str = CStr::from_ptr(name);
+        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code() as c_longlong);
+        rust_db.delete_all(name_utf8)
+    };
+
+    match result {
+        Ok(size) => size as c_longlong,
+        Err(err) => {
+            set_global_error(err);
+            PLDB_error_code() as c_longlong
+        }
     }
 }
 

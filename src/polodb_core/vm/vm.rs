@@ -51,8 +51,9 @@ pub enum VmState {
 pub struct VM<'a> {
     pub(crate) state:    VmState,
     pc:       *const u8,
-    r0:       i32,
+    r0:       i32,  // usually the logic register
     r1:       Option<Box<Cursor>>,
+    pub(crate) r2:       i64,  // usually the counter
     page_handler: &'a mut PageHandler,
     stack:    Vec<Value>,
     pub(crate) program:  Box<SubProgram>,
@@ -69,6 +70,7 @@ impl<'a> VM<'a> {
             pc,
             r0: 0,
             r1: None,
+            r2: 0,
             page_handler,
             stack,
             program,
@@ -83,6 +85,10 @@ impl<'a> VM<'a> {
 
     fn open_read(&mut self, root_pid: u32) {
         self.r1 = Some(Box::new(Cursor::new(self.item_size(), root_pid)));
+    }
+
+    fn open_write(&mut self, root_pid: u32) {
+        self.open_read(root_pid)
     }
 
     fn reset_cursor(&mut self) {
@@ -184,7 +190,7 @@ impl<'a> VM<'a> {
                         let location = self.pc.add(5).cast::<u32>().read();
 
                         let key = self.program.static_values[key_stat_id as usize].unwrap_string();
-                        let top = self.stack[self.stack.len()].clone();
+                        let top = self.stack[self.stack.len() - 1].clone();
                         let doc = top.unwrap_document();
 
                         match doc.get(key) {
@@ -263,6 +269,18 @@ impl<'a> VM<'a> {
                         let root_pid = self.pc.add(1).cast::<u32>().read();
 
                         self.open_read(root_pid);
+
+                        if self.error.is_some() {
+                            return;
+                        }
+
+                        self.pc = self.pc.add(5);
+                    }
+
+                    DbOp::OpenWrite => {
+                        let root_pid = self.pc.add(1).cast::<u32>().read();
+
+                        self.open_write(root_pid);
 
                         if self.error.is_some() {
                             return;
