@@ -9,7 +9,7 @@ use crate::db::DbResult;
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::index_ctx::{IndexCtx, merge_options_into_default};
 use crate::btree::*;
-use crate::page::RawPage;
+use crate::page::{RawPage, TransactionState};
 use crate::db_handle::DbHandle;
 use crate::journal::TransactionType;
 
@@ -17,12 +17,12 @@ macro_rules! try_db_op {
     ($self: tt, $action: expr) => {
         match $action {
             Ok(ret) => {
-                $self.auto_commit()?;
+                $self.page_handler.auto_commit()?;
                 ret
             }
 
             Err(err) => {
-                $self.auto_rollback()?;
+                $self.page_handler.auto_rollback()?;
                 return Err(err);
             }
         }
@@ -34,13 +34,6 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
     index_doc.get(key).is_some()
 }
 
-enum TransactionState {
-    NoTrans,
-    User,
-    UserAuto,
-    DbAuto,
-}
-
 /**
  * API for all platforms
  */
@@ -48,8 +41,6 @@ pub struct DbContext {
     page_handler :        Box<PageHandler>,
 
     obj_id_maker:         ObjectIdMaker,
-
-    transaction_state:    TransactionState,
 
 }
 
@@ -67,9 +58,6 @@ impl DbContext {
 
             // first_page,
             obj_id_maker,
-
-            transaction_state: TransactionState::NoTrans,
-
         };
         Ok(ctx)
     }
@@ -87,7 +75,7 @@ impl DbContext {
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<()> {
-        self.auto_start_transaction(TransactionType::Write)?;
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
         try_db_op!(self, self.internal_create_collection(name));
 
@@ -169,11 +157,11 @@ impl DbContext {
     }
 
     pub fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        self.auto_start_transaction(TransactionType::Write)?;
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
         try_db_op!(self, self.internal_create_index(col_name, keys, options));
 
-        self.auto_commit()
+        Ok(())
     }
 
     fn internal_create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
@@ -238,47 +226,8 @@ impl DbContext {
         doc
     }
 
-    fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        match self.transaction_state {
-            TransactionState::NoTrans => {
-                self.internal_start_transaction(ty)?;
-                self.transaction_state = TransactionState::DbAuto;
-            }
-
-            // current is auto-read, but going to write
-            TransactionState::UserAuto => {
-                match (ty, self.page_handler.transaction_type()) {
-                    (TransactionType::Write, Some(TransactionType::Read)) => {
-                        self.page_handler.upgrade_read_transaction_to_write()?;
-                    }
-
-                    _ => ()
-                }
-            }
-
-            _ => ()
-        }
-        Ok(())
-    }
-
-    fn auto_rollback(&mut self) -> DbResult<()> {
-        if let TransactionState::DbAuto = self.transaction_state {
-            self.internal_rollback()?;
-            self.transaction_state = TransactionState::NoTrans;
-        }
-        Ok(())
-    }
-
-    fn auto_commit(&mut self) -> DbResult<()> {
-        if let TransactionState::DbAuto = self.transaction_state {
-            self.internal_commit()?;
-            self.transaction_state = TransactionState::NoTrans;
-        }
-        Ok(())
-    }
-
     pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
-        self.auto_start_transaction(TransactionType::Write)?;
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
         let result = try_db_op!(self, self.internal_insert(col_name, doc));
 
@@ -360,7 +309,7 @@ impl DbContext {
     }
 
     pub fn update(&mut self, col_name: &str, query: Option<&Document>, update: &Document) -> DbResult<usize> {
-        self.auto_start_transaction(TransactionType::Write)?;
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
         let result = try_db_op!(self, self.internal_update(col_name, query, update));
 
@@ -460,7 +409,7 @@ impl DbContext {
     }
 
     pub(crate) fn delete_by_pkey(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
-        self.auto_start_transaction(TransactionType::Write)?;
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
         let result = try_db_op!(self, self.internal_delete_by_pkey(col_name, key));
 
@@ -510,44 +459,29 @@ impl DbContext {
     pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
         match ty {
             Some(ty) => {
-                self.internal_start_transaction(ty)?;
-                self.transaction_state = TransactionState::User;
+                self.page_handler.start_transaction(ty)?;
+                self.page_handler.set_transaction_state(TransactionState::User);
             }
 
             None => {
-                self.internal_start_transaction(TransactionType::Read)?;
-                self.transaction_state = TransactionState::UserAuto;
+                self.page_handler.start_transaction(TransactionType::Read)?;
+                self.page_handler.set_transaction_state(TransactionState::UserAuto);
             }
 
         }
         Ok(())
     }
 
-    #[inline]
-    fn internal_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        self.page_handler.start_transaction(ty)
-    }
-
     pub fn commit(&mut self) -> DbResult<()> {
-        self.internal_commit()?;
-        self.transaction_state = TransactionState::NoTrans;
+        self.page_handler.commit()?;
+        self.page_handler.set_transaction_state(TransactionState::NoTrans);
         Ok(())
-    }
-
-    #[inline]
-    fn internal_commit(&mut self) -> DbResult<()> {
-        self.page_handler.commit()
     }
 
     pub fn rollback(&mut self) -> DbResult<()> {
-        self.internal_rollback()?;
-        self.transaction_state = TransactionState::NoTrans;
+        self.page_handler.rollback()?;
+        self.page_handler.set_transaction_state(TransactionState::NoTrans);
         Ok(())
-    }
-
-    #[inline]
-    fn internal_rollback(&mut self) -> DbResult<()> {
-        self.page_handler.rollback()
     }
 
     #[inline]

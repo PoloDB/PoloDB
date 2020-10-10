@@ -6,4 +6,4 @@ mod pagecache;
 mod data_page_wrapper;
 
 pub(crate) use page::{RawPage, PageType};
-pub(crate) use page_handler::PageHandler;
+pub(crate) use page_handler::{PageHandler, TransactionState};

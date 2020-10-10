@@ -32,6 +32,13 @@ use crate::data_ticket::DataTicket;
 const DB_INIT_BLOCK_COUNT: u32 = 16;
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
+pub(crate) enum TransactionState {
+    NoTrans,
+    User,
+    UserAuto,
+    DbAuto,
+}
+
 pub(crate) struct PageHandler {
     file:                     File,
 
@@ -43,6 +50,9 @@ pub(crate) struct PageHandler {
     journal_manager:          Box<JournalManager>,
 
     data_page_map:            BTreeMap<u32, Vec<u32>>,
+
+    transaction_state:        TransactionState,
+
 }
 
 impl PageHandler {
@@ -111,7 +121,49 @@ impl PageHandler {
             journal_manager: Box::new(journal_manager),
 
             data_page_map: BTreeMap::new(),
+
+            transaction_state: TransactionState::NoTrans,
+
         })
+    }
+
+    pub(crate) fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+        match self.transaction_state {
+            TransactionState::NoTrans => {
+                self.start_transaction(ty)?;
+                self.transaction_state = TransactionState::DbAuto;
+            }
+
+            // current is auto-read, but going to write
+            TransactionState::UserAuto => {
+                match (ty, self.transaction_type()) {
+                    (TransactionType::Write, Some(TransactionType::Read)) => {
+                        self.upgrade_read_transaction_to_write()?;
+                    }
+
+                    _ => ()
+                }
+            }
+
+            _ => ()
+        }
+        Ok(())
+    }
+
+    pub(crate) fn auto_rollback(&mut self) -> DbResult<()> {
+        if let TransactionState::DbAuto = self.transaction_state {
+            self.rollback()?;
+            self.transaction_state = TransactionState::NoTrans;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn auto_commit(&mut self) -> DbResult<()> {
+        if let TransactionState::DbAuto = self.transaction_state {
+            self.commit()?;
+            self.transaction_state = TransactionState::NoTrans;
+        }
+        Ok(())
     }
 
     pub(crate) fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper> {
@@ -387,8 +439,13 @@ impl PageHandler {
     }
 
     #[inline]
-    pub(crate) fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
+    fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
         self.journal_manager.upgrade_read_transaction_to_write()
+    }
+
+    #[inline]
+    pub fn set_transaction_state(&mut self, state: TransactionState) {
+        self.transaction_state = state;
     }
 
     #[inline]
