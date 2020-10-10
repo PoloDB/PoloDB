@@ -22,7 +22,7 @@ use super::op::DbOp;
 use crate::cursor::Cursor;
 use crate::page::PageHandler;
 use crate::btree::{HEADER_SIZE, ITEM_SIZE};
-use crate::{DbErr, TransactionType, DbResult};
+use crate::{TransactionType, DbResult};
 
 const STACK_SIZE: usize = 256;
 
@@ -227,7 +227,7 @@ impl<'a> VM<'a> {
 
                             Err(err) => {
                                 self.state = VmState::Halt;
-                                return Err(DbErr::BsonErr(err));
+                                return Err(err.into());
                             }
 
                         }
@@ -254,7 +254,7 @@ impl<'a> VM<'a> {
 
                             Err(err) => {
                                 self.state = VmState::Halt;
-                                return Err(DbErr::BsonErr(err));
+                                return Err(err.into());
                             }
                         }
 

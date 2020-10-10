@@ -5,9 +5,9 @@ use std::io;
 #[derive(Debug)]
 pub enum BsonErr {
     ParseError(String),
-    ParseIntError(num::ParseIntError),
+    ParseIntError(Box<num::ParseIntError>),
     DecodeIntUnknownByte,
-    IOErr(io::Error),
+    IOErr(Box<io::Error>),
     TypeNotComparable(String, String),
 }
 
@@ -41,7 +41,7 @@ impl fmt::Display for BsonErr {
 impl From<io::Error> for BsonErr {
 
     fn from(error: io::Error) -> Self {
-        BsonErr::IOErr(error)
+        BsonErr::IOErr(Box::new(error))
     }
 
 }
@@ -49,7 +49,7 @@ impl From<io::Error> for BsonErr {
 impl From<num::ParseIntError> for BsonErr {
 
     fn from(error: num::ParseIntError) -> Self {
-        BsonErr::ParseIntError(error)
+        BsonErr::ParseIntError(Box::new(error))
     }
 
 }

@@ -45,11 +45,11 @@ impl fmt::Display for IndexOptionsTypeUnexpectedStruct {
 
 #[inline]
 pub(crate) fn mk_index_options_type_unexpected(option_name: &str, expected_ty: &str, actual_ty: &str) -> DbErr {
-    DbErr::IndexOptionsTypeUnexpected(IndexOptionsTypeUnexpectedStruct {
+    DbErr::IndexOptionsTypeUnexpected(Box::new(IndexOptionsTypeUnexpectedStruct {
         option_name: option_name.into(),
         expected_ty: expected_ty.into(),
         actual_ty: actual_ty.into(),
-    })
+    }))
 }
 
 #[derive(Debug)]
@@ -59,11 +59,11 @@ pub enum DbErr {
     ValidationError(String),
     InvalidOrderOfIndex(String),
     IndexAlreadyExists(String),
-    IndexOptionsTypeUnexpected(IndexOptionsTypeUnexpectedStruct),
+    IndexOptionsTypeUnexpected(Box<IndexOptionsTypeUnexpectedStruct>),
     ParseError(String),
-    IOErr(io::Error),
-    UTF8Err(std::str::Utf8Error),
-    BsonErr(BsonErr),
+    IOErr(Box<io::Error>),
+    UTF8Err(Box<std::str::Utf8Error>),
+    BsonErr(Box<BsonErr>),
     DataSizeTooLarge(u32, u32),
     DecodeEOF,
     DataOverflow,
@@ -139,7 +139,7 @@ impl fmt::Display for DbErr {
 impl From<BsonErr> for DbErr {
 
     fn from(error: BsonErr) -> Self {
-        DbErr::BsonErr(error)
+        DbErr::BsonErr(Box::new(error))
     }
 
 }
@@ -147,7 +147,7 @@ impl From<BsonErr> for DbErr {
 impl From<io::Error> for DbErr {
 
     fn from(error: io::Error) -> Self {
-        DbErr::IOErr(error)
+        DbErr::IOErr(Box::new(error))
     }
 
 }
@@ -155,7 +155,19 @@ impl From<io::Error> for DbErr {
 impl From<std::str::Utf8Error> for DbErr {
 
     fn from(error: std::str::Utf8Error) -> Self {
-        DbErr::UTF8Err(error)
+        DbErr::UTF8Err(Box::new(error))
+    }
+
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::DbErr;
+
+    #[test]
+    fn print_value_size() {
+        let size = std::mem::size_of::<DbErr>();
+        assert_eq!(size, 32);
     }
 
 }

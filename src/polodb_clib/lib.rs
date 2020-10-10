@@ -35,7 +35,7 @@ macro_rules! try_read_utf8 {
         match $action {
             Ok(str) => str,
             Err(err) => {
-                set_global_error(DbErr::UTF8Err(err));
+                set_global_error(err.into());
                 return $ret;
             }
         }
