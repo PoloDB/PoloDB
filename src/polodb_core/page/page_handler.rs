@@ -23,7 +23,7 @@ use super::page::RawPage;
 use super::pagecache::PageCache;
 use super::header_page_wrapper;
 use super::header_page_wrapper::HeaderPageWrapper;
-use crate::journal::JournalManager;
+use crate::journal::{JournalManager, TransactionType};
 use crate::DbResult;
 use crate::error::DbErr;
 use crate::page::data_page_wrapper::DataPageWrapper;
@@ -377,8 +377,18 @@ impl PageHandler {
     }
 
     #[inline]
-    pub fn start_transaction(&mut self) -> DbResult<()> {
-        self.journal_manager.start_transaction()
+    pub fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+        self.journal_manager.start_transaction(ty)
+    }
+
+    #[inline]
+    pub fn transaction_type(&mut self) -> &Option<TransactionType> {
+        self.journal_manager.transaction_type()
+    }
+
+    #[inline]
+    pub(crate) fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
+        self.journal_manager.upgrade_read_transaction_to_write()
     }
 
     #[inline]

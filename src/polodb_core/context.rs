@@ -11,10 +11,34 @@ use crate::index_ctx::{IndexCtx, merge_options_into_default};
 use crate::btree::*;
 use crate::page::RawPage;
 use crate::db_handle::DbHandle;
+use crate::journal::TransactionType;
+
+macro_rules! try_db_op {
+    ($self: tt, $action: expr) => {
+        match $action {
+            Ok(ret) => {
+                $self.auto_commit()?;
+                ret
+            }
+
+            Err(err) => {
+                $self.auto_rollback()?;
+                return Err(err);
+            }
+        }
+    }
+}
 
 #[inline]
 fn index_already_exists(index_doc: &Document, key: &str) -> bool {
     index_doc.get(key).is_some()
+}
+
+enum TransactionState {
+    NoTrans,
+    User,
+    UserAuto,
+    DbAuto,
 }
 
 /**
@@ -24,6 +48,8 @@ pub struct DbContext {
     page_handler :        Box<PageHandler>,
 
     obj_id_maker:         ObjectIdMaker,
+
+    transaction_state:    TransactionState,
 
 }
 
@@ -41,6 +67,9 @@ impl DbContext {
 
             // first_page,
             obj_id_maker,
+
+            transaction_state: TransactionState::NoTrans,
+
         };
         Ok(ctx)
     }
@@ -58,9 +87,18 @@ impl DbContext {
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<()> {
+        self.auto_start_transaction(TransactionType::Write)?;
+
+        try_db_op!(self, self.internal_create_collection(name));
+
+        Ok(())
+    }
+
+    fn internal_create_collection(&mut self, name: &str) -> DbResult<()> {
         if name.is_empty() {
             return Err(DbErr::IllegalCollectionName(name.into()));
         }
+
         let mut doc = Document::new_without_id();
         doc.insert(meta_doc_key::ID.into(), Value::from(name));
 
@@ -75,20 +113,16 @@ impl DbContext {
 
         let insert_result = btree_wrapper.insert_item(&doc, false)?;
 
-        match insert_result.backward_item {
-            Some(backward_item) => {
-                let new_root_id = self.page_handler.alloc_page_id()?;
+        if let Some(backward_item) = insert_result.backward_item {
+            let new_root_id = self.page_handler.alloc_page_id()?;
 
-                let raw_page = backward_item.write_to_page(&mut self.page_handler, new_root_id, meta_page_id)?;
-                self.page_handler.pipeline_write_page(&raw_page)?;
+            let raw_page = backward_item.write_to_page(&mut self.page_handler, new_root_id, meta_page_id)?;
+            self.page_handler.pipeline_write_page(&raw_page)?;
 
-                self.update_meta_page_id_of_db(new_root_id)?;
-
-                Ok(())
-            }
-
-            None => Ok(())
+            self.update_meta_page_id_of_db(new_root_id)?;
         }
+
+        Ok(())
     }
 
     fn update_meta_page_id_of_db(&mut self, new_meta_page_root_pid: u32) -> DbResult<()> {
@@ -135,6 +169,14 @@ impl DbContext {
     }
 
     pub fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+        self.auto_start_transaction(TransactionType::Write)?;
+
+        try_db_op!(self, self.internal_create_index(col_name, keys, options));
+
+        self.auto_commit()
+    }
+
+    fn internal_create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         let meta_page_id = self.get_meta_page_id()?;
         let (_, mut meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
         let mut_meta_doc = Rc::get_mut(&mut meta_doc).unwrap();
@@ -196,7 +238,54 @@ impl DbContext {
         doc
     }
 
+    fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+        match self.transaction_state {
+            TransactionState::NoTrans => {
+                self.internal_start_transaction(ty)?;
+                self.transaction_state = TransactionState::DbAuto;
+            }
+
+            // current is auto-read, but going to write
+            TransactionState::UserAuto => {
+                match (ty, self.page_handler.transaction_type()) {
+                    (TransactionType::Write, Some(TransactionType::Read)) => {
+                        self.page_handler.upgrade_read_transaction_to_write()?;
+                    }
+
+                    _ => ()
+                }
+            }
+
+            _ => ()
+        }
+        Ok(())
+    }
+
+    fn auto_rollback(&mut self) -> DbResult<()> {
+        if let TransactionState::DbAuto = self.transaction_state {
+            self.internal_rollback()?;
+            self.transaction_state = TransactionState::NoTrans;
+        }
+        Ok(())
+    }
+
+    fn auto_commit(&mut self) -> DbResult<()> {
+        if let TransactionState::DbAuto = self.transaction_state {
+            self.internal_commit()?;
+            self.transaction_state = TransactionState::NoTrans;
+        }
+        Ok(())
+    }
+
     pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
+        self.auto_start_transaction(TransactionType::Write)?;
+
+        let result = try_db_op!(self, self.internal_insert(col_name, doc));
+
+        Ok(result)
+    }
+
+    fn internal_insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
         let meta_page_id = self.get_meta_page_id()?;
         let doc_value = self.fix_doc(doc);
 
@@ -271,6 +360,14 @@ impl DbContext {
     }
 
     pub fn update(&mut self, col_name: &str, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+        self.auto_start_transaction(TransactionType::Write)?;
+
+        let result = try_db_op!(self, self.internal_update(col_name, query, update));
+
+        Ok(result)
+    }
+
+    fn internal_update(&mut self, col_name: &str, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         let meta_page_id = self.get_meta_page_id()?;
         let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
 
@@ -363,6 +460,14 @@ impl DbContext {
     }
 
     pub(crate) fn delete_by_pkey(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
+        self.auto_start_transaction(TransactionType::Write)?;
+
+        let result = try_db_op!(self, self.internal_delete_by_pkey(col_name, key));
+
+        Ok(result)
+    }
+
+    fn internal_delete_by_pkey(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
         let meta_page_id = self.get_meta_page_id()?;
         let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
 
@@ -402,19 +507,46 @@ impl DbContext {
         unimplemented!()
     }
 
-    #[inline]
-    pub fn start_transaction(&mut self) -> DbResult<()> {
-        self.page_handler.start_transaction()
+    pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
+        match ty {
+            Some(ty) => {
+                self.internal_start_transaction(ty)?;
+                self.transaction_state = TransactionState::User;
+            }
+
+            None => {
+                self.internal_start_transaction(TransactionType::Read)?;
+                self.transaction_state = TransactionState::UserAuto;
+            }
+
+        }
+        Ok(())
     }
 
     #[inline]
+    fn internal_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+        self.page_handler.start_transaction(ty)
+    }
+
     pub fn commit(&mut self) -> DbResult<()> {
+        self.internal_commit()?;
+        self.transaction_state = TransactionState::NoTrans;
+        Ok(())
+    }
+
+    #[inline]
+    fn internal_commit(&mut self) -> DbResult<()> {
         self.page_handler.commit()
     }
 
-    #[inline]
-    #[allow(dead_code)]
     pub fn rollback(&mut self) -> DbResult<()> {
+        self.internal_rollback()?;
+        self.transaction_state = TransactionState::NoTrans;
+        Ok(())
+    }
+
+    #[inline]
+    fn internal_rollback(&mut self) -> DbResult<()> {
         self.page_handler.rollback()
     }
 

@@ -64,6 +64,11 @@ impl FrameHeader {
 
 }
 
+pub enum TransactionType {
+    Read,
+    Write,
+}
+
 // name:       32 bytes
 // version:    4bytes(offset 32)
 // page_size:  4bytes(offset 36)
@@ -78,7 +83,7 @@ pub(crate) struct JournalManager {
     page_size:        u32,
     salt1:            u32,
     salt2:            u32,
-    in_transaction:   bool,
+    transaction_ty:   Option<TransactionType>,
 
     // page_id => file_position
     pub offset_map_list:       LinkedList<BTreeMap<u32, u64>>,
@@ -112,7 +117,7 @@ impl JournalManager {
             page_size,
             salt1: 0,
             salt2: 0,
-            in_transaction: false,
+            transaction_ty: None,
 
             offset_map_list,
             count: 0,
@@ -308,8 +313,9 @@ impl JournalManager {
     }
 
     pub(crate) fn append_raw_page(&mut self, raw_page: &RawPage) -> DbResult<()> {
-        if !self.in_transaction {
-            return Err(DbErr::CannotWriteDbWithoutTransaction);
+        match self.transaction_ty {
+            Some(TransactionType::Write) => (),
+            _ => return Err(DbErr::CannotWriteDbWithoutTransaction),
         }
 
         let start_pos = self.journal_file.seek(SeekFrom::Current(0))?;
@@ -394,40 +400,54 @@ impl JournalManager {
         self.write_header_to_file()
     }
 
-    pub(crate) fn start_transaction(&mut self) -> DbResult<()> {
-        if self.in_transaction {
+    pub(crate) fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+        if self.transaction_ty.is_some() {
             return Err(DbErr::StartTransactionInAnotherTransaction);
         }
 
-        self.lock_file()?;
-        self.in_transaction = true;
+        match ty {
+            TransactionType::Read => {
+                self.shared_lock_file()?;
+            }
+
+            TransactionType::Write => {
+                self.exclusive_lock_file()?;
+            }
+
+        }
+
+        self.transaction_ty = Some(ty);
 
         Ok(())
     }
 
     pub(crate) fn commit(&mut self) -> DbResult<()> {
-        if !self.in_transaction {
+        if self.transaction_ty.is_none() {
             return Err(DbErr::CannotWriteDbWithoutTransaction);
         }
 
         self.unlock_file()?;
-        self.in_transaction = false;
+        self.transaction_ty = None;
 
         Ok(())
     }
 
     pub(crate) fn rollback(&mut self) -> DbResult<()> {
-        if !self.in_transaction {
+        if self.transaction_ty.is_none() {
             return Err(DbErr::RollbackNotInTransaction);
         }
 
         self.unlock_file()?;
-        self.in_transaction = false;
+        self.transaction_ty = None;
 
         Ok(())
     }
 
-    fn lock_file(&mut self) -> DbResult<()> {
+    pub(crate) fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
+        self.exclusive_lock_file()
+    }
+
+    fn exclusive_lock_file(&mut self) -> DbResult<()> {
         use std::os::unix::prelude::*;
         use libc::{flock, LOCK_EX, LOCK_NB};
 
@@ -443,6 +463,24 @@ impl JournalManager {
         }
     }
 
+    fn shared_lock_file(&mut self) -> DbResult<()> {
+        use std::os::unix::prelude::*;
+        use libc::{flock, LOCK_SH, LOCK_NB};
+
+        let fd = self.journal_file.as_raw_fd();
+        let result = unsafe {
+            flock(fd, LOCK_SH | LOCK_NB)
+        };
+
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(DbErr::Busy)
+        }
+    }
+
+    /// LOCK_UN: unlock
+    /// LOCK_NB: non-blocking
     fn unlock_file(&mut self) -> DbResult<()> {
         use std::os::unix::prelude::*;
         use libc::{flock, LOCK_UN, LOCK_NB};
@@ -467,6 +505,11 @@ impl JournalManager {
     #[inline]
     pub(crate) fn len(&self) -> u32 {
         self.count
+    }
+
+    #[inline]
+    pub(crate) fn transaction_type(&self) -> &Option<TransactionType> {
+        &self.transaction_ty
     }
 
 }

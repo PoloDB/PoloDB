@@ -45,10 +45,9 @@ impl Database {
         })
     }
 
+    #[inline]
     pub fn create_collection(&mut self, name: &str) -> DbResult<()> {
-        self.ctx.start_transaction()?;
-        self.ctx.create_collection(name)?;
-        self.ctx.commit()
+        self.ctx.create_collection(name)
     }
 
     #[inline]
@@ -92,24 +91,19 @@ impl Database {
         self.ctx.update(col_name, query, update)
     }
 
+    #[inline]
     pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
-        self.ctx.start_transaction()?;
-        let doc = self.ctx.insert(col_name, doc)?;
-        self.ctx.commit()?;
-        Ok(doc)
+        self.ctx.insert(col_name, doc)
     }
 
+    #[inline]
     pub fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
-        self.ctx.start_transaction()?;
-        let result = self.ctx.delete_by_pkey(col_name, key)?;
-        self.ctx.commit()?;
-        Ok(result)
+        self.ctx.delete_by_pkey(col_name, key)
     }
 
+    #[inline]
     pub fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        self.ctx.start_transaction()?;
-        self.ctx.create_index(col_name, keys, options)?;
-        self.ctx.commit()
+        self.ctx.create_index(col_name, keys, options)
     }
 
     #[allow(dead_code)]

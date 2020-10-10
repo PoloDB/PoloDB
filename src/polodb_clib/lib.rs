@@ -13,7 +13,7 @@
  * You should have received a copy of the GNU Lesser General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-use polodb_core::{DbContext, DbErr, DbHandle};
+use polodb_core::{DbContext, DbErr, DbHandle, TransactionType};
 use polodb_bson::{Value, ObjectId, Document, Array};
 use polodb_bson::linked_hash_map::Iter;
 use std::cell::RefCell;
@@ -66,10 +66,16 @@ pub extern "C" fn PLDB_open(path: *const c_char) -> *mut DbContext {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_start_transaction(db: *mut DbContext, _flags: c_int) -> c_int {
+pub extern "C" fn PLDB_start_transaction(db: *mut DbContext, flags: c_int) -> c_int {
     unsafe {
         let rust_db = db.as_mut().unwrap();
-        match rust_db.start_transaction() {
+        let ty = match flags {
+            0 => None,
+            1 => Some(TransactionType::Read),
+            2 => Some(TransactionType::Write),
+            _ => return -1,
+        };
+        match rust_db.start_transaction(ty) {
             Ok(()) => 0,
             Err(err) => {
                 set_global_error(err);
