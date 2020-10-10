@@ -32,6 +32,7 @@ use crate::data_ticket::DataTicket;
 const DB_INIT_BLOCK_COUNT: u32 = 16;
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
+#[derive(Eq, PartialEq)]
 pub(crate) enum TransactionState {
     NoTrans,
     User,
@@ -151,7 +152,7 @@ impl PageHandler {
     }
 
     pub(crate) fn auto_rollback(&mut self) -> DbResult<()> {
-        if let TransactionState::DbAuto = self.transaction_state {
+        if self.transaction_state == TransactionState::DbAuto {
             self.rollback()?;
             self.transaction_state = TransactionState::NoTrans;
         }
@@ -159,7 +160,7 @@ impl PageHandler {
     }
 
     pub(crate) fn auto_commit(&mut self) -> DbResult<()> {
-        if let TransactionState::DbAuto = self.transaction_state {
+        if self.transaction_state == TransactionState::DbAuto {
             self.commit()?;
             self.transaction_state = TransactionState::NoTrans;
         }

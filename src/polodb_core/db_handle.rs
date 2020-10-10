@@ -1,7 +1,7 @@
 use std::fmt;
 use polodb_bson::Value;
 use crate::vm::{VM, VmState};
-use crate::DbErr;
+use crate::DbResult;
 
 /**
  * A VM wrapper for Rust-level API
@@ -31,17 +31,7 @@ impl<'a> DbHandle<'a> {
     }
 
     #[inline]
-    pub fn has_error(&self) -> bool {
-        self.0.error.is_some()
-    }
-
-    #[inline]
-    pub fn take_error(&mut self) -> Option<DbErr> {
-        Option::take(&mut self.0.error)
-    }
-
-    #[inline]
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> DbResult<()> {
         self.0.execute()
     }
 

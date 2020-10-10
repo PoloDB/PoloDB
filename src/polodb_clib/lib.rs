@@ -270,10 +270,9 @@ pub extern "C" fn PLDB_handle_to_str(handle: *mut DbHandle, buffer: *mut c_char,
 pub extern "C" fn PLDB_handle_step(handle: *mut DbHandle) -> c_int {
     unsafe {
         let rust_handle = handle.as_mut().unwrap();
-        rust_handle.step();
+        let result = rust_handle.step();
 
-        if rust_handle.has_error() {
-            let err = rust_handle.take_error().unwrap();
+        if let Err(err) = result {
             set_global_error(err);
             return PLDB_error_code();
         }

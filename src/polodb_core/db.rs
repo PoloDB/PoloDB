@@ -66,21 +66,13 @@ impl Database {
     }
 
     fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
-        handle.step();
-        if handle.has_error() {
-            let err = handle.take_error();
-            return Err(err.unwrap());
-        }
+        handle.step()?;
 
         while handle.has_row() {
             let doc = handle.get().unwrap_document();
             result.push(doc.clone());
 
-            handle.step();
-            if handle.has_error() {
-                let err = handle.take_error();
-                return Err(err.unwrap());
-            }
+            handle.step()?;
         }
 
         Ok(())

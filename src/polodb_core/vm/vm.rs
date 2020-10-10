@@ -22,7 +22,7 @@ use super::op::DbOp;
 use crate::cursor::Cursor;
 use crate::page::PageHandler;
 use crate::btree::{HEADER_SIZE, ITEM_SIZE};
-use crate::DbErr;
+use crate::{DbErr, TransactionType, DbResult};
 
 const STACK_SIZE: usize = 256;
 
@@ -31,9 +31,8 @@ macro_rules! try_vm {
         match $action {
             Ok(result) => result,
             Err(err) => {
-                $self.error = Some(err);
                 $self.state = VmState::Halt;
-                return;
+                return Err(err);
             }
         }
     }
@@ -57,7 +56,6 @@ pub struct VM<'a> {
     page_handler: &'a mut PageHandler,
     stack:    Vec<Value>,
     pub(crate) program:  Box<SubProgram>,
-    pub(crate) error:    Option<DbErr>,
 }
 
 impl<'a> VM<'a> {
@@ -74,7 +72,6 @@ impl<'a> VM<'a> {
             page_handler,
             stack,
             program,
-            error: None,
         }
     }
 
@@ -83,20 +80,24 @@ impl<'a> VM<'a> {
         (self.page_handler.page_size - HEADER_SIZE) / ITEM_SIZE
     }
 
-    fn open_read(&mut self, root_pid: u32) {
+    fn open_read(&mut self, root_pid: u32) -> DbResult<()> {
+        self.page_handler.auto_start_transaction(TransactionType::Read)?;
         self.r1 = Some(Box::new(Cursor::new(self.item_size(), root_pid)));
+        Ok(())
     }
 
-    fn open_write(&mut self, root_pid: u32) {
-        self.open_read(root_pid)
+    fn open_write(&mut self, root_pid: u32) -> DbResult<()> {
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.r1 = Some(Box::new(Cursor::new(self.item_size(), root_pid)));
+        Ok(())
     }
 
-    fn reset_cursor(&mut self) {
-        try_vm!(self, self.r1.as_mut().unwrap().reset(self.page_handler))
+    fn reset_cursor(&mut self) -> DbResult<()> {
+        self.r1.as_mut().unwrap().reset(self.page_handler)
     }
 
-    fn next(&mut self) {
-        let result = try_vm!(self, self.r1.as_mut().unwrap().next(self.page_handler));
+    fn next(&mut self) -> DbResult<()> {
+        let result = self.r1.as_mut().unwrap().next(self.page_handler)?;
         match &result {
             Some(doc) => {
                 self.stack.push(Value::Document(doc.clone()));
@@ -113,6 +114,7 @@ impl<'a> VM<'a> {
                 self.r0 = 0;
             }
         }
+        Ok(())
     }
 
     pub(crate) fn stack_top(&self) -> &Value {
@@ -126,7 +128,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub(crate) fn execute(&mut self) {
+    pub(crate) fn execute(&mut self) -> DbResult<()> {
         if self.state == VmState::Halt {
             panic!("vm is halt, can not execute");
         }
@@ -159,18 +161,12 @@ impl<'a> VM<'a> {
                     }
 
                     DbOp::Rewind => {
-                        self.reset_cursor();
-                        if self.error.is_some() {
-                            return;
-                        }
+                        try_vm!(self, self.reset_cursor());
                         self.pc = self.pc.add(1);
                     }
 
                     DbOp::Next => {
-                        self.next();
-                        if self.error.is_some() {
-                            return;
-                        }
+                        try_vm!(self, self.next());
                         if self.r0 != 0 {
                             let location = self.pc.add(1).cast::<u32>().read();
                             self.reset_location(location);
@@ -230,8 +226,8 @@ impl<'a> VM<'a> {
                             }
 
                             Err(err) => {
-                                self.error = Some(DbErr::BsonErr(err));
-                                return;
+                                self.state = VmState::Halt;
+                                return Err(DbErr::BsonErr(err));
                             }
 
                         }
@@ -257,8 +253,8 @@ impl<'a> VM<'a> {
                             }
 
                             Err(err) => {
-                                self.error = Some(DbErr::BsonErr(err));
-                                return;
+                                self.state = VmState::Halt;
+                                return Err(DbErr::BsonErr(err));
                             }
                         }
 
@@ -268,11 +264,7 @@ impl<'a> VM<'a> {
                     DbOp::OpenRead => {
                         let root_pid = self.pc.add(1).cast::<u32>().read();
 
-                        self.open_read(root_pid);
-
-                        if self.error.is_some() {
-                            return;
-                        }
+                        try_vm!(self, self.open_read(root_pid));
 
                         self.pc = self.pc.add(5);
                     }
@@ -280,11 +272,7 @@ impl<'a> VM<'a> {
                     DbOp::OpenWrite => {
                         let root_pid = self.pc.add(1).cast::<u32>().read();
 
-                        self.open_write(root_pid);
-
-                        if self.error.is_some() {
-                            return;
-                        }
+                        try_vm!(self, self.open_write(root_pid));
 
                         self.pc = self.pc.add(5);
                     }
@@ -292,7 +280,7 @@ impl<'a> VM<'a> {
                     DbOp::ResultRow => {
                         self.pc = self.pc.add(1);
                         self.state = VmState::HasRow;
-                        return;
+                        return Ok(());
                     }
 
                     DbOp::Close => {
@@ -305,7 +293,7 @@ impl<'a> VM<'a> {
                     DbOp::Halt => {
                         self.r1 = None;
                         self.state = VmState::Halt;
-                        return;
+                        return Ok(());
                     }
 
                 }

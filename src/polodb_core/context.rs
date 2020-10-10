@@ -326,11 +326,7 @@ impl DbContext {
         }?;
 
         let mut vm = VM::new(&mut self.page_handler, Box::new(subprogram));
-        vm.execute();
-
-        if vm.error.is_some() {
-            return Err(vm.error.take().unwrap());
-        }
+        vm.execute()?;
 
         Ok(vm.r2 as usize)
     }
@@ -342,11 +338,7 @@ impl DbContext {
         let subprogram = SubProgram::compile_delete(&collection_meta, query)?;
 
         let mut vm = VM::new(&mut self.page_handler, Box::new(subprogram));
-        vm.execute();
-
-        if vm.error.is_some() {
-            return Err(vm.error.take().unwrap());
-        }
+        vm.execute()?;
 
         Ok(vm.r2 as usize)
     }
