@@ -22,7 +22,7 @@ use super::op::DbOp;
 use crate::cursor::Cursor;
 use crate::page::PageHandler;
 use crate::btree::{HEADER_SIZE, ITEM_SIZE};
-use crate::{TransactionType, DbResult};
+use crate::{TransactionType, DbResult, DbErr};
 
 const STACK_SIZE: usize = 256;
 
@@ -49,13 +49,14 @@ pub enum VmState {
 
 pub struct VM<'a> {
     pub(crate) state:    VmState,
-    pc:       *const u8,
-    r0:       i32,  // usually the logic register
-    r1:       Option<Box<Cursor>>,
+    pc:                  *const u8,
+    r0:                  i32,  // usually the logic register
+    r1:                  Option<Box<Cursor>>,
     pub(crate) r2:       i64,  // usually the counter
-    page_handler: &'a mut PageHandler,
-    stack:    Vec<Value>,
+    page_handler:        &'a mut PageHandler,
+    stack:               Vec<Value>,
     pub(crate) program:  Box<SubProgram>,
+    rollback_on_drop:    bool,
 }
 
 impl<'a> VM<'a> {
@@ -72,6 +73,7 @@ impl<'a> VM<'a> {
             page_handler,
             stack,
             program,
+            rollback_on_drop: false,
         }
     }
 
@@ -80,14 +82,21 @@ impl<'a> VM<'a> {
         (self.page_handler.page_size - HEADER_SIZE) / ITEM_SIZE
     }
 
+    #[inline]
+    fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+        self.page_handler.auto_start_transaction(ty)?;
+        self.rollback_on_drop = true;
+        Ok(())
+    }
+
     fn open_read(&mut self, root_pid: u32) -> DbResult<()> {
-        self.page_handler.auto_start_transaction(TransactionType::Read)?;
+        self.auto_start_transaction(TransactionType::Read)?;
         self.r1 = Some(Box::new(Cursor::new(self.item_size(), root_pid)));
         Ok(())
     }
 
     fn open_write(&mut self, root_pid: u32) -> DbResult<()> {
-        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.auto_start_transaction(TransactionType::Write)?;
         self.r1 = Some(Box::new(Cursor::new(self.item_size(), root_pid)));
         Ok(())
     }
@@ -130,7 +139,7 @@ impl<'a> VM<'a> {
 
     pub(crate) fn execute(&mut self) -> DbResult<()> {
         if self.state == VmState::Halt {
-            panic!("vm is halt, can not execute");
+            return Err(DbErr::VmIsHalt);
         }
         self.state = VmState::Running;
         unsafe {
@@ -285,6 +294,8 @@ impl<'a> VM<'a> {
 
                     DbOp::Close => {
                         self.r1 = None;
+                        self.page_handler.auto_commit()?;
+                        self.rollback_on_drop = false;
 
                         self.pc = self.pc.add(1);
                     }
@@ -297,6 +308,20 @@ impl<'a> VM<'a> {
                     }
 
                 }
+            }
+        }
+    }
+
+}
+
+impl<'a> Drop for VM<'a> {
+
+    fn drop(&mut self) {
+        if self.rollback_on_drop {
+            let result = self.page_handler.rollback();
+            #[cfg(debug_assertions)]
+            if let Err(err) = result {
+                panic!("rollback fatal: {}", err);
             }
         }
     }

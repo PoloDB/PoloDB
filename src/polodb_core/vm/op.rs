@@ -15,6 +15,7 @@
  */
 
 #[repr(u8)]
+#[allow(dead_code)]
 pub enum DbOp {
     _EOF = 0,
 

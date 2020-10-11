@@ -332,19 +332,48 @@ impl DbContext {
     }
 
     pub fn delete(&mut self, col_name: &str, query: &Document) -> DbResult<usize> {
-        let meta_page_id = self.get_meta_page_id()?;
-        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let primary_keys = self.get_primary_keys_by_query(col_name, Some(query))?;
 
-        let subprogram = SubProgram::compile_delete(&collection_meta, query)?;
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let mut vm = VM::new(&mut self.page_handler, Box::new(subprogram));
-        vm.execute()?;
+        let result = try_db_op!(self, self.internal_delete(col_name, &primary_keys));
 
-        Ok(vm.r2 as usize)
+        Ok(result)
     }
 
-    pub fn delete_all(&mut self, _col_name: &str) -> DbResult<usize> {
-        unimplemented!()
+    fn internal_delete(&mut self, col_name: &str, primary_keys: &Vec<Value>) -> DbResult<usize> {
+        for pkey in primary_keys {
+            let _ = self.internal_delete_by_pkey(col_name, pkey)?;
+        }
+
+        Ok(primary_keys.len())
+    }
+
+    pub fn delete_all(&mut self, col_name: &str) -> DbResult<usize> {
+        let primary_keys = self.get_primary_keys_by_query(col_name, None)?;
+
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+
+        let result = try_db_op!(self, self.internal_delete(col_name, &primary_keys));
+
+        Ok(result)
+    }
+
+    fn get_primary_keys_by_query(&mut self, col_name: &str, query: Option<&Document>) -> DbResult<Vec<Value>> {
+        let mut handle = self.find(col_name, query)?;
+        let mut buffer = vec![];
+
+        handle.step()?;
+
+        while handle.has_row() {
+            let doc = handle.get().unwrap_document();
+            let pkey = doc.pkey_id().unwrap();
+            buffer.push(pkey);
+
+            handle.step()?;
+        }
+
+        Ok(buffer)
     }
 
     fn update_by_root_pid(&mut self, parent_pid: u32, root_pid: u32, key: &Value, doc: &Document) -> DbResult<bool> {

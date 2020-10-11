@@ -46,6 +46,9 @@ class Value {
         if (Array.isArray(value)) {
           return DbArray.fromRaw(value);
         }
+        if (value instanceof ObjectId) {
+          return value.toValue();
+        }
         return new Document.fromRaw(value);
 
       default:
@@ -309,13 +312,24 @@ class Collection {
     return this.find(null);
   }
 
-  insert(doc) {
-    if (!(doc instanceof Document)) {
-      throw new TypeError("type of insert value should be a Document");
+  insert(data) {
+    if (!(data instanceof Document)) {
+      data = Document.fromRaw(data);
     }
-    this.__db.startTransaction();
-    addon.insert(this.__db[NativeExt], this.__name, doc[NativeExt]);
-    this.__db.commit();
+    addon.dbInsert(this.__db[NativeExt], this.__name, data[NativeExt]);
+  }
+
+  delete(query) {
+    if (typeof query === 'undefined') {
+      throw new TypeError("query param is missing");
+    } else if (!(query instanceof Document)) {
+      query = Document.fromRaw(query);
+    }
+    addon.dbDelete(this.__db[NativeExt], this.__name, query[NativeExt]);
+  }
+
+  deleteAll() {
+    addon.dbDeleteAll(this.__db[NativeExt], this.__name);
   }
 
   find(queryObj) {
@@ -387,14 +401,7 @@ class Database {
   }
 
   createCollection(name) {
-    try {
-      this.startTransaction();
-      addon.createCollection(this[NativeExt], name);
-      this.commit();
-    } catch(err) {
-      this.rollback();
-      throw err;
-    }
+    addon.createCollection(this[NativeExt], name);
   }
 
   collection(name) {

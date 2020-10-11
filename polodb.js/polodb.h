@@ -30,6 +30,10 @@ typedef struct DbHandle DbHandle;
 typedef struct DbValue DbValue;
 typedef struct DbObjectId DbObjectId;
 
+#define PLDB_TRANS_AUTO 0
+#define PLDB_TRANS_READ 1
+#define PLDB_TRANS_WRITE 2
+
 #ifdef __cplusplus
 extern "C" {
 #endif

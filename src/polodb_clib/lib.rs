@@ -73,7 +73,10 @@ pub extern "C" fn PLDB_start_transaction(db: *mut DbContext, flags: c_int) -> c_
             0 => None,
             1 => Some(TransactionType::Read),
             2 => Some(TransactionType::Write),
-            _ => return -1,
+            _ => {
+                set_global_error(DbErr::UnknownTransactionType);
+                return PLDB_error_code();
+            }
         };
         match rust_db.start_transaction(ty) {
             Ok(()) => 0,
@@ -256,7 +259,8 @@ pub extern "C" fn PLDB_handle_to_str(handle: *mut DbHandle, buffer: *mut c_char,
         }
 
         if (buffer_size as usize) < length + 1 {
-            return -1;
+            set_global_error(DbErr::BufferNotEnough(length + 1));
+            return PLDB_error_code();
         }
 
         let cstring = CString::new(str_content).unwrap();
@@ -639,7 +643,8 @@ pub extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, String, Value>,
             Some((key, value)) => {
                 let key_len = key.len();
                 if key_len > (key_buffer_size as usize) {
-                    return -1;
+                    set_global_error(DbErr::BufferNotEnough(key_len));
+                    return PLDB_error_code();
                 }
                 let real_size = std::cmp::min(key_len, key_buffer_size as usize);
 
@@ -770,7 +775,10 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::KeyTypeOfBtreeShouldNotBeZero => 31,
         DbErr::UnexpectedPageHeader => 32,
         DbErr::UnexpectedPageType => 33,
-        DbErr::Busy => 34,
+        DbErr::UnknownTransactionType => 34,
+        DbErr::BufferNotEnough(_) => 35,
+        DbErr::VmIsHalt => 36,
+        DbErr::Busy => 37,
 
     }
 }

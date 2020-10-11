@@ -85,6 +85,9 @@ pub enum DbErr {
     KeyTypeOfBtreeShouldNotBeZero,
     UnexpectedPageHeader,
     UnexpectedPageType,
+    UnknownTransactionType,
+    BufferNotEnough(usize),
+    VmIsHalt,
     Busy
 }
 
@@ -122,7 +125,7 @@ impl fmt::Display for DbErr {
             DbErr::ItemSizeGreaterThanExpected => write!(f, "the size of the item is greater than expected"),
             DbErr::CollectionNotFound(name) => write!(f, "collection \"{}\" not found", name),
             DbErr::MetaPageIdError => write!(f, "meta page id should not be zero"),
-            DbErr::CannotWriteDbWithoutTransaction => write!(f, "cannot write Db without transaction"),
+            DbErr::CannotWriteDbWithoutTransaction => write!(f, "cannot write database without transaction"),
             DbErr::StartTransactionInAnotherTransaction => write!(f, "start transaction in another transaction"),
             DbErr::RollbackNotInTransaction => write!(f, "can not rollback because not int transaction"),
             DbErr::IllegalCollectionName(name) => write!(f, "collection name \"{}\" is illegal", name),
@@ -130,6 +133,9 @@ impl fmt::Display for DbErr {
             DbErr::KeyTypeOfBtreeShouldNotBeZero => write!(f, "key type of btree should not be zero"),
             DbErr::UnexpectedPageHeader => write!(f, "unexpected page header"),
             DbErr::UnexpectedPageType => write!(f, "unexpected page type"),
+            DbErr::UnknownTransactionType => write!(f, "unknown transaction type"),
+            DbErr::BufferNotEnough(buffer_size) => write!(f, "buffer not enough, {} needed", buffer_size),
+            DbErr::VmIsHalt => write!(f, "Vm can not execute because it's halt"),
             DbErr::Busy => write!(f, "database busy"),
         }
     }

@@ -53,6 +53,32 @@ impl InsertBackwardItem {
 
 }
 
+mod doc_validation {
+    use polodb_bson::Document;
+    use crate::{DbResult, DbErr};
+
+    fn validate_key(key: &str) -> DbResult<()> {
+        let mut i: usize = 0;
+        while i < key.len() {
+            let ch = key.chars().nth(i).unwrap();
+            if ch == ' ' || ch == '$' {
+                let msg = format!("illegal key content: '{}'", key);
+                return Err(DbErr::ValidationError(msg))
+            }
+            i += 1;
+        }
+        Ok(())
+    }
+
+    pub(super) fn validate(doc: &Document) -> DbResult<()> {
+        for (key, _value) in doc.iter() {
+            validate_key(key.as_ref())?;
+        }
+        Ok(())
+    }
+
+}
+
 // Offset 0:  header(64 bytes)
 // Offset 64: Item(500 bytes) * 8
 //
@@ -71,6 +97,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
     #[inline]
     pub(crate) fn insert_item(&mut self, doc: &Document, replace: bool) -> DbResult<InsertResult> {
+        doc_validation::validate(doc)?;
         // insert to root node
         self.insert_item_to_page(self.0.root_page_id, 0, doc, false, replace)
     }

@@ -1124,6 +1124,93 @@ static napi_value js_find(napi_env env, napi_callback_info info) {
   return result;
 }
 
+static napi_value js_delete(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 3;
+  napi_value args[3];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 0");
+    return NULL;
+  }
+
+  if (!check_type(env, args[1], napi_string)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 1");
+    return NULL;
+  }
+
+  if (!check_type(env, args[2], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 2");
+    return NULL;
+  }
+
+  Database* db;
+  status = napi_get_value_external(env, args[0], (void**)&db);
+  assert(status == napi_ok);
+
+  static char name_buffer[BUFFER_SIZE];
+  memset(name_buffer, 0, BUFFER_SIZE);
+
+  size_t written_count = 0;
+  status = napi_get_value_string_utf8(env, args[1], name_buffer, BUFFER_SIZE, &written_count);
+  assert(status == napi_ok);
+
+  DbDocument* query_doc;
+  status = napi_get_value_external(env, args[2], (void**)&query_doc);
+  assert(status == napi_ok);
+
+  long long ec = 0;
+  STD_CALL(PLDB_delete(db, name_buffer, query_doc));
+
+  napi_value result;
+  status = napi_create_bigint_int64(env, ec, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_delete_all(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 2;
+  napi_value args[2];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 0");
+    return NULL;
+  }
+
+  if (!check_type(env, args[1], napi_string)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 1");
+    return NULL;
+  }
+
+  Database* db;
+  status = napi_get_value_external(env, args[0], (void**)&db);
+  assert(status == napi_ok);
+
+  static char name_buffer[BUFFER_SIZE];
+  memset(name_buffer, 0, BUFFER_SIZE);
+
+  size_t written_count = 0;
+  status = napi_get_value_string_utf8(env, args[1], name_buffer, BUFFER_SIZE, &written_count);
+  assert(status == napi_ok);
+
+  long long ec = 0;
+  STD_CALL(PLDB_delete_all(db, name_buffer));
+
+  napi_value result;
+  status = napi_create_bigint_int64(env, ec, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
 static napi_value js_handle_step(napi_env env, napi_callback_info info) {
   napi_status status;
 
@@ -1307,8 +1394,10 @@ static napi_value Init(napi_env env, napi_value exports) {
   REGISTER_CALLBACK("startTransaction", js_start_transaction);
   REGISTER_CALLBACK("commit", js_commit);
   REGISTER_CALLBACK("rollback", js_rollback);
-  REGISTER_CALLBACK("insert", js_insert);
+  REGISTER_CALLBACK("dbInsert", js_insert);
   REGISTER_CALLBACK("dbFind", js_find);
+  REGISTER_CALLBACK("dbDelete", js_delete);
+  REGISTER_CALLBACK("dbDeleteAll", js_delete_all);
   REGISTER_CALLBACK("dbHandleStep", js_handle_step);
   REGISTER_CALLBACK("dbHandleState", js_handle_state);
   REGISTER_CALLBACK("dbHandleGet", js_handle_get);

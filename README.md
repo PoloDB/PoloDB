@@ -5,12 +5,12 @@ PoloDB is a embedded JSON-based database.
 
 [中文版](README_CN.md)
 
-# Feature
+# Features
 
 - Embedded(No standalone processes, no cross-process calls)
-- No dependency(except for libc, which is a system lib)
+- No runtime dependency
 - NoSQL
-- MongoDB like API
+- MongoDB-like API
 - Cross-Platform
 - Store data in ONE file
 
@@ -35,6 +35,10 @@ It's very easy to learn and use.
 The feature will be implemented one by on in order.
 
 - [x] Basic database API
+  - [x] CURD
+  - [x] Transactions
+  - [ ] Indexes
+  - [ ] Join operations
 - [x] Command line Tools
 - [ ] Mobile Platform Compilation
   - [ ] iOS
