@@ -1,9 +1,9 @@
 use std::fmt;
-use std::rc::Rc;
 use polodb_bson::{Value, Document};
 use crate::DbResult;
 use crate::meta_doc_helper::{MetaDocEntry, meta_doc_key};
 use super::op::DbOp;
+use crate::vm::codegen::Codegen;
 
 pub(crate) struct SubProgram {
     pub(super) static_values:    Vec<Value>,
@@ -20,7 +20,7 @@ fn doc_to_tuples(doc: &Document) -> Vec<(String, Value)> {
 
 impl SubProgram {
 
-    fn new() -> SubProgram {
+    pub(super) fn new() -> SubProgram {
         SubProgram {
             static_values: Vec::with_capacity(16),
             instructions: Vec::with_capacity(64),
@@ -31,166 +31,53 @@ impl SubProgram {
         let _indexes = meta_doc.get(meta_doc_key::INDEXES);
         // let _tuples = doc_to_tuples(doc);
 
-        let mut program = SubProgram::new();
-        program.add_open_read(entry.root_pid);
-        program.add(DbOp::Rewind);
+        let mut codegen = Codegen::new();
 
-        let next_preserve_location = program.current_location();
-        program.add_next(0);
+        codegen.add_open_read(entry.root_pid);
+        codegen.add(DbOp::Rewind);
 
-        program.add(DbOp::Close);
-        program.add(DbOp::Halt);
+        codegen.add_query_layout(query, |codegen| {
+            codegen.add(DbOp::ResultRow);
+            codegen.add(DbOp::Pop);
+        });
 
-        // let result_location = program.current_location();
-
-        let not_found_branch_preserve_location = program.current_location();
-        program.add(DbOp::Pop);
-        program.add(DbOp::Pop);
-        program.add(DbOp::Pop);  // pop the current value;
-        program.add_goto(next_preserve_location);
-
-        let get_field_failed_location = program.current_location();
-        program.add(DbOp::Pop);
-        program.add_goto(next_preserve_location);
-
-        let compare_location: u32 = program.current_location();
-
-        for (key, value) in query.iter() {
-            let key_static_id = program.push_static(Value::String(Rc::new(key.clone())));
-            let value_static_id = program.push_static(value.clone());
-
-            program.add_get_field(key_static_id, get_field_failed_location);  // push a value1
-            program.add_push_value(value_static_id);  // push a value2
-
-            program.add(DbOp::Equal);
-            // if not equal，go to next
-            program.add_false_jump(not_found_branch_preserve_location);
-
-            program.add(DbOp::Pop); // pop a value2
-            program.add(DbOp::Pop); // pop a value1
-        }
-
-        program.update_next_location(next_preserve_location as usize, compare_location);
-
-        program.add(DbOp::ResultRow);
-
-        program.add(DbOp::Pop);
-
-        program.add_goto(next_preserve_location);
-
-        Ok(program)
+        Ok(codegen.take())
     }
 
-    pub(crate) fn compile_update(entry: &MetaDocEntry, _query: &Document, _update: &Document) -> DbResult<SubProgram> {
-        let mut program = SubProgram::new();
+    pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, _update: &Document) -> DbResult<SubProgram> {
+        let mut codegen = Codegen::new();
 
-        program.add_open_write(entry.root_pid);
-        program.add(DbOp::Rewind);
+        codegen.add_open_write(entry.root_pid);
+        codegen.add(DbOp::Rewind);
 
-        Ok(program)
-    }
+        codegen.add_query_layout(query.unwrap(), |codegen| {
+            codegen.add(DbOp::Pop);
+        });
 
-    pub(crate) fn compile_update_all(_entry: &MetaDocEntry, _update: &Document) -> DbResult<SubProgram> {
-        unimplemented!()
+        Ok(codegen.take())
     }
 
     pub(crate) fn compile_query_all(entry: &MetaDocEntry) -> DbResult<SubProgram> {
-        let mut program = SubProgram::new();
+        let mut codegen = Codegen::new();
 
-        program.add_open_read(entry.root_pid);
-        program.add(DbOp::Rewind);
+        codegen.add_open_read(entry.root_pid);
+        codegen.add(DbOp::Rewind);
 
-        let location = program.current_location();
-        program.add_next(0);
+        let location = codegen.current_location();
+        codegen.add_next(0);
 
-        program.add(DbOp::Close);
-        program.add(DbOp::Halt);
+        codegen.add(DbOp::Close);
+        codegen.add(DbOp::Halt);
 
-        let result_location = program.instructions.len() as u32;
-        program.update_next_location(location as usize, result_location);
+        let result_location = codegen.current_location();
+        codegen.update_next_location(location as usize, result_location);
 
-        program.add(DbOp::ResultRow);
-        program.add(DbOp::Pop);
+        codegen.add(DbOp::ResultRow);
+        codegen.add(DbOp::Pop);
 
-        program.add_goto(location);
+        codegen.add_goto(location);
 
-        Ok(program)
-    }
-
-    pub(crate) fn compile_delete(entry: &MetaDocEntry, _query: &Document) -> DbResult<SubProgram> {
-        let mut program = SubProgram::new();
-
-        program.add_open_write(entry.root_pid);
-        program.add(DbOp::Rewind);
-
-        Ok(program)
-    }
-
-    #[inline]
-    fn update_next_location(&mut self, pos: usize, location: u32) {
-        let loc_be = location.to_le_bytes();
-        self.instructions[pos + 1..pos + 5].copy_from_slice(&loc_be);
-    }
-
-    fn add_goto(&mut self, location: u32) {
-        self.add(DbOp::Goto);
-        let bytes = location.to_le_bytes();
-        self.instructions.extend_from_slice(&bytes);
-    }
-
-    fn add_open_read(&mut self, root_pid: u32) {
-        self.add(DbOp::OpenRead);
-        let bytes = root_pid.to_le_bytes();
-        self.instructions.extend_from_slice(&bytes);
-    }
-
-    fn add_open_write(&mut self, root_pid: u32) {
-        self.add(DbOp::OpenWrite);
-        let bytes = root_pid.to_le_bytes();
-        self.instructions.extend_from_slice(&bytes);
-    }
-
-    fn add_next(&mut self, location: u32) {
-        self.add(DbOp::Next);
-        let bytes = location.to_le_bytes();
-        self.instructions.extend_from_slice(&bytes);
-    }
-
-    fn add_push_value(&mut self, static_id: u32) {
-        self.add(DbOp::PushValue);
-        let bytes = static_id.to_le_bytes();
-        self.instructions.extend_from_slice(&bytes);
-    }
-
-    fn add_false_jump(&mut self, location: u32) {
-        self.add(DbOp::FalseJump);
-        let bytes = location.to_le_bytes();
-        self.instructions.extend_from_slice(&bytes);
-    }
-
-    fn add_get_field(&mut self, static_id: u32, failed_location: u32) {
-        self.add(DbOp::GetField);
-        let bytes = static_id.to_le_bytes();
-        self.instructions.extend_from_slice(&bytes);
-        let bytes = failed_location.to_le_bytes();
-        self.instructions.extend_from_slice(&bytes);
-    }
-
-    #[inline]
-    fn add(&mut self, op: DbOp) {
-        self.instructions.push(op as u8);
-    }
-
-    #[inline]
-    fn current_location(&self) -> u32 {
-        self.instructions.len() as u32
-    }
-
-    #[inline]
-    fn push_static(&mut self, value: Value) -> u32 {
-        let pos = self.static_values.len() as u32;
-        self.static_values.push(value);
-        pos
+        Ok(codegen.take())
     }
 
 }
@@ -338,7 +225,7 @@ mod tests {
             "name": "Vincent Chan",
             "age": 32,
         };
-        let program = SubProgram::compile_update(&meta_entry, &query_doc, &update_doc).unwrap();
+        let program = SubProgram::compile_update(&meta_entry, Some(&query_doc), &update_doc).unwrap();
         println!("Program: \n\n{}", program);
     }
 

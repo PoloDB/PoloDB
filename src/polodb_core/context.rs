@@ -320,10 +320,7 @@ impl DbContext {
         let meta_page_id = self.get_meta_page_id()?;
         let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
 
-        let subprogram = match query {
-            Some(query) => SubProgram::compile_update(&collection_meta, query, update),
-            None => SubProgram::compile_update_all(&collection_meta, update),
-        }?;
+        let subprogram = SubProgram::compile_update(&collection_meta, query, update)?;
 
         let mut vm = VM::new(&mut self.page_handler, Box::new(subprogram));
         vm.execute()?;
