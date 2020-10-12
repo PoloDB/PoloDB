@@ -36,23 +36,26 @@ impl SubProgram {
         codegen.add_open_read(entry.root_pid);
         codegen.add(DbOp::Rewind);
 
-        codegen.add_query_layout(query, |codegen| {
+        codegen.add_query_layout(query, |codegen| -> DbResult<()> {
             codegen.add(DbOp::ResultRow);
             codegen.add(DbOp::Pop);
-        });
+            Ok(())
+        })?;
 
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, _update: &Document) -> DbResult<SubProgram> {
+    pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, update: &Document) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new();
 
         codegen.add_open_write(entry.root_pid);
         codegen.add(DbOp::Rewind);
 
-        codegen.add_query_layout(query.unwrap(), |codegen| {
+        codegen.add_query_layout(query.unwrap(), |codegen| -> DbResult<()> {
+            codegen.add_update_operation(update)?;
             codegen.add(DbOp::Pop);
-        });
+            Ok(())
+        })?;
 
         Ok(codegen.take())
     }

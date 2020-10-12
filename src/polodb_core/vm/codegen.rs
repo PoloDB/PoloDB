@@ -2,6 +2,22 @@ use std::rc::Rc;
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
 use polodb_bson::{Value, Document};
+use crate::{DbResult, DbErr};
+use crate::error::mk_index_options_type_unexpected;
+
+mod update_operators {
+
+    // pub const currentDate: &str = "$currentDate";
+    pub const INC: &str = "$inc";
+    pub const MIN: &str = "$min";
+    pub const MAX: &str = "$max";
+    pub const MUL: &str = "$mul";
+    pub const RENAME: &str = "$rename";
+    pub const SET: &str = "$set";
+    pub const SET_ON_INSERT: &str = "$setOnInsert";
+    pub const UNSET: &str = "$unset";
+
+}
 
 pub(super) struct Codegen {
     program: Box<SubProgram>,
@@ -19,8 +35,8 @@ impl Codegen {
         *self.program
     }
 
-    pub(super) fn add_query_layout<F>(&mut self, query: &Document, result_callback: F) where
-        F: FnOnce(&mut Codegen) -> () {
+    pub(super) fn add_query_layout<F>(&mut self, query: &Document, result_callback: F) -> DbResult<()> where
+        F: FnOnce(&mut Codegen) -> DbResult<()> {
         let next_preserve_location = self.current_location();
         self.add_next(0);
 
@@ -56,9 +72,82 @@ impl Codegen {
 
         self.update_next_location(next_preserve_location as usize, compare_location);
 
-        result_callback(self);
+        result_callback(self)?;
 
         self.add_goto(next_preserve_location);
+
+        Ok(())
+    }
+
+    pub(super) fn add_update_operation(&mut self, update: &Document) -> DbResult<()> {
+        for (key, value) in update.iter() {
+            if key == update_operators::INC {
+                self.update_op_inc(value)?;
+            } else if key == update_operators::MAX {
+                unimplemented!()
+            } else if key == update_operators::MIN {
+                unimplemented!()
+            } else if key == update_operators::MUL {
+                unimplemented!()
+            } else if key == update_operators::RENAME {
+                unimplemented!()
+            } else if key == update_operators::SET {
+                self.updat_op_set(value)?
+            } else if key == update_operators::SET_ON_INSERT {
+                unimplemented!()
+            } else if key == update_operators::UNSET {
+                unimplemented!()
+            } else {
+                return Err(DbErr::UnknownUpdateOperation(key.clone()))
+            }
+        }
+        Ok(())
+    }
+
+    fn update_op_inc(&mut self, doc: &Value) -> DbResult<()> {
+        let doc = match doc {
+            Value::Document(doc) => doc,
+            t => {
+                let err = mk_index_options_type_unexpected("$inc", "Document".into(), t.ty_name());
+                return Err(err);
+            },
+        };
+
+        self.iterate_add_op(DbOp::IncField, doc.as_ref());
+
+        Ok(())
+    }
+
+    fn updat_op_set(&mut self, doc: &Value) -> DbResult<()> {
+        let doc = match doc {
+            Value::Document(doc) => doc,
+            t => {
+                let err = mk_index_options_type_unexpected("$set", "Document".into(), t.ty_name());
+                return Err(err);
+            },
+        };
+
+        self.iterate_add_op(DbOp::SetField, doc.as_ref());
+
+        Ok(())
+    }
+
+    fn iterate_add_op(&mut self, op: DbOp, doc: &Document) {
+        for (key, value) in doc.iter() {
+            let value_id = self.push_static(value.clone());
+            self.add_push_value(value_id);
+
+            let key_id = self.push_static(Value::String(Rc::new(key.into())));
+            self.add_5bytes(op, key_id);
+
+            self.add(DbOp::Pop);
+        }
+    }
+
+    fn add_5bytes(&mut self, op: DbOp, op1: u32) {
+        self.add(op);
+        let bytes = op1.to_le_bytes();
+        self.program.instructions.extend_from_slice(&bytes);
     }
 
     pub(super) fn add_open_read(&mut self, root_pid: u32) {

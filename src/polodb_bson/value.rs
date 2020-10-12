@@ -99,6 +99,14 @@ impl Value {
     }
 
     #[inline]
+    pub fn unwrap_document_mut(&mut self) -> &mut Rc<Document> {
+        match self {
+            Value::Document(doc) => doc,
+            _ => panic!("unwrap error: document expected, but it's {}", self.ty_name()),
+        }
+    }
+
+    #[inline]
     pub fn unwrap_boolean(&self) -> bool {
         match self {
             Value::Boolean(bl) => *bl,

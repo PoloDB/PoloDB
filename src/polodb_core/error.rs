@@ -28,25 +28,25 @@ pub mod validation_error_reason {
 }
 
 #[derive(Debug)]
-pub struct IndexOptionsTypeUnexpectedStruct {
-    pub option_name: String,
+pub struct FieldTypeUnexpectedStruct {
+    pub field_name: String,
     pub expected_ty: String,
     pub actual_ty: String,
 }
 
-impl fmt::Display for IndexOptionsTypeUnexpectedStruct {
+impl fmt::Display for FieldTypeUnexpectedStruct {
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "unexpected type for index option '{}', expected: {}, actual: {}",
-               self.option_name, self.expected_ty, self.actual_ty)
+        write!(f, "unexpected type for field '{}', expected: {}, actual: {}",
+               self.field_name, self.expected_ty, self.actual_ty)
     }
 
 }
 
 #[inline]
 pub(crate) fn mk_index_options_type_unexpected(option_name: &str, expected_ty: &str, actual_ty: &str) -> DbErr {
-    DbErr::IndexOptionsTypeUnexpected(Box::new(IndexOptionsTypeUnexpectedStruct {
-        option_name: option_name.into(),
+    DbErr::FieldTypeUnexpected(Box::new(FieldTypeUnexpectedStruct {
+        field_name: option_name.into(),
         expected_ty: expected_ty.into(),
         actual_ty: actual_ty.into(),
     }))
@@ -59,7 +59,7 @@ pub enum DbErr {
     ValidationError(String),
     InvalidOrderOfIndex(String),
     IndexAlreadyExists(String),
-    IndexOptionsTypeUnexpected(Box<IndexOptionsTypeUnexpectedStruct>),
+    FieldTypeUnexpected(Box<FieldTypeUnexpectedStruct>),
     ParseError(String),
     IOErr(Box<io::Error>),
     UTF8Err(Box<std::str::Utf8Error>),
@@ -87,6 +87,8 @@ pub enum DbErr {
     UnexpectedPageType,
     UnknownTransactionType,
     BufferNotEnough(usize),
+    UnknownUpdateOperation(String),
+    IncrementNullField,
     VmIsHalt,
     Busy
 }
@@ -106,7 +108,7 @@ impl fmt::Display for DbErr {
             DbErr::ValidationError(reason) => write!(f, "ValidationError: {}", reason),
             DbErr::InvalidOrderOfIndex(index_key_name) => write!(f, "invalid order of index: {}", index_key_name),
             DbErr::IndexAlreadyExists(index_key_name) => write!(f, "index for {} already exists", index_key_name),
-            DbErr::IndexOptionsTypeUnexpected(st) => write!(f, "{}", st),
+            DbErr::FieldTypeUnexpected(st) => write!(f, "{}", st),
             DbErr::ParseError(reason) => write!(f, "ParseError: {}", reason),
             DbErr::IOErr(io_err) => io_err.fmt(f),
             DbErr::UTF8Err(utf8_err) => utf8_err.fmt(f),
@@ -135,6 +137,8 @@ impl fmt::Display for DbErr {
             DbErr::UnexpectedPageType => write!(f, "unexpected page type"),
             DbErr::UnknownTransactionType => write!(f, "unknown transaction type"),
             DbErr::BufferNotEnough(buffer_size) => write!(f, "buffer not enough, {} needed", buffer_size),
+            DbErr::UnknownUpdateOperation(op) => write!(f, "unknown update operation: '{}'", op),
+            DbErr::IncrementNullField => write!(f, "can not increment a field which is null"),
             DbErr::VmIsHalt => write!(f, "Vm can not execute because it's halt"),
             DbErr::Busy => write!(f, "database busy"),
         }

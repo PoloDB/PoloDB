@@ -749,7 +749,7 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::ValidationError(_) => 3,
         DbErr::InvalidOrderOfIndex(_) => 4,
         DbErr::IndexAlreadyExists(_) => 5,
-        DbErr::IndexOptionsTypeUnexpected(_) => 6,
+        DbErr::FieldTypeUnexpected(_) => 6,
         DbErr::ParseError(_) => 7,
         DbErr::IOErr(_) => 9,
         DbErr::UTF8Err(_) => 10,
@@ -777,8 +777,10 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::UnexpectedPageType => 33,
         DbErr::UnknownTransactionType => 34,
         DbErr::BufferNotEnough(_) => 35,
-        DbErr::VmIsHalt => 36,
-        DbErr::Busy => 37,
+        DbErr::UnknownUpdateOperation(_) => 36,
+        DbErr::IncrementNullField => 37,
+        DbErr::VmIsHalt => 38,
+        DbErr::Busy => 39,
 
     }
 }

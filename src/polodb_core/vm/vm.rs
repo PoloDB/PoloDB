@@ -13,6 +13,7 @@
  * You should have received a copy of the GNU Lesser General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+use std::rc::Rc;
 use std::vec::Vec;
 use std::cmp::Ordering;
 use polodb_bson::Value;
@@ -23,6 +24,7 @@ use crate::cursor::Cursor;
 use crate::page::PageHandler;
 use crate::btree::{HEADER_SIZE, ITEM_SIZE};
 use crate::{TransactionType, DbResult, DbErr};
+use crate::error::mk_index_options_type_unexpected;
 
 const STACK_SIZE: usize = 256;
 
@@ -137,6 +139,73 @@ impl<'a> VM<'a> {
         }
     }
 
+    fn inc_field(&mut self, field_id: usize) -> DbResult<()> {
+        let key = self.program.static_values[field_id].unwrap_string();
+
+        let value_index = self.stack.len() - 1;
+        let doc_index = self.stack.len() - 2;
+
+        let value = self.stack[value_index].clone();
+
+        let doc = self.stack[doc_index].unwrap_document_mut();
+        let mut_doc = Rc::get_mut(doc).unwrap();
+
+        match mut_doc.get(key) {
+            Some(Value::Null) => {
+                return Err(DbErr::IncrementNullField);
+            }
+
+            Some(Value::Int(original_int_value)) => {
+                let new_value = match value {
+                    Value::Int(inc_int_value) => {
+                        let new_value = *original_int_value + inc_int_value;
+                        Value::Int(new_value)
+                    }
+
+                    Value::Double(inc_double_value) => {
+                        let new_value = *original_int_value as f64 + inc_double_value;
+                        Value::Double(new_value)
+                    }
+
+                    _ => {
+                        return Err(mk_index_options_type_unexpected(key, "number", value.ty_name()));
+                    }
+                };
+                mut_doc.insert(key.into(), new_value);
+            }
+
+            Some(Value::Double(original_float_value)) => {
+                let new_value = match value {
+                    Value::Int(inc_int_value) => {
+                        let new_value = *original_float_value + inc_int_value as f64;
+                        Value::Double(new_value)
+                    }
+
+                    Value::Double(inc_float_value) => {
+                        let new_value = *original_float_value + inc_float_value;
+                        Value::Double(new_value)
+                    }
+
+                    _ => {
+                        return Err(mk_index_options_type_unexpected(key, "number", value.ty_name()));
+                    }
+
+                };
+                mut_doc.insert(key.into(), new_value);
+            }
+
+            Some(ty) => {
+                return Err(mk_index_options_type_unexpected(key, "number", ty.ty_name()));
+            }
+
+            None => {
+                mut_doc.insert(key.into(), value.clone());
+            }
+
+        }
+        Ok(())
+    }
+
     pub(crate) fn execute(&mut self) -> DbResult<()> {
         if self.state == VmState::Halt {
             return Err(DbErr::VmIsHalt);
@@ -210,6 +279,32 @@ impl<'a> VM<'a> {
 
                         }
 
+                    }
+
+                    DbOp::IncField => {
+                        let filed_id = self.pc.add(1).cast::<u32>().read();
+
+                        try_vm!(self, self.inc_field(filed_id as usize));
+
+                        self.pc = self.pc.add(5);
+                    }
+
+                    DbOp::SetField => {
+                        let filed_id = self.pc.add(1).cast::<u32>().read();
+
+                        let key = self.program.static_values[filed_id as usize].unwrap_string();
+
+                        let value_index = self.stack.len() - 1;
+                        let doc_index = self.stack.len() - 2;
+
+                        let value = self.stack[value_index].clone();
+
+                        let doc_ref = self.stack[doc_index].unwrap_document_mut();
+                        let mut_doc = Rc::get_mut(doc_ref).unwrap();
+
+                        mut_doc.insert(key.into(), value);
+
+                        self.pc = self.pc.add(5);
                     }
 
                     DbOp::Pop => {

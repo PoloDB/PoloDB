@@ -15,6 +15,7 @@
  */
 
 #[repr(u8)]
+#[derive(Copy, Clone)]
 #[allow(dead_code)]
 pub enum DbOp {
     _EOF = 0,
@@ -65,6 +66,27 @@ pub enum DbOp {
     // op1. value_index: 4bytes
     // op2. location: 4bytes
     GetField,
+
+    // increment the field
+    // if not exists, set the value
+    //
+    // throw error if field is null
+    //
+    // top-1 is the value to push
+    // top-2 is the doc to change
+    //
+    // 5 bytes
+    // op1. field_name_index: 4bytes
+    IncField,
+
+    // set the value of the field
+    //
+    // top-1 is the value to push
+    // top-2 is the doc to change
+    //
+    // 5 bytes
+    // op1. field_name_index: 4bytes
+    SetField,
 
     Pop,
 
