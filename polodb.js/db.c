@@ -1166,7 +1166,7 @@ static napi_value js_delete(napi_env env, napi_callback_info info) {
   STD_CALL(PLDB_delete(db, name_buffer, query_doc));
 
   napi_value result;
-  status = napi_create_bigint_int64(env, ec, &result);
+  status = napi_create_int64(env, ec, &result);
   assert(status == napi_ok);
 
   return result;
@@ -1205,7 +1205,7 @@ static napi_value js_delete_all(napi_env env, napi_callback_info info) {
   STD_CALL(PLDB_delete_all(db, name_buffer));
 
   napi_value result;
-  status = napi_create_bigint_int64(env, ec, &result);
+  status = napi_create_int64(env, ec, &result);
   assert(status == napi_ok);
 
   return result;
