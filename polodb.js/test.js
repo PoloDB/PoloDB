@@ -15,17 +15,25 @@ console.log(oid.hex());
 
 try {
   const collection = db.collection("test_col");
-  collection.insert({
-    hello: -1,
+
+  // for (let i = 0; i < 100; i++) {
+  //   collection.insert({
+  //     hello: i,
+  //   });
+  // }
+
+  const count = collection.update({
+    hello: 600, 
+  }, {
+    $min: {
+      hello: 400,
+    }
   });
+
+  console.log('count:', count);
+
   const allData = collection.findAll();
   console.log(allData);
-
-  const age = collection.find({
-    hello: 3,
-  });
-  console.log('age');
-  console.log(age);
 } catch(e) {
   console.error(e);
 } finally {

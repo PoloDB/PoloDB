@@ -34,7 +34,6 @@ impl SubProgram {
         let mut codegen = Codegen::new();
 
         codegen.add_open_read(entry.root_pid);
-        codegen.add(DbOp::Rewind);
 
         codegen.add_query_layout(query, |codegen| -> DbResult<()> {
             codegen.add(DbOp::ResultRow);
@@ -49,7 +48,6 @@ impl SubProgram {
         let mut codegen = Codegen::new();
 
         codegen.add_open_write(entry.root_pid);
-        codegen.add(DbOp::Rewind);
 
         codegen.add_query_layout(query.unwrap(), |codegen| -> DbResult<()> {
             codegen.add_update_operation(update)?;
@@ -64,21 +62,32 @@ impl SubProgram {
         let mut codegen = Codegen::new();
 
         codegen.add_open_read(entry.root_pid);
-        codegen.add(DbOp::Rewind);
+
+        let rewind_loc = codegen.current_location();
+        codegen.add_5bytes(DbOp::Rewind, 0);
+
+        let goto_loc = codegen.current_location();
+        codegen.add_goto(0);
 
         let location = codegen.current_location();
         codegen.add_next(0);
 
+        let close_loc = codegen.current_location();
         codegen.add(DbOp::Close);
         codegen.add(DbOp::Halt);
 
         let result_location = codegen.current_location();
         codegen.update_next_location(location as usize, result_location);
 
+        let result_loc = codegen.current_location();
         codegen.add(DbOp::ResultRow);
         codegen.add(DbOp::Pop);
 
+        codegen.update_next_location(goto_loc as usize, result_loc);
+
         codegen.add_goto(location);
+
+        codegen.update_next_location(rewind_loc as usize, close_loc);
 
         Ok(codegen.take())
     }
@@ -125,8 +134,9 @@ impl fmt::Display for SubProgram {
                     }
 
                     DbOp::Rewind => {
-                        write!(f, "{}: Rewind\n", pc)?;
-                        pc += 1;
+                        let location = begin.add(pc + 1).cast::<u32>().read();
+                        write!(f, "{}: Rewind({})\n", pc, location)?;
+                        pc += 5;
                     }
 
                     DbOp::Next => {

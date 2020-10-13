@@ -10,6 +10,7 @@ use crate::page::PageHandler;
 use crate::btree::{HEADER_SIZE, ITEM_SIZE};
 use crate::{TransactionType, DbResult, DbErr};
 use crate::error::mk_field_name_type_unexpected;
+use std::cell::Cell;
 
 const STACK_SIZE: usize = 256;
 
@@ -88,15 +89,27 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    fn reset_cursor(&mut self) -> DbResult<()> {
-        self.r1.as_mut().unwrap().reset(self.page_handler)
+    fn reset_cursor(&mut self, is_empty: &Cell<bool>) -> DbResult<()> {
+        let cursor = self.r1.as_mut().unwrap();
+        cursor.reset(self.page_handler)?;
+        if cursor.has_next() {
+            let item = cursor.peek().unwrap();
+            let doc = self.page_handler.get_doc_from_ticket(&item)?;
+            self.stack.push(Value::Document(doc));
+            is_empty.set(false);
+        } else {
+            is_empty.set(true);
+        }
+        Ok(())
     }
 
     fn next(&mut self) -> DbResult<()> {
-        let result = self.r1.as_mut().unwrap().next(self.page_handler)?;
-        match &result {
-            Some(doc) => {
-                self.stack.push(Value::Document(doc.clone()));
+        let cursor = self.r1.as_mut().unwrap();
+        let _ = cursor.next(self.page_handler)?;
+        match cursor.peek() {
+            Some(ticket) => {
+                let doc = self.page_handler.get_doc_from_ticket(&ticket)?;
+                self.stack.push(Value::Document(doc));
 
                 #[cfg(debug_assertions)]
                 if self.stack.len() > 64 {
@@ -322,8 +335,16 @@ impl<'a> VM<'a> {
                     }
 
                     DbOp::Rewind => {
-                        try_vm!(self, self.reset_cursor());
-                        self.pc = self.pc.add(1);
+                        let location = self.pc.add(1).cast::<u32>().read();
+
+                        let is_empty = Cell::new(false);
+                        try_vm!(self, self.reset_cursor(&is_empty));
+
+                        if is_empty.get() {
+                            self.reset_location(location);
+                        } else {
+                            self.pc = self.pc.add(5);
+                        }
                     }
 
                     DbOp::Next => {

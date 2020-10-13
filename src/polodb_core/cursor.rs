@@ -45,7 +45,13 @@ impl Cursor {
     pub fn reset(&mut self, page_handler: &mut PageHandler) -> DbResult<()> {
         self.mk_initial_btree(page_handler, self.root_pid, self.item_size)?;
 
-        self.push_all_left_nodes(page_handler)
+        if self.btree_stack.is_empty() {
+            return Ok(());
+        }
+
+        self.push_all_left_nodes(page_handler)?;
+
+        Ok(())
     }
 
     fn mk_initial_btree(&mut self, page_handler: &mut PageHandler, root_page_id: u32, item_size: u32) -> DbResult<()> {

@@ -36,6 +36,10 @@ pub enum DbOp {
     IfLess,
 
     // reset the cursor to the first element
+    // if empty, jump to location
+    //
+    // 5bytes
+    // op1. location: 4 bytes
     Rewind,
 
     // next element of the cursor

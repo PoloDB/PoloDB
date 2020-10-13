@@ -61,9 +61,9 @@ fn update_op_min_max(codegen: &mut Codegen, doc: &Value, min: bool) -> DbResult<
         let value_id = codegen.push_static(value.clone());
 
         let begin_loc = codegen.current_location();
-        codegen.add_get_field(key_id_1, 0);
+        codegen.add_get_field(key_id_1, 0);  // stack +1
 
-        codegen.add_push_value(value_id);
+        codegen.add_push_value(value_id);  // stack +2
 
         codegen.add(DbOp::Cmp);
 
@@ -80,14 +80,26 @@ fn update_op_min_max(codegen: &mut Codegen, doc: &Value, min: bool) -> DbResult<
         let loc = codegen.current_location();
         codegen.update_next_location(jmp_loc as usize, loc);
 
+        codegen.add(DbOp::Pop);
+        codegen.add(DbOp::Pop);  // stack
+
+        codegen.add_push_value(value_id);
+
         codegen.add_5bytes(DbOp::SetField, key_id_2);
+
+        codegen.add(DbOp::Pop);
+
+        let goto_next_loc = codegen.current_location();
+        codegen.add_goto(0);
 
         let loc = codegen.current_location();
         codegen.update_next_location(goto_loc as usize, loc);
 
         codegen.add(DbOp::Pop);
+        codegen.add(DbOp::Pop);
 
         let loc = codegen.current_location();
+        codegen.update_next_location(goto_next_loc as usize, loc);
         codegen.update_failed_location(begin_loc as usize, loc);
     }
 
@@ -148,8 +160,18 @@ impl Codegen {
 
     pub(super) fn add_query_layout<F>(&mut self, query: &Document, result_callback: F) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
+
+        let rewind_location = self.current_location();
+        self.add_5bytes(DbOp::Rewind, 0);
+
+        let goto_compare_loc = self.current_location();
+        self.add_goto(0);
+
         let next_preserve_location = self.current_location();
         self.add_next(0);
+
+        let close_location = self.current_location();
+        self.update_next_location(rewind_location as usize, close_location);
 
         self.add(DbOp::Close);
         self.add(DbOp::Halt);
@@ -182,6 +204,7 @@ impl Codegen {
         }
 
         self.update_next_location(next_preserve_location as usize, compare_location);
+        self.update_next_location(goto_compare_loc as usize, compare_location);
 
         result_callback(self)?;
 
@@ -221,7 +244,7 @@ impl Codegen {
         }
     }
 
-    fn add_5bytes(&mut self, op: DbOp, op1: u32) {
+    pub(super) fn add_5bytes(&mut self, op: DbOp, op1: u32) {
         self.add(op);
         let bytes = op1.to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);

@@ -34,6 +34,11 @@ impl BTreeNode {
         self.indexes[0] == 0
     }
 
+    #[inline]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.content.is_empty()
+    }
+
     // binary search the content
     // find the content or index
     pub(crate) fn search(&self, key: &Value) -> DbResult<SearchKeyResult> {

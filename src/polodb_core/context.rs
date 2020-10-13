@@ -135,6 +135,9 @@ impl DbContext {
         let item_size = self.item_size();
         let btree_node = BTreeNode::from_raw(&raw_page, parent_pid, item_size, &mut self.page_handler)?;
         let key = Value::String(Rc::new(col_name.to_string()));
+        if btree_node.is_empty() {
+            return Err(DbErr::CollectionNotFound(col_name.into()));
+        }
         let result = btree_node.search(&key)?;
         match result {
             SearchKeyResult::Node(node_index) => {
