@@ -36,6 +36,11 @@ impl Document {
     }
 
     #[inline]
+    pub fn remove(&mut self, key: &str) -> Option<Value> {
+        self.map.remove(key)
+    }
+
+    #[inline]
     pub fn get(&self, key: &str) -> Option<&Value> {
         self.map.get(key)
     }

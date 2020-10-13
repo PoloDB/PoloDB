@@ -3,15 +3,6 @@ use std::fmt;
 use polodb_bson::{Value, ty_int};
 use polodb_bson::error::BsonErr;
 
-pub mod validation_error_reason {
-
-    pub static ILLEGAL_INDEX_OPTIONS_KEY: &str = "illegal key for index options";
-    pub static TYPE_OF_INDEX_NAME_SHOULD_BE_STRING: &str = "type of index name should be string";
-    pub static ORDER_OF_INDEX_CAN_ONLY_BE_ONE: &str = "order of index can only be one";
-    pub static UNIQUE_PROP_SHOULD_BE_BOOLEAN: &str = "unique prop should be boolean";
-
-}
-
 #[derive(Debug)]
 pub struct FieldTypeUnexpectedStruct {
     pub field_name: String,

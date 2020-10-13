@@ -714,7 +714,35 @@ static napi_value js_oid2value(napi_env env, napi_callback_info info) {
   assert(status == napi_ok);
 
   DbObjectId* oid = (DbObjectId*)oid_raw;
-  DbValue* val = PLDB_object_id_into_value(oid);
+  DbValue* val = PLDB_object_id_to_value(oid);
+
+  napi_value result = NULL;
+
+  status = napi_create_external(env, (void*)val, &DbValue_finalize, NULL, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
+static napi_value js_doc2value(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "the first argument should be an external object");
+    return NULL;
+  }
+
+  void* oid_raw = NULL;
+  status = napi_get_value_external(env, args[0], &oid_raw);
+  assert(status == napi_ok);
+
+  DbDocument* oid = (DbDocument*)oid_raw;
+  DbValue* val = PLDB_doc_to_value(oid);
 
   napi_value result = NULL;
 
@@ -1109,6 +1137,65 @@ static napi_value js_find(napi_env env, napi_callback_info info) {
   return result;
 }
 
+static napi_value js_update(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 4;
+  napi_value args[4];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 0");
+    return NULL;
+  }
+
+  Database* db = NULL;
+  status = napi_get_value_external(env, args[0], (void**)&db);
+  assert(status == napi_ok);
+
+  static char name_buffer[BUFFER_SIZE];
+  memset(name_buffer, 0, BUFFER_SIZE);
+
+  size_t written_count = 0;
+  status = napi_get_value_string_utf8(env, args[1], name_buffer, BUFFER_SIZE, &written_count);
+  assert(status == napi_ok);
+
+  napi_valuetype second_arg_ty;
+
+  status = napi_typeof(env, args[2], &second_arg_ty);
+  assert(status == napi_ok);
+  
+  DbDocument* query;
+  if (second_arg_ty == napi_undefined) {
+    query = NULL;
+  } else if (second_arg_ty == napi_external) {
+    status = napi_get_value_external(env, args[2], (void**)&query);
+    assert(status == napi_ok);
+  } else {
+    napi_throw_type_error(env, NULL, "Wrong arguments 2");
+    return NULL;
+  }
+
+  if (!check_type(env, args[3], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 3");
+    return NULL;
+  }
+
+  DbDocument* update;
+  status = napi_get_value_external(env, args[3], (void**)&update);
+  assert(status == napi_ok);
+
+  long long ec = 0;
+  STD_CALL(PLDB_update(db, name_buffer, query, update));
+
+  napi_value result;
+  status = napi_create_int64(env, ec, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
 static napi_value js_delete(napi_env env, napi_callback_info info) {
   napi_status status;
 
@@ -1365,6 +1452,7 @@ static napi_value Init(napi_env env, napi_value exports) {
   REGISTER_CALLBACK("mkArray", js_mk_array);
   REGISTER_CALLBACK("mkDocIter", js_mk_doc_iter);
   REGISTER_CALLBACK("docIterNext", js_doc_iter_next);
+  REGISTER_CALLBACK("docToValue", js_doc2value);
   REGISTER_CALLBACK("objectIdToValue", js_oid2value);
   REGISTER_CALLBACK("objectIdToHex", js_oid2hex);
   REGISTER_CALLBACK("valueType", js_value_type);
@@ -1381,6 +1469,7 @@ static napi_value Init(napi_env env, napi_value exports) {
   REGISTER_CALLBACK("rollback", js_rollback);
   REGISTER_CALLBACK("dbInsert", js_insert);
   REGISTER_CALLBACK("dbFind", js_find);
+  REGISTER_CALLBACK("dbUpdate", js_update);
   REGISTER_CALLBACK("dbDelete", js_delete);
   REGISTER_CALLBACK("dbDeleteAll", js_delete_all);
   REGISTER_CALLBACK("dbHandleStep", js_handle_step);

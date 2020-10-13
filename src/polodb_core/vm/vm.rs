@@ -124,6 +124,10 @@ impl<'a> VM<'a> {
         }
     }
 
+    fn borrow_static(&self, index: usize) -> &Value {
+        &self.program.static_values[index]
+    }
+
     fn inc_field(&mut self, field_id: usize) -> DbResult<()> {
         let key = self.program.static_values[field_id].unwrap_string();
 
@@ -133,7 +137,8 @@ impl<'a> VM<'a> {
         let value = self.stack[value_index].clone();
 
         let doc = self.stack[doc_index].unwrap_document_mut();
-        let mut_doc = Rc::get_mut(doc).unwrap();
+        let mut_doc = Rc::make_mut(doc);
+
 
         match mut_doc.get(key) {
             Some(Value::Null) => {
@@ -191,6 +196,81 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+    fn mul_field(&mut self, field_id: usize) -> DbResult<()> {
+        let key = self.program.static_values[field_id].unwrap_string();
+
+        let value_index = self.stack.len() - 1;
+        let doc_index = self.stack.len() - 2;
+
+        let value = self.stack[value_index].clone();
+
+        let doc = self.stack[doc_index].unwrap_document_mut();
+        let mut_doc = Rc::make_mut(doc);
+
+        match mut_doc.get(key) {
+            Some(Value::Int(original_int_value)) => {
+                let new_value = match value {
+                    Value::Int(inc_int_value) => {
+                        let new_value = *original_int_value * inc_int_value;
+                        Value::Int(new_value)
+                    }
+
+                    Value::Double(inc_double_value) => {
+                        let new_value = *original_int_value as f64 * inc_double_value;
+                        Value::Double(new_value)
+                    }
+
+                    _ => {
+                        return Err(mk_field_name_type_unexpected(key, "number", value.ty_name()));
+                    }
+                };
+                mut_doc.insert(key.into(), new_value);
+            }
+
+            Some(Value::Double(original_float_value)) => {
+                let new_value = match value {
+                    Value::Int(inc_int_value) => {
+                        let new_value = *original_float_value * inc_int_value as f64;
+                        Value::Double(new_value)
+                    }
+
+                    Value::Double(inc_float_value) => {
+                        let new_value = *original_float_value * inc_float_value;
+                        Value::Double(new_value)
+                    }
+
+                    _ => {
+                        return Err(mk_field_name_type_unexpected(key, "number", value.ty_name()));
+                    }
+
+                };
+                mut_doc.insert(key.into(), new_value);
+            }
+
+            Some(ty) => {
+                return Err(mk_field_name_type_unexpected(key, "number", ty.ty_name()));
+            }
+
+            None => {
+                mut_doc.insert(key.into(), value.clone());
+            }
+
+        }
+        Ok(())
+    }
+
+    fn unset_field(&mut self, field_id: u32) -> DbResult<()> {
+        let key = self.program.static_values[field_id as usize].unwrap_string();
+
+        let doc_index = self.stack.len() - 1;
+        let doc = self.stack[doc_index].unwrap_document_mut();
+        let mut_doc = Rc::make_mut(doc);
+
+        let _ = mut_doc.remove(key);
+
+        Ok(())
+    }
+
     pub(crate) fn execute(&mut self) -> DbResult<()> {
         if self.state == VmState::Halt {
             return Err(DbErr::VmIsHalt);
@@ -205,7 +285,7 @@ impl<'a> VM<'a> {
                         self.reset_location(location);
                     }
 
-                    DbOp::TrueJump => {
+                    DbOp::IfTrue => {
                         let location = self.pc.add(1).cast::<u32>().read();
                         if self.r0 != 0 {  // true
                             self.reset_location(location);
@@ -214,9 +294,27 @@ impl<'a> VM<'a> {
                         }
                     }
 
-                    DbOp::FalseJump => {
+                    DbOp::IfFalse => {
                         let location = self.pc.add(1).cast::<u32>().read();
                         if self.r0 == 0 {  // false
+                            self.reset_location(location);
+                        } else {
+                            self.pc = self.pc.add(5);
+                        }
+                    }
+
+                    DbOp::IfGreater => {
+                        let location = self.pc.add(1).cast::<u32>().read();
+                        if self.r0 > 0 {  // greater
+                            self.reset_location(location);
+                        } else {
+                            self.pc = self.pc.add(5);
+                        }
+                    }
+
+                    DbOp::IfLess => {
+                        let location = self.pc.add(1).cast::<u32>().read();
+                        if self.r0 < 0 {  // greater
                             self.reset_location(location);
                         } else {
                             self.pc = self.pc.add(5);
@@ -239,8 +337,9 @@ impl<'a> VM<'a> {
                     }
 
                     DbOp::PushValue => {
-                        let location = self.pc.add(1).cast::<u32>().read();
-                        self.stack.push(self.program.static_values[location as usize].clone());
+                        let id = self.pc.add(1).cast::<u32>().read();
+                        let value = self.borrow_static(id as usize).clone();
+                        self.stack.push(value);
                         self.pc = self.pc.add(5);
                     }
 
@@ -248,11 +347,11 @@ impl<'a> VM<'a> {
                         let key_stat_id = self.pc.add(1).cast::<u32>().read();
                         let location = self.pc.add(5).cast::<u32>().read();
 
-                        let key = self.program.static_values[key_stat_id as usize].unwrap_string();
+                        let key = self.borrow_static(key_stat_id as usize);
                         let top = self.stack[self.stack.len() - 1].clone();
                         let doc = top.unwrap_document();
 
-                        match doc.get(key) {
+                        match doc.get(key.unwrap_string()) {
                             Some(val) => {
                                 self.stack.push(val.clone());
                                 self.pc = self.pc.add(9);
@@ -266,10 +365,26 @@ impl<'a> VM<'a> {
 
                     }
 
+                    DbOp::UnsetField => {
+                        let field_id = self.pc.add(1).cast::<u32>().read();
+
+                        try_vm!(self, self.unset_field(field_id));
+
+                        self.pc = self.pc.add(5);
+                    }
+
                     DbOp::IncField => {
                         let filed_id = self.pc.add(1).cast::<u32>().read();
 
                         try_vm!(self, self.inc_field(filed_id as usize));
+
+                        self.pc = self.pc.add(5);
+                    }
+
+                    DbOp::MulField => {
+                        let filed_id = self.pc.add(1).cast::<u32>().read();
+
+                        try_vm!(self, self.mul_field(filed_id as usize));
 
                         self.pc = self.pc.add(5);
                     }
@@ -285,11 +400,22 @@ impl<'a> VM<'a> {
                         let value = self.stack[value_index].clone();
 
                         let doc_ref = self.stack[doc_index].unwrap_document_mut();
-                        let mut_doc = Rc::get_mut(doc_ref).unwrap();
+                        let mut_doc = Rc::make_mut(doc_ref);
 
                         mut_doc.insert(key.into(), value);
 
                         self.pc = self.pc.add(5);
+                    }
+
+                    DbOp::UpdateCurrent => {
+                        let top_index = self.stack.len() - 1;
+                        let top_value = &self.stack[top_index];
+
+                        let doc = top_value.unwrap_document();
+
+                        self.r1.as_mut().unwrap().update_current(self.page_handler, doc.as_ref())?;
+
+                        self.pc = self.pc.add(1);
                     }
 
                     DbOp::Pop => {

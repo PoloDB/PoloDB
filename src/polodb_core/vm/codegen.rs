@@ -14,22 +14,29 @@ lazy_static! {
         let mut m: HashMap<&'static str, Callback> = HashMap::new();
         m.insert("$inc", update_op_inc);
         m.insert("$set", update_op_set);
-        m.insert("$max", update_op_max);
-        m.insert("$min", update_op_min);
+        m.insert("$max", |codegen, doc| { update_op_min_max(codegen, doc, false) });
+        m.insert("$min", |codegen, doc| { update_op_min_max(codegen, doc, true) });
         m.insert("$mul", update_op_mul);
         m.insert("$rename", update_op_rename);
+        m.insert("$unset", update_op_unset);
         m
     };
 }
 
-fn update_op_inc(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
-    let doc = match doc {
-        Value::Document(doc) => doc,
-        t => {
-            let err = mk_field_name_type_unexpected("$inc", "Document".into(), t.ty_name());
-            return Err(err);
-        },
+macro_rules! try_unwrap_document {
+    ($op_name:tt, $doc:expr) => {
+        match $doc {
+            Value::Document(doc) => doc,
+            t => {
+                let err = mk_field_name_type_unexpected($op_name, "Document".into(), t.ty_name());
+                return Err(err);
+            },
+        }
     };
+}
+
+fn update_op_inc(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
+    let doc = try_unwrap_document!("$inc", doc);
 
     codegen.iterate_add_op(DbOp::IncField, doc.as_ref());
 
@@ -37,33 +44,90 @@ fn update_op_inc(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
 }
 
 fn update_op_set(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
-    let doc = match doc {
-        Value::Document(doc) => doc,
-        t => {
-            let err = mk_field_name_type_unexpected("$set", "Document".into(), t.ty_name());
-            return Err(err);
-        },
-    };
+    let doc = try_unwrap_document!("$set", doc);
 
     codegen.iterate_add_op(DbOp::SetField, doc.as_ref());
 
     Ok(())
 }
 
-fn update_op_max(_codegen: &mut Codegen, _doc: &Value) -> DbResult<()> {
-    unimplemented!()
+fn update_op_min_max(codegen: &mut Codegen, doc: &Value, min: bool) -> DbResult<()> {
+    let doc = try_unwrap_document!("$min", doc);
+
+    for (key, value) in doc.iter() {
+        let rc_str: Rc<String> = Rc::new(key.into());
+        let key_id_1 = codegen.push_static(Value::String(rc_str.clone()));
+        let key_id_2 = codegen.push_static(Value::String(rc_str));
+        let value_id = codegen.push_static(value.clone());
+
+        let begin_loc = codegen.current_location();
+        codegen.add_get_field(key_id_1, 0);
+
+        codegen.add_push_value(value_id);
+
+        codegen.add(DbOp::Cmp);
+
+        let jmp_loc = codegen.current_location();
+        if min {
+            codegen.add_5bytes(DbOp::IfLess, 0);
+        } else {
+            codegen.add_5bytes(DbOp::IfGreater, 0);
+        }
+
+        let goto_loc = codegen.current_location();
+        codegen.add_goto(0);
+
+        let loc = codegen.current_location();
+        codegen.update_next_location(jmp_loc as usize, loc);
+
+        codegen.add_5bytes(DbOp::SetField, key_id_2);
+
+        let loc = codegen.current_location();
+        codegen.update_next_location(goto_loc as usize, loc);
+
+        codegen.add(DbOp::Pop);
+
+        let loc = codegen.current_location();
+        codegen.update_failed_location(begin_loc as usize, loc);
+    }
+
+    Ok(())
 }
 
-fn update_op_min(_codegen: &mut Codegen, _doc: &Value) -> DbResult<()> {
-    unimplemented!()
+fn update_op_mul(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
+    let doc = try_unwrap_document!("$mul", doc);
+
+    codegen.iterate_add_op(DbOp::MulField, doc.as_ref());
+
+    Ok(())
 }
 
-fn update_op_mul(_codegen: &mut Codegen, _doc: &Value) -> DbResult<()> {
-    unimplemented!()
+fn update_op_unset(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
+    let doc = try_unwrap_document!("$unset", doc);
+
+    for (key, _) in doc.iter() {
+        codegen.add_unset_field(key.as_str());
+    }
+
+    Ok(())
 }
 
-fn update_op_rename(codegen: &mut Codegen, _doc: &Value) -> DbResult<()> {
-    unimplemented!()
+fn update_op_rename(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
+    let doc = try_unwrap_document!("$set", doc);
+
+    for (key, value) in doc.iter() {
+        let new_name = match value {
+            Value::String(new_name) => new_name.as_str(),
+            t => {
+                let err = mk_field_name_type_unexpected(key, "String".into(), t.ty_name());
+                return Err(err);
+            }
+        };
+
+        codegen.add_rename_field(key.as_str(), new_name);
+    }
+
+    Ok(())
 }
 
 pub(super) struct Codegen {
@@ -139,6 +203,9 @@ impl Codegen {
                 }
             }
         }
+
+        self.add(DbOp::UpdateCurrent);
+
         Ok(())
     }
 
@@ -203,15 +270,39 @@ impl Codegen {
     }
 
     pub(super) fn add_false_jump(&mut self, location: u32) {
-        self.add(DbOp::FalseJump);
+        self.add(DbOp::IfFalse);
         let bytes = location.to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);
+    }
+
+    pub(super) fn add_rename_field(&mut self, old_name: &str, new_name: &str) {
+        let old_name_id = self.push_static(Value::String(Rc::new(old_name.into())));
+        let new_name_id = self.push_static(Value::String(Rc::new(new_name.into())));
+        let field_location = self.current_location();
+        self.add_get_field(old_name_id, 0);
+        self.add_5bytes(DbOp::SetField, new_name_id);
+        self.add(DbOp::Pop);
+        self.add_5bytes(DbOp::UnsetField, old_name_id);
+        let current_loc = self.current_location();
+        self.update_failed_location(field_location as usize, current_loc);
+    }
+
+    #[inline]
+    pub(super) fn add_unset_field(&mut self, name: &str) {
+        let value_id = self.push_static(Value::String(Rc::new(name.into())));
+        self.add_5bytes(DbOp::UnsetField, value_id);
     }
 
     #[inline]
     pub(super) fn update_next_location(&mut self, pos: usize, location: u32) {
         let loc_be = location.to_le_bytes();
         self.program.instructions[pos + 1..pos + 5].copy_from_slice(&loc_be);
+    }
+
+    #[inline]
+    pub(super) fn update_failed_location(&mut self, pos: usize, location: u32) {
+        let loc_be = location.to_le_bytes();
+        self.program.instructions[pos + 5..pos + 9].copy_from_slice(&loc_be);
     }
 
     pub(super) fn add_goto(&mut self, location: u32) {

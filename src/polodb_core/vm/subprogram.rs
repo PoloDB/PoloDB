@@ -10,13 +10,13 @@ pub(crate) struct SubProgram {
     pub(super) instructions:     Vec<u8>,
 }
 
-fn doc_to_tuples(doc: &Document) -> Vec<(String, Value)> {
-    let mut result = Vec::with_capacity(doc.len());
-    for (key, value) in doc.iter() {
-        result.push((key.clone(), value.clone()))
-    }
-    result
-}
+// fn doc_to_tuples(doc: &Document) -> Vec<(String, Value)> {
+//     let mut result = Vec::with_capacity(doc.len());
+//     for (key, value) in doc.iter() {
+//         result.push((key.clone(), value.clone()))
+//     }
+//     result
+// }
 
 impl SubProgram {
 
@@ -100,15 +100,27 @@ impl fmt::Display for SubProgram {
                         pc += 5;
                     }
 
-                    DbOp::TrueJump => {
+                    DbOp::IfTrue => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
                         write!(f, "{}: TrueJump({})\n", pc, location)?;
                         pc += 5;
                     }
 
-                    DbOp::FalseJump => {
+                    DbOp::IfFalse => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
                         write!(f, "{}: FalseJump({})\n", pc, location)?;
+                        pc += 5;
+                    }
+
+                    DbOp::IfGreater => {
+                        let location = begin.add(pc + 1).cast::<u32>().read();
+                        write!(f, "{}: IfGreater({})\n", pc, location)?;
+                        pc += 5;
+                    }
+
+                    DbOp::IfLess => {
+                        let location = begin.add(pc + 1).cast::<u32>().read();
+                        write!(f, "{}: IfLess({})\n", pc, location)?;
                         pc += 5;
                     }
 
@@ -128,6 +140,11 @@ impl fmt::Display for SubProgram {
                         let val = &self.static_values[index as usize];
                         write!(f, "{}: PushValue({})\n", pc, val)?;
                         pc += 5;
+                    }
+
+                    DbOp::UpdateCurrent => {
+                        write!(f, "{}: UpdateCurrent\n", pc)?;
+                        pc += 1;
                     }
 
                     DbOp::Pop => {
@@ -187,10 +204,24 @@ impl fmt::Display for SubProgram {
                         pc += 5;
                     }
 
+                    DbOp::MulField => {
+                        let static_id = begin.add(pc + 1).cast::<u32>().read();
+                        let val = &self.static_values[static_id as usize];
+                        write!(f, "{}: MulField({})\n", pc, val)?;
+                        pc += 5;
+                    }
+
                     DbOp::SetField => {
                         let static_id = begin.add(pc + 1).cast::<u32>().read();
                         let val = &self.static_values[static_id as usize];
                         write!(f, "{}: SetField({})\n", pc, val)?;
+                        pc += 5;
+                    }
+
+                    DbOp::UnsetField => {
+                        let static_id = begin.add(pc + 1).cast::<u32>().read();
+                        let val = &self.static_values[static_id as usize];
+                        write!(f, "{}: UnsetField({})\n", pc, val)?;
                         pc += 5;
                     }
 
@@ -240,10 +271,22 @@ mod tests {
         };
         let update_doc = mk_document! {
             "$set": mk_document! {
-                "name": "Alan chan",
+                "name": "Alan Chan",
             },
             "$inc": mk_document! {
                 "age": 1,
+            },
+            "$mul": mk_document! {
+                "age": 3,
+            },
+            "$min": mk_document! {
+                "age": 100,
+            },
+            "$unset": mk_document! {
+                "age": "",
+            },
+            "$rename": mk_document! {
+                "hello1": "hello2",
             },
         };
         let program = SubProgram::compile_update(&meta_entry, Some(&query_doc), &update_doc).unwrap();

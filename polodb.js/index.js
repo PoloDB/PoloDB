@@ -34,7 +34,7 @@ class Value {
         if (value instanceof ObjectId) {
           return value.toValue();
         }
-        return new Document.fromRaw(value);
+        return Document.fromRaw(value).toValue();
 
       default:
         throw new TypeError("uknown type: " + ty);
@@ -193,6 +193,10 @@ class Document {
     return result;
   }
 
+  toValue() {
+    return new Value(addon.docToValue(this[NativeExt]));
+  }
+
   get length() {
     const len = addon.documentLen(this[NativeExt]);
     return len;
@@ -301,7 +305,7 @@ class Collection {
     if (!(data instanceof Document)) {
       data = Document.fromRaw(data);
     }
-    addon.dbInsert(this.__db[NativeExt], this.__name, data[NativeExt]);
+    return addon.dbInsert(this.__db[NativeExt], this.__name, data[NativeExt]);
   }
 
   delete(query) {
@@ -310,11 +314,28 @@ class Collection {
     } else if (!(query instanceof Document)) {
       query = Document.fromRaw(query);
     }
-    addon.dbDelete(this.__db[NativeExt], this.__name, query[NativeExt]);
+    return addon.dbDelete(this.__db[NativeExt], this.__name, query[NativeExt]);
   }
 
   deleteAll() {
-    addon.dbDeleteAll(this.__db[NativeExt], this.__name);
+    return addon.dbDeleteAll(this.__db[NativeExt], this.__name);
+  }
+
+  update(query, update) {
+    if (typeof query !== 'undefined' && !(query instanceof Document)) {
+      query = Document.fromRaw(query);
+    }
+
+    if (!(update instanceof Document)) {
+      update = Document.fromRaw(update);
+    }
+
+    return addon.dbUpdate(
+      this.__db[NativeExt],
+      this.__name,
+      query[NativeExt],
+      update[NativeExt]
+    );
   }
 
   find(queryObj) {

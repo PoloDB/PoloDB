@@ -700,10 +700,20 @@ pub extern "C" fn PLDB_free_object_id(oid: *mut ObjectId) {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_object_id_into_value(oid: *const ObjectId) -> *mut Value {
+pub extern "C" fn PLDB_object_id_to_value(oid: *const ObjectId) -> *mut Value {
     unsafe {
         let rust_oid = oid.as_ref().unwrap();
         let value = Value::ObjectId(Rc::new(rust_oid.clone()));
+        let boxed_value = Box::new(value);
+        Box::into_raw(boxed_value)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_to_value(oid: *const Rc<Document>) -> *mut Value {
+    unsafe {
+        let rust_doc = oid.as_ref().unwrap();
+        let value = Value::Document(rust_doc.clone());
         let boxed_value = Box::new(value);
         Box::into_raw(boxed_value)
     }

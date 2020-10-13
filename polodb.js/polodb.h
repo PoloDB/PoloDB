@@ -99,6 +99,8 @@ int PLDB_doc_iter_next(DbDocumentIter* iter,
 
 void PLDB_free_doc_iter(DbDocumentIter* iter);
 
+DbValue* PLDB_doc_to_value(DbDocument* doc);
+
 // }
 
 // DbValue {
@@ -142,7 +144,7 @@ void PLDB_free_object_id(DbObjectId*);
 
 int PLDB_object_id_to_hex(const DbObjectId* oid, char* buffer, unsigned int size);
 
-DbValue* PLDB_object_id_into_value(const DbObjectId* oid);
+DbValue* PLDB_object_id_to_value(const DbObjectId* oid);
 // }
 
 #ifdef __cplusplus

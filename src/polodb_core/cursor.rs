@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::collections::LinkedList;
 use polodb_bson::Document;
-use crate::page::PageHandler;
+use crate::page::{PageHandler, RawPage};
 use crate::btree::*;
 use crate::DbResult;
 use crate::data_ticket::DataTicket;
@@ -12,17 +12,17 @@ struct CursorItem {
     index:        usize,  // pointer point to the current node
 }
 
-// impl CursorItem {
-//
-//     #[inline]
-//     fn clone_with_new_node(&self, new_node: Rc<BTreeNode>) -> CursorItem {
-//         CursorItem {
-//             node: new_node,
-//             index: self.index,
-//         }
-//     }
-//
-// }
+impl CursorItem {
+
+    #[inline]
+    fn clone_with_new_node(&self, new_node: Rc<BTreeNode>) -> CursorItem {
+        CursorItem {
+            node: new_node,
+            index: self.index,
+        }
+    }
+
+}
 
 pub(crate) struct Cursor {
     root_pid:           u32,
@@ -112,33 +112,33 @@ impl Cursor {
         Some(ticket)
     }
 
-    // pub fn update_current(&mut self, doc: &Document) -> DbResult<()> {
-    //     let top = self.btree_stack.pop_back().unwrap();
-    //
-    //     self.page_handler.free_data_ticket(&top.node.content[top.index].data_ticket)?;
-    //     let key = doc.pkey_id().unwrap();
-    //     let new_ticket = self.page_handler.store_doc(doc)?;
-    //     let new_btree_node: BTreeNode = top.node.clone_with_content(
-    //         top.index,
-    //         BTreeNodeDataItem {
-    //             key,
-    //             data_ticket: new_ticket,
-    //         });
-    //
-    //     self.btree_stack.push_back(
-    //         top.clone_with_new_node(Rc::new(new_btree_node)));
-    //
-    //     self.sync_top_btree_node()
-    // }
-    //
-    // fn sync_top_btree_node(&mut self) -> DbResult<()> {
-    //     let top = self.btree_stack.back().unwrap();
-    //
-    //     let mut page = RawPage::new(top.node.pid, self.page_handler.page_size);
-    //     top.node.to_raw(&mut page)?;
-    //
-    //     self.page_handler.pipeline_write_page(&page)
-    // }
+    pub fn update_current(&mut self, page_handler: &mut PageHandler, doc: &Document) -> DbResult<()> {
+        let top = self.btree_stack.pop_back().unwrap();
+
+        page_handler.free_data_ticket(&top.node.content[top.index].data_ticket)?;
+        let key = doc.pkey_id().unwrap();
+        let new_ticket = page_handler.store_doc(doc)?;
+        let new_btree_node: BTreeNode = top.node.clone_with_content(
+            top.index,
+            BTreeNodeDataItem {
+                key,
+                data_ticket: new_ticket,
+            });
+
+        self.btree_stack.push_back(
+            top.clone_with_new_node(Rc::new(new_btree_node)));
+
+        self.sync_top_btree_node(page_handler)
+    }
+
+    fn sync_top_btree_node(&mut self, page_handler: &mut PageHandler) -> DbResult<()> {
+        let top = self.btree_stack.back().unwrap();
+
+        let mut page = RawPage::new(top.node.pid, page_handler.page_size);
+        top.node.to_raw(&mut page)?;
+
+        page_handler.pipeline_write_page(&page)
+    }
 
     #[inline]
     pub fn has_next(&self) -> bool {

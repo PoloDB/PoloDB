@@ -15,13 +15,25 @@ pub enum DbOp {
     //
     // 5 bytes
     // op1. location: 4 bytes
-    TrueJump,
+    IfTrue,
 
     // if r0 is false, jump to location
     //
     // 5 bytes
     // op1. location: 4 bytes
-    FalseJump,
+    IfFalse,
+
+    // if r0 is greater
+    //
+    // 5 bytes
+    // op1. location: 4 bytes
+    IfGreater,
+
+    // if r0 is less
+    //
+    // 5 bytes
+    // op1. location: 4 bytes
+    IfLess,
 
     // reset the cursor to the first element
     Rewind,
@@ -52,6 +64,12 @@ pub enum DbOp {
     // op2. location: 4bytes
     GetField,
 
+    // remove the field
+    //
+    // 5 bytes
+    // op1. value_index: 4bytes
+    UnsetField,
+
     // increment the field
     // if not exists, set the value
     //
@@ -64,6 +82,18 @@ pub enum DbOp {
     // op1. field_name_index: 4bytes
     IncField,
 
+    // multiple the field
+    // if not exists, set the value
+    //
+    // throw error if field is null
+    //
+    // top-1 is the value to push
+    // top-2 is the doc to change
+    //
+    // 5 bytes
+    // op1. field_name_index: 4bytes
+    MulField,
+
     // set the value of the field
     //
     // top-1 is the value to push
@@ -72,6 +102,11 @@ pub enum DbOp {
     // 5 bytes
     // op1. field_name_index: 4bytes
     SetField,
+
+    // update current item on cursor
+    //
+    // 1 byte
+    UpdateCurrent,
 
     Pop,
 
