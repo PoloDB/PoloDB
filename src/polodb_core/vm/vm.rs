@@ -9,7 +9,7 @@ use crate::cursor::Cursor;
 use crate::page::PageHandler;
 use crate::btree::{HEADER_SIZE, ITEM_SIZE};
 use crate::{TransactionType, DbResult, DbErr};
-use crate::error::mk_index_options_type_unexpected;
+use crate::error::mk_field_name_type_unexpected;
 
 const STACK_SIZE: usize = 256;
 
@@ -153,7 +153,7 @@ impl<'a> VM<'a> {
                     }
 
                     _ => {
-                        return Err(mk_index_options_type_unexpected(key, "number", value.ty_name()));
+                        return Err(mk_field_name_type_unexpected(key, "number", value.ty_name()));
                     }
                 };
                 mut_doc.insert(key.into(), new_value);
@@ -172,7 +172,7 @@ impl<'a> VM<'a> {
                     }
 
                     _ => {
-                        return Err(mk_index_options_type_unexpected(key, "number", value.ty_name()));
+                        return Err(mk_field_name_type_unexpected(key, "number", value.ty_name()));
                     }
 
                 };
@@ -180,7 +180,7 @@ impl<'a> VM<'a> {
             }
 
             Some(ty) => {
-                return Err(mk_index_options_type_unexpected(key, "number", ty.ty_name()));
+                return Err(mk_field_name_type_unexpected(key, "number", ty.ty_name()));
             }
 
             None => {

@@ -180,6 +180,20 @@ impl fmt::Display for SubProgram {
                         pc += 9;
                     }
 
+                    DbOp::IncField => {
+                        let static_id = begin.add(pc + 1).cast::<u32>().read();
+                        let val = &self.static_values[static_id as usize];
+                        write!(f, "{}: IncField({})\n", pc, val)?;
+                        pc += 5;
+                    }
+
+                    DbOp::SetField => {
+                        let static_id = begin.add(pc + 1).cast::<u32>().read();
+                        let val = &self.static_values[static_id as usize];
+                        write!(f, "{}: SetField({})\n", pc, val)?;
+                        pc += 5;
+                    }
+
                     _ => {
                         write!(f, "{}: Unknown\n", pc)?;
                         break;
@@ -225,8 +239,12 @@ mod tests {
             "age": 32,
         };
         let update_doc = mk_document! {
-            "name": "Vincent Chan",
-            "age": 32,
+            "$set": mk_document! {
+                "name": "Alan chan",
+            },
+            "$inc": mk_document! {
+                "age": 1,
+            },
         };
         let program = SubProgram::compile_update(&meta_entry, Some(&query_doc), &update_doc).unwrap();
         println!("Program: \n\n{}", program);

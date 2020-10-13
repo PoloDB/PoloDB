@@ -1,22 +1,69 @@
 use std::rc::Rc;
+use std::collections::HashMap;
+use lazy_static::lazy_static;
+use polodb_bson::{Value, Document};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
-use polodb_bson::{Value, Document};
 use crate::{DbResult, DbErr};
-use crate::error::mk_index_options_type_unexpected;
+use crate::error::mk_field_name_type_unexpected;
 
-mod update_operators {
+type Callback = fn(&mut Codegen, &Value) -> DbResult<()>;
 
-    // pub const currentDate: &str = "$currentDate";
-    pub const INC: &str = "$inc";
-    pub const MIN: &str = "$min";
-    pub const MAX: &str = "$max";
-    pub const MUL: &str = "$mul";
-    pub const RENAME: &str = "$rename";
-    pub const SET: &str = "$set";
-    pub const SET_ON_INSERT: &str = "$setOnInsert";
-    pub const UNSET: &str = "$unset";
+lazy_static! {
+    static ref UPDATE_OP_MAP: HashMap<&'static str, Callback> = {
+        let mut m: HashMap<&'static str, Callback> = HashMap::new();
+        m.insert("$inc", update_op_inc);
+        m.insert("$set", update_op_set);
+        m.insert("$max", update_op_max);
+        m.insert("$min", update_op_min);
+        m.insert("$mul", update_op_mul);
+        m.insert("$rename", update_op_rename);
+        m
+    };
+}
 
+fn update_op_inc(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
+    let doc = match doc {
+        Value::Document(doc) => doc,
+        t => {
+            let err = mk_field_name_type_unexpected("$inc", "Document".into(), t.ty_name());
+            return Err(err);
+        },
+    };
+
+    codegen.iterate_add_op(DbOp::IncField, doc.as_ref());
+
+    Ok(())
+}
+
+fn update_op_set(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
+    let doc = match doc {
+        Value::Document(doc) => doc,
+        t => {
+            let err = mk_field_name_type_unexpected("$set", "Document".into(), t.ty_name());
+            return Err(err);
+        },
+    };
+
+    codegen.iterate_add_op(DbOp::SetField, doc.as_ref());
+
+    Ok(())
+}
+
+fn update_op_max(_codegen: &mut Codegen, _doc: &Value) -> DbResult<()> {
+    unimplemented!()
+}
+
+fn update_op_min(_codegen: &mut Codegen, _doc: &Value) -> DbResult<()> {
+    unimplemented!()
+}
+
+fn update_op_mul(_codegen: &mut Codegen, _doc: &Value) -> DbResult<()> {
+    unimplemented!()
+}
+
+fn update_op_rename(codegen: &mut Codegen, _doc: &Value) -> DbResult<()> {
+    unimplemented!()
 }
 
 pub(super) struct Codegen {
@@ -81,54 +128,17 @@ impl Codegen {
 
     pub(super) fn add_update_operation(&mut self, update: &Document) -> DbResult<()> {
         for (key, value) in update.iter() {
-            if key == update_operators::INC {
-                self.update_op_inc(value)?;
-            } else if key == update_operators::MAX {
-                unimplemented!()
-            } else if key == update_operators::MIN {
-                unimplemented!()
-            } else if key == update_operators::MUL {
-                unimplemented!()
-            } else if key == update_operators::RENAME {
-                unimplemented!()
-            } else if key == update_operators::SET {
-                self.updat_op_set(value)?
-            } else if key == update_operators::SET_ON_INSERT {
-                unimplemented!()
-            } else if key == update_operators::UNSET {
-                unimplemented!()
-            } else {
-                return Err(DbErr::UnknownUpdateOperation(key.clone()))
+            let result = UPDATE_OP_MAP.get(key.as_str());
+            match result {
+                Some(callback) => {
+                    callback(self, value)?;
+                }
+
+                None => {
+                    return Err(DbErr::UnknownUpdateOperation(key.clone()))
+                }
             }
         }
-        Ok(())
-    }
-
-    fn update_op_inc(&mut self, doc: &Value) -> DbResult<()> {
-        let doc = match doc {
-            Value::Document(doc) => doc,
-            t => {
-                let err = mk_index_options_type_unexpected("$inc", "Document".into(), t.ty_name());
-                return Err(err);
-            },
-        };
-
-        self.iterate_add_op(DbOp::IncField, doc.as_ref());
-
-        Ok(())
-    }
-
-    fn updat_op_set(&mut self, doc: &Value) -> DbResult<()> {
-        let doc = match doc {
-            Value::Document(doc) => doc,
-            t => {
-                let err = mk_index_options_type_unexpected("$set", "Document".into(), t.ty_name());
-                return Err(err);
-            },
-        };
-
-        self.iterate_add_op(DbOp::SetField, doc.as_ref());
-
         Ok(())
     }
 

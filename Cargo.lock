@@ -250,6 +250,7 @@ dependencies = [
 name = "polodb_core"
 version = "0.0.1"
 dependencies = [
+ "lazy_static",
  "libc",
  "polodb_bson",
 ]

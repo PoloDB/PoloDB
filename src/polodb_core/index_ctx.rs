@@ -4,7 +4,7 @@ use std::borrow::Borrow;
 use polodb_bson::{Document, Value};
 use crate::meta_doc_helper::meta_doc_key;
 use crate::DbResult;
-use crate::error::{DbErr, mk_index_options_type_unexpected};
+use crate::error::{DbErr, mk_field_name_type_unexpected};
 use crate::data_ticket::DataTicket;
 use crate::page::PageHandler;
 use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
@@ -175,7 +175,7 @@ macro_rules! match_and_merge_option {
             }
 
             Some(val) => {
-                let err = mk_index_options_type_unexpected($key_name, stringify!($val_ty), val.ty_name());
+                let err = mk_field_name_type_unexpected($key_name, stringify!($val_ty), val.ty_name());
                 return Err(err)
             }
 

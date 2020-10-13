@@ -29,7 +29,7 @@ impl fmt::Display for FieldTypeUnexpectedStruct {
 }
 
 #[inline]
-pub(crate) fn mk_index_options_type_unexpected(option_name: &str, expected_ty: &str, actual_ty: &str) -> DbErr {
+pub(crate) fn mk_field_name_type_unexpected(option_name: &str, expected_ty: &str, actual_ty: &str) -> DbErr {
     DbErr::FieldTypeUnexpected(Box::new(FieldTypeUnexpectedStruct {
         field_name: option_name.into(),
         expected_ty: expected_ty.into(),
