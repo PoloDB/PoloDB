@@ -1,5 +1,5 @@
 use polodb_core::{DbContext, DbErr, DbHandle, TransactionType};
-use polodb_bson::{Value, ObjectId, Document, Array};
+use polodb_bson::{Value, ObjectId, Document, Array, UTCDateTime};
 use polodb_bson::linked_hash_map::Iter;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -671,6 +671,43 @@ pub extern "C" fn PLDB_doc_into_value(doc: *mut Rc<Document>) -> *mut Value {
 
     let val = Box::new(Value::Document(doc));
     Box::into_raw(val)
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_mk_UTCDateTime(time: i64) -> *mut Rc<UTCDateTime> {
+    let datetime = if time >= 0 {
+        UTCDateTime::new(time as u64)
+    } else {
+        UTCDateTime::now()
+    };
+
+    let boxed_datetime = Box::new(Rc::new(datetime));
+    Box::into_raw(boxed_datetime)
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_UTCDateTime_get_timestamp(dt: *mut Rc<UTCDateTime>) -> i64 {
+    unsafe {
+        let dt = dt.as_ref().unwrap();
+        dt.timestamp() as i64
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_UTCDateTime_to_value(dt: *mut Rc<UTCDateTime>) -> *mut Value {
+    let doc: Rc<UTCDateTime> = unsafe {
+        dt.as_ref().unwrap().clone()
+    };
+
+    let val = Box::new(Value::UTCDateTime(doc));
+    Box::into_raw(val)
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_free_UTCDateTime(dt: *mut Rc<UTCDateTime>) {
+    unsafe {
+        let _ = Box::from_raw(dt);
+    }
 }
 
 #[no_mangle]

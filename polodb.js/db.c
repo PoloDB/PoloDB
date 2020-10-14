@@ -53,6 +53,10 @@ static void DbDocumentIter_finalize(napi_env env, void* data, void* hint) {
   PLDB_free_doc_iter((DbDocumentIter*)data);
 }
 
+static void DbUTDDateTime_finalize(napi_env env, void* data, void* hint) {
+  PLDB_free_UTCDateTime((DbUTCDateTime*)data);
+}
+
 static int check_type(napi_env env, napi_value value, napi_valuetype expected) {
   napi_status status;
   napi_valuetype actual;
@@ -264,6 +268,68 @@ static napi_value js_doc_iter_next(napi_env env, napi_callback_info info) {
   napi_set_element(env, arr, 1, js_value);
 
   return arr;
+}
+
+static napi_value js_mk_utc_datetime(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  napi_valuetype ty;
+
+  status = napi_typeof(env, args[0], &ty);
+  assert(status == napi_ok);
+
+  long long ts = 0;
+  if (ty == napi_undefined) {
+    ts = -1;
+  } else if (ty == napi_number) {
+    status = napi_get_value_int64(env, args[0], &ts);
+    assert(status == napi_ok);
+  } else {
+    napi_throw_type_error(env, NULL, "Wrong arguments");
+    return NULL;
+  }
+
+  DbUTCDateTime* dt = PLDB_mk_UTCDateTime(ts);
+
+  napi_value val;
+
+  status = napi_create_external(env, (void*)dt, DbUTDDateTime_finalize, NULL, &val);
+  assert(status == napi_ok);
+
+  return val;
+}
+
+static napi_value js_utd_datetime_to_value(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "the first argument should be an external object");
+    return NULL;
+  }
+
+  void* time_raw = NULL;
+  status = napi_get_value_external(env, args[0], &time_raw);
+  assert(status == napi_ok);
+
+  DbUTCDateTime* dt = (DbUTCDateTime*)time_raw;
+  DbValue* val = PLDB_UTCDateTime_to_value(dt);
+
+  napi_value result = NULL;
+
+  status = napi_create_external(env, (void*)val, &DbValue_finalize, NULL, &result);
+  assert(status == napi_ok);
+
+  return result;
 }
 
 static napi_value js_value_type(napi_env env, napi_callback_info info) {
@@ -1451,6 +1517,8 @@ static napi_value Init(napi_env env, napi_value exports) {
   REGISTER_CALLBACK("mkObjectId", js_mk_object_id);
   REGISTER_CALLBACK("mkArray", js_mk_array);
   REGISTER_CALLBACK("mkDocIter", js_mk_doc_iter);
+  REGISTER_CALLBACK("mkUTCDateTime", js_mk_utc_datetime);
+  REGISTER_CALLBACK("UTCDateTimeToValue", js_utd_datetime_to_value);
   REGISTER_CALLBACK("docIterNext", js_doc_iter_next);
   REGISTER_CALLBACK("docToValue", js_doc2value);
   REGISTER_CALLBACK("objectIdToValue", js_oid2value);

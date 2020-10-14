@@ -34,6 +34,13 @@ class Value {
         if (value instanceof ObjectId) {
           return value.toValue();
         }
+        if (value instanceof UTCDatetime) {
+          return value.toValue();
+        }
+        if (value instanceof Date) {
+          const ts = value.getTime();
+          return UTCDatetime.fromTimestamp(ts).toValue();
+        }
         return Document.fromRaw(value).toValue();
 
       default:
@@ -290,6 +297,28 @@ class ObjectId {
 
 }
 
+class UTCDatetime {
+
+  static fromTimestamp(ts) {
+    if (typeof ts !== 'number') {
+      throw new TypeError("the first arg should be a number");
+    }
+    const raw = addon.mkUTCDateTime(ts);
+    return new UTCDatetime(raw);
+  }
+
+  constructor(ext) {
+    this[NativeExt] = ext;
+  }
+
+  toValue() {
+    const raw = this[NativeExt];
+    const valueRaw = addon.UTCDateTimeToValue(raw);
+    return new Value(valueRaw);
+  }
+
+}
+
 class Collection {
 
   constructor(db, name) {
@@ -436,6 +465,7 @@ module.exports = {
   Database,
   Document,
   DbArray,
+  UTCDatetime,
   Value,
   version,
 };

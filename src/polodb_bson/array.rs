@@ -101,6 +101,12 @@ impl Array {
                     result.extend(bin.as_ref());
                 }
 
+                Value::UTCDateTime(datetime) => {
+                    result.push(ty_int::UTC_DATETIME);  // not standard, use vli
+                    let ts = datetime.timestamp();
+                    vli::encode(&mut result, ts as i64).expect("encode vli error");
+                }
+
             }
         }
 

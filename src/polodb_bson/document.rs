@@ -280,6 +280,14 @@ impl Document {
 
                 buffer.extend_from_slice(bin);
             }
+
+            Value::UTCDateTime(datetime) => {
+                buffer.push(ty_int::UTC_DATETIME);  // not standard, use vli
+                Document::key_to_bytes(&key, buffer);
+                let ts = datetime.timestamp();
+                vli::encode(buffer, ts as i64).expect("encode vli error");
+            }
+
         }
 
         Ok(())

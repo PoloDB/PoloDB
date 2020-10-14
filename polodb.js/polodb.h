@@ -6,6 +6,7 @@ struct DbDocumentIter;
 struct DbArray;
 struct DbObjectId;
 struct DbValue;
+struct DbUTCDateTime;
 
 typedef struct DbDocument DbDocument;
 typedef struct DbDocumentIter DbDocumentIter;
@@ -14,6 +15,7 @@ typedef struct Database Database;
 typedef struct DbHandle DbHandle;
 typedef struct DbValue DbValue;
 typedef struct DbObjectId DbObjectId;
+typedef struct DbUTCDateTime DbUTCDateTime;
 
 #define PLDB_TRANS_AUTO 0
 #define PLDB_TRANS_READ 1
@@ -145,6 +147,17 @@ void PLDB_free_object_id(DbObjectId*);
 int PLDB_object_id_to_hex(const DbObjectId* oid, char* buffer, unsigned int size);
 
 DbValue* PLDB_object_id_to_value(const DbObjectId* oid);
+// }
+
+// DbUTCDateTime {
+// -1 to make current date
+DbUTCDateTime*  PLDB_mk_UTCDateTime(long long time);
+
+long long PLDB_UTCDateTime_get_timestamp(DbUTCDateTime* dt);
+
+DbValue* PLDB_UTCDateTime_to_value(DbUTCDateTime* dt);
+
+void PLDB_free_UTCDateTime(DbUTCDateTime* dt);
 // }
 
 #ifdef __cplusplus

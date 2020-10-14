@@ -25,10 +25,12 @@ mod value;
 pub mod linked_hash_map;
 pub mod error;
 pub mod vli;
+mod datetime;
 
 pub use object_id::{ObjectId, ObjectIdMaker};
 pub use document::Document;
 pub use array::Array;
+pub use datetime::UTCDateTime;
 pub use value::*;
 
 pub type BsonResult<T> = Result<T, error::BsonErr>;

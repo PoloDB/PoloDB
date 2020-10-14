@@ -7,6 +7,7 @@ use super::array::Array;
 use super::hex;
 use crate::BsonResult;
 use crate::error::BsonErr;
+use crate::datetime::UTCDateTime;
 
 const BINARY_MAX_DISPLAY_LEN: usize = 64;
 
@@ -31,6 +32,9 @@ pub enum Value {
     Document(Rc<Document>),
 
     Binary(Rc<Vec<u8>>),
+
+    UTCDateTime(Rc<UTCDateTime>),
+
 }
 
 impl Value {
@@ -48,29 +52,31 @@ impl Value {
 
     pub fn ty_name(&self) -> &str {
         match self {
-            Value::Null        => "Null",
-            Value::Double(_)   => "Double",
-            Value::Boolean(_)  => "Boolean",
-            Value::Int(_)      => "Int",
-            Value::String(_)   => "String",
-            Value::ObjectId(_) => "ObjectId",
-            Value::Array(_)    => "Array",
-            Value::Document(_) => "Document",
-            Value::Binary(_)   => "Binary",
+            Value::Null           => "Null",
+            Value::Double(_)      => "Double",
+            Value::Boolean(_)     => "Boolean",
+            Value::Int(_)         => "Int",
+            Value::String(_)      => "String",
+            Value::ObjectId(_)    => "ObjectId",
+            Value::Array(_)       => "Array",
+            Value::Document(_)    => "Document",
+            Value::Binary(_)      => "Binary",
+            Value::UTCDateTime(_) => "UTCDateTime",
         }
     }
 
     pub fn ty_int(&self) -> u8 {
         match self {
-            Value::Null        => ty_int::NULL,
-            Value::Double(_)   => ty_int::DOUBLE,
-            Value::Boolean(_)  => ty_int::BOOLEAN,
-            Value::Int(_)      => ty_int::INT,
-            Value::String(_)   => ty_int::STRING,
-            Value::ObjectId(_) => ty_int::OBJECT_ID,
-            Value::Array(_)    => ty_int::ARRAY,
-            Value::Document(_) => ty_int::DOCUMENT,
-            Value::Binary(_)   => ty_int::BINARY,
+            Value::Null           => ty_int::NULL,
+            Value::Double(_)      => ty_int::DOUBLE,
+            Value::Boolean(_)     => ty_int::BOOLEAN,
+            Value::Int(_)         => ty_int::INT,
+            Value::String(_)      => ty_int::STRING,
+            Value::ObjectId(_)    => ty_int::OBJECT_ID,
+            Value::Array(_)       => ty_int::ARRAY,
+            Value::Document(_)    => ty_int::DOCUMENT,
+            Value::Binary(_)      => ty_int::BINARY,
+            Value::UTCDateTime(_) => ty_int::UTC_DATETIME,
 
         }
     }
@@ -162,21 +168,26 @@ impl fmt::Display for Value {
                 write!(f, "Binary({})", hex_string_content)
             }
 
+            Value::UTCDateTime(datetime) => {
+                write!(f, "UTCDateTime({})", datetime.timestamp())
+            }
+
         }
     }
 
 }
 
 pub mod ty_int {
-    pub const NULL: u8       = 0x0A;
-    pub const DOUBLE: u8     = 0x01;
-    pub const BOOLEAN: u8    = 0x08;
-    pub const INT: u8        = 0x16;
-    pub const STRING: u8     = 0x02;
-    pub const OBJECT_ID: u8  = 0x07;
-    pub const ARRAY: u8      = 0x17;
-    pub const DOCUMENT: u8   = 0x13;
-    pub const BINARY: u8     = 0x05;
+    pub const NULL: u8         = 0x0A;
+    pub const DOUBLE: u8       = 0x01;
+    pub const BOOLEAN: u8      = 0x08;
+    pub const INT: u8          = 0x16;
+    pub const STRING: u8       = 0x02;
+    pub const OBJECT_ID: u8    = 0x07;
+    pub const ARRAY: u8        = 0x17;
+    pub const DOCUMENT: u8     = 0x13;
+    pub const BINARY: u8       = 0x05;
+    pub const UTC_DATETIME: u8 = 0x09;
 
     pub fn to_str(i: u8) -> &'static str {
         match i {
@@ -188,6 +199,7 @@ pub mod ty_int {
             ARRAY => "Array",
             DOCUMENT => "Document",
             BINARY => "Binary",
+            UTC_DATETIME => "UTCDateTime",
 
             _ => "<unknown>"
         }
