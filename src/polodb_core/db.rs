@@ -164,6 +164,23 @@ mod tests {
     }
 
     #[test]
+    fn test_create_collection_and_find_by_pkey() {
+        let mut db = create_and_return_db_with_items("test-find-pkey", 10);
+
+        let all = db.find("test", None).unwrap();
+
+        assert_eq!(all.len(), 10);
+
+        let first_key = &all[0].pkey_id().unwrap();
+
+        let result = db.find("test", Some(mk_document! {
+            "_id": first_key.clone(),
+        }.borrow())).unwrap();
+
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
     fn test_reopen_db() {
         {
             let _db1 = create_and_return_db_with_items("test-reopen", 5);

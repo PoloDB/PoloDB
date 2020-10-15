@@ -190,4 +190,17 @@ mod tests {
         assert_eq!(from_hex, oid)
     }
 
+    #[test]
+    fn serialize() {
+        let mut maker = ObjectIdMaker::new();
+        let oid = maker.mk_object_id();
+
+        let mut buffer = vec![];
+        oid.serialize(&mut buffer).unwrap();
+
+        let another = ObjectId::deserialize(&buffer).unwrap();
+
+        assert_eq!(oid, another);
+    }
+
 }

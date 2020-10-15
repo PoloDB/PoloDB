@@ -449,12 +449,12 @@ pub extern "C" fn PLDB_value_get_array(val: *const Value, out: *mut *mut Rc<Arra
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_value_get_object_id(val: *const Value, out: *mut *mut Rc<ObjectId>) -> c_int {
+pub extern "C" fn PLDB_value_get_object_id(val: *const Value, out: *mut *mut ObjectId) -> c_int {
     unsafe {
         let local_val = val.as_ref().unwrap();
         match local_val {
             Value::ObjectId(oid) => {
-                let boxed_oid = Box::new(oid.clone());
+                let boxed_oid: Box<ObjectId> = Box::new(oid.as_ref().clone());
                 out.write(Box::into_raw(boxed_oid));
                 0
             }

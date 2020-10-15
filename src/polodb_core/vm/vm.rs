@@ -109,7 +109,16 @@ impl<'a> VM<'a> {
         let top_index = self.stack.len() - 1;
         let op = &self.stack[top_index];
 
-        cursor.reset_by_pkey(self.page_handler, op)
+        let result = cursor.reset_by_pkey(self.page_handler, op)?;
+        if !result {
+            return Ok(false);
+        }
+
+        let ticket = cursor.peek().unwrap();
+        let doc = self.page_handler.get_doc_from_ticket(&ticket)?;
+        self.stack.push(Value::Document(doc));
+
+        Ok(true)
     }
 
     fn next(&mut self) -> DbResult<()> {
@@ -359,9 +368,9 @@ impl<'a> VM<'a> {
                     DbOp::FindByPrimaryKey => {
                         let location = self.pc.add(1).cast::<u32>().read();
 
-                        let is_empty = try_vm!(self, self.find_by_primary_key());
+                        let found = try_vm!(self, self.find_by_primary_key());
 
-                        if is_empty {
+                        if !found {
                             self.reset_location(location);
                         } else {
                             self.pc = self.pc.add(5);

@@ -167,6 +167,17 @@ impl Codegen {
         let reset_location = self.current_location();
         self.add_5bytes(DbOp::FindByPrimaryKey, 0);
 
+        let goto_loc = self.current_location();
+        self.add_goto(0);
+
+        let close_location = self.current_location();
+        self.add(DbOp::Pop);
+        self.add(DbOp::Close);
+        self.add(DbOp::Halt);
+
+        self.update_next_location(reset_location as usize, close_location);
+
+        let result_location = self.current_location();
         for (key, value) in query.iter() {
             if key == "_id" {
                 continue;
@@ -175,12 +186,12 @@ impl Codegen {
             let key_static_id = self.push_static(Value::String(Rc::new(key.clone())));
             let value_static_id = self.push_static(value.clone());
 
-            self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+            self.add_get_field(key_static_id, 0);  // push a value1
             self.add_push_value(value_static_id);  // push a value2
 
             self.add(DbOp::Equal);
             // if not equal，go to next
-            self.add_false_jump(not_found_branch_preserve_location);
+            self.add_false_jump(close_location);
 
             self.add(DbOp::Pop); // pop a value2
             self.add(DbOp::Pop); // pop a value1
@@ -188,12 +199,9 @@ impl Codegen {
 
         result_callback(self)?;
 
-        let close_location = self.current_location();
-        self.add(DbOp::Pop);
-        self.add(DbOp::Close);
-        self.add(DbOp::Halt);
+        self.add_goto(close_location);
 
-        self.update_next_location(reset_location as usize, close_location);
+        self.update_next_location(goto_loc as usize, result_location);
 
         Ok(())
     }
