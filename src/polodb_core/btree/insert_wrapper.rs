@@ -46,11 +46,18 @@ mod doc_validation {
         let mut i: usize = 0;
         while i < key.len() {
             let ch = key.chars().nth(i).unwrap();
-            if ch == ' ' || ch == '$' {
-                let msg = format!("illegal key content: '{}'", key);
-                return Err(DbErr::ValidationError(msg))
+            match ch {
+                ' ' | '$' | '.' |
+                '<' | '>' | '[' |
+                ']' | '{' | '}' => {
+                    let msg = format!("illegal key content: '{}'", key);
+                    return Err(DbErr::ValidationError(msg))
+                }
+
+                _ => {
+                    i += 1;
+                }
             }
-            i += 1;
         }
         Ok(())
     }
