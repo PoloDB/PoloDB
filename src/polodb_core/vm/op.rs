@@ -38,9 +38,17 @@ pub enum DbOp {
     // reset the cursor to the first element
     // if empty, jump to location
     //
-    // 5bytes
+    // 5 bytes
     // op1. location: 4 bytes
     Rewind,
+
+    // reset the cursor pointer to the element
+    // in btree by the primary key on the top of the stack
+    // if the item can not be found, jump to the location
+    //
+    // 5 bytes
+    // op1. location: 4 bytes
+    FindByPrimaryKey,
 
     // next element of the cursor
     // if no next element, pass

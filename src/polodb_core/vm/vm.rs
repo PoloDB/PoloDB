@@ -103,6 +103,15 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+    fn find_by_primary_key(&mut self) -> DbResult<bool> {
+        let cursor = self.r1.as_mut().unwrap();
+
+        let top_index = self.stack.len() - 1;
+        let op = &self.stack[top_index];
+
+        cursor.reset_by_pkey(self.page_handler, op)
+    }
+
     fn next(&mut self) -> DbResult<()> {
         let cursor = self.r1.as_mut().unwrap();
         let _ = cursor.next(self.page_handler)?;
@@ -341,6 +350,18 @@ impl<'a> VM<'a> {
                         try_vm!(self, self.reset_cursor(&is_empty));
 
                         if is_empty.get() {
+                            self.reset_location(location);
+                        } else {
+                            self.pc = self.pc.add(5);
+                        }
+                    }
+
+                    DbOp::FindByPrimaryKey => {
+                        let location = self.pc.add(1).cast::<u32>().read();
+
+                        let is_empty = try_vm!(self, self.find_by_primary_key());
+
+                        if is_empty {
                             self.reset_location(location);
                         } else {
                             self.pc = self.pc.add(5);

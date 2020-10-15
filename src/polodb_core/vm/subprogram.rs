@@ -139,6 +139,12 @@ impl fmt::Display for SubProgram {
                         pc += 5;
                     }
 
+                    DbOp::FindByPrimaryKey => {
+                        let location = begin.add(pc + 1).cast::<u32>().read();
+                        write!(f, "{}: FindByPrimaryKey({})\n", pc, location)?;
+                        pc += 5;
+                    }
+
                     DbOp::Next => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
                         write!(f, "{}: Next({})\n", pc, location)?;
@@ -265,6 +271,18 @@ mod tests {
         let meta_doc = mk_document! {};
         let test_doc = mk_document! {
             "name": "Vincent Chan",
+            "age": 32,
+        };
+        let meta_entry = MetaDocEntry::new("test".into(), 100);
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
+        println!("Program: \n\n{}", program);
+    }
+
+    #[test]
+    fn print_query_by_primary_key() {
+        let meta_doc = mk_document! {};
+        let test_doc = mk_document! {
+            "_id": 6,
             "age": 32,
         };
         let meta_entry = MetaDocEntry::new("test".into(), 100);

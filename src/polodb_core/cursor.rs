@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use std::collections::LinkedList;
-use polodb_bson::Document;
+use polodb_bson::{Document, Value};
 use crate::page::{PageHandler, RawPage};
 use crate::btree::*;
 use crate::DbResult;
@@ -52,6 +52,55 @@ impl Cursor {
         self.push_all_left_nodes(page_handler)?;
 
         Ok(())
+    }
+
+    pub fn reset_by_pkey(&mut self, page_handler: &mut PageHandler, pkey: &Value) -> DbResult<bool> {
+        self.btree_stack.clear();
+
+        let mut current_pid = self.root_pid;
+        let item_size = self.item_size;
+
+        // recursively find the item
+        while current_pid > 0 {
+            let btree_page = page_handler.pipeline_read_page(current_pid)?;
+            let btree_node = BTreeNode::from_raw(
+                &btree_page, 0,
+                item_size,
+                page_handler
+            )?;
+
+            if btree_node.is_empty() {
+                return Ok(false);
+            }
+
+            let search_result = btree_node.search(pkey)?;
+            match search_result {
+                SearchKeyResult::Node(index) => {
+                    self.btree_stack.push_back(CursorItem {
+                        node: Rc::new(btree_node),
+                        index,
+                    });
+                    return Ok(true)
+                }
+
+                SearchKeyResult::Index(index) => {
+                    let next_pid = btree_node.indexes[index];
+                    if next_pid == 0 {
+                        return Ok(false);
+                    }
+
+                    self.btree_stack.push_back(CursorItem {
+                        node: Rc::new(btree_node),
+                        index
+                    });
+
+                    current_pid = next_pid;
+                }
+
+            }
+        }
+
+        Ok(false)
     }
 
     fn mk_initial_btree(&mut self, page_handler: &mut PageHandler, root_page_id: u32, item_size: u32) -> DbResult<()> {

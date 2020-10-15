@@ -158,8 +158,52 @@ impl Codegen {
         *self.program
     }
 
+    fn add_query_layout_has_pkey<F>(&mut self, pkey: Value, query: &Document, result_callback: F) -> DbResult<()> where
+        F: FnOnce(&mut Codegen) -> DbResult<()> {
+
+        let pkey_id = self.push_static(pkey);
+        self.add_push_value(pkey_id);
+
+        let reset_location = self.current_location();
+        self.add_5bytes(DbOp::FindByPrimaryKey, 0);
+
+        for (key, value) in query.iter() {
+            if key == "_id" {
+                continue;
+            }
+
+            let key_static_id = self.push_static(Value::String(Rc::new(key.clone())));
+            let value_static_id = self.push_static(value.clone());
+
+            self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+            self.add_push_value(value_static_id);  // push a value2
+
+            self.add(DbOp::Equal);
+            // if not equal，go to next
+            self.add_false_jump(not_found_branch_preserve_location);
+
+            self.add(DbOp::Pop); // pop a value2
+            self.add(DbOp::Pop); // pop a value1
+        }
+
+        result_callback(self)?;
+
+        let close_location = self.current_location();
+        self.add(DbOp::Pop);
+        self.add(DbOp::Close);
+        self.add(DbOp::Halt);
+
+        self.update_next_location(reset_location as usize, close_location);
+
+        Ok(())
+    }
+
     pub(super) fn add_query_layout<F>(&mut self, query: &Document, result_callback: F) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
+
+        if let Some(id_value) = query.pkey_id() {
+            return self.add_query_layout_has_pkey(id_value, query, result_callback);
+        }
 
         let rewind_location = self.current_location();
         self.add_5bytes(DbOp::Rewind, 0);
