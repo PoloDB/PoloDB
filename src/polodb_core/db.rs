@@ -147,6 +147,33 @@ mod tests {
     }
 
     #[test]
+    fn test_create_collection_with_number_pkey() {
+        let mut db = {
+            let mut db = prepare_db("test-number-pkey");
+            let _result = db.create_collection("test").unwrap();
+
+            for i in 0..TEST_SIZE {
+                let content = i.to_string();
+                let new_doc = mk_document! {
+                    "_id": i,
+                    "content": content,
+                };
+                db.insert("test", Rc::new(new_doc)).unwrap();
+            }
+
+            db
+        };
+
+        let all = db.find("test", None).unwrap();
+
+        for doc in &all {
+            println!("object: {}", doc);
+        }
+
+        assert_eq!(TEST_SIZE, all.len())
+    }
+
+    #[test]
     fn test_find() {
         let mut db = create_and_return_db_with_items("test-find", TEST_SIZE);
 

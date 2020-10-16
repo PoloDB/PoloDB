@@ -93,11 +93,13 @@ impl fmt::Display for DbErr {
                 write!(f, "DataSizeTooLarge(expected: {}, actual: {})", expected, actual),
             DbErr::DecodeEOF => write!(f, "DecodeEOF"),
             DbErr::DataOverflow => write!(f, "DataOverflow"),
-            DbErr::DataExist(value) => write!(f, "DataExist(pkey = {})", value),
+            DbErr::DataExist(value) => write!(f, "item with primary key exists, key: {}", value),
             DbErr::PageSpaceNotEnough => write!(f, "the space of page is not enough"),
             DbErr::DataHasNoPrimaryKey => write!(f, "DataHasNoPrimaryKey"),
-            DbErr::ChecksumMismatch => write!(f, "ChecksumMismatch"),
-            DbErr::JournalPageSizeMismatch(expect, actual) => write!(f, "JournalPageSizeMismatch(expect={}, actual={})", expect, actual),
+            DbErr::ChecksumMismatch => write!(f, "journal's checksum is mismatch with data, database maybe corrupt"),
+            DbErr::JournalPageSizeMismatch(expect, actual) => {
+                write!(f, "journal's page size is mismatch with database. expect:{}, actual: {}", expect, actual)
+            },
             DbErr::SaltMismatch => write!(f, "SaltMismatch"),
             DbErr::PageMagicMismatch(pid) => write!(f, "PageMagicMismatch({})", pid),
             DbErr::ItemSizeGreaterThanExpected => write!(f, "the size of the item is greater than expected"),

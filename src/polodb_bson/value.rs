@@ -239,6 +239,14 @@ impl From<u64> for Value {
 
 }
 
+impl From<usize> for Value {
+
+    fn from(int: usize) -> Self {
+        Value::Int(int as i64)
+    }
+
+}
+
 impl From<&str> for Value {
 
     fn from(string: &str) -> Self {
