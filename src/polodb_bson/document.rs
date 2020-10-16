@@ -20,7 +20,7 @@ impl Document {
         let mut result = Document {
             map: LinkedHashMap::new(),
         };
-        result.map.insert("_id".to_string(), Value::ObjectId(Rc::new(id)));
+        result.map.insert("_id".to_string(), id.into());
         result
     }
 
@@ -134,7 +134,7 @@ impl Document {
 
                         let oid = ObjectId::deserialize(&buffer)?;
 
-                        doc.map.insert(key, Value::ObjectId(Rc::new(oid)));
+                        doc.map.insert(key, oid.into());
                     }
 
                     ty_int::ARRAY => {
@@ -150,7 +150,7 @@ impl Document {
                         ptr = ptr.add(len as usize);
 
                         let sub_arr = Array::from_bytes(&buffer)?;
-                        doc.map.insert(key, Value::Array(Rc::new(sub_arr)));
+                        doc.map.insert(key, sub_arr.into());
                     }
 
                     ty_int::DOCUMENT => {
@@ -167,7 +167,7 @@ impl Document {
 
                         let sub_doc = Document::from_bytes(&buffer)?;
 
-                        doc.map.insert(key, Value::Document(Rc::new(sub_doc)));
+                        doc.map.insert(key, sub_doc.into());
                     }
 
                     ty_int::BINARY => {
@@ -182,7 +182,7 @@ impl Document {
 
                         ptr = ptr.add(len as usize);
 
-                        doc.map.insert(key, Value::Binary(Rc::new(buffer)));
+                        doc.map.insert(key, buffer.into());
                     }
 
                     _ => return Err(BsonErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),

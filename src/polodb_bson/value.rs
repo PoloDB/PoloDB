@@ -280,6 +280,14 @@ impl From<f64> for Value {
 
 }
 
+impl From<ObjectId> for Value {
+
+    fn from(oid: ObjectId) -> Self {
+        Value::ObjectId(Rc::new(oid))
+    }
+
+}
+
 impl From<Document> for Value {
 
     fn from(doc: Document) -> Self {
@@ -292,6 +300,22 @@ impl From<Array> for Value {
 
     fn from(arr: Array) -> Self {
         Value::Array(Rc::new(arr))
+    }
+
+}
+
+impl From<Vec<u8>> for Value {
+
+    fn from(buf: Vec<u8>) -> Self {
+        Value::Binary(Rc::new(buf))
+    }
+
+}
+
+impl From<UTCDateTime> for Value {
+
+    fn from(datetime: UTCDateTime) -> Self {
+        Value::UTCDateTime(Rc::new(datetime))
     }
 
 }

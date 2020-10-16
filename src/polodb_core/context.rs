@@ -225,7 +225,8 @@ impl DbContext {
         }
 
         let new_doc = Rc::make_mut(&mut doc);
-        new_doc.insert(meta_doc_key::ID.into(), Value::ObjectId(Rc::new(self.obj_id_maker.mk_object_id())));
+        let new_oid = self.obj_id_maker.mk_object_id();
+        new_doc.insert(meta_doc_key::ID.into(), new_oid.into());
         doc
     }
 

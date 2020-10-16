@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use std::cmp::Ordering;
 use polodb_bson::{vli, Value, ObjectId, ty_int};
 use crate::db::DbResult;
@@ -149,7 +148,7 @@ impl BTreeNode {
 
         let key_ty_int = page.get_u8(begin_offset + 4 + 1);  // use to parse data
 
-        let key = match key_ty_int {
+        let key: Value = match key_ty_int {
             0 => return Err(DbErr::KeyTypeOfBtreeShouldNotBeZero),
 
             ty_int::OBJECT_ID => {
@@ -157,7 +156,7 @@ impl BTreeNode {
                 let oid_bytes = &page.data[oid_bytes_begin..(oid_bytes_begin + 12)];
                 let oid = ObjectId::deserialize(oid_bytes)?;
 
-                Value::ObjectId(Rc::new(oid))
+                oid.into()
             }
 
             ty_int::BOOLEAN => {
@@ -211,7 +210,7 @@ impl BTreeNode {
                     String::from_utf8_unchecked(buffer)
                 };
 
-                Value::String(Rc::new(str))
+                str.into()
             }
 
             _ => {

@@ -674,19 +674,19 @@ pub extern "C" fn PLDB_doc_into_value(doc: *mut Rc<Document>) -> *mut Value {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_mk_UTCDateTime(time: i64) -> *mut Rc<UTCDateTime> {
+pub extern "C" fn PLDB_mk_UTCDateTime(time: i64) -> *mut UTCDateTime {
     let datetime = if time >= 0 {
         UTCDateTime::new(time as u64)
     } else {
         UTCDateTime::now()
     };
 
-    let boxed_datetime = Box::new(Rc::new(datetime));
+    let boxed_datetime = Box::new(datetime);
     Box::into_raw(boxed_datetime)
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_UTCDateTime_get_timestamp(dt: *mut Rc<UTCDateTime>) -> i64 {
+pub extern "C" fn PLDB_UTCDateTime_get_timestamp(dt: *const UTCDateTime) -> i64 {
     unsafe {
         let dt = dt.as_ref().unwrap();
         dt.timestamp() as i64
@@ -694,17 +694,17 @@ pub extern "C" fn PLDB_UTCDateTime_get_timestamp(dt: *mut Rc<UTCDateTime>) -> i6
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_UTCDateTime_to_value(dt: *mut Rc<UTCDateTime>) -> *mut Value {
-    let doc: Rc<UTCDateTime> = unsafe {
+pub extern "C" fn PLDB_UTCDateTime_to_value(dt: *const UTCDateTime) -> *mut Value {
+    let doc: UTCDateTime = unsafe {
         dt.as_ref().unwrap().clone()
     };
 
-    let val = Box::new(Value::UTCDateTime(doc));
+    let val = Box::new(Value::from(doc));
     Box::into_raw(val)
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_free_UTCDateTime(dt: *mut Rc<UTCDateTime>) {
+pub extern "C" fn PLDB_free_UTCDateTime(dt: *mut UTCDateTime) {
     unsafe {
         let _ = Box::from_raw(dt);
     }
@@ -740,7 +740,7 @@ pub extern "C" fn PLDB_free_object_id(oid: *mut ObjectId) {
 pub extern "C" fn PLDB_object_id_to_value(oid: *const ObjectId) -> *mut Value {
     unsafe {
         let rust_oid = oid.as_ref().unwrap();
-        let value = Value::ObjectId(Rc::new(rust_oid.clone()));
+        let value: Value = rust_oid.clone().into();
         let boxed_value = Box::new(value);
         Box::into_raw(boxed_value)
     }

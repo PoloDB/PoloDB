@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use std::ops;
 use super::value::{Value, ty_int};
 use crate::vli;
@@ -165,7 +164,7 @@ impl Array {
                     let (value, to_ptr) = Document::parse_key(ptr)?;
                     ptr = to_ptr;
 
-                    arr.0.push(Value::String(Rc::new(value)));
+                    arr.0.push(value.into());
                 }
 
                 ty_int::OBJECT_ID => {
@@ -176,7 +175,7 @@ impl Array {
 
                     let oid = ObjectId::deserialize(&buffer)?;
 
-                    arr.0.push(Value::ObjectId(Rc::new(oid)));
+                    arr.0.push(oid.into());
                 }
 
                 ty_int::ARRAY => {
@@ -189,7 +188,7 @@ impl Array {
                     ptr = ptr.add(len as usize);
 
                     let sub_arr = Array::from_bytes(&buffer)?;
-                    arr.0.push(Value::Array(Rc::new(sub_arr)));
+                    arr.0.push(sub_arr.into());
                 }
 
                 ty_int::DOCUMENT => {
@@ -202,7 +201,7 @@ impl Array {
                     ptr = ptr.add(len as usize);
 
                     let sub_doc = Document::from_bytes(&buffer)?;
-                    arr.0.push(Value::Document(Rc::new(sub_doc)));
+                    arr.0.push(sub_doc.into());
                 }
 
                 ty_int::BINARY => {
@@ -214,7 +213,7 @@ impl Array {
 
                     ptr = ptr.add(len as usize);
 
-                    arr.0.push(Value::Binary(Rc::new(buffer)));
+                    arr.0.push(buffer.into());
                 }
 
                 _ => return Err(BsonErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),

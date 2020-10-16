@@ -153,9 +153,9 @@ DbValue* PLDB_object_id_to_value(const DbObjectId* oid);
 // -1 to make current date
 DbUTCDateTime*  PLDB_mk_UTCDateTime(long long time);
 
-long long PLDB_UTCDateTime_get_timestamp(DbUTCDateTime* dt);
+long long PLDB_UTCDateTime_get_timestamp(const DbUTCDateTime* dt);
 
-DbValue* PLDB_UTCDateTime_to_value(DbUTCDateTime* dt);
+DbValue* PLDB_UTCDateTime_to_value(const DbUTCDateTime* dt);
 
 void PLDB_free_UTCDateTime(DbUTCDateTime* dt);
 // }
