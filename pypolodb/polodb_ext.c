@@ -3,10 +3,10 @@
 #include <string.h>
 #include "./polodb.h"
 
+#define KEY_VALUE    "Value"
 #define KEY_DATABASE "Database"
 #define KEY_DOCUMENT "DbDocument"
 #define KEY_DOC_ITER "DbDocumentIter"
-#define KEY_VALUE "DbValue"
 #define KEY_DB_HANDLE "DbHandle"
 #define KEY_ARRAY "Array"
 #define KEY_OBJECT_ID "ObjectId"
@@ -24,6 +24,115 @@
     return NULL; \
   }
 
+static PyTypeObject ValueObjectType;
+
+typedef struct {
+  PyObject_HEAD
+  DbHandle* handle;
+} DbHandleObject;
+
+static PyObject* DbHandleObject_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
+  DbHandleObject* self;
+  self = (DbHandleObject*)type->tp_alloc(type, 0);
+  if (self != NULL) {
+    self->handle = NULL;
+  }
+  return (PyObject*)self;
+}
+
+static int DbHandleObject_init(DbHandleObject* self, PyObject *args, PyObject* kwds) {
+  PyObject* cap_obj;
+  if (!PyArg_ParseTuple(args, "O", &cap_obj)) {
+    return -1;
+  }
+
+  DbHandle* db_handle = PyCapsule_GetPointer(cap_obj, KEY_DB_HANDLE);
+  if (db_handle == NULL) {
+    return -1;
+  }
+
+  self->handle = db_handle;
+
+  return 0;
+}
+
+static void DbHandleObject_dealloc(DbHandleObject* self) {
+  if (self->handle != NULL) {
+    PLDB_free_handle(self->handle);
+    self->handle = NULL;
+  }
+  Py_TYPE(self)->tp_free(self);
+}
+
+static PyObject* DbHandleObject_get(DbHandleObject* self, PyObject* Py_UNUSED(ignored)) {
+  DbValue* value;
+  PLDB_handle_get(self->handle, &value);
+
+  PyObject* cap = PyCapsule_New(value, KEY_VALUE, NULL);
+  
+  PyObject* argList = PyTuple_New(1);
+  PyTuple_SetItem(argList, 0, cap);
+
+  PyObject* result = PyObject_CallObject((PyObject*)&ValueObjectType, argList);
+
+  Py_DECREF(argList);
+  Py_DECREF(cap);
+
+  return result;
+}
+
+static PyObject* DbHandleObject_step(DbHandleObject* self, PyObject* Py_UNUSED(ignored)) {
+  if (PLDB_handle_step(self->handle) < 0) {
+    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+    return NULL;
+  }
+
+  Py_RETURN_NONE;
+}
+
+static PyObject* DbHandleObject_str(DbHandleObject* self, PyObject* Py_UNUSED(ignored)) {
+  char* buffer = malloc(4096);
+  memset(buffer, 0, 4096);
+
+  int ec = PLDB_handle_to_str(self->handle, buffer, 4096);
+  if (ec < 0) {
+    free(buffer);
+    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+    return NULL;
+  }
+
+  PyObject* result = PyUnicode_FromStringAndSize(buffer, ec);
+
+  free(buffer);
+
+  return result;
+}
+
+static PyMethodDef DbHandleObject_methods[] = {
+  {"get", (PyCFunction)DbHandleObject_get, METH_NOARGS,
+   "get value of handle"
+  },
+  {"step", (PyCFunction)DbHandleObject_step, METH_NOARGS,
+   "step the handle"
+  },
+  {"str", (PyCFunction)DbHandleObject_str, METH_NOARGS,
+   "print the handle"
+  },
+  {NULL}  /* Sentinel */
+};
+
+static PyTypeObject DbHandleObjectType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "polodb.DbHandle",
+    .tp_doc = "DbHandle object",
+    .tp_basicsize = sizeof(DbHandleObject),
+    .tp_itemsize = 0,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_new = DbHandleObject_new,
+    .tp_init = (initproc) DbHandleObject_init,
+    .tp_dealloc = (destructor) DbHandleObject_dealloc,
+    .tp_methods = DbHandleObject_methods,
+};
 
 typedef struct {
   PyObject_HEAD
@@ -64,6 +173,41 @@ static int DatabaseObject_init(DatabaseObject* self, PyObject *args, PyObject* k
   return 0;
 }
 
+static int DatabaseObject_start_transaction(DatabaseObject* self, PyObject* args) {
+  int flags = 0;
+  if (!PyArg_ParseTuple(args, "i", &flags)) {
+    return -1;
+  }
+
+  int ec = PLDB_start_transaction(self->db, flags);
+  if (ec < 0) {
+    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+    return -1;
+  }
+
+  return 0;
+}
+
+static int DatabaseObject_commit(DatabaseObject* self, PyObject* Py_UNUSED(ignored)) {
+  int ec = PLDB_commit(self->db);
+  if (ec < 0) {
+    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+    return -1;
+  }
+
+  return 0;
+}
+
+static int DatabaseObject_rollback(DatabaseObject* self, PyObject* Py_UNUSED(ignored)) {
+  int ec = PLDB_rollback(self->db);
+  if (ec < 0) {
+    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+    return -1;
+  }
+
+  return 0;
+}
+
 static PyObject* DatabaseObject_close(DatabaseObject* self, PyObject* Py_UNUSED(ignored)) {
   if (self->db == NULL) {
     PyErr_SetString(PyExc_Exception, "database is not opened");
@@ -81,6 +225,16 @@ static PyMethodDef DatabaseObject_methods[] = {
   {"close", (PyCFunction)DatabaseObject_close, METH_NOARGS,
    "close the database"
   },
+  {"start_transaction", (PyCFunction)DatabaseObject_start_transaction, METH_VARARGS,
+   "start a transaction"
+  },
+  {"commit", (PyCFunction)DatabaseObject_commit, METH_NOARGS,
+   "commit"
+  },
+  {
+    "rollback", (PyCFunction)DatabaseObject_rollback, METH_NOARGS,
+    "rollback"
+  },
   {NULL}  /* Sentinel */
 };
 
@@ -97,15 +251,234 @@ static PyTypeObject DatabaseObjectType = {
     .tp_methods = DatabaseObject_methods,
 };
 
-static void doc_dctor(PyObject* obj) {
-  DbDocument* doc = (DbDocument*)PyCapsule_GetPointer(obj, KEY_DOCUMENT);
-  PLDB_free_doc(doc);
+typedef struct {
+  PyObject_HEAD
+  DbDocument* doc;
+} DocumentObject;
+
+static PyObject* DocumentObject_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
+  DocumentObject* self;
+  self = (DocumentObject*) type->tp_alloc(type, 0);
+  if (self != NULL) {
+    self->doc = PLDB_mk_doc();
+  }
+  return (PyObject*)self;
 }
 
-static void value_dctor(PyObject* obj) {
-  DbValue* val = (DbValue*)PyCapsule_GetPointer(obj, KEY_VALUE);
-  PLDB_free_value(val);
+static void DocumentObject_dealloc(DocumentObject* self) {
+  PLDB_free_doc(self->doc);
+  Py_TYPE(self)->tp_free((PyObject*)self);
 }
+
+static int DocumentObject_init(DatabaseObject* self, PyObject *args, PyObject* kwds) {
+  return 0;
+}
+
+static PyMethodDef DocumentObject_methods[] = {
+  {NULL}  /* Sentinel */
+};
+
+static PyTypeObject DocumentObjectType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "polodb.Document",
+    .tp_doc = "Document object",
+    .tp_basicsize = sizeof(DocumentObject),
+    .tp_itemsize = 0,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_new = DocumentObject_new,
+    .tp_init = (initproc) DocumentObject_init,
+    .tp_dealloc = (destructor) DocumentObject_dealloc,
+    .tp_methods = DocumentObject_methods,
+};
+
+typedef struct {
+  PyObject_HEAD
+  DbObjectId* oid;
+} ObjectIdObject;
+
+static PyObject* ObjectIdObject_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
+  ObjectIdObject* self;
+  self = (ObjectIdObject*) type->tp_alloc(type, 0);
+  if (self != NULL) {
+    self->oid = NULL;
+  }
+  return (PyObject*)self;
+}
+
+static int ObjectIdObject_init(PyTypeObject* self, PyObject *args, PyObject* kwds) {
+  return 0;
+}
+
+static void ObjectIdObject_dealloc(ObjectIdObject* self) {
+  if (self->oid != NULL) {
+    PLDB_free_object_id(self->oid);
+    self->oid = NULL;
+  }
+  Py_TYPE(self)->tp_free(self);
+}
+
+static PyObject* ObjectIdObject_to_hex(ObjectIdObject* self, PyObject* Py_UNUSED(ignored)) {
+  static char buffer[64];
+  memset(buffer, 0, 64);
+
+  int ec = 0;
+  POLO_CALL(PLDB_object_id_to_hex(self->oid, buffer, 64));
+
+  return PyUnicode_FromStringAndSize(buffer, ec);
+}
+
+static PyMethodDef ObjectIdObject_methods[] = {
+  {"to_hex", (PyCFunction)ObjectIdObject_to_hex, METH_NOARGS,
+   "return hex of ObjectId"
+  },
+  {NULL}  /* Sentinel */
+};
+
+static PyTypeObject ObjectIdObjectType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "polodb.ObjectId",
+    .tp_doc = "ObjectId",
+    .tp_basicsize = sizeof(ObjectIdObject),
+    .tp_itemsize = 0,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_new = ObjectIdObject_new,
+    .tp_init = (initproc) ObjectIdObject_init,
+    .tp_dealloc = (destructor) ObjectIdObject_dealloc,
+    .tp_methods = ObjectIdObject_methods,
+};
+
+typedef struct {
+  PyObject_HEAD
+  DbValue* value;
+} ValueObject;
+
+static PyObject* ValueObject_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
+  ValueObject* self;
+  self = (ValueObject*) type->tp_alloc(type, 0);
+  if (self != NULL) {
+    self->value = NULL;
+  }
+  return (PyObject*)self;
+}
+
+static int ValueObject_init(ValueObject* self, PyObject *args, PyObject* kwds) {
+  PyObject* obj;
+  if (!PyArg_ParseTuple(args, "O", &obj)) {
+    return -1;
+  }
+
+  if (obj == Py_None) {
+    self->value = PLDB_mk_null();
+  } else if (PyLong_CheckExact(obj)) {
+    long long int_value = PyLong_AsLongLong(obj);
+    self->value = PLDB_mk_int(int_value);
+    return 0;
+  } else if (PyBool_Check(obj)) {
+    int value = 0;
+    if (obj == Py_True) {
+      value = 1;
+    }
+    self->value = PLDB_mk_bool(value);
+    return 0;
+  } else if (PyFloat_CheckExact(obj)) {
+    double float_value = PyFloat_AsDouble(obj);
+    self->value = PLDB_mk_double(float_value);
+    return 0;
+  } else if (PyUnicode_CheckExact(obj)) {
+    const char* content = PyUnicode_AsUTF8(obj);
+    if (content == NULL) {
+      return -1;
+    }
+    self->value = PLDB_mk_str(content);
+    return 0;
+  } else if (PyCapsule_CheckExact(obj)) {
+    DbValue* value = PyCapsule_GetPointer(obj, KEY_VALUE);
+    self->value = value;
+    return 0;
+  } else if (Py_TYPE(obj) == &DocumentObjectType) {
+    DocumentObject* doc = (DocumentObject*)obj;
+
+    self->value = PLDB_doc_to_value(doc->doc);
+
+    return 0;
+  } else if (Py_TYPE(obj) == &ObjectIdObjectType) {
+    ObjectIdObject* oid_obj = (ObjectIdObject*)obj;
+
+    self->value = PLDB_object_id_to_value(oid_obj->oid);
+
+    return 0;
+  }
+
+  PyErr_SetString(PyExc_RuntimeError, "unkown value type");
+  return -1;
+}
+
+static void ValueObject_dealloc(ValueObject* self) {
+  if (self->value != NULL) {
+    PLDB_free_value(self->value);
+    self->value = NULL;
+  }
+  Py_TYPE(self)->tp_free(self);
+}
+
+static PyObject* ValueObject_type(ValueObject* val, PyObject* Py_UNUSED(ignored)) {
+  int ty = PLDB_value_type(val->value);
+
+  return PyLong_FromLong(ty);
+}
+
+static PyObject* ValueObject_get_i64(ValueObject* val, PyObject* Py_UNUSED(ignored)) {
+  long long result = 0;
+  int ec = 0;
+  POLO_CALL(PLDB_value_get_i64(val->value, &result));
+
+  return PyLong_FromLongLong(result);
+}
+
+static PyObject* ValueObject_get_double(ValueObject* val, PyObject* Py_UNUSED(ignored)) {
+  double out = 0;
+  int ec = 0;
+  POLO_CALL(PLDB_value_get_double(val->value, &out));
+
+  return PyFloat_FromDouble(out);
+}
+
+static PyObject* ValueObject_get_string(ValueObject* val, PyObject* Py_UNUSED(ignored)) {
+  const char* content = NULL;
+  int ec = 0;
+  POLO_CALL(PLDB_value_get_string_utf8(val->value, &content));
+
+  return PyUnicode_FromStringAndSize(content, ec);
+}
+
+static PyMethodDef ValueObject_methods[] = {
+  {"type", (PyCFunction)ValueObject_type, METH_NOARGS,
+   "return type from Value"
+  },
+  {"get_i64", (PyCFunction)ValueObject_get_i64, METH_NOARGS,
+   "return i64 from Value"
+  },
+  {"get_double", (PyCFunction)ValueObject_get_double, METH_NOARGS,
+   "return double from Value"
+  },
+  {"get_string", (PyCFunction)ValueObject_get_string, METH_NOARGS,
+   "return string from Value"
+  },
+  {NULL}  /* Sentinel */
+};
+
+static PyTypeObject ValueObjectType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "polodb.Value",
+    .tp_doc = "Value object",
+    .tp_basicsize = sizeof(ValueObject),
+    .tp_itemsize = 0,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_new = ValueObject_new,
+    .tp_init = (initproc) ValueObject_init,
+    .tp_dealloc = (destructor) ValueObject_dealloc,
+    .tp_methods = ValueObject_methods,
+};
 
 static void database_dctor(PyObject* obj) {
   Database* db = PyCapsule_GetPointer(obj, KEY_DATABASE);
@@ -314,24 +687,6 @@ static PyObject* py_handle_to_str(PyObject* self, PyObject* args) {
   return result;
 }
 
-static PyObject* py_handle_get(PyObject* self, PyObject* args) {
-  PyObject* obj = NULL;
-  if (!PyArg_ParseTuple(args, "O", &obj)) {
-    return NULL;
-  }
-
-  DbHandle* handle = PyCapsule_GetPointer(obj, KEY_DB_HANDLE);
-  CHECK_NULL(handle);
-
-  DbValue* val = NULL;
-
-  PLDB_handle_get(handle, &val);
-
-  PyObject* result = PyCapsule_New(val, KEY_VALUE, value_dctor);
-
-  return result;
-}
-
 static PyObject* py_update(PyObject* self, PyObject* args) {
   PyObject* db_obj = NULL;
   const char* col_name = NULL;
@@ -408,56 +763,6 @@ static PyObject* py_version(PyObject* self, PyObject* args) {
   return PyUnicode_FromString(buffer);
 }
 
-static PyObject* py_mk_doc(PyObject* self, PyObject* args) {
-  DbDocument* doc = PLDB_mk_doc();
-
-  PyObject* obj = PyCapsule_New((void*)doc, KEY_DOCUMENT, doc_dctor);
-
-  return obj;
-}
-
-static PyObject* py_doc_set(PyObject* self, PyObject* args) {
-  PyObject* db_obj;
-  const char* name;
-  PyObject* val_obj;
-
-  if (!PyArg_ParseTuple(args, "OsO", &db_obj, &name, &val_obj)) {
-    return NULL;
-  }
-
-  DbDocument* doc = PyCapsule_GetPointer(db_obj, KEY_DOCUMENT);
-  CHECK_NULL(doc);
-
-  DbValue* val = PyCapsule_GetPointer(val_obj, KEY_VALUE);
-  CHECK_NULL(val);
-
-  PLDB_doc_set(doc, name, val);
-
-  Py_RETURN_NONE;
-}
-
-static PyObject* py_doc_get(PyObject* self, PyObject* args) {
-  PyObject* db_obj;
-  const char* name;
-
-  if (!PyArg_ParseTuple(args, "Os", &db_obj, &name)) {
-    return NULL;
-  }
-
-  DbDocument* doc = PyCapsule_GetPointer(db_obj, KEY_DOCUMENT);
-  CHECK_NULL(doc);
-
-  DbValue* result = NULL;
-
-  if (PLDB_doc_get(doc, name, &result)) {
-    PyObject* result_obj = PyCapsule_New(result, KEY_VALUE, value_dctor);
-
-    return result_obj;
-  }
-
-  Py_RETURN_NONE;
-}
-
 static PyObject* py_doc_len(PyObject* self, PyObject* args) {
   PyObject* db_obj;
   if (!PyArg_ParseTuple(args, "O", &db_obj)) {
@@ -488,59 +793,6 @@ static PyObject* py_doc_iter(PyObject* self, PyObject* args) {
   return result_obj;
 }
 
-static PyObject* py_doc_iter_next(PyObject* self, PyObject* args) {
-  PyObject* iter_obj;
-  if (!PyArg_ParseTuple(args, "O", &iter_obj)) {
-    return NULL;
-  }
-
-  DbDocumentIter* iter = PyCapsule_GetPointer(iter_obj, KEY_DOC_ITER);
-  CHECK_NULL(iter);
-
-  // TODO: dynamic check buffer
-  char* buffer = malloc(512);
-  memset(buffer, 0, 512);
-
-  DbValue* val = NULL;
-
-  int ec = 0;
-  POLO_CALL(PLDB_doc_iter_next(iter, buffer, 512, &val));
-
-  if (ec != 0) {
-    PyObject* key = PyUnicode_FromString(buffer);
-    PyObject* value_result = PyCapsule_New(val, KEY_VALUE, value_dctor);
-
-    free(buffer);
-
-    PyObject* result = PyTuple_New(2);
-    if (PyTuple_SetItem(result, 0, key)) {
-      return NULL;
-    }
-    if (PyTuple_SetItem(result, 1, value_result)) {
-      return NULL;
-    }
-    return result;
-  }
-
-  free(buffer);
-  Py_RETURN_NONE;
-}
-
-static PyObject* py_doc_to_value(PyObject* self, PyObject* args) {
-  PyObject* py_doc;
-  if (!PyArg_ParseTuple(args, "O", &py_doc)) {
-    return NULL;
-  }
-
-  DbDocument* doc = PyCapsule_GetPointer(py_doc, KEY_DOCUMENT);
-
-  DbValue* val = PLDB_doc_into_value(doc);
-
-  PyObject* result = PyCapsule_New(val, KEY_VALUE, value_dctor);
-
-  return result;
-}
-
 static PyObject* py_mk_object_id(PyObject* self, PyObject* args) {
   PyObject* py_db;
   if (!PyArg_ParseTuple(args, "O", &py_db)) {
@@ -551,83 +803,6 @@ static PyObject* py_mk_object_id(PyObject* self, PyObject* args) {
   DbObjectId* oid = PLDB_mk_object_id(db);
 
   PyObject* result = PyCapsule_New(oid, KEY_OBJECT_ID, object_id_dctor);
-
-  return result;
-}
-
-static PyObject* py_object_id_to_hex(PyObject* self, PyObject* args) {
-  PyObject* py_oid;
-  if (!PyArg_ParseTuple(args, "O", &py_oid)) {
-    return NULL;
-  }
-
-  DbObjectId* oid = PyCapsule_GetPointer(py_oid, KEY_OBJECT_ID);
-
-  static char buffer[64];
-  memset(buffer, 0, 64);
-
-  int ec = 0;
-  POLO_CALL(PLDB_object_id_to_hex(oid, buffer, 64));
-
-  return PyUnicode_FromStringAndSize(buffer, ec);
-}
-
-static PyObject* py_mk_int(PyObject *self, PyObject *args) {
-  long long int_value;
-  if (!PyArg_ParseTuple(args, "L", &int_value)) {
-      return NULL;
-  }
-
-  DbValue* val = PLDB_mk_int(int_value);
-
-  PyObject* result = PyCapsule_New(val, KEY_VALUE, value_dctor);
-
-  return result;
-}
-
-static PyObject* py_mk_double(PyObject *self, PyObject *args) {
-  double db_value;
-  if (!PyArg_ParseTuple(args, "d", &db_value)) {
-    return NULL;
-  }
-
-  DbValue* val = PLDB_mk_double(db_value);
-
-  PyObject* result = PyCapsule_New(val, KEY_VALUE, value_dctor);
-
-  return result;
-}
-
-static PyObject* py_mk_bool(PyObject* self, PyObject* args) {
-  int bl_value;
-  if (!PyArg_ParseTuple(args, "p", &bl_value)) {
-    return NULL;
-  }
-
-  DbValue* val = PLDB_mk_bool(bl_value);
-
-  PyObject* result = PyCapsule_New(val, KEY_VALUE, value_dctor);
-
-  return result;
-}
-
-static PyObject* py_mk_null(PyObject* self, PyObject* args) {
-  DbValue* val = PLDB_mk_null();
-
-  PyObject* obj = PyCapsule_New((void*)val, KEY_VALUE, value_dctor);
-
-  return obj;
-}
-
-static PyObject* py_mk_str(PyObject* self, PyObject* args) {
-  const char* content;
-  if (!PyArg_ParseTuple(args, "s", &content)) {
-    return NULL;
-  }
-
-  DbValue* val = PLDB_mk_str(content);
-
-  PyObject* result = PyCapsule_New(val, KEY_VALUE, value_dctor);
 
   return result;
 }
@@ -652,173 +827,6 @@ static PyObject* py_arr_len(PyObject* self, PyObject* args) {
   unsigned int len = PLDB_arr_len(arr);
 
   return PyLong_FromUnsignedLong(len);
-}
-
-static PyObject* py_arr_push(PyObject* self, PyObject* args) {
-  PyObject* arr_obj;
-  PyObject* val_obj;
-  if (!PyArg_ParseTuple(args, "OO", &arr_obj, &val_obj)) {
-    return NULL;
-  }
-
-  DbArray* arr = PyCapsule_GetPointer(arr_obj, KEY_ARRAY);
-  CHECK_NULL(arr);
-
-  DbValue* val = PyCapsule_GetPointer(val_obj, KEY_VALUE);
-  CHECK_NULL(val);
-
-  PLDB_arr_push(arr, val);
-
-  Py_RETURN_NONE;
-}
-
-static PyObject* py_arr_get(PyObject* self, PyObject* args) {
-  PyObject* arr_obj;
-  unsigned int index;
-  if (!PyArg_ParseTuple(args, "OI", &arr_obj, &index)) {
-    return NULL;
-  }
-
-  DbArray* arr = PyCapsule_GetPointer(arr_obj, KEY_ARRAY);
-  CHECK_NULL(arr);
-
-  DbValue* val = NULL;
-
-  int ec = 0;
-  POLO_CALL(PLDB_arr_get(arr, index, &val))
-
-  PyObject* result = PyCapsule_New(val, KEY_VALUE, value_dctor);
-
-  return result;
-}
-
-static PyObject* py_arr_to_value(PyObject* self, PyObject* args) {
-  PyObject* arr_obj;
-  if (!PyArg_ParseTuple(args, "O", &arr_obj)) {
-    return NULL;
-  }
-
-  DbArray* arr = PyCapsule_GetPointer(arr_obj, KEY_ARRAY);
-  CHECK_NULL(arr);
-
-  DbValue* val = PLDB_arr_into_value(arr);
-
-  PyObject* result = PyCapsule_New(val, KEY_VALUE, value_dctor);
-
-  return result;
-}
-
-static PyObject* py_value_get_type(PyObject* self, PyObject* args) {
-  PyObject* obj;
-  if (!PyArg_ParseTuple(args, "O", &obj)) {
-    return NULL;
-  }
-  
-  DbValue* val = PyCapsule_GetPointer(obj, KEY_VALUE);
-  CHECK_NULL(val);
-
-  int ty = PLDB_value_type(val);
-
-  return PyLong_FromLong(ty);
-}
-
-static PyObject* py_value_get_i64(PyObject* self, PyObject* args) {
-  PyObject* obj;
-  if (!PyArg_ParseTuple(args, "O", &obj)) {
-    return NULL;
-  }
-  
-  DbValue* val = PyCapsule_GetPointer(obj, KEY_VALUE);
-  CHECK_NULL(val);
-
-  long long result = 0;
-  int ec = 0;
-  POLO_CALL(PLDB_value_get_i64(val, &result));
-
-  return PyLong_FromLongLong(result);
-}
-
-static PyObject* py_value_get_string(PyObject* self, PyObject* args) {
-  PyObject* obj;
-  if (!PyArg_ParseTuple(args, "O", &obj)) {
-    return NULL;
-  }
-
-  DbValue* val = PyCapsule_GetPointer(obj, KEY_VALUE);
-  CHECK_NULL(val);
-
-  const char* content = NULL;
-  int ec = 0;
-  POLO_CALL(PLDB_value_get_string_utf8(val, &content));
-
-  return PyUnicode_FromStringAndSize(content, ec);
-}
-
-static PyObject* py_value_get_bool(PyObject* self, PyObject* args) {
-  PyObject* obj;
-  if (!PyArg_ParseTuple(args, "O", &obj)) {
-    return NULL;
-  }
-
-  DbValue* val = PyCapsule_GetPointer(obj, KEY_VALUE);
-  CHECK_NULL(val);
-
-  int ec = 0;
-  POLO_CALL(PLDB_value_get_bool(val));
-
-  return PyBool_FromLong(ec);
-}
-
-static PyObject* py_value_get_double(PyObject* self, PyObject* args) {
-  PyObject* obj;
-  if (!PyArg_ParseTuple(args, "O", &obj)) {
-    return NULL;
-  }
-
-  DbValue* val = PyCapsule_GetPointer(obj, KEY_VALUE);
-  CHECK_NULL(val);
-
-  double out = 0;
-  int ec = 0;
-  POLO_CALL(PLDB_value_get_double(val, &out));
-
-  return PyFloat_FromDouble(out);
-}
-
-static PyObject* py_value_get_arr(PyObject* self, PyObject* args) {
-  PyObject* obj;
-  if (!PyArg_ParseTuple(args, "O", &obj)) {
-    return NULL;
-  }
-
-  DbValue* val = PyCapsule_GetPointer(obj, KEY_VALUE);
-  CHECK_NULL(val);
-
-  DbArray* arr = NULL;
-  int ec = 0;
-  POLO_CALL(PLDB_value_get_array(val, &arr))
-
-  PyObject* arr_obj = PyCapsule_New((void*)arr, KEY_ARRAY, array_dctor);
-
-  return arr_obj;
-}
-
-static PyObject* py_value_get_doc(PyObject* self, PyObject* args) {
-  PyObject* obj;
-  if (!PyArg_ParseTuple(args, "O", &obj)) {
-    return NULL;
-  }
-
-  DbValue* val = PyCapsule_GetPointer(obj, KEY_VALUE);
-  CHECK_NULL(val);
-
-  DbDocument* doc = NULL;
-  int ec = 0;
-  POLO_CALL(PLDB_value_get_document(val, &doc))
-
-  PyObject* doc_obj = PyCapsule_New((void*)doc, KEY_DOCUMENT, doc_dctor);
-
-  return doc_obj;
 }
 
 // Method definition object for this extension, these argumens mean:
@@ -870,10 +878,6 @@ static PyMethodDef polodb_methods[] = {
     "handle to string"
   },
   {
-    "handle_get_value", py_handle_get, METH_VARARGS,
-    "handle get value"
-  },
-  {
     "update", py_update, METH_VARARGS,
     "update documents"
   },
@@ -886,52 +890,12 @@ static PyMethodDef polodb_methods[] = {
     "delete all items in a collection"
   },
   {
-    "mk_doc", py_mk_doc, METH_NOARGS,
-    "make a document"
-  },
-  {
-    "doc_set", py_doc_set, METH_VARARGS,
-    "set document"
-  },
-  {
-    "doc_get", py_doc_get, METH_VARARGS,
-    "get document"
-  },
-  {
     "doc_len", py_doc_len, METH_VARARGS,
     "length of doc"
   },
   {
     "doc_iter", py_doc_iter, METH_VARARGS,
     "get iterator of a doc"
-  },
-  {
-    "doc_iter_next", py_doc_iter_next, METH_VARARGS,
-    "next iteration of iterator"
-  },
-  {
-    "doc_to_value", py_doc_to_value, METH_VARARGS,
-    "convert document to value"
-  },
-  {
-    "mk_null", py_mk_null, METH_NOARGS,
-    "make a null value"
-  },
-  {
-    "mk_str", py_mk_str, METH_NOARGS,
-    "make a string value"
-  },
-  {
-    "mk_int", py_mk_int, METH_VARARGS,
-    "make a int value"
-  },
-  {
-    "mk_double", py_mk_double, METH_VARARGS,
-    "make a double value"
-  },
-  {
-    "mk_bool", py_mk_bool, METH_VARARGS,
-    "make a bool value"
   },
   {
     "mk_arr", py_mk_arr, METH_VARARGS,
@@ -942,52 +906,8 @@ static PyMethodDef polodb_methods[] = {
     "make an ObjectId"
   },
   {
-    "object_id_to_hex", py_object_id_to_hex, METH_VARARGS,
-    "return hex of an ObjectId"
-  },
-  {
-    "arr_to_value", py_arr_to_value, METH_VARARGS,
-    "convert array to value"
-  },
-  {
     "arr_len", py_arr_len, METH_VARARGS,
     "return length of an array"
-  },
-  {
-    "arr_push", py_arr_push, METH_VARARGS,
-    "push an item to array"
-  },
-  {
-    "arr_get", py_arr_get, METH_VARARGS,
-    "get item by index from array"
-  },
-  {
-    "value_get_type", py_value_get_type, METH_VARARGS,
-    "return type of a value"
-  },
-  {
-    "value_get_i64", py_value_get_i64, METH_VARARGS,
-    "get i64 from value"
-  },
-  {
-    "value_get_string", py_value_get_string, METH_VARARGS,
-    "get string from value"
-  },
-  {
-    "value_get_double", py_value_get_double, METH_VARARGS,
-    "get double from value"
-  },
-  {
-    "value_get_bool", py_value_get_bool, METH_VARARGS,
-    "get boolean from value"
-  },
-  {
-    "value_get_array", py_value_get_arr, METH_VARARGS,
-    "get array from value"
-  },
-  {
-    "value_get_document", py_value_get_doc, METH_VARARGS,
-    "get document from value"
   },
   {
     "version", py_version, METH_NOARGS,
@@ -1007,11 +927,35 @@ static struct PyModuleDef hello_definition = {
     polodb_methods
 };
 
+#define REGISTER_OBJECT(VAR, NAME) \
+  Py_INCREF(&VAR); \
+  if (PyModule_AddObject(m, NAME, (PyObject*)&VAR) < 0) { \
+    Py_DECREF(&VAR); \
+    Py_DECREF(m); \
+    return NULL; \
+  }
+
 PyMODINIT_FUNC
 PyInit_polodb(void)
 {
   PyObject *m;
-  if (PyType_Ready(&DatabaseObjectType)) {
+  if (PyType_Ready(&DbHandleObjectType) < 0) {
+    return NULL;
+  }
+
+  if (PyType_Ready(&DatabaseObjectType) < 0) {
+    return NULL;
+  }
+
+  if (PyType_Ready(&ValueObjectType) < 0) {
+    return NULL;
+  }
+
+  if (PyType_Ready(&DocumentObjectType) < 0) {
+    return NULL;
+  }
+
+  if (PyType_Ready(&ObjectIdObjectType) < 0) {
     return NULL;
   }
 
@@ -1020,12 +964,10 @@ PyInit_polodb(void)
     return NULL;
   }
 
-  Py_INCREF(&DatabaseObjectType);
-  if (PyModule_AddObject(m, "Database", (PyObject*)&DatabaseObjectType) < 0) {
-    Py_DECREF(&DatabaseObjectType);
-    Py_DECREF(m);
-    return NULL;
-  }
+  REGISTER_OBJECT(DatabaseObjectType, "Database");
+  REGISTER_OBJECT(ValueObjectType, "Value");
+  REGISTER_OBJECT(DocumentObjectType, "Document");
+  REGISTER_OBJECT(ObjectIdObjectType, "ObjectId");
 
   return m;
 }
