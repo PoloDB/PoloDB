@@ -502,6 +502,22 @@ pub extern "C" fn PLDB_value_get_string_utf8(val: *const Value, out_str: *mut *c
 }
 
 #[no_mangle]
+pub extern "C" fn PLDB_value_get_utc_datetime(val: *const Value, out_time: *mut *mut UTCDateTime) -> c_int {
+    unsafe {
+        let local_val = val.as_ref().unwrap();
+        match local_val {
+            Value::UTCDateTime(dt) => {
+                let boxed_time = Box::new(dt.as_ref().clone());
+                out_time.write(Box::into_raw(boxed_time));
+                0
+            }
+
+            _ => -1,
+        }
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn PLDB_mk_str(str: *const c_char) -> *mut Value {
     let str = unsafe { CStr::from_ptr(str) };
     let rust_str = try_read_utf8!(str.to_str(), null_mut());

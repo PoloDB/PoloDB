@@ -25,6 +25,19 @@ typedef struct DbUTCDateTime DbUTCDateTime;
 extern "C" {
 #endif
 
+enum PLDB_VALUE_TYPE {
+  PLDB_VAL_NULL = 0x0A,
+  PLDB_VAL_DOUBL = 0x01,
+  PLDB_VAL_BOOLEAN = 0x08,
+  PLDB_VAL_INT = 0x16,
+  PLDB_VAL_STRING = 0x02,
+  PLDB_VAL_OBJECT_ID = 0x07,
+  PLDB_VAL_ARRAY = 0x17,
+  PLDB_VAL_DOCUMENT = 0x13,
+  PLDB_VAL_BINARY = 0x05,
+  PLDB_VAL_UTC_DATETIME = 0x09,
+};
+
 // Database {
 Database* PLDB_open(const char* path);
 
@@ -135,6 +148,8 @@ int PLDB_value_get_array(const DbValue* value, DbArray** arr);
 int PLDB_value_get_object_id(const DbValue* value, DbObjectId** oid);
 
 int PLDB_value_get_document(const DbValue* value, DbDocument** doc);
+
+int PLDB_value_get_utc_datetime(const DbValue* value, DbUTCDateTime** time);
 
 void PLDB_free_value(DbValue* val);
 // }
