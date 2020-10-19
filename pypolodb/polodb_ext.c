@@ -27,7 +27,6 @@
     return NULL; \
   }
 
-static PyTypeObject ValueObjectType;
 static PyTypeObject DocumentObjectType;
 static DbDocument* PyDictToDbDocument(PyObject* dict);
 static DbArray* PyListToDbArray(PyObject* arr);
@@ -171,18 +170,26 @@ static PyObject* DatabaseObject_find(DatabaseObject* self, PyObject* args) {
   if (!PyArg_ParseTuple(args, "sO", &col_name, &dict_obj)) {
     return NULL;
   }
-  
-  if (Py_TYPE(dict_obj) != &PyDict_Type) {
+
+  DbDocument* doc;
+
+  if (dict_obj == Py_None) {
+    doc = NULL;
+  } else if (Py_TYPE(dict_obj) != &PyDict_Type) {
+    doc = PyDictToDbDocument(dict_obj);
+  } else {
     PyErr_SetString(PyExc_ValueError, "the second argument should be a dict");
     return NULL;
   }
 
-  DbDocument* doc = PyDictToDbDocument(dict_obj);
-
   DbHandle* handle = NULL;
   int ec = 0;
 
-  POLO_CALL(PLDB_find(self->db, col_name, doc, &handle))
+  ec = PLDB_find(self->db, col_name, doc, &handle);
+  if (ec < 0) {
+    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+    goto handle_err;
+  }
 
   PyObject* result = PyList_New(0);
 
@@ -816,7 +823,6 @@ PyInit_polodb(void)
   }
 
   REGISTER_OBJECT(DatabaseObjectType, "Database");
-  REGISTER_OBJECT(ValueObjectType, "Value");
   REGISTER_OBJECT(ObjectIdObjectType, "ObjectId");
 
   return m;
