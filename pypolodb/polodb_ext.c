@@ -11,6 +11,8 @@
 #define KEY_ARRAY "Array"
 #define KEY_OBJECT_ID "ObjectId"
 
+#define DB_HANDLE_STATE_HAS_ROW 2
+
 #define POLO_CALL(EXPR) \
   ec = (EXPR); \
   if (ec < 0) { \
@@ -25,6 +27,12 @@
   }
 
 static PyTypeObject ValueObjectType;
+static PyTypeObject DocumentObjectType;
+
+typedef struct {
+  PyObject_HEAD
+  DbDocument* doc;
+} DocumentObject;
 
 typedef struct {
   PyObject_HEAD
@@ -173,39 +181,135 @@ static int DatabaseObject_init(DatabaseObject* self, PyObject *args, PyObject* k
   return 0;
 }
 
-static int DatabaseObject_start_transaction(DatabaseObject* self, PyObject* args) {
+static PyObject* DatabaseObject_start_transaction(DatabaseObject* self, PyObject* args) {
   int flags = 0;
   if (!PyArg_ParseTuple(args, "i", &flags)) {
-    return -1;
+    return NULL;
   }
 
   int ec = PLDB_start_transaction(self->db, flags);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
-    return -1;
+    return NULL;
   }
 
-  return 0;
+  Py_RETURN_NONE;
 }
 
-static int DatabaseObject_commit(DatabaseObject* self, PyObject* Py_UNUSED(ignored)) {
+static PyObject* DatabaseObject_commit(DatabaseObject* self, PyObject* Py_UNUSED(ignored)) {
   int ec = PLDB_commit(self->db);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
-    return -1;
+    return NULL;
   }
 
-  return 0;
+  Py_RETURN_NONE;
 }
 
-static int DatabaseObject_rollback(DatabaseObject* self, PyObject* Py_UNUSED(ignored)) {
+static PyObject* DatabaseObject_rollback(DatabaseObject* self, PyObject* Py_UNUSED(ignored)) {
   int ec = PLDB_rollback(self->db);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
-    return -1;
+    return NULL;
   }
 
-  return 0;
+  Py_RETURN_NONE;
+}
+
+static PyObject* DatabaseObject_create_collection(DatabaseObject* self, PyObject* args) {
+  if (self->db == NULL) {
+    PyErr_SetString(PyExc_Exception, "database is not opened");
+    return NULL;
+  }
+
+  const char* content;
+  if (!PyArg_ParseTuple(args, "s", &content)) {
+    return NULL;
+  }
+
+  int ec = 0;
+  POLO_CALL(PLDB_create_collection(self->db, content));
+
+  Py_RETURN_NONE;
+}
+
+static PyObject* DatabaseObject_insert(DatabaseObject* self, PyObject* args) {
+  if (self->db == NULL) {
+    PyErr_SetString(PyExc_Exception, "database is not opened");
+    return NULL;
+  }
+
+  const char* col_name;
+  PyObject* obj;
+  if (!PyArg_ParseTuple(args, "sO", &col_name, &obj)) {
+    return NULL;
+  }
+
+  if (Py_TYPE(obj) != &DocumentObjectType) {
+    PyErr_SetString(PyExc_ValueError, "the second argument should be a document");
+    return NULL;
+  }
+
+  int ec = 0;
+  POLO_CALL(PLDB_insert(self->db, col_name, ((DocumentObject*)obj)->doc));
+
+  Py_RETURN_NONE;
+}
+
+static PyObject* DatabaseObject_find(DatabaseObject* self, PyObject* args) {
+  if (self->db == NULL) {
+    PyErr_SetString(PyExc_Exception, "database is not opened");
+    return NULL;
+  }
+
+  const char* col_name;
+  PyObject* doc_obj;
+  if (!PyArg_ParseTuple(args, "sO", &col_name, &doc_obj)) {
+    return NULL;
+  }
+  
+  if (Py_TYPE(doc_obj) != &DocumentObjectType) {
+    PyErr_SetString(PyExc_ValueError, "the second argument should be a document");
+    return NULL;
+  }
+
+  DbDocument* doc = ((DocumentObject*)doc_obj)->doc;
+
+  DbHandle* handle = NULL;
+  int ec = 0;
+
+  POLO_CALL(PLDB_find(self->db, col_name, doc, &handle))
+
+  PyObject* result = PyList_New(0);
+
+  ec = PLDB_handle_step(handle);
+  if (ec < 0) {
+    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+    goto handle_err;
+  }
+
+  while (PLDB_handle_state(handle) == DB_HANDLE_STATE_HAS_ROW) {
+    DbValue* val = NULL;
+
+    PLDB_handle_get(handle, &val);
+
+    PLDB_free_value(val);
+
+    ec = PLDB_handle_step(handle);
+    if (ec < 0) {
+      PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+      goto handle_err;
+    }
+  }
+
+  goto handle_success;
+handle_err:
+  PLDB_free_handle(handle);
+  Py_DECREF(result);
+  return NULL;
+
+handle_success:
+  return result;
 }
 
 static PyObject* DatabaseObject_close(DatabaseObject* self, PyObject* Py_UNUSED(ignored)) {
@@ -235,6 +339,17 @@ static PyMethodDef DatabaseObject_methods[] = {
     "rollback", (PyCFunction)DatabaseObject_rollback, METH_NOARGS,
     "rollback"
   },
+  {"create_collection", (PyCFunction)DatabaseObject_create_collection, METH_VARARGS,
+   "create a collection"
+  },
+  {
+    "insert", (PyCFunction)DatabaseObject_insert, METH_VARARGS,
+    "insert a document"
+  },
+  {
+    "find", (PyCFunction)DatabaseObject_find, METH_VARARGS,
+    "find documents"
+  },
   {NULL}  /* Sentinel */
 };
 
@@ -250,11 +365,6 @@ static PyTypeObject DatabaseObjectType = {
     .tp_dealloc = (destructor) DatabaseObject_dealloc,
     .tp_methods = DatabaseObject_methods,
 };
-
-typedef struct {
-  PyObject_HEAD
-  DbDocument* doc;
-} DocumentObject;
 
 static PyObject* DocumentObject_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
   DocumentObject* self;
