@@ -1,6 +1,10 @@
 const addon = require('bindings')('polodb-js');
 const { typeName } = require('./typeName');
 
+const db = new addon.Database();
+console.log(db);
+console.log(db.close());
+
 function version() {
   return addon.version();
 }

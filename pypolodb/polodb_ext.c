@@ -28,6 +28,7 @@
   }
 
 static PyTypeObject DocumentObjectType;
+static PyTypeObject CollectionObjectType;
 static DbDocument* PyDictToDbDocument(PyObject* dict);
 static DbArray* PyListToDbArray(PyObject* arr);
 
@@ -133,12 +134,142 @@ static PyObject* DatabaseObject_create_collection(DatabaseObject* self, PyObject
   Py_RETURN_NONE;
 }
 
-static PyObject* DatabaseObject_insert(DatabaseObject* self, PyObject* args) {
-  CHECK_DB_OPEND(self);
+static PyObject* DatabaseObject_collection(DatabaseObject* self, PyObject* args) {
+  PyObject* name;
+  if (PyArg_ParseTuple(args, "O", &name)) {
+    return NULL;
+  }
 
-  const char* col_name;
+  if (Py_TYPE(name) != &PyUnicode_Type) {
+    PyErr_SetString(PyExc_TypeError, "this first argument should be a string");
+    return NULL;
+  }
+
+  Py_INCREF(self);
+  Py_INCREF(name);
+  
+  PyObject* argList = PyTuple_New(2); 
+  PyTuple_SetItem(argList, 0, (PyObject*)self);
+  PyTuple_SetItem(argList, 1, name);
+
+  PyObject* result = PyObject_CallObject((PyObject*)&CollectionObjectType, argList);
+
+  Py_DECREF(argList);
+
+  return result;
+}
+
+static PyObject* DatabaseObject_close(DatabaseObject* self, PyObject* Py_UNUSED(ignored)) {
+  if (self->db == NULL) {
+    PyErr_SetString(PyExc_Exception, "database is not opened");
+    return NULL;
+  }
+
+  PLDB_close(self->db);
+
+  self->db = NULL;
+
+  Py_RETURN_NONE;
+}
+
+static PyMethodDef DatabaseObject_methods[] = {
+  {
+    "close", (PyCFunction)DatabaseObject_close, METH_NOARGS,
+    "close the database"
+  },
+  {
+    "start_transaction", (PyCFunction)DatabaseObject_start_transaction, METH_VARARGS,
+    "start a transaction"
+  },
+  {
+    "commit", (PyCFunction)DatabaseObject_commit, METH_NOARGS,
+    "commit"
+  },
+  {
+    "rollback", (PyCFunction)DatabaseObject_rollback, METH_NOARGS,
+    "rollback"
+  },
+  {
+    "create_collection", (PyCFunction)DatabaseObject_create_collection, METH_VARARGS,
+    "create a collection"
+  },
+  {
+    "collection", (PyCFunction)DatabaseObject_collection, METH_VARARGS,
+    "get a collection handle"
+  },
+  {NULL}  /* Sentinel */
+};
+
+static PyTypeObject DatabaseObjectType = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "polodb.Database",
+    .tp_doc = "Database object",
+    .tp_basicsize = sizeof(DatabaseObject),
+    .tp_itemsize = 0,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    .tp_new = DatabaseObject_new,
+    .tp_init = (initproc) DatabaseObject_init,
+    .tp_dealloc = (destructor) DatabaseObject_dealloc,
+    .tp_methods = DatabaseObject_methods,
+};
+
+typedef struct {
+  PyObject_HEAD
+  DatabaseObject* db_obj;
+  char* name;
+} CollectionObject;
+
+static PyObject* CollectionObject_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
+  CollectionObject* self;
+  self = (CollectionObject*)type->tp_alloc(type, 0);
+  if (self != NULL) {
+    self->db_obj = NULL;
+    self->name = NULL;
+  }
+  return (PyObject*)self;
+}
+
+static int CollectionObject_init(CollectionObject* self, PyObject* args, PyObject* kwds) {
+  PyObject* db_obj;
+  const char* name;
+  if (!PyArg_ParseTuple(args, "Os", &db_obj, &name)) {
+    return -1;
+  }
+
+  if (Py_TYPE(db_obj) != &DatabaseObjectType) {
+    PyErr_SetString(PyExc_TypeError, "this first argument should be a DatabaesObject");
+    return -1;
+  }
+
+  Py_INCREF(db_obj);
+  self->db_obj = (DatabaseObject*)db_obj;
+
+  size_t name_len = strlen(name) + 1;
+  char* buffer = malloc(name_len);
+  memset(buffer, 0, name_len);
+
+  self->name = buffer;
+
+  return 0;
+}
+
+static void CollectionObject_dealloc(CollectionObject* self) {
+  if (self->db_obj != NULL) {
+    Py_DECREF(self->db_obj);
+    self->db_obj = NULL;
+  }
+  if (self->name != NULL) {
+    free(self->name);
+    self->name = NULL;
+  }
+  Py_TYPE(self)->tp_free(self);
+}
+
+static PyObject* CollectionObject_insert(CollectionObject* self, PyObject* args) {
+  CHECK_DB_OPEND(self->db_obj);
+
   PyObject* obj;
-  if (!PyArg_ParseTuple(args, "sO", &col_name, &obj)) {
+  if (!PyArg_ParseTuple(args, "O", &obj)) {
     return NULL;
   }
 
@@ -152,7 +283,7 @@ static PyObject* DatabaseObject_insert(DatabaseObject* self, PyObject* args) {
     return NULL;
   }
 
-  if (PLDB_insert(self->db, col_name, doc) < 0) {
+  if (PLDB_insert(self->db_obj->db, self->name, doc) < 0) {
     PLDB_free_doc(doc);
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     return NULL;
@@ -162,12 +293,12 @@ static PyObject* DatabaseObject_insert(DatabaseObject* self, PyObject* args) {
   Py_RETURN_NONE;
 }
 
-static PyObject* DatabaseObject_find(DatabaseObject* self, PyObject* args) {
-  CHECK_DB_OPEND(self);
 
-  const char* col_name;
+static PyObject* CollectionObject_find(CollectionObject* self, PyObject* args) {
+  CHECK_DB_OPEND(self->db_obj);
+
   PyObject* dict_obj;
-  if (!PyArg_ParseTuple(args, "sO", &col_name, &dict_obj)) {
+  if (!PyArg_ParseTuple(args, "O", &dict_obj)) {
     return NULL;
   }
 
@@ -187,7 +318,7 @@ static PyObject* DatabaseObject_find(DatabaseObject* self, PyObject* args) {
 
   PyObject* result = NULL;
 
-  ec = PLDB_find(self->db, col_name, doc, &handle);
+  ec = PLDB_find(self->db_obj->db, self->name, doc, &handle);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     goto handle_err;
@@ -238,13 +369,12 @@ handle_success:
   return result;
 }
 
-static PyObject* DatabaseObject_update(DatabaseObject* self, PyObject* args) {
-  CHECK_DB_OPEND(self);
+static PyObject* CollectionObject_update(CollectionObject* self, PyObject* args) {
+  CHECK_DB_OPEND(self->db_obj);
 
-  const char* col_name;
   PyObject* query_dict_obj;
   PyObject* update_dict_obj;
-  if (!PyArg_ParseTuple(args, "sOO", &col_name, &query_dict_obj, &update_dict_obj)) {
+  if (!PyArg_ParseTuple(args, "OO", &query_dict_obj, &update_dict_obj)) {
     return NULL;
   }
 
@@ -268,7 +398,7 @@ static PyObject* DatabaseObject_update(DatabaseObject* self, PyObject* args) {
 
   update = PyDictToDbDocument(update_dict_obj);
 
-  int64_t count = PLDB_update(self->db, col_name, query, update);
+  int64_t count = PLDB_update(self->db_obj->db, self->name, query, update);
   if (count < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     goto result;
@@ -288,12 +418,11 @@ result:
   return result;
 }
 
-static PyObject* DatabaseObject_delete(DatabaseObject* self, PyObject* args) {
-  CHECK_DB_OPEND(self);
+static PyObject* CollectionObject_delete(CollectionObject* self, PyObject* args) {
+  CHECK_DB_OPEND(self->db_obj);
 
-  const char* col_name;
   PyObject* query_obj;
-  if (!PyArg_ParseTuple(args, "sO", &col_name, &query_obj)) {
+  if (!PyArg_ParseTuple(args, "O", &query_obj)) {
     return NULL;
   }
 
@@ -305,7 +434,7 @@ static PyObject* DatabaseObject_delete(DatabaseObject* self, PyObject* args) {
   PyObject* result = NULL;
   DbDocument* doc = PyDictToDbDocument(query_obj);
 
-  int64_t ec = PLDB_delete(self->db, col_name, doc);
+  int64_t ec = PLDB_delete(self->db_obj->db, self->name, doc);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     goto result;
@@ -321,15 +450,10 @@ result:
   return result;
 }
 
-static PyObject* DatabaseObject_delete_all(DatabaseObject* self, PyObject* args) {
-  CHECK_DB_OPEND(self);
+static PyObject* CollectionObject_delete_all(CollectionObject* self, PyObject* args) {
+  CHECK_DB_OPEND(self->db_obj);
 
-  const char* col_name;
-  if (!PyArg_ParseTuple(args, "s", &col_name)) {
-    return NULL;
-  }
-
-  int64_t ec = PLDB_delete_all(self->db, col_name);
+  int64_t ec = PLDB_delete_all(self->db_obj->db, self->name);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     return NULL;
@@ -338,74 +462,42 @@ static PyObject* DatabaseObject_delete_all(DatabaseObject* self, PyObject* args)
   return PyLong_FromLongLong(ec);
 }
 
-static PyObject* DatabaseObject_close(DatabaseObject* self, PyObject* Py_UNUSED(ignored)) {
-  if (self->db == NULL) {
-    PyErr_SetString(PyExc_Exception, "database is not opened");
-    return NULL;
-  }
 
-  PLDB_close(self->db);
-
-  self->db = NULL;
-
-  Py_RETURN_NONE;
-}
-
-static PyMethodDef DatabaseObject_methods[] = {
+static PyMethodDef CollectionObject_methods[] = {
   {
-    "close", (PyCFunction)DatabaseObject_close, METH_NOARGS,
-    "close the database"
-  },
-  {
-    "start_transaction", (PyCFunction)DatabaseObject_start_transaction, METH_VARARGS,
-    "start a transaction"
-  },
-  {
-    "commit", (PyCFunction)DatabaseObject_commit, METH_NOARGS,
-    "commit"
-  },
-  {
-    "rollback", (PyCFunction)DatabaseObject_rollback, METH_NOARGS,
-    "rollback"
-  },
-  {
-    "create_collection", (PyCFunction)DatabaseObject_create_collection, METH_VARARGS,
-    "create a collection"
-  },
-  {
-    "insert", (PyCFunction)DatabaseObject_insert, METH_VARARGS,
+    "insert", (PyCFunction)CollectionObject_insert, METH_VARARGS,
     "insert a document"
   },
   {
-    "update", (PyCFunction)DatabaseObject_update, METH_VARARGS,
+    "update", (PyCFunction)CollectionObject_update, METH_VARARGS,
     "update documents"
   },
   {
-    "delete", (PyCFunction)DatabaseObject_delete, METH_VARARGS,
+    "delete", (PyCFunction)CollectionObject_delete, METH_VARARGS,
     "delete documents"
   },
   {
-    "delete_all", (PyCFunction)DatabaseObject_delete_all, METH_VARARGS,
+    "delete_all", (PyCFunction)CollectionObject_delete_all, METH_NOARGS,
     "delete all documents from a collection",
   },
   {
-    "find", (PyCFunction)DatabaseObject_find, METH_VARARGS,
+    "find", (PyCFunction)CollectionObject_find, METH_VARARGS,
     "find documents"
   },
   {NULL}  /* Sentinel */
 };
 
-static PyTypeObject DatabaseObjectType = {
+static PyTypeObject CollectionObjectType = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "polodb.Database",
-    .tp_doc = "Database object",
-    .tp_basicsize = sizeof(DatabaseObject),
+    .tp_name = "polodb.Collection",
+    .tp_doc = "Collection",
+    .tp_basicsize = sizeof(CollectionObject),
     .tp_itemsize = 0,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
-    .tp_new = DatabaseObject_new,
-    .tp_init = (initproc) DatabaseObject_init,
-    .tp_dealloc = (destructor) DatabaseObject_dealloc,
-    .tp_methods = DatabaseObject_methods,
+    .tp_new = CollectionObject_new,
+    .tp_init = (initproc) CollectionObject_init,
+    .tp_dealloc = (destructor) CollectionObject_dealloc,
+    .tp_methods = CollectionObject_methods,
 };
 
 typedef struct {
@@ -815,6 +907,10 @@ PyInit_polodb(void)
     return NULL;
   }
 
+  if (PyType_Ready(&CollectionObjectType) < 0) {
+    return NULL;
+  }
+
   if (PyType_Ready(&ObjectIdObjectType) < 0) {
     return NULL;
   }
@@ -825,6 +921,7 @@ PyInit_polodb(void)
   }
 
   REGISTER_OBJECT(DatabaseObjectType, "Database");
+  REGISTER_OBJECT(CollectionObjectType, "Collection");
   REGISTER_OBJECT(ObjectIdObjectType, "ObjectId");
 
   return m;
