@@ -185,13 +185,15 @@ static PyObject* DatabaseObject_find(DatabaseObject* self, PyObject* args) {
   DbHandle* handle = NULL;
   int ec = 0;
 
+  PyObject* result = NULL;
+
   ec = PLDB_find(self->db, col_name, doc, &handle);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     goto handle_err;
   }
 
-  PyObject* result = PyList_New(0);
+  result = PyList_New(0);
 
   ec = PLDB_handle_step(handle);
   if (ec < 0) {
@@ -516,7 +518,7 @@ static DbValue* PyObjectToDbValue(PyObject* obj) {
     return result;
   } else if (Py_TYPE(obj) == &PyList_Type) {
     DbArray* arr = PyListToDbArray(obj);
-    DbValue* result = PLDB_arr_into_value(arr);
+    DbValue* result = PLDB_arr_to_value(arr);
     PLDB_free_arr(arr);
     return result;
   } else if (Py_TYPE(obj) == &ObjectIdObjectType) {

@@ -537,7 +537,7 @@ pub extern "C" fn PLDB_free_arr(arr: *mut Rc<Array>) {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_arr_into_value(arr: *mut Rc<Array>) -> *mut Value {
+pub extern "C" fn PLDB_arr_to_value(arr: *mut Rc<Array>) -> *mut Value {
     let boxed_value = unsafe {
         let local_arr = arr.as_ref().unwrap();
         let local_value = Value::Array(local_arr.clone());
@@ -677,16 +677,6 @@ pub extern "C" fn PLDB_free_doc(doc: *mut Rc<Document>) {
     unsafe {
         let _ptr = Box::from_raw(doc);
     }
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_doc_into_value(doc: *mut Rc<Document>) -> *mut Value {
-    let doc: Rc<Document> = unsafe {
-        doc.as_ref().unwrap().clone()
-    };
-
-    let val = Box::new(Value::Document(doc));
-    Box::into_raw(val)
 }
 
 #[no_mangle]

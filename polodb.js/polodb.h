@@ -89,7 +89,7 @@ void PLDB_free_arr(DbArray* arr);
 
 unsigned int PLDB_arr_len(DbArray* arr);
 
-DbValue* PLDB_arr_into_value(DbArray* arr);
+DbValue* PLDB_arr_to_value(DbArray* arr);
 
 void PLDB_arr_push(DbArray* arr, DbValue* value);
 
@@ -119,8 +119,6 @@ DbValue* PLDB_doc_to_value(DbDocument* doc);
 // }
 
 // DbValue {
-DbValue* PLDB_doc_into_value(DbDocument* db);
-
 DbValue* PLDB_mk_null();
 
 DbValue* PLDB_mk_double(double value);
