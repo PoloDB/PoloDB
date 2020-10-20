@@ -268,7 +268,7 @@ static PyObject* DatabaseObject_update(DatabaseObject* self, PyObject* args) {
 
   update = PyDictToDbDocument(update_dict_obj);
 
-  long long count = PLDB_update(self->db, col_name, query, update);
+  int64_t count = PLDB_update(self->db, col_name, query, update);
   if (count < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     goto result;
@@ -305,7 +305,7 @@ static PyObject* DatabaseObject_delete(DatabaseObject* self, PyObject* args) {
   PyObject* result = NULL;
   DbDocument* doc = PyDictToDbDocument(query_obj);
 
-  long long ec = PLDB_delete(self->db, col_name, doc);
+  int64_t ec = PLDB_delete(self->db, col_name, doc);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     goto result;
@@ -329,7 +329,7 @@ static PyObject* DatabaseObject_delete_all(DatabaseObject* self, PyObject* args)
     return NULL;
   }
 
-  long long ec = PLDB_delete_all(self->db, col_name);
+  int64_t ec = PLDB_delete_all(self->db, col_name);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     return NULL;
@@ -491,8 +491,8 @@ static DbValue* PyObjectToDbValue(PyObject* obj) {
   if (obj == Py_None) {
     return PLDB_mk_null();
   } else if (PyLong_CheckExact(obj)) {
-    long long int_value = PyLong_AsLongLong(obj);
-     return PLDB_mk_int(int_value);
+    int64_t int_value = PyLong_AsLongLong(obj);
+    return PLDB_mk_int(int_value);
   } else if (PyBool_Check(obj)) {
     int value = 0;
     if (obj == Py_True) {
@@ -542,7 +542,7 @@ static DbValue* PyObjectToDbValue(PyObject* obj) {
     }
     double timestamp = PyFloat_AsDouble(result);
     Py_DECREF(result);
-    DbUTCDateTime* dt = PLDB_mk_UTCDateTime((long long)timestamp);
+    DbUTCDateTime* dt = PLDB_mk_UTCDateTime((int64_t)timestamp);
     DbValue* val = PLDB_UTCDateTime_to_value(dt);
     PLDB_free_UTCDateTime(dt);
     return val;
@@ -711,7 +711,7 @@ static PyObject* UTCDateTimeTypeValueToPyDate(DbValue* value) {
   int ec = 0;
   POLO_CALL(PLDB_value_get_utc_datetime(value, &date))
 
-  long long timestamp = PLDB_UTCDateTime_get_timestamp(date);
+  int64_t timestamp = PLDB_UTCDateTime_get_timestamp(date);
 
   PyObject* argList = PyTuple_New(1);
   PyTuple_SetItem(argList, 0, PyLong_FromLongLong(timestamp));
@@ -728,7 +728,7 @@ static PyObject* UTCDateTimeTypeValueToPyDate(DbValue* value) {
 static PyObject* DbValueToPyObject(DbValue* value) {
   int ty = PLDB_value_type(value);
   int ec = 0;
-  long long int_value = 0;
+  int64_t int_value = 0;
   double float_value;
   switch (ty)
   {

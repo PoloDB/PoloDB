@@ -117,7 +117,7 @@ static napi_value js_mk_int(napi_env env, napi_callback_info info) {
     return NULL;
   }
 
-  long long num = 0;
+  int64_t num = 0;
   status = napi_get_value_int64(env, args[0], &num);
   assert(status == napi_ok);
 
@@ -283,7 +283,7 @@ static napi_value js_mk_utc_datetime(napi_env env, napi_callback_info info) {
   status = napi_typeof(env, args[0], &ty);
   assert(status == napi_ok);
 
-  long long ts = 0;
+  int64_t ts = 0;
   if (ty == napi_undefined) {
     ts = -1;
   } else if (ty == napi_number) {
@@ -375,7 +375,7 @@ static napi_value js_value_get_i64(napi_env env, napi_callback_info info) {
   status = napi_get_value_external(env, args[0], (void**)&val);
   assert(status == napi_ok);
 
-  long long out = 0;
+  int64_t out = 0;
   if (PLDB_value_get_i64(val, &out) != 0) {
     napi_throw_type_error(env, NULL, "DbValue is not an integer");
     return NULL;
@@ -1252,7 +1252,7 @@ static napi_value js_update(napi_env env, napi_callback_info info) {
   status = napi_get_value_external(env, args[3], (void**)&update);
   assert(status == napi_ok);
 
-  long long ec = 0;
+  int64_t ec = 0;
   STD_CALL(PLDB_update(db, name_buffer, query, update));
 
   napi_value result;
@@ -1300,7 +1300,7 @@ static napi_value js_delete(napi_env env, napi_callback_info info) {
   status = napi_get_value_external(env, args[2], (void**)&query_doc);
   assert(status == napi_ok);
 
-  long long ec = 0;
+  int64_t ec = 0;
   STD_CALL(PLDB_delete(db, name_buffer, query_doc));
 
   napi_value result;
@@ -1339,7 +1339,7 @@ static napi_value js_delete_all(napi_env env, napi_callback_info info) {
   status = napi_get_value_string_utf8(env, args[1], name_buffer, BUFFER_SIZE, &written_count);
   assert(status == napi_ok);
 
-  long long ec = 0;
+  int64_t ec = 0;
   STD_CALL(PLDB_delete_all(db, name_buffer));
 
   napi_value result;

@@ -1,3 +1,4 @@
+#include <stdint.h>
 
 struct Database;
 struct DbHandle;
@@ -57,11 +58,11 @@ int PLDB_insert(Database* db, const char* col_name, const DbDocument* doc);
 int PLDB_find(Database* db, const char* col_name, const DbDocument* query, DbHandle** out_handle);
 
 // <query> is nullable
-long long PLDB_update(Database* db, const char* col_name, const DbDocument* query, const DbDocument* update);
+int64_t PLDB_update(Database* db, const char* col_name, const DbDocument* query, const DbDocument* update);
 
-long long PLDB_delete(Database* db, const char* col_name, const DbDocument* query);
+int64_t PLDB_delete(Database* db, const char* col_name, const DbDocument* query);
 
-long long PLDB_delete_all(Database* db, const char* col_name);
+int64_t PLDB_delete_all(Database* db, const char* col_name);
 
 const char* PLDB_error_msg();
 
@@ -125,7 +126,7 @@ DbValue* PLDB_mk_double(double value);
 
 DbValue* PLDB_mk_bool(int bl);
 
-DbValue* PLDB_mk_int(long long value);
+DbValue* PLDB_mk_int(int64_t value);
 
 DbValue* PLDB_mk_str(const char* content);
 
@@ -133,7 +134,7 @@ DbValue* PLDB_mk_binary(unsigned char* content, unsigned int size);
 
 int PLDB_value_type(const DbValue* value);
 
-int PLDB_value_get_i64(const DbValue* value, long long* out_value);
+int PLDB_value_get_i64(const DbValue* value, int64_t* out_value);
 
 int PLDB_value_get_string_utf8(const DbValue* value, const char** content);
 
@@ -164,9 +165,9 @@ DbValue* PLDB_object_id_to_value(const DbObjectId* oid);
 
 // DbUTCDateTime {
 // -1 to make current date
-DbUTCDateTime*  PLDB_mk_UTCDateTime(long long time);
+DbUTCDateTime*  PLDB_mk_UTCDateTime(int64_t time);
 
-long long PLDB_UTCDateTime_get_timestamp(const DbUTCDateTime* dt);
+int64_t PLDB_UTCDateTime_get_timestamp(const DbUTCDateTime* dt);
 
 DbValue* PLDB_UTCDateTime_to_value(const DbUTCDateTime* dt);
 
