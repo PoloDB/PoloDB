@@ -3,7 +3,11 @@
   "version": "0.1.0",
   "description": "",
   "main": "index.js",
+  "engines": {
+    "node": ">= 0.12"
+  },
   "scripts": {
+    "preinstall": "node scripts/download-lib.js",
     "install": "cmake-js compile",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -15,12 +19,12 @@
     "database"
   ],
   "author": "Vincent Chan",
-  "license": "LGPL-3.0-or-later",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/vincentdchan/PoloDB/issues"
   },
   "homepage": "https://github.com/vincentdchan/PoloDB#readme",
-  "dependencies": {
+  "devDependencies": {
     "bindings": "^1.5.0"
   }
 }

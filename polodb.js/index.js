@@ -1,4 +1,4 @@
-const addon = require('bindings')('polodb-js');
+const addon = require('./polodb-js');
 const { typeName } = require('./typeName');
 
 function version() {

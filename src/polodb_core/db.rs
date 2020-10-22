@@ -5,6 +5,66 @@ use super::error::DbErr;
 use crate::context::DbContext;
 use crate::DbHandle;
 
+fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
+    handle.step()?;
+
+    while handle.has_row() {
+        let doc = handle.get().unwrap_document();
+        result.push(doc.clone());
+
+        handle.step()?;
+    }
+
+    Ok(())
+}
+
+pub struct Collection<'a> {
+    db: &'a mut Database,
+    name: String,
+}
+
+impl<'a>  Collection<'a> {
+
+    fn new(db: &'a mut Database, name: &str) -> Collection<'a> {
+        Collection {
+            db,
+            name: name.into(),
+        }
+    }
+
+    pub fn find(&mut self, query: Option<&Document>) -> DbResult<Vec<Rc<Document>>> {
+        let mut handle = self.db.ctx.find(&self.name, query)?;
+
+        let mut result = Vec::new();
+
+        consume_handle_to_vec(&mut handle, &mut result)?;
+
+        Ok(result)
+    }
+
+    #[inline]
+    pub fn update(&mut self, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+        self.db.ctx.update(&self.name, query, update)
+    }
+
+    #[inline]
+    pub fn insert(&mut self, doc: Rc<Document>) -> DbResult<Rc<Document>> {
+        self.db.ctx.insert(&self.name, doc)
+    }
+
+    #[inline]
+    pub fn delete(&mut self, key: &Value) -> DbResult<Option<Rc<Document>>> {
+        self.db.ctx.delete_by_pkey(&self.name, key)
+    }
+
+    // release in 0.2
+    #[inline]
+    fn create_index(&mut self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+        self.db.ctx.create_index(&self.name, keys, options)
+    }
+
+}
+
 /*
  * API wrapper for Rust-level
  */
@@ -30,9 +90,9 @@ impl Database {
         })
     }
 
-    #[inline]
-    pub fn create_collection(&mut self, name: &str) -> DbResult<()> {
-        self.ctx.create_collection(name)
+    pub fn create_collection(&mut self, name: &str) -> DbResult<Collection> {
+        self.ctx.create_collection(name)?;
+        Ok(Collection::new(self, name))
     }
 
     #[inline]
@@ -40,47 +100,9 @@ impl Database {
         DbContext::get_version()
     }
 
-    pub fn find(&mut self, col_name: &str, query: Option<&Document>) -> DbResult<Vec<Rc<Document>>> {
-        let mut handle = self.ctx.find(col_name, query)?;
-
-        let mut result = Vec::new();
-
-        Database::consume_handle_to_vec(&mut handle, &mut result)?;
-
-        Ok(result)
-    }
-
-    fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
-        handle.step()?;
-
-        while handle.has_row() {
-            let doc = handle.get().unwrap_document();
-            result.push(doc.clone());
-
-            handle.step()?;
-        }
-
-        Ok(())
-    }
-
     #[inline]
-    pub fn update(&mut self, col_name: &str, query: Option<&Document>, update: &Document) -> DbResult<usize> {
-        self.ctx.update(col_name, query, update)
-    }
-
-    #[inline]
-    pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
-        self.ctx.insert(col_name, doc)
-    }
-
-    #[inline]
-    pub fn delete(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
-        self.ctx.delete_by_pkey(col_name, key)
-    }
-
-    #[inline]
-    pub fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        self.ctx.create_index(col_name, keys, options)
+    pub fn collection(&mut self, col_name: &str) -> Collection {
+        Collection::new(self, col_name)
     }
 
     #[allow(dead_code)]
@@ -118,7 +140,7 @@ mod tests {
 
     fn create_and_return_db_with_items(db_name: &str, size: usize) -> Database {
         let mut db = prepare_db(db_name);
-        let _result = db.create_collection("test").unwrap();
+        let mut collection = db.create_collection("test").unwrap();
 
         // let meta = db.query_all_meta().unwrap();
 
@@ -127,7 +149,7 @@ mod tests {
             let new_doc = mk_document! {
                 "content": content,
             };
-            db.insert("test", Rc::new(new_doc)).unwrap();
+            collection.insert(Rc::new(new_doc)).unwrap();
         }
 
         db
@@ -137,7 +159,8 @@ mod tests {
     fn test_create_collection_and_find_all() {
         let mut db = create_and_return_db_with_items("test-collection", TEST_SIZE);
 
-        let all = db.find("test", None).unwrap();
+        let mut test_collection = db.collection("test");
+        let all = test_collection.find( None).unwrap();
 
         for doc in &all {
             println!("object: {}", doc);
@@ -150,7 +173,7 @@ mod tests {
     fn test_create_collection_with_number_pkey() {
         let mut db = {
             let mut db = prepare_db("test-number-pkey");
-            let _result = db.create_collection("test").unwrap();
+            let mut collection = db.create_collection("test").unwrap();
 
             for i in 0..TEST_SIZE {
                 let content = i.to_string();
@@ -158,13 +181,14 @@ mod tests {
                     "_id": i,
                     "content": content,
                 };
-                db.insert("test", Rc::new(new_doc)).unwrap();
+                collection.insert(Rc::new(new_doc)).unwrap();
             }
 
             db
         };
 
-        let all = db.find("test", None).unwrap();
+        let mut collection = db.collection("test");
+        let all = collection.find( None).unwrap();
 
         for doc in &all {
             println!("object: {}", doc);
@@ -176,9 +200,9 @@ mod tests {
     #[test]
     fn test_find() {
         let mut db = create_and_return_db_with_items("test-find", TEST_SIZE);
+        let mut collection = db.collection("test");
 
-        let result = db.find(
-            "test",
+        let result = collection.find(
             Some(mk_document! {
                 "content": "3",
             }.borrow())
@@ -193,14 +217,15 @@ mod tests {
     #[test]
     fn test_create_collection_and_find_by_pkey() {
         let mut db = create_and_return_db_with_items("test-find-pkey", 10);
+        let mut collection = db.collection("test");
 
-        let all = db.find("test", None).unwrap();
+        let all = collection.find(None).unwrap();
 
         assert_eq!(all.len(), 10);
 
         let first_key = &all[0].pkey_id().unwrap();
 
-        let result = db.find("test", Some(mk_document! {
+        let result = collection.find(Some(mk_document! {
             "_id": first_key.clone(),
         }.borrow())).unwrap();
 
@@ -229,13 +254,14 @@ mod tests {
             "value": "something",
         };
 
-        db.insert("test", Rc::new(doc)).expect_err("should not succuess");
+        let mut collection = db.collection("test");
+        collection.insert(Rc::new(doc)).expect_err("should not succuess");
     }
 
     #[test]
     fn test_insert_bigger_key() {
         let mut db = prepare_db("test-insert-bigger-key");
-        let _result = db.create_collection("test").unwrap();
+        let mut collection = db.create_collection("test").unwrap();
 
         let mut doc = Document::new_without_id();
 
@@ -246,7 +272,7 @@ mod tests {
 
         doc.insert("_id".into(), Value::String(Rc::new(new_str.clone())));
 
-        let _ = db.insert("test", Rc::new(doc)).unwrap();
+        let _ = collection.insert(Rc::new(doc)).unwrap();
 
         // let cursor = db.ctx.get_collection_cursor("test").unwrap();
 
@@ -259,13 +285,13 @@ mod tests {
     #[test]
     fn test_create_index() {
         let mut db = prepare_db("test-create-index");
-        let _result = db.create_collection("test").unwrap();
+        let mut collection = db.create_collection("test").unwrap();
 
         let keys = mk_document! {
             "user_id": 1,
         };
 
-        db.create_index("test", &keys, None).unwrap();
+        collection.create_index(&keys, None).unwrap();
 
         for i in 0..10 {
             let str = Rc::new(i.to_string());
@@ -273,22 +299,22 @@ mod tests {
                 "name": str.clone(),
                 "user_id": str.clone(),
             };
-            db.insert("test", Rc::new(data)).unwrap();
+            collection.insert(Rc::new(data)).unwrap();
         }
 
         let data = mk_document! {
             "name": "what",
             "user_id": 3,
         };
-        db.insert("test", Rc::new(data)).expect_err("not comparable");
+        collection.insert(Rc::new(data)).expect_err("not comparable");
     }
 
     #[test]
     fn test_one_delete_item() {
         let mut db = prepare_db("test-delete-item");
-        let _ = db.create_collection("test").unwrap();
+        let mut collection = db.create_collection("test").unwrap();
 
-        let mut collection  = vec![];
+        let mut doc_collection  = vec![];
 
         for i in 0..100 {
             let content = i.to_string();
@@ -297,35 +323,35 @@ mod tests {
                 "content": content,
             };
 
-            let ret_doc = db.insert("test", Rc::new(new_doc)).unwrap();
-            collection.push(ret_doc);
+            let ret_doc = collection.insert( Rc::new(new_doc)).unwrap();
+            doc_collection.push(ret_doc);
         }
 
-        let third = &collection[3];
+        let third = &doc_collection[3];
         let third_key = third.get("_id").unwrap();
-        assert!(db.delete("test", third_key).unwrap().is_some());
-        assert!(db.delete("test", third_key).unwrap().is_none());
+        assert!(collection.delete(third_key).unwrap().is_some());
+        assert!(collection.delete(third_key).unwrap().is_none());
     }
 
     #[test]
     fn test_delete_all_items() {
         let mut db = prepare_db("test-delete-all-items");
-        let _ = db.create_collection("test").unwrap();
+        let mut collection = db.create_collection("test").unwrap();
 
-        let mut collection  = vec![];
+        let mut doc_collection  = vec![];
 
         for i in 0..100 {
             let content = i.to_string();
             let new_doc = mk_document! {
                 "content": content,
             };
-            let ret_doc = db.insert("test", Rc::new(new_doc)).unwrap();
-            collection.push(ret_doc);
+            let ret_doc = collection.insert(Rc::new(new_doc)).unwrap();
+            doc_collection.push(ret_doc);
         }
 
-        for doc in &collection {
+        for doc in &doc_collection {
             let key = doc.get("_id").unwrap();
-            db.delete("test", key).unwrap();
+            collection.delete(key).unwrap();
         }
     }
 

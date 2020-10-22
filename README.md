@@ -72,9 +72,11 @@ The feature will be implemented one by on in order.
   - [ ] JavaScript Engine
 - [ ] Visualization Tools
 
-# Languages Binding
+# Languages
 
+- [Rust](./docs/en-US/Rust/READEME.md)
 - [Node.js](./docs/en-US/Node.js/READEME.md)
+- [Python](WIP)
 
 # Command Line Tool
 

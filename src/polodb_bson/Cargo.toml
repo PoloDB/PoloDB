@@ -2,7 +2,10 @@
 name = "polodb_bson"
 version = "0.1.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
+license = "MIT"
 edition = "2018"
+repository = "https://github.com/vincentdchan/PoloDB"
+description = "BSON lib for PoloDB"
 
 [lib]
 name="polodb_bson"

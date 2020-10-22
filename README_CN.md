@@ -58,9 +58,11 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
   - [ ] JavaScript 引擎
 - [ ] 可视化工具
 
-# 语言绑定版本
+# 语言版本
 
+- [Rust](./docs/zh-CN/Rust/READEME.md)
 - [Node.js](./docs/zh-CN/Node.js/READEME.md)
+- [Python](WIP)
 
 # 命令行工具
 
