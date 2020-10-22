@@ -24,6 +24,15 @@ PoloDB 所有数据都储存在一个文件里。PoloDB
 
 PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
 
+# 支持的平台
+
+理论上来说，Rust 编译器支持的平台，PoloDB 都能支持。
+但是鉴于 PoloDB 是一个个人项目，个人精力有限，我只能支持以下平台：
+
+- macOS 10.15 x64
+- Linux x64 (Tested on Fedora 30)
+- Windows 10 x64
+
 # 开发计划
 
 以下特性会按计划一个一个来：
@@ -35,16 +44,12 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
   - [ ] Android
   - [ ] Flutter
 - [ ] 语言绑定
-  - [x] C
+  - [x] C/C++
   - [ ] Go
-  - [ ] Objective-C
   - [ ] Swift
   - [x] Python
-  - [ ] Ruby
-  - [ ] Elixir
   - [x] Node.js
-  - [ ] Java
-  - [ ] Kotlin
+  - [ ] Java/Kotlin
   - [ ] Dart
 - [ ] 大量测试
 - [ ] 多线程支持
@@ -52,6 +57,10 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
   - [ ] 数据加密
   - [ ] JavaScript 引擎
 - [ ] 可视化工具
+
+# 语言绑定版本
+
+- [Node.js](./docs/zh-CN/Node.js/READEME.md)
 
 # 命令行工具
 

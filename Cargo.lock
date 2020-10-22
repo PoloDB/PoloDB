@@ -223,7 +223,7 @@ checksum = "0b631f7e854af39a1739f401cf34a8a013dfe09eac4fa4dba91e9768bd28168d"
 
 [[package]]
 name = "polodb_bson"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "libc",
 ]
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "polodb_clib"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "polodb_bson",
  "polodb_core",
@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "polodb_core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "lazy_static",
  "libc",

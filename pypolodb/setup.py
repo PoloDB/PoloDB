@@ -6,7 +6,7 @@ module1 = Extension('polodb',
                     extra_objects=['../target/debug/libpolodb_clib.a'])
 
 setup (name = 'polodb',
-       version = '0.1',
+       version = '0.1.0',
        description = 'This is a demo package',
        author = 'Vincent Chan',
        author_email = 'okcdz@diverse.space',
