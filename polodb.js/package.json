@@ -1,14 +1,14 @@
 {
   "name": "polodb",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "",
   "main": "index.js",
   "engines": {
     "node": ">= 0.12"
   },
   "scripts": {
-    "preinstall": "node scripts/download-lib.js",
-    "install": "cmake-js compile",
+    "install": "node scripts/download-lib.js",
+    "compile": "cmake-js compile",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
