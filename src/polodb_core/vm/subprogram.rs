@@ -178,6 +178,11 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::In => {
+                        write!(f, "{}: In\n", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::OpenRead => {
                         let root_pid = begin.add(pc + 1).cast::<u32>().read();
                         write!(f, "{}: OpenRead({})\n", pc, root_pid)?;

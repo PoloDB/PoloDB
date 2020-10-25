@@ -274,7 +274,6 @@ impl Codegen {
                 }
             }
         } else {
-            let key_static_id = self.push_static(key.into());
             match value {
                 Value::Document(doc) => {
                     return self.add_query_tuple_document(
@@ -288,9 +287,10 @@ impl Codegen {
                 }
 
                 _ => {
-                    let value_static_id = self.push_static(value.clone());
-
+                    let key_static_id = self.push_static(key.into());
                     self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+
+                    let value_static_id = self.push_static(value.clone());
                     self.add_push_value(value_static_id);  // push a value2
 
                     self.add(DbOp::Equal);
@@ -310,35 +310,139 @@ impl Codegen {
         for (sub_key, sub_value) in value.iter() {
             match sub_key.as_str() {
                 "$eq" => {
-                    unimplemented!()
+                    let key_static_id = self.push_static(key.into());
+                    self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+
+                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    self.add_push_value(stat_val_id);
+                    self.add(DbOp::Equal);
+
+                    // if not equal，go to next
+                    self.add_false_jump(not_found_branch);
+
+                    self.add(DbOp::Pop); // pop a value2
+                    self.add(DbOp::Pop); // pop a value1
                 }
 
                 "$gt" => {
-                    unimplemented!()
+                    let key_static_id = self.push_static(key.into());
+                    self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+
+                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    self.add_push_value(stat_val_id);
+                    self.add(DbOp::Cmp);
+
+                    // equal, r0 == 0
+                    self.add_false_jump(not_found_branch);
+                    // less
+                    self.add_less_jump(not_found_branch);
+
+                    self.add(DbOp::Pop); // pop a value2
+                    self.add(DbOp::Pop); // pop a value1
                 }
 
                 "$gte" => {
-                    unimplemented!()
+                    let key_static_id = self.push_static(key.into());
+                    self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+
+                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    self.add_push_value(stat_val_id);
+                    self.add(DbOp::Cmp);
+
+                    self.add_less_jump(not_found_branch);
+
+                    self.add(DbOp::Pop); // pop a value2
+                    self.add(DbOp::Pop); // pop a value1
                 }
 
+                // check the value is array
                 "$in" => {
-                    unimplemented!()
+                    match sub_value {
+                        Value::Array(_) => (),
+                        _ => {
+                            return Err(DbErr::NotAValidField(key.into()));
+                        }
+                    }
+
+                    let key_static_id = self.push_static(key.into());
+                    self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+
+                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    self.add_push_value(stat_val_id);
+                    self.add(DbOp::In);
+
+                    self.add_false_jump(not_found_branch);
+
+                    self.add(DbOp::Pop); // pop a value2
+                    self.add(DbOp::Pop); // pop a value1
                 }
 
                 "$lt" => {
-                    unimplemented!()
+                    let key_static_id = self.push_static(key.into());
+                    self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+
+                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    self.add_push_value(stat_val_id);
+                    self.add(DbOp::Cmp);
+
+                    // equal, r0 == 0
+                    self.add_false_jump(not_found_branch);
+                    // less
+                    self.add_greater_jump(not_found_branch);
+
+                    self.add(DbOp::Pop); // pop a value2
+                    self.add(DbOp::Pop); // pop a value1
                 }
 
                 "$lte" => {
-                    unimplemented!()
+                    let key_static_id = self.push_static(key.into());
+                    self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+
+                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    self.add_push_value(stat_val_id);
+                    self.add(DbOp::Cmp);
+
+                    // less
+                    self.add_greater_jump(not_found_branch);
+
+                    self.add(DbOp::Pop); // pop a value2
+                    self.add(DbOp::Pop); // pop a value1
                 }
 
                 "$ne" => {
-                    unimplemented!()
+                    let key_static_id = self.push_static(key.into());
+                    self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+
+                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    self.add_push_value(stat_val_id);
+                    self.add(DbOp::Equal);
+
+                    // if equal，go to next
+                    self.add_true_jump(not_found_branch);
+
+                    self.add(DbOp::Pop); // pop a value2
+                    self.add(DbOp::Pop); // pop a value1
                 }
 
                 "$nin" => {
-                    unimplemented!()
+                    match sub_value {
+                        Value::Array(_) => (),
+                        _ => {
+                            return Err(DbErr::NotAValidField(key.into()));
+                        }
+                    }
+
+                    let key_static_id = self.push_static(key.into());
+                    self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+
+                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    self.add_push_value(stat_val_id);
+                    self.add(DbOp::In);
+
+                    self.add_true_jump(not_found_branch);
+
+                    self.add(DbOp::Pop); // pop a value2
+                    self.add(DbOp::Pop); // pop a value1
                 }
 
                 _ => {
@@ -428,8 +532,30 @@ impl Codegen {
         self.program.instructions.extend_from_slice(&bytes);
     }
 
+    #[inline]
     pub(super) fn add_false_jump(&mut self, location: u32) {
         self.add(DbOp::IfFalse);
+        let bytes = location.to_le_bytes();
+        self.program.instructions.extend_from_slice(&bytes);
+    }
+
+    #[inline]
+    pub(super) fn add_true_jump(&mut self, location: u32) {
+        self.add(DbOp::IfTrue);
+        let bytes = location.to_le_bytes();
+        self.program.instructions.extend_from_slice(&bytes);
+    }
+
+    #[inline]
+    pub(super) fn add_less_jump(&mut self, location: u32) {
+        self.add(DbOp::IfLess);
+        let bytes = location.to_le_bytes();
+        self.program.instructions.extend_from_slice(&bytes);
+    }
+
+    #[inline]
+    pub(super) fn add_greater_jump(&mut self, location: u32) {
+        self.add(DbOp::IfGreater);
         let bytes = location.to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);
     }

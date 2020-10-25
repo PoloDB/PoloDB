@@ -9,11 +9,36 @@ use crate::object_id::ObjectId;
 #[derive(Debug, Clone)]
 pub struct Array(Vec<Value>);
 
+pub struct Iter<'a> {
+    arr: &'a Array,
+    index: u32,
+}
+
+impl<'a> std::iter::Iterator for Iter<'a> {
+    type Item = &'a Value;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.arr.len() {
+            return None;
+        }
+        let result: &'a Value = &self.arr[self.index as usize];
+        self.index += 1;
+        Some(result)
+    }
+}
+
 impl Array {
 
     pub fn new() -> Array {
         let data = vec![];
         Array(data)
+    }
+
+    pub fn iter(&self) -> Iter {
+        Iter {
+            arr: self,
+            index: 0,
+        }
     }
 
     pub fn push(&mut self, elm: Value) {

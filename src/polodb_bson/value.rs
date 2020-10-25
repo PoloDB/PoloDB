@@ -90,6 +90,14 @@ impl Value {
     }
 
     #[inline]
+    pub fn unwrap_arary(&self) -> &Rc<Array> {
+        match self {
+            Value::Array(arr) => arr,
+            _ => panic!("unwrap error: document expected, but it's {}", self.ty_name()),
+        }
+    }
+
+    #[inline]
     pub fn unwrap_document_mut(&mut self) -> &mut Rc<Document> {
         match self {
             Value::Document(doc) => doc,

@@ -535,6 +535,28 @@ impl<'a> VM<'a> {
                         self.pc = self.pc.add(1);
                     }
 
+                    // stack
+                    // -1: Aarry
+                    // -2: value
+                    //
+                    // check value in Array
+                    DbOp::In => {
+                        let top1 = &self.stack[self.stack.len() - 1];
+                        let top2 = &self.stack[self.stack.len() - 2];
+
+                        self.r0 = 0;
+
+                        for item in top1.unwrap_arary().iter() {
+                            let cmp_result = top2.value_cmp(item);
+                            if let Ok(Ordering::Equal) = cmp_result {
+                                self.r0 = 1;
+                                break;
+                            }
+                        }
+
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::OpenRead => {
                         let root_pid = self.pc.add(1).cast::<u32>().read();
 
