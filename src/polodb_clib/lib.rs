@@ -819,6 +819,7 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::IncrementNullField => 37,
         DbErr::VmIsHalt => 38,
         DbErr::Busy => 39,
+        DbErr::NotAValidField(_) => 40,
 
     }
 }
