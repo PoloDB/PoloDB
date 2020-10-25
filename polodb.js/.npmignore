@@ -1,0 +1,12 @@
+
+/build
+/node_modules
+
+.vscode
+
+/polodb-js.node
+
+/test.js
+/polodb.h
+/db.c
+/CMakeLists.txt
