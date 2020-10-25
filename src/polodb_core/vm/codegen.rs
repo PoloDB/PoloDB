@@ -241,18 +241,11 @@ impl Codegen {
         let compare_location: u32 = self.current_location();
 
         for (key, value) in query.iter() {
-            let key_static_id = self.push_static(Value::String(Rc::new(key.clone())));
-            let value_static_id = self.push_static(value.clone());
-
-            self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
-            self.add_push_value(value_static_id);  // push a value2
-
-            self.add(DbOp::Equal);
-            // if not equal，go to next
-            self.add_false_jump(not_found_branch_preserve_location);
-
-            self.add(DbOp::Pop); // pop a value2
-            self.add(DbOp::Pop); // pop a value1
+            self.add_query_tuple(
+                key, value,
+                get_field_failed_location,
+                not_found_branch_preserve_location
+            )?;
         }
 
         self.update_next_location(next_preserve_location as usize, compare_location);
@@ -262,6 +255,97 @@ impl Codegen {
 
         self.add_goto(next_preserve_location);
 
+        Ok(())
+    }
+
+    fn add_query_tuple(&mut self, key: &str, value: &Value, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
+        if key.chars().nth(0).unwrap() == '$' {
+            match key {
+                "$and" => {
+                    unimplemented!()
+                }
+
+                "$or" => {
+                    unimplemented!()
+                }
+
+                _ => {
+                    return Err(DbErr::NotAValidField(key.into()));
+                }
+            }
+        } else {
+            let key_static_id = self.push_static(key.into());
+            match value {
+                Value::Document(doc) => {
+                    return self.add_query_tuple_document(
+                        key, doc.as_ref(),
+                        get_field_failed_location, not_found_branch
+                    );
+                }
+
+                Value::Array(_) => {
+                    return Err(DbErr::NotAValidField(key.into()));
+                }
+
+                _ => {
+                    let value_static_id = self.push_static(value.clone());
+
+                    self.add_get_field(key_static_id, get_field_failed_location);  // push a value1
+                    self.add_push_value(value_static_id);  // push a value2
+
+                    self.add(DbOp::Equal);
+                    // if not equal，go to next
+                    self.add_false_jump(not_found_branch);
+
+                    self.add(DbOp::Pop); // pop a value2
+                    self.add(DbOp::Pop); // pop a value1
+                }
+            }
+        }
+        Ok(())
+    }
+
+    // very complex query document
+    fn add_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
+        for (sub_key, sub_value) in value.iter() {
+            match sub_key.as_str() {
+                "$eq" => {
+                    unimplemented!()
+                }
+
+                "$gt" => {
+                    unimplemented!()
+                }
+
+                "$gte" => {
+                    unimplemented!()
+                }
+
+                "$in" => {
+                    unimplemented!()
+                }
+
+                "$lt" => {
+                    unimplemented!()
+                }
+
+                "$lte" => {
+                    unimplemented!()
+                }
+
+                "$ne" => {
+                    unimplemented!()
+                }
+
+                "$nin" => {
+                    unimplemented!()
+                }
+
+                _ => {
+                    return Err(DbErr::NotAValidField(sub_key.into()));
+                }
+            }
+        }
         Ok(())
     }
 
