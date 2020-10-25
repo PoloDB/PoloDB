@@ -399,10 +399,18 @@ impl<'a> VM<'a> {
                         let location = self.pc.add(5).cast::<u32>().read();
 
                         let key = self.borrow_static(key_stat_id as usize);
+                        let key_name = key.unwrap_string();
                         let top = self.stack[self.stack.len() - 1].clone();
-                        let doc = top.unwrap_document();
+                        let doc = match top {
+                            Value::Document(doc) => doc,
+                            _ => {
+                                let err = mk_field_name_type_unexpected(key_name, "Document", top.ty_name());
+                                self.state = VmState::Halt;
+                                return Err(err)
+                            }
+                        };
 
-                        match doc.get(key.unwrap_string()) {
+                        match doc.get(key_name) {
                             Some(val) => {
                                 self.stack.push(val.clone());
                                 self.pc = self.pc.add(9);
