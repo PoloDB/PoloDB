@@ -1,27 +1,9 @@
 use std::rc::Rc;
-use std::collections::HashMap;
-use lazy_static::lazy_static;
 use polodb_bson::{Value, Document};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
 use crate::{DbResult, DbErr};
 use crate::error::mk_field_name_type_unexpected;
-
-type Callback = fn(&mut Codegen, &Value) -> DbResult<()>;
-
-lazy_static! {
-    static ref UPDATE_OP_MAP: HashMap<&'static str, Callback> = {
-        let mut m: HashMap<&'static str, Callback> = HashMap::new();
-        m.insert("$inc", update_op_inc);
-        m.insert("$set", update_op_set);
-        m.insert("$max", |codegen, doc| { update_op_min_max(codegen, doc, false) });
-        m.insert("$min", |codegen, doc| { update_op_min_max(codegen, doc, true) });
-        m.insert("$mul", update_op_mul);
-        m.insert("$rename", update_op_rename);
-        m.insert("$unset", update_op_unset);
-        m
-    };
-}
 
 macro_rules! try_unwrap_document {
     ($op_name:tt, $doc:expr) => {
@@ -35,111 +17,69 @@ macro_rules! try_unwrap_document {
     };
 }
 
-fn update_op_inc(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
-    let doc = try_unwrap_document!("$inc", doc);
+mod update_op {
+    use polodb_bson::Value;
+    use std::rc::Rc;
+    use crate::vm::codegen::Codegen;
+    use crate::DbResult;
+    use crate::vm::op::DbOp;
+    use crate::error::mk_field_name_type_unexpected;
 
-    codegen.iterate_add_op(DbOp::IncField, doc.as_ref());
+    pub(super) fn update_op_min_max(codegen: &mut Codegen, doc: &Value, min: bool) -> DbResult<()> {
+        let doc = try_unwrap_document!("$min", doc);
 
-    Ok(())
-}
+        for (key, value) in doc.iter() {
+            let rc_str: Rc<String> = Rc::new(key.into());
+            let key_id_1 = codegen.push_static(Value::String(rc_str.clone()));
+            let key_id_2 = codegen.push_static(Value::String(rc_str));
+            let value_id = codegen.push_static(value.clone());
 
-fn update_op_set(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
-    let doc = try_unwrap_document!("$set", doc);
+            let begin_loc = codegen.current_location();
+            codegen.add_get_field(key_id_1, 0);  // stack +1
 
-    codegen.iterate_add_op(DbOp::SetField, doc.as_ref());
+            codegen.add_push_value(value_id);  // stack +2
 
-    Ok(())
-}
+            codegen.add(DbOp::Cmp);
 
-fn update_op_min_max(codegen: &mut Codegen, doc: &Value, min: bool) -> DbResult<()> {
-    let doc = try_unwrap_document!("$min", doc);
+            let jmp_loc = codegen.current_location();
+            if min {
+                codegen.add_5bytes(DbOp::IfLess, 0);
+            } else {
+                codegen.add_5bytes(DbOp::IfGreater, 0);
+            }
 
-    for (key, value) in doc.iter() {
-        let rc_str: Rc<String> = Rc::new(key.into());
-        let key_id_1 = codegen.push_static(Value::String(rc_str.clone()));
-        let key_id_2 = codegen.push_static(Value::String(rc_str));
-        let value_id = codegen.push_static(value.clone());
+            let goto_loc = codegen.current_location();
+            codegen.add_goto(0);
 
-        let begin_loc = codegen.current_location();
-        codegen.add_get_field(key_id_1, 0);  // stack +1
+            let loc = codegen.current_location();
+            codegen.update_next_location(jmp_loc as usize, loc);
 
-        codegen.add_push_value(value_id);  // stack +2
+            codegen.add(DbOp::Pop);
+            codegen.add(DbOp::Pop);  // stack
 
-        codegen.add(DbOp::Cmp);
+            codegen.add_push_value(value_id);
 
-        let jmp_loc = codegen.current_location();
-        if min {
-            codegen.add_5bytes(DbOp::IfLess, 0);
-        } else {
-            codegen.add_5bytes(DbOp::IfGreater, 0);
+            codegen.add_5bytes(DbOp::SetField, key_id_2);
+
+            codegen.add(DbOp::Pop);
+
+            let goto_next_loc = codegen.current_location();
+            codegen.add_goto(0);
+
+            let loc = codegen.current_location();
+            codegen.update_next_location(goto_loc as usize, loc);
+
+            codegen.add(DbOp::Pop);
+            codegen.add(DbOp::Pop);
+
+            let loc = codegen.current_location();
+            codegen.update_next_location(goto_next_loc as usize, loc);
+            codegen.update_failed_location(begin_loc as usize, loc);
         }
 
-        let goto_loc = codegen.current_location();
-        codegen.add_goto(0);
-
-        let loc = codegen.current_location();
-        codegen.update_next_location(jmp_loc as usize, loc);
-
-        codegen.add(DbOp::Pop);
-        codegen.add(DbOp::Pop);  // stack
-
-        codegen.add_push_value(value_id);
-
-        codegen.add_5bytes(DbOp::SetField, key_id_2);
-
-        codegen.add(DbOp::Pop);
-
-        let goto_next_loc = codegen.current_location();
-        codegen.add_goto(0);
-
-        let loc = codegen.current_location();
-        codegen.update_next_location(goto_loc as usize, loc);
-
-        codegen.add(DbOp::Pop);
-        codegen.add(DbOp::Pop);
-
-        let loc = codegen.current_location();
-        codegen.update_next_location(goto_next_loc as usize, loc);
-        codegen.update_failed_location(begin_loc as usize, loc);
+        Ok(())
     }
 
-    Ok(())
-}
-
-fn update_op_mul(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
-    let doc = try_unwrap_document!("$mul", doc);
-
-    codegen.iterate_add_op(DbOp::MulField, doc.as_ref());
-
-    Ok(())
-}
-
-fn update_op_unset(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
-    let doc = try_unwrap_document!("$unset", doc);
-
-    for (key, _) in doc.iter() {
-        codegen.add_unset_field(key.as_str());
-    }
-
-    Ok(())
-}
-
-fn update_op_rename(codegen: &mut Codegen, doc: &Value) -> DbResult<()> {
-    let doc = try_unwrap_document!("$set", doc);
-
-    for (key, value) in doc.iter() {
-        let new_name = match value {
-            Value::String(new_name) => new_name.as_str(),
-            t => {
-                let err = mk_field_name_type_unexpected(key, "String".into(), t.ty_name());
-                return Err(err);
-            }
-        };
-
-        codegen.add_rename_field(key.as_str(), new_name);
-    }
-
-    Ok(())
 }
 
 pub(super) struct Codegen {
@@ -455,15 +395,61 @@ impl Codegen {
 
     pub(super) fn add_update_operation(&mut self, update: &Document) -> DbResult<()> {
         for (key, value) in update.iter() {
-            let result = UPDATE_OP_MAP.get(key.as_str());
-            match result {
-                Some(callback) => {
-                    callback(self, value)?;
+            match key.as_str() {
+                "$inc" => {
+                    let doc = try_unwrap_document!("$inc", value);
+
+                    self.iterate_add_op(DbOp::IncField, doc.as_ref());
                 }
 
-                None => {
+                "$set" => {
+                    let doc = try_unwrap_document!("$set", value);
+
+                    self.iterate_add_op(DbOp::SetField, doc.as_ref());
+                }
+
+                "$max" => {
+                    update_op::update_op_min_max(self, value, false)?;
+                }
+
+                "$min" => {
+                    update_op::update_op_min_max(self, value, true)?;
+                }
+
+                "$mul" => {
+                    let doc = try_unwrap_document!("$mul", value);
+
+                    self.iterate_add_op(DbOp::MulField, doc.as_ref());
+                }
+
+                "$rename" => {
+                    let doc = try_unwrap_document!("$set", value);
+
+                    for (key, value) in doc.iter() {
+                        let new_name = match value {
+                            Value::String(new_name) => new_name.as_str(),
+                            t => {
+                                let err = mk_field_name_type_unexpected(key, "String".into(), t.ty_name());
+                                return Err(err);
+                            }
+                        };
+
+                        self.add_rename_field(key.as_str(), new_name);
+                    }
+                }
+
+                "$unset" => {
+                    let doc = try_unwrap_document!("$unset", value);
+
+                    for (key, _) in doc.iter() {
+                        self.add_unset_field(key.as_str());
+                    }
+                }
+
+                _ => {
                     return Err(DbErr::UnknownUpdateOperation(key.clone()))
                 }
+
             }
         }
 

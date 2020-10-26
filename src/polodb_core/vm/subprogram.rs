@@ -260,7 +260,7 @@ impl fmt::Display for SubProgram {
 
 #[cfg(test)]
 mod tests {
-    use polodb_bson::mk_document;
+    use polodb_bson::{mk_document, mk_array};
     use crate::vm::SubProgram;
     use crate::meta_doc_helper::MetaDocEntry;
 
@@ -289,6 +289,22 @@ mod tests {
         let test_doc = mk_document! {
             "_id": 6,
             "age": 32,
+        };
+        let meta_entry = MetaDocEntry::new("test".into(), 100);
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
+        println!("Program: \n\n{}", program);
+    }
+
+    #[test]
+    fn print_complex_print() {
+        let meta_doc = mk_document! {};
+        let test_doc = mk_document! {
+            "age": mk_document! {
+                "$gt": 3,
+            },
+            "age": mk_document! {
+                "$in": mk_array! [ 1, 2 ],
+            },
         };
         let meta_entry = MetaDocEntry::new("test".into(), 100);
         let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
