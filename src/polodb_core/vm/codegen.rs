@@ -245,6 +245,16 @@ impl Codegen {
         Ok(())
     }
 
+    fn recursively_get_field(&mut self, key: &str, get_field_failed_location: u32) -> usize {
+        let slices: Vec<&str> = key.split('.').collect();
+        for slice in &slices {
+            let str_ref: &str = slice.as_ref();
+            let current_stat_id = self.push_static(str_ref.into());
+            self.add_get_field(current_stat_id, get_field_failed_location);
+        }
+        slices.len()
+    }
+
     // very complex query document
     fn add_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
         for (sub_key, sub_value) in value.iter() {
