@@ -556,7 +556,7 @@ impl<'a> VM<'a> {
 
                         self.r0 = 0;
 
-                        for item in top1.unwrap_arary().iter() {
+                        for item in top1.unwrap_array().iter() {
                             let cmp_result = top2.value_cmp(item);
                             if let Ok(Ordering::Equal) = cmp_result {
                                 self.r0 = 1;

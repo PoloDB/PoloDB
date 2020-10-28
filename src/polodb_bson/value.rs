@@ -90,7 +90,7 @@ impl Value {
     }
 
     #[inline]
-    pub fn unwrap_arary(&self) -> &Rc<Array> {
+    pub fn unwrap_array(&self) -> &Rc<Array> {
         match self {
             Value::Array(arr) => arr,
             _ => panic!("unwrap error: document expected, but it's {}", self.ty_name()),
