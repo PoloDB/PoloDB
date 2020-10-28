@@ -247,6 +247,16 @@ impl fmt::Display for SubProgram {
                         pc += 5;
                     }
 
+                    DbOp::SaveStackPos => {
+                        write!(f, "{}: SaveStackPos\n", pc)?;
+                        pc += 1;
+                    }
+
+                    DbOp::RecoverStackPos => {
+                        write!(f, "{}: RecoverStackPos\n", pc)?;
+                        pc += 1;
+                    }
+
                     _ => {
                         write!(f, "{}: Unknown\n", pc)?;
                         break;
@@ -303,7 +313,7 @@ mod tests {
             "age": mk_document! {
                 "$gt": 3,
             },
-            "age": mk_document! {
+            "gentle": mk_document! {
                 "$in": mk_array! [ 1, 2 ],
             },
         };

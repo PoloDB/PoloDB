@@ -174,16 +174,21 @@ impl Codegen {
         self.emit(DbOp::Halt);
 
         let not_found_branch_preserve_location = self.current_location();
-        self.emit(DbOp::Pop);
-        self.emit(DbOp::Pop);
+        self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);  // pop the current value;
         self.emit_goto(next_preserve_location);
 
         let get_field_failed_location = self.current_location();
+        self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);
         self.emit_goto(next_preserve_location);
 
+        // the top of the stack is the target document
+        //
+        // begin to execute compare logic
+        // save the stack first
         let compare_location: u32 = self.current_location();
+        self.emit(DbOp::SaveStackPos);
 
         for (key, value) in query.iter() {
             self.emit_query_tuple(

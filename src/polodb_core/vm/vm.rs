@@ -41,6 +41,7 @@ pub struct VM<'a> {
     r0:                  i32,  // usually the logic register
     r1:                  Option<Box<Cursor>>,
     pub(crate) r2:       i64,  // usually the counter
+    r3:                  usize,
     page_handler:        &'a mut PageHandler,
     stack:               Vec<Value>,
     pub(crate) program:  Box<SubProgram>,
@@ -58,6 +59,7 @@ impl<'a> VM<'a> {
             r0: 0,
             r1: None,
             r2: 0,
+            r3: 0,
             page_handler,
             stack,
             program,
@@ -584,6 +586,16 @@ impl<'a> VM<'a> {
                         self.page_handler.auto_commit()?;
                         self.rollback_on_drop = false;
 
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::SaveStackPos => {
+                        self.r3 = self.stack.len();
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::RecoverStackPos => {
+                        self.stack.resize(self.r3, Value::Null);
                         self.pc = self.pc.add(1);
                     }
 

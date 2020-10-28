@@ -162,6 +162,10 @@ pub enum DbOp {
     // Close cursor
     Close,
 
+    SaveStackPos,
+
+    RecoverStackPos,
+
     // Exit
     // Close cursor automatically
     Halt,
