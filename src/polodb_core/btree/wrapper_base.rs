@@ -8,6 +8,10 @@ pub(super) struct BTreePageWrapperBase<'a> {
     pub(super) item_size:          u32,
 }
 
+pub fn cal_item_size(page_size: u32) -> u32 {
+    (page_size - HEADER_SIZE) / ITEM_SIZE
+}
+
 impl<'a> BTreePageWrapperBase<'a> {
 
     pub(super) fn new(page_handler: &mut PageHandler, root_page_id: u32) -> BTreePageWrapperBase {
@@ -16,11 +20,12 @@ impl<'a> BTreePageWrapperBase<'a> {
             panic!("page id is zero");
         }
 
-        let item_size = (page_handler.page_size - HEADER_SIZE) / ITEM_SIZE;
+        let item_size = cal_item_size(page_handler.page_size);
 
         BTreePageWrapperBase {
             page_handler,
-            root_page_id, item_size
+            root_page_id,
+            item_size
         }
     }
 

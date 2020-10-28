@@ -43,6 +43,11 @@ impl<'a>  Collection<'a> {
     }
 
     #[inline]
+    pub fn count(&mut self) -> DbResult<u64> {
+        self.db.ctx.count(&self.name)
+    }
+
+    #[inline]
     pub fn update(&mut self, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         self.db.ctx.update(&self.name, query, update)
     }
@@ -188,6 +193,10 @@ mod tests {
         };
 
         let mut collection = db.collection("test");
+
+        let count = collection.count().unwrap();
+        assert_eq!(TEST_SIZE, count as usize);
+
         let all = collection.find( None).unwrap();
 
         for doc in &all {

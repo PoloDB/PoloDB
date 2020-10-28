@@ -460,6 +460,12 @@ impl DbContext {
         Ok(None)
     }
 
+    pub fn count(&mut self, col_name: &str) -> DbResult<u64> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        counter_helper::count(&mut self.page_handler, collection_meta)
+    }
+
     pub fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
         // let meta_page_id = self.get_meta_page_id()?;
         //
