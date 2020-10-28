@@ -33,11 +33,11 @@ impl SubProgram {
 
         let mut codegen = Codegen::new();
 
-        codegen.add_open_read(entry.root_pid);
+        codegen.emit_open_read(entry.root_pid);
 
-        codegen.add_query_layout(query, |codegen| -> DbResult<()> {
-            codegen.add(DbOp::ResultRow);
-            codegen.add(DbOp::Pop);
+        codegen.emit_query_layout(query, |codegen| -> DbResult<()> {
+            codegen.emit(DbOp::ResultRow);
+            codegen.emit(DbOp::Pop);
             Ok(())
         })?;
 
@@ -47,11 +47,11 @@ impl SubProgram {
     pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, update: &Document) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new();
 
-        codegen.add_open_write(entry.root_pid);
+        codegen.emit_open_write(entry.root_pid);
 
-        codegen.add_query_layout(query.unwrap(), |codegen| -> DbResult<()> {
-            codegen.add_update_operation(update)?;
-            codegen.add(DbOp::Pop);
+        codegen.emit_query_layout(query.unwrap(), |codegen| -> DbResult<()> {
+            codegen.emit_update_operation(update)?;
+            codegen.emit(DbOp::Pop);
             Ok(())
         })?;
 
@@ -61,31 +61,32 @@ impl SubProgram {
     pub(crate) fn compile_query_all(entry: &MetaDocEntry) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new();
 
-        codegen.add_open_read(entry.root_pid);
+        codegen.emit_open_read(entry.root_pid);
 
         let rewind_loc = codegen.current_location();
-        codegen.add_5bytes(DbOp::Rewind, 0);
+        codegen.emit(DbOp::Rewind);
+        codegen.emit_u32(0);
 
         let goto_loc = codegen.current_location();
-        codegen.add_goto(0);
+        codegen.emit_goto(0);
 
         let location = codegen.current_location();
-        codegen.add_next(0);
+        codegen.emit_next(0);
 
         let close_loc = codegen.current_location();
-        codegen.add(DbOp::Close);
-        codegen.add(DbOp::Halt);
+        codegen.emit(DbOp::Close);
+        codegen.emit(DbOp::Halt);
 
         let result_location = codegen.current_location();
         codegen.update_next_location(location as usize, result_location);
 
         let result_loc = codegen.current_location();
-        codegen.add(DbOp::ResultRow);
-        codegen.add(DbOp::Pop);
+        codegen.emit(DbOp::ResultRow);
+        codegen.emit(DbOp::Pop);
 
         codegen.update_next_location(goto_loc as usize, result_loc);
 
-        codegen.add_goto(location);
+        codegen.emit_goto(location);
 
         codegen.update_next_location(rewind_loc as usize, close_loc);
 
