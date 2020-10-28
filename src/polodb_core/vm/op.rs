@@ -122,6 +122,11 @@ pub enum DbOp {
 
     Pop,
 
+    // 5 bytes
+    //
+    // count: pop offset count
+    Pop2,
+
     // check if top 2 values on the stack are qual
     // the result is stored in r0
     //

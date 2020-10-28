@@ -169,6 +169,12 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::Pop2 => {
+                        let index = begin.add(pc + 1).cast::<u32>().read();
+                        write!(f, "{}: Pop2({})\n", pc, index)?;
+                        pc += 5;
+                    }
+
                     DbOp::Equal => {
                         write!(f, "{}: Equal\n", pc)?;
                         pc += 1;
@@ -313,7 +319,7 @@ mod tests {
             "age": mk_document! {
                 "$gt": 3,
             },
-            "gentle": mk_document! {
+            "child.age": mk_document! {
                 "$in": mk_array! [ 1, 2 ],
             },
         };

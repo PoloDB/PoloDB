@@ -484,6 +484,14 @@ impl<'a> VM<'a> {
                         self.pc = self.pc.add(1);
                     }
 
+                    DbOp::Pop2 => {
+                        let offset = self.pc.add(1).cast::<u32>().read();
+
+                        self.stack.set_len(self.stack.len() - (offset as usize));
+
+                        self.pc = self.pc.add(5);
+                    }
+
                     DbOp::Equal => {
                         let top1 = &self.stack[self.stack.len() - 1];
                         let top2 = &self.stack[self.stack.len() - 2];

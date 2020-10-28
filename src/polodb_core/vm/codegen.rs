@@ -270,8 +270,7 @@ impl Codegen {
         for (sub_key, sub_value) in value.iter() {
             match sub_key.as_str() {
                 "$eq" => {
-                    let key_static_id = self.push_static(key.into());
-                    self.emit_get_field(key_static_id, get_field_failed_location);  // push a value1
+                    let field_size = self.recursively_get_field(key, get_field_failed_location);
 
                     let stat_val_id = self.push_static(sub_value.clone().into());
                     self.emit_push_value(stat_val_id);
@@ -280,13 +279,12 @@ impl Codegen {
                     // if not equal，go to next
                     self.emit_false_jump(not_found_branch);
 
-                    self.emit(DbOp::Pop); // pop a value2
-                    self.emit(DbOp::Pop); // pop a value1
+                    self.emit(DbOp::Pop2);
+                    self.emit_u32((field_size + 1) as u32);
                 }
 
                 "$gt" => {
-                    let key_static_id = self.push_static(key.into());
-                    self.emit_get_field(key_static_id, get_field_failed_location);  // push a value1
+                    let field_size = self.recursively_get_field(key, get_field_failed_location);
 
                     let stat_val_id = self.push_static(sub_value.clone().into());
                     self.emit_push_value(stat_val_id);
@@ -297,13 +295,12 @@ impl Codegen {
                     // less
                     self.emit_less_jump(not_found_branch);
 
-                    self.emit(DbOp::Pop); // pop a value2
-                    self.emit(DbOp::Pop); // pop a value1
+                    self.emit(DbOp::Pop2);
+                    self.emit_u32((field_size + 1) as u32);
                 }
 
                 "$gte" => {
-                    let key_static_id = self.push_static(key.into());
-                    self.emit_get_field(key_static_id, get_field_failed_location);  // push a value1
+                    let field_size = self.recursively_get_field(key, get_field_failed_location);
 
                     let stat_val_id = self.push_static(sub_value.clone().into());
                     self.emit_push_value(stat_val_id);
@@ -311,8 +308,8 @@ impl Codegen {
 
                     self.emit_less_jump(not_found_branch);
 
-                    self.emit(DbOp::Pop); // pop a value2
-                    self.emit(DbOp::Pop); // pop a value1
+                    self.emit(DbOp::Pop2);
+                    self.emit_u32((field_size + 1) as u32);
                 }
 
                 // check the value is array
@@ -324,8 +321,7 @@ impl Codegen {
                         }
                     }
 
-                    let key_static_id = self.push_static(key.into());
-                    self.emit_get_field(key_static_id, get_field_failed_location);  // push a value1
+                    let field_size = self.recursively_get_field(key, get_field_failed_location);
 
                     let stat_val_id = self.push_static(sub_value.clone().into());
                     self.emit_push_value(stat_val_id);
@@ -333,13 +329,12 @@ impl Codegen {
 
                     self.emit_false_jump(not_found_branch);
 
-                    self.emit(DbOp::Pop); // pop a value2
-                    self.emit(DbOp::Pop); // pop a value1
+                    self.emit(DbOp::Pop2);
+                    self.emit_u32((field_size + 1) as u32);
                 }
 
                 "$lt" => {
-                    let key_static_id = self.push_static(key.into());
-                    self.emit_get_field(key_static_id, get_field_failed_location);  // push a value1
+                    let field_size = self.recursively_get_field(key, get_field_failed_location);
 
                     let stat_val_id = self.push_static(sub_value.clone().into());
                     self.emit_push_value(stat_val_id);
@@ -350,13 +345,12 @@ impl Codegen {
                     // less
                     self.emit_greater_jump(not_found_branch);
 
-                    self.emit(DbOp::Pop); // pop a value2
-                    self.emit(DbOp::Pop); // pop a value1
+                    self.emit(DbOp::Pop2);
+                    self.emit_u32((field_size + 1) as u32);
                 }
 
                 "$lte" => {
-                    let key_static_id = self.push_static(key.into());
-                    self.emit_get_field(key_static_id, get_field_failed_location);  // push a value1
+                    let field_size = self.recursively_get_field(key, get_field_failed_location);
 
                     let stat_val_id = self.push_static(sub_value.clone().into());
                     self.emit_push_value(stat_val_id);
@@ -365,13 +359,12 @@ impl Codegen {
                     // less
                     self.emit_greater_jump(not_found_branch);
 
-                    self.emit(DbOp::Pop); // pop a value2
-                    self.emit(DbOp::Pop); // pop a value1
+                    self.emit(DbOp::Pop2);
+                    self.emit_u32((field_size + 1) as u32);
                 }
 
                 "$ne" => {
-                    let key_static_id = self.push_static(key.into());
-                    self.emit_get_field(key_static_id, get_field_failed_location);  // push a value1
+                    let field_size = self.recursively_get_field(key, get_field_failed_location);
 
                     let stat_val_id = self.push_static(sub_value.clone().into());
                     self.emit_push_value(stat_val_id);
@@ -380,8 +373,8 @@ impl Codegen {
                     // if equal，go to next
                     self.emit_true_jump(not_found_branch);
 
-                    self.emit(DbOp::Pop); // pop a value2
-                    self.emit(DbOp::Pop); // pop a value1
+                    self.emit(DbOp::Pop2);
+                    self.emit_u32((field_size + 1) as u32);
                 }
 
                 "$nin" => {
@@ -392,8 +385,7 @@ impl Codegen {
                         }
                     }
 
-                    let key_static_id = self.push_static(key.into());
-                    self.emit_get_field(key_static_id, get_field_failed_location);  // push a value1
+                    let field_size = self.recursively_get_field(key, get_field_failed_location);
 
                     let stat_val_id = self.push_static(sub_value.clone().into());
                     self.emit_push_value(stat_val_id);
@@ -401,8 +393,8 @@ impl Codegen {
 
                     self.emit_true_jump(not_found_branch);
 
-                    self.emit(DbOp::Pop); // pop a value2
-                    self.emit(DbOp::Pop); // pop a value1
+                    self.emit(DbOp::Pop2);
+                    self.emit_u32((field_size + 1) as u32);
                 }
 
                 _ => {
