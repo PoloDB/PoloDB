@@ -977,6 +977,46 @@ static napi_value js_doc_len(napi_env env, napi_callback_info info) {
   return result;
 }
 
+static napi_value js_count(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  size_t argc = 2;
+  napi_value args[2];
+  status = napi_get_cb_info(env, info, &argc, args, NULL, NULL);
+  assert(status == napi_ok);
+
+  if (!check_type(env, args[0], napi_external)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 0");
+    return NULL;
+  }
+
+  if (!check_type(env, args[1], napi_string)) {
+    napi_throw_type_error(env, NULL, "Wrong arguments 1");
+    return NULL;
+  }
+
+  Database* db;
+  status = napi_get_value_external(env, args[0], (void**)&db);
+  assert(status == napi_ok);
+
+  static char name_buffer[BUFFER_SIZE];
+  memset(name_buffer, 0, BUFFER_SIZE);
+
+  size_t written_count = 0;
+  status = napi_get_value_string_utf8(env, args[1], name_buffer, BUFFER_SIZE, &written_count);
+  assert(status == napi_ok);
+
+  int64_t ec =  0;
+  STD_CALL(PLDB_count(db, name_buffer));
+
+  napi_value result;
+
+  status = napi_create_int64(env, ec, &result);
+  assert(status == napi_ok);
+
+  return result;
+}
+
 static napi_value js_create_collection(napi_env env, napi_callback_info info) {
   napi_status status;
 
@@ -1531,6 +1571,7 @@ static napi_value Init(napi_env env, napi_value exports) {
   REGISTER_CALLBACK("valueGetArray", js_value_get_array);
   REGISTER_CALLBACK("valueGetDocument", js_value_get_doc);
   REGISTER_CALLBACK("valueGetObjectId", js_value_get_object_id);
+  REGISTER_CALLBACK("count", js_count);
   REGISTER_CALLBACK("createCollection", js_create_collection);
   REGISTER_CALLBACK("startTransaction", js_start_transaction);
   REGISTER_CALLBACK("commit", js_commit);

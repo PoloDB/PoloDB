@@ -102,6 +102,25 @@ pub extern "C" fn PLDB_commit(db: *mut DbContext) -> c_int {
 }
 
 #[no_mangle]
+pub extern "C" fn PLDB_count(db: *mut DbContext, name: *const c_char) -> c_longlong {
+    unsafe {
+        let name_str= CStr::from_ptr(name);
+        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code() as c_longlong);
+        let rust_db = db.as_mut().unwrap();
+        let result = rust_db.count(name_utf8);
+        match result {
+            Ok(result) => {
+                return result as c_longlong;
+            }
+            Err(err) => {
+                set_global_error(err);
+                return PLDB_error_code() as c_longlong;
+            }
+        };
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn PLDB_create_collection(db: *mut DbContext, name: *const c_char) -> c_int {
     unsafe {
         let name_str= CStr::from_ptr(name);

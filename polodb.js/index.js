@@ -1,4 +1,4 @@
-const addon = require('./polodb-js');
+const addon = require('bindings')('./polodb-js');
 const { typeName } = require('./typeName');
 
 function version() {
@@ -391,6 +391,10 @@ class Collection {
     }
 
     return result;
+  }
+
+  count() {
+    return addon.count(this.__db[NativeExt], this.__name);;
   }
 
 }
