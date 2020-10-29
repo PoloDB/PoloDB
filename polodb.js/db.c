@@ -16,6 +16,8 @@
     return NULL; \
   }
 
+static napi_ref collection_object_ref;
+
 static napi_value db_version(napi_env env, napi_callback_info info) {
   static char buffer[BUFFER_SIZE];
   memset(buffer, 0, BUFFER_SIZE);
@@ -1521,8 +1523,362 @@ static napi_value js_handle_state(napi_env env, napi_callback_info info) {
   return result;
 }
 
+#define CHECK_STAT(stat) \
+  if ((stat) != napi_ok) { \
+    return NULL; \
+  }
+
+#define CHECK_STAT2(stat) \
+  if ((stat) != napi_ok) { \
+    goto err; \
+  }
+
 #define DECLARE_NAPI_METHOD(name, func)                                        \
   { name, 0, func, 0, 0, 0, napi_default, 0 }
+
+typedef struct {
+  Database* db;
+  size_t name_size;
+  size_t name_capacity;
+  char* name;
+} InternalCollection;
+
+InternalCollection* NewInternalCollection(Database* db) {
+  InternalCollection* collection = (InternalCollection*)malloc(sizeof(InternalCollection));
+  memset(collection, 0, sizeof(InternalCollection));
+
+  collection->db = db;
+  collection->name_size = 0;
+  collection->name_capacity = 512;
+  collection->name = malloc(512);
+  memset(collection->name, 0, collection->name_capacity);
+
+  return collection;
+}
+
+void InternalCollection_finalizer(napi_env env, void* finalize_data, void* finalize_hint) {
+  InternalCollection* internal_collection = (InternalCollection*)finalize_data;
+  if (internal_collection->name != NULL) {
+    free(internal_collection->name);
+    internal_collection->name = NULL;
+  }
+  free(internal_collection);
+}
+
+static napi_value Collection_constructor(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  napi_value this_arg;
+
+  size_t argc = 2;
+  napi_value args[2];
+  status = napi_get_cb_info(env, info, &argc, args, &this_arg, NULL);
+  CHECK_STAT(status);
+
+  Database* db = NULL;
+  status = napi_unwrap(env, args[0], (void**)&db);
+  CHECK_STAT(status);
+
+  napi_property_descriptor db_prop[] = {
+    { "__db", 0, 0, 0, 0, args[0], napi_default, 0 },
+    { "__name", 0, 0, 0, 0, args[1], napi_default, 0 },
+    { NULL }
+  };
+
+  status = napi_define_properties(env, this_arg, 2, db_prop);
+  CHECK_STAT(status);
+
+  InternalCollection* internal_collection = NewInternalCollection(db);
+  
+  status = napi_wrap(env, this_arg, internal_collection, InternalCollection_finalizer, 0, NULL);
+  CHECK_STAT(status);
+
+  status = napi_get_value_string_utf8(
+    env, args[1],
+    internal_collection->name,
+    internal_collection->name_capacity,
+    &internal_collection->name_size
+  );
+  CHECK_STAT(status);
+
+  return this_arg;
+}
+
+static DbValue* JsValueToDbValue(napi_env env, napi_value value);
+static DbDocument* JsValueToDbDocument(napi_env env, napi_value value);
+
+static bool JsIsInteger(napi_env env, napi_value value) {
+  napi_status status;
+  napi_value global;
+
+  status = napi_get_global(env, &global);
+  if (status != napi_ok) {
+    return false;
+  }
+
+  napi_value number_str;
+  status = napi_create_string_utf8(env, "Number", NAPI_AUTO_LENGTH, &number_str);
+  if (status != napi_ok) {
+    return false;
+  }
+
+  napi_value is_integer_str;
+  status = napi_create_string_utf8(env, "Number", NAPI_AUTO_LENGTH, &number_str);
+  if (status != napi_ok) {
+    return false;
+  }
+
+  napi_value number_instance;
+  status = napi_get_property(env, global, number_str, &number_instance);
+  if (status != napi_ok) {
+    return false;
+  }
+
+  napi_value is_int_fun;
+  status = napi_get_property(env, global, is_integer_str, &is_int_fun);
+  if (status != napi_ok) {
+    return false;
+  }
+
+  size_t argc = 1;
+  napi_value argv[] = { value };
+
+  napi_value result;
+  status = napi_call_function(env, number_instance, is_int_fun, argc, argv, &result);
+  if (status != napi_ok) {
+    return false;
+  }
+
+  bool bl_result = false;
+
+  status = napi_get_value_bool(env, result, &bl_result);
+  if (status != napi_ok) {
+    return false;
+  }
+
+  return bl_result;
+}
+
+static DbValue* JsValueToDbValue(napi_env env, napi_value value) {
+  napi_status status;
+  napi_valuetype ty;
+
+  status = napi_typeof(env, value, &ty);
+
+  DbValue* result = NULL;
+
+  int64_t int_value = 0;
+  double float_value = 0;
+  switch (ty) {
+    case napi_number: {
+      if (JsIsInteger(env, value)) {
+        status = napi_get_value_int64(env, value, &int_value);
+        return PLDB_mk_int(int_value);
+      } else {
+        status = napi_get_value_double(env, value, &float_value);
+        return PLDB_mk_double(float_value);
+      }
+    }
+
+    case napi_object: {
+      DbDocument* doc = JsValueToDbDocument(env, value);
+      if (doc == NULL) {
+        return NULL;
+      }
+
+      result = PLDB_doc_to_value(doc);
+
+      PLDB_free_doc(doc);
+      return result;
+    }
+    
+    default:
+      napi_throw_type_error(env, NULL, "unsupport object type");
+      return NULL;
+  }
+}
+
+static DbDocument* JsValueToDbDocument(napi_env env, napi_value value) {
+  napi_status status;
+  if (!check_type(env, value, napi_object)) {
+    napi_throw_type_error(env, NULL, "object expected");
+    return NULL;
+  }
+  DbDocument* doc = PLDB_mk_doc();
+
+  napi_value names_array;
+
+  status = napi_get_property_names(env, value, &names_array);
+  CHECK_STAT2(status);
+
+  uint32_t arr_len = 0;
+  status = napi_get_array_length(env, names_array, &arr_len);
+  CHECK_STAT2(status);
+
+  char name_buffer[512];
+
+  napi_value element_name;
+  napi_value element_value;
+  DbValue* db_value;
+  int ec = 0;
+  for (uint32_t i = 0; i < arr_len; i++) {
+    status = napi_get_element(env, names_array, i, &element_name);
+    CHECK_STAT2(status);
+
+    status = napi_get_property(env, value, element_name, &element_value);
+    CHECK_STAT2(status);
+
+    memset(name_buffer, 0, 512);
+
+    size_t size = 0;
+    status = napi_get_value_string_utf8(env, element_name, name_buffer, 512, &size);
+    CHECK_STAT2(status);
+
+    db_value = JsValueToDbValue(env, element_value);
+    if (db_value == NULL) {
+      goto err;
+    }
+
+    ec = PLDB_doc_set(doc, name_buffer, db_value);
+    if (ec < 0) {
+      napi_throw_type_error(env, NULL, PLDB_error_msg());
+      PLDB_free_value(db_value);
+      goto err;
+    }
+
+    PLDB_free_value(db_value);
+  }
+
+  goto normal;
+err:
+  PLDB_free_doc(doc);
+  return NULL;
+normal:
+  return doc;
+}
+
+static napi_value Collection_insert(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  napi_value this_arg;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, &this_arg, NULL);
+  CHECK_STAT(status);
+
+  InternalCollection* internal_collection;
+  status = napi_unwrap(env, this_arg, (void**)&internal_collection);
+  CHECK_STAT(status);
+
+  DbDocument* doc = JsValueToDbDocument(env, args[0]); 
+  if (doc == NULL) {
+    return NULL;
+  }
+
+  napi_value result = 0;
+  int ec = 0;
+  ec = PLDB_insert(internal_collection->db, internal_collection->name, doc);
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    goto clean;
+  }
+
+clean:
+  PLDB_free_doc(doc);
+  return result;
+}
+
+static napi_value Database_create_collection(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  napi_value this_arg;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, &this_arg, NULL);
+  CHECK_STAT(status);
+
+  Database* db = NULL;
+  status = napi_unwrap(env, this_arg, (void*)&db);
+  CHECK_STAT(status);
+
+  if (!check_type(env, args[0], napi_string)) {
+    napi_throw_type_error(env, NULL, "The first argument should be a string");
+    return NULL;
+  }
+
+  static char path_buffer[BUFFER_SIZE];
+  memset(path_buffer, 0, BUFFER_SIZE);
+
+  size_t written_count = 0;
+  status = napi_get_value_string_utf8(env, args[0], path_buffer, BUFFER_SIZE, &written_count);
+  assert(status == napi_ok);
+
+  int ec = 0;
+  STD_CALL(PLDB_create_collection(db, path_buffer));
+
+  return NULL;
+}
+
+static napi_value Database_close(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  napi_value this_arg;
+
+  status = napi_get_cb_info(env, info, NULL, NULL, &this_arg, NULL);
+  CHECK_STAT(status);
+
+  Database* db;
+
+  status = napi_remove_wrap(env, this_arg, (void*)db);
+  CHECK_STAT(status);
+
+  PLDB_close(db);
+
+  return NULL;
+}
+
+static void Database_finalize(napi_env env, void* finalize_data, void* finalize_hint) {
+  if (finalize_data == NULL) {
+    return;
+  }
+  PLDB_close((Database*)finalize_data);
+}
+
+static napi_value Database_constuctor(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  napi_value this_arg;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, &this_arg, NULL);
+  CHECK_STAT(status);
+
+  if (!check_type(env, args[0], napi_string)) {
+    napi_throw_type_error(env, NULL, "The first argument should be a string");
+    return NULL;
+  }
+
+  static char path_buffer[BUFFER_SIZE];
+  memset(path_buffer, 0, BUFFER_SIZE);
+
+  size_t written_count = 0;
+  status = napi_get_value_string_utf8(env, args[0], path_buffer, BUFFER_SIZE, &written_count);
+  assert(status == napi_ok);
+
+  Database* db = PLDB_open(path_buffer);
+  if (db == NULL) {
+    napi_throw_type_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
+
+  status = napi_wrap(env, this_arg, db, Database_finalize, 0, NULL);
+  CHECK_STAT(status);
+
+  return this_arg;
+}
 
 static napi_status SetCallbackProp(napi_env env, napi_value exports, const char* key, napi_callback cb) {
   napi_status status;
@@ -1585,7 +1941,58 @@ static napi_value Init(napi_env env, napi_value exports) {
   REGISTER_CALLBACK("dbHandleState", js_handle_state);
   REGISTER_CALLBACK("dbHandleGet", js_handle_get);
   REGISTER_CALLBACK("dbHandleToStr", js_handle_to_str);
+  REGISTER_CALLBACK("Database", Database_constuctor);
   REGISTER_CALLBACK("version", db_version);
+
+  size_t db_prop_size = 1;
+  napi_property_descriptor db_props[] = {
+    DECLARE_NAPI_METHOD("createCollection", Database_create_collection),
+    DECLARE_NAPI_METHOD("close", Database_close),
+    {NULL}
+  };
+
+  napi_value db_result;
+  status = napi_define_class(
+    env,
+    "Database",
+    NAPI_AUTO_LENGTH,
+    Database_constuctor,
+    NULL,
+    db_prop_size,
+    db_props,
+    &db_result
+  );
+  CHECK_STAT(status);
+
+  napi_property_descriptor export_prop = { "Database", NULL, 0, 0, 0, db_result, napi_default, 0 };
+  status = napi_define_properties(env, exports, 1, &export_prop);
+  CHECK_STAT(status);
+
+  size_t collection_prop_size = 0;
+  napi_property_descriptor collection_props[] = {
+    {NULL}
+  };
+
+  napi_value collection_result;
+  status = napi_define_class(
+    env,
+    "Collection",
+    NAPI_AUTO_LENGTH,
+    Collection_constructor,
+    NULL,
+    collection_prop_size,
+    collection_props,
+    &collection_result
+  );
+  CHECK_STAT(status);
+
+  status = napi_create_reference(
+    env,
+    collection_result,
+    1,
+    &collection_object_ref
+  );
+  CHECK_STAT(status);
 
   return exports;
 }
