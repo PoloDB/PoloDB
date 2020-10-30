@@ -7,6 +7,6 @@
 /polodb-js.node
 
 /test
-/polodb.h
-/db.c
+/*.c
+/*.h
 /CMakeLists.txt

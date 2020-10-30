@@ -1794,6 +1794,172 @@ normal:
   return doc;
 }
 
+static napi_value DbValueToJsValue(napi_env env, DbValue* value);
+
+static napi_value DbDocumentToJsValue(napi_env env, DbDocument* doc) {
+  napi_status status;
+  napi_value result = 0;
+
+  status = napi_create_object(env, &result);
+  CHECK_STAT(status);
+
+  int ec = 0;
+  DbDocumentIter* iter = PLDB_doc_iter(doc);
+
+  static char buffer[BUFFER_SIZE];
+  memset(buffer, 0, BUFFER_SIZE);
+
+  DbValue* item;
+  ec = PLDB_doc_iter_next(iter, buffer, BUFFER_SIZE, &item);
+
+  while (ec) {
+    napi_value item_value = DbValueToJsValue(env, item);
+
+    napi_property_descriptor prop = { buffer, NULL, 0, 0, 0, item_value, napi_default, 0 };
+    status = napi_define_properties(env, result, 1, &prop);
+    if (status != napi_ok) {
+      PLDB_free_value(item);
+      goto err;
+    }
+
+    memset(buffer, 0, BUFFER_SIZE);
+    PLDB_free_value(item);
+    item = NULL;
+
+    ec = PLDB_doc_iter_next(iter, buffer, BUFFER_SIZE, &item);
+  }
+
+  goto normal;
+err:
+  if (iter != NULL) {
+    PLDB_free_doc_iter(iter);
+    iter = NULL;
+  }
+  return NULL;
+normal:
+  PLDB_free_doc_iter(iter);
+  return result;
+}
+
+static napi_value DbArrayToJsValue(napi_env env, DbArray* arr) {
+  napi_status status;
+  napi_value result = 0;
+
+  uint32_t len = PLDB_arr_len(arr);
+
+  status = napi_create_array_with_length(env, len, &result);
+  CHECK_STAT(status);
+
+  DbValue* value_item = NULL;
+  int ec = 0;
+  for (uint32_t i = 0; i < len; i++) {
+    ec = PLDB_arr_get(arr, i, &value_item);
+    if (ec < 0) {
+      return NULL;
+    }
+
+    napi_value js_item = DbValueToJsValue(env, value_item);
+
+    status = napi_set_element(env, result, i, js_item);
+    if (status != napi_ok) {
+      PLDB_free_value(value_item);
+      return NULL;
+    }
+
+    PLDB_free_value(value_item);
+    value_item = NULL;
+  }
+
+  return result;
+}
+
+static napi_value DbValueToJsValue(napi_env env, DbValue* value) {
+  napi_status status;
+  napi_value result = NULL;
+  double db_value = 0;
+  int ty = PLDB_value_type(value);
+  int ec = 0;
+  int64_t long_value = 0;
+  switch (ty) {
+    case PLDB_VAL_NULL:
+      status = napi_get_undefined(env, &result);
+      CHECK_STAT(status);
+      return result;
+
+    case PLDB_VAL_DOUBL:
+      ec = PLDB_value_get_double(value, &db_value);
+      if (ec < 0) {
+        napi_throw_error(env, NULL, PLDB_error_msg());
+        return NULL;
+      }
+      status = napi_create_double(env, db_value, &result);
+      CHECK_STAT(status);
+      return result;
+
+    case PLDB_VAL_BOOLEAN:
+      ec = PLDB_value_get_bool(value);
+      if (ec < 0) {
+        napi_throw_error(env, NULL, PLDB_error_msg());
+        return NULL;
+      }
+      status = napi_get_boolean(env, ec ? true : false, &result);
+      CHECK_STAT(status);
+      return result;
+
+    case PLDB_VAL_INT:
+      ec = PLDB_value_get_i64(value, &long_value);
+      CHECK_STAT(status);
+      return result;
+
+    case PLDB_VAL_STRING: {
+      if (ec < 0) {
+        napi_throw_error(env, NULL, PLDB_error_msg());
+        return NULL;
+      }
+      const char* content = NULL;
+      ec = PLDB_value_get_string_utf8(value, &content);
+
+      result = NULL;
+      status = napi_create_string_utf8(env, content, ec, &result);
+
+      return result;
+    }
+
+    case PLDB_VAL_DOCUMENT: {
+      DbDocument* doc = NULL;
+      ec = PLDB_value_get_document(value, &doc);
+      if (ec < 0) {
+        return NULL;
+      }
+
+      result = DbDocumentToJsValue(env, doc);
+
+      PLDB_free_doc(doc);
+
+      return result;
+    }
+
+    case PLDB_VAL_ARRAY: {
+      DbArray* arr = NULL;
+      ec = PLDB_value_get_array(value, &arr);
+      if (ec < 0) {
+        return NULL;
+      }
+
+      result = DbArrayToJsValue(env, arr);
+
+      PLDB_free_arr(arr);
+
+      return result;
+    }
+    
+    default:
+      napi_throw_error(env, NULL, "Uknown DbValue type");
+      return NULL;
+
+  }
+}
+
 static napi_value Collection_insert(napi_env env, napi_callback_info info) {
   napi_status status;
 
@@ -1823,6 +1989,98 @@ static napi_value Collection_insert(napi_env env, napi_callback_info info) {
 
 clean:
   PLDB_free_doc(doc);
+  return result;
+}
+
+static napi_value Collection_find(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  napi_value this_arg;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, &this_arg, NULL);
+  CHECK_STAT(status);
+
+  InternalCollection* internal_collection;
+  status = napi_unwrap(env, this_arg, (void**)&internal_collection);
+  CHECK_STAT(status);
+
+  DbDocument* query_doc;
+
+  napi_valuetype arg1_ty;
+
+  status = napi_typeof(env, args[0], &arg1_ty);
+  assert(status == napi_ok);
+
+  if (arg1_ty == napi_undefined) {
+    query_doc = NULL;
+  } else if (arg1_ty == napi_object) {
+    query_doc = JsValueToDbDocument(env, args[0]);
+    if (query_doc == NULL) {
+      return NULL;
+    }
+  }
+
+  int ec = 0;
+
+  DbHandle* handle = NULL;
+  ec = PLDB_find(
+    internal_collection->db,
+    internal_collection->name,
+    query_doc,
+    &handle
+  );
+
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
+
+  napi_value result;
+  status = napi_create_array(env, &result);
+
+  ec = PLDB_handle_step(handle);
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
+
+  uint32_t counter = 0;
+
+  int state = PLDB_handle_state(handle);
+  DbValue* item;
+  while (state == 2) {
+    PLDB_handle_get(handle, &item);
+    napi_value js_value = DbValueToJsValue(env, item);
+    if (js_value == NULL) {
+      PLDB_free_value(item);
+      goto err;
+    }
+
+    status = napi_set_element(env, result, counter, js_value);
+    if (status != napi_ok) {
+      PLDB_free_value(item);
+      goto err;
+    }
+
+    PLDB_free_value(item);
+    counter++;
+
+    ec = PLDB_handle_step(handle);
+    if (ec < 0) {
+      napi_throw_error(env, NULL, PLDB_error_msg());
+      goto err;
+    }
+    state = PLDB_handle_state(handle);
+  }
+
+  goto normal;
+err:
+  PLDB_free_handle(handle);
+  return NULL;
+normal:
+  PLDB_free_handle(handle);
   return result;
 }
 
@@ -2005,8 +2263,10 @@ static napi_value Init(napi_env env, napi_value exports) {
   status = napi_define_properties(env, exports, 1, &export_prop);
   CHECK_STAT(status);
 
-  size_t collection_prop_size = 0;
+  size_t collection_prop_size = 2;
   napi_property_descriptor collection_props[] = {
+    DECLARE_NAPI_METHOD("insert", Collection_insert),
+    DECLARE_NAPI_METHOD("find", Collection_find),
     {NULL}
   };
 
