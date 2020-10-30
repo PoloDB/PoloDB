@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <node_api.h>
+#include "utils.h"
 
 #define BUFFER_SIZE 512
 #define VALUE_NAME_BUFFER_SIZE 64
@@ -1606,58 +1607,8 @@ static napi_value Collection_constructor(napi_env env, napi_callback_info info) 
 
 static DbValue* JsValueToDbValue(napi_env env, napi_value value);
 static DbDocument* JsValueToDbDocument(napi_env env, napi_value value);
-
-static bool JsIsInteger(napi_env env, napi_value value) {
-  napi_status status;
-  napi_value global;
-
-  status = napi_get_global(env, &global);
-  if (status != napi_ok) {
-    return false;
-  }
-
-  napi_value number_str;
-  status = napi_create_string_utf8(env, "Number", NAPI_AUTO_LENGTH, &number_str);
-  if (status != napi_ok) {
-    return false;
-  }
-
-  napi_value is_integer_str;
-  status = napi_create_string_utf8(env, "Number", NAPI_AUTO_LENGTH, &number_str);
-  if (status != napi_ok) {
-    return false;
-  }
-
-  napi_value number_instance;
-  status = napi_get_property(env, global, number_str, &number_instance);
-  if (status != napi_ok) {
-    return false;
-  }
-
-  napi_value is_int_fun;
-  status = napi_get_property(env, global, is_integer_str, &is_int_fun);
-  if (status != napi_ok) {
-    return false;
-  }
-
-  size_t argc = 1;
-  napi_value argv[] = { value };
-
-  napi_value result;
-  status = napi_call_function(env, number_instance, is_int_fun, argc, argv, &result);
-  if (status != napi_ok) {
-    return false;
-  }
-
-  bool bl_result = false;
-
-  status = napi_get_value_bool(env, result, &bl_result);
-  if (status != napi_ok) {
-    return false;
-  }
-
-  return bl_result;
-}
+static DbValue* JsStringValueToDbValue(napi_env env, napi_value value);
+static DbValue* JsArrayValueToDbValue(napi_env env, napi_value value);
 
 static DbValue* JsValueToDbValue(napi_env env, napi_value value) {
   napi_status status;
@@ -1669,9 +1620,28 @@ static DbValue* JsValueToDbValue(napi_env env, napi_value value) {
 
   int64_t int_value = 0;
   double float_value = 0;
+  bool bl_value = false;
+  int ec = 0;
   switch (ty) {
+    case napi_undefined:
+    case napi_null:
+      return PLDB_mk_null();
+
+    case napi_string:
+      return JsStringValueToDbValue(env, value);
+
+    case napi_boolean:
+      status = napi_get_value_bool(env, value, &bl_value);
+      if (status != napi_ok) {
+        return NULL;
+      }
+      return PLDB_mk_bool(bl_value ? 1 : 0);
+
     case napi_number: {
-      if (JsIsInteger(env, value)) {
+      ec = JsIsInteger(env, value);
+      if (ec < 0) {
+        return NULL;
+      } else if (ec) {
         status = napi_get_value_int64(env, value, &int_value);
         return PLDB_mk_int(int_value);
       } else {
@@ -1681,6 +1651,13 @@ static DbValue* JsValueToDbValue(napi_env env, napi_value value) {
     }
 
     case napi_object: {
+      ec = JsIsArray(env, value);
+      if (ec < 0) {
+        return NULL;
+      } else if (ec) {
+        return JsArrayValueToDbValue(env, value);
+      }
+
       DbDocument* doc = JsValueToDbDocument(env, value);
       if (doc == NULL) {
         return NULL;
@@ -1696,6 +1673,66 @@ static DbValue* JsValueToDbValue(napi_env env, napi_value value) {
       napi_throw_type_error(env, NULL, "unsupport object type");
       return NULL;
   }
+}
+
+static DbValue* JsArrayValueToDbValue(napi_env env, napi_value value) {
+  napi_status status;
+  DbArray* arr = PLDB_mk_arr();
+
+  uint32_t arr_len = 0;
+  status = napi_get_array_length(env, value, &arr_len);
+  CHECK_STAT2(status);
+
+  napi_value item_value;
+  DbValue* item_db_value;
+  for (uint32_t i = 0; i < arr_len; i++) {
+    status = napi_get_element(env, value, i, &item_value);
+    CHECK_STAT2(status);
+
+    item_db_value = JsValueToDbValue(env, item_value);
+    if (item_db_value == NULL) {
+      goto err;
+    }
+
+    PLDB_arr_push(arr, item_db_value);
+    PLDB_free_arr(arr);
+  }
+
+  DbValue* result = NULL;
+  goto normal;
+err:
+  PLDB_free_arr(arr);
+  return NULL;
+
+normal:
+  result = PLDB_arr_to_value(arr);
+  PLDB_free_arr(arr);
+
+  return result;
+}
+
+static DbValue* JsStringValueToDbValue(napi_env env, napi_value value) {
+  napi_status status;
+
+  size_t str_len = 0;
+  status = napi_get_value_string_utf8(env, value, NULL, 0, &str_len);
+  if (status != napi_ok) {
+    return NULL;
+  }
+
+  char* buffer = malloc(str_len + 1);
+  memset(buffer, 0, str_len + 1);
+
+  status = napi_get_value_string_utf8(env, value, buffer, str_len + 1, &str_len);
+  if (status != napi_ok) {
+    return NULL;
+  }
+
+  DbValue* result = PLDB_mk_str(buffer);
+
+  free(buffer);
+
+  return result;
 }
 
 static DbDocument* JsValueToDbDocument(napi_env env, napi_value value) {
