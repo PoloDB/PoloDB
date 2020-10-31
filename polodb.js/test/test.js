@@ -65,7 +65,6 @@ describe('Database', function() {
           hello: i.toString(),
         });
       }
-
     });
 
     it('count', function() {
