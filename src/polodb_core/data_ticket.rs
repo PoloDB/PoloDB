@@ -1,3 +1,4 @@
+use std::fmt;
 
 // 6 bytes in store
 #[derive(Clone)]
@@ -31,6 +32,14 @@ impl DataTicket {
         let index = u16::from_be_bytes(index_bytes);
 
         DataTicket { pid, index }
+    }
+
+}
+
+impl fmt::Display for DataTicket {
+
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "DataTicket(pid={}, index={})", self.pid, self.index)
     }
 
 }

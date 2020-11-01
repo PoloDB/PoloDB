@@ -447,6 +447,7 @@ impl DbContext {
             collection_meta.root_pid as u32
         );
         let result = delete_wrapper.delete_item(key)?;
+        delete_wrapper.flush_pages()?;
 
         if let Some(deleted_item) = &result {
             let index_ctx_opt = IndexCtx::from_meta_doc(meta_doc.borrow());

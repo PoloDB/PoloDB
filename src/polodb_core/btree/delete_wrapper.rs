@@ -1,16 +1,17 @@
 use std::rc::Rc;
-use std::borrow::{BorrowMut, Borrow};
+use std::borrow::BorrowMut;
 use std::collections::{BTreeSet, HashMap};
 use polodb_bson::{Value, Document};
 use crate::DbResult;
 use crate::page::{RawPage, PageHandler};
 use super::btree::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;
+use crate::data_ticket::DataTicket;
 
 struct DeleteBackwardItem {
     is_leaf:       bool,
     child_size:    usize,
-    deleted_item:  Rc<Document>,
+    deleted_ticket:   Box<DataTicket>,
 }
 
 pub struct BTreePageDeleteWrapper<'a> {
@@ -31,27 +32,33 @@ impl<'a> BTreePageDeleteWrapper<'a> {
     }
 
     fn get_btree_by_pid(&mut self, pid: u32, parent_pid: u32) -> DbResult<Box<BTreeNode>> {
-        match self.cache_btree.remove(&pid) {
-            Some(node) => {
-                self.dirty_set.remove(&pid);
-                Ok(node)
-            }
-
-            None => {
-                let node = self.base.get_node(pid, parent_pid)?;
-                Ok(Box::new(node))
-            }
-
-        }
+        let node = self.base.get_node(pid, parent_pid)?;
+        Ok(Box::new(node))
+        // match self.cache_btree.remove(&pid) {
+        //     Some(node) => {
+        //         self.dirty_set.remove(&pid);
+        //         Ok(node)
+        //     }
+        //
+        //     None => {
+        //         let node = self.base.get_node(pid, parent_pid)?;
+        //         Ok(Box::new(node))
+        //     }
+        //
+        // }
     }
 
-    #[inline]
+    // #[inline]
     fn write_btree(&mut self, node: Box<BTreeNode>) {
-        self.dirty_set.insert(node.pid);
-        self.cache_btree.insert(node.pid, node);
+        let mut page = RawPage::new(node.pid, self.base.page_handler.page_size);
+        node.to_raw(&mut page).unwrap();
+        self.base.page_handler.pipeline_write_page(&page).unwrap();
+        // self.base.page_handler.pipeline_write_page(&page)?;
+        // self.dirty_set.insert(node.pid);
+        // self.cache_btree.insert(node.pid, node);
     }
 
-    fn flush_pages(&mut self) -> DbResult<()> {
+    pub fn flush_pages(&mut self) -> DbResult<()> {
         for pid in &self.dirty_set {
             let node = self.cache_btree.remove(pid).unwrap();
             let mut page = RawPage::new(node.pid, self.base.page_handler.page_size);
@@ -80,7 +87,10 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                 }
                 let subtree_pid = root_btree_node.indexes[idx];
                 match self.delete_item_on_subtree(root_btree_node.pid, subtree_pid, id)? {
-                    Some(backward_item) => Ok(Some(backward_item.deleted_item)),
+                    Some(backward_item) => {
+                        let item = self.erase_item(backward_item.deleted_ticket.as_ref())?;
+                        Ok(Some(item))
+                    },
                     None => Ok(None)
                 }
             }
@@ -88,11 +98,11 @@ impl<'a> BTreePageDeleteWrapper<'a> {
             SearchKeyResult::Node(idx) => {
                 if root_btree_node.is_leaf() {
                     let backward_item = self.delete_item_on_leaf(root_btree_node, idx)?;
-                    self.flush_pages()?;
-                    return Ok(Some(backward_item.deleted_item))
+                    let item = self.erase_item(backward_item.deleted_ticket.as_ref())?;
+                    return Ok(Some(item))
                 }
 
-                let result = self.erase_item(&root_btree_node.content[idx])?;
+                let result = self.erase_item(&root_btree_node.content[idx].data_ticket)?;
 
                 let current_pid = root_btree_node.pid;
                 let next_pid = root_btree_node.indexes[idx + 1];
@@ -101,6 +111,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                 root_btree_node.content[idx] = next_item.clone();
                 self.write_btree(root_btree_node);
 
+                // borrow item from children, do NOT need to erase
                 match self.delete_item_on_subtree(current_pid, next_pid, &next_item.key)? {
                     Some(_) => Ok(Some(result)),
                     None => Ok(None)
@@ -143,7 +154,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                     let backward_item = self.delete_item_on_leaf(current_btree_node, idx)?;
                     Ok(Some(backward_item))
                 } else {
-                    let deleted_item = self.erase_item(&current_btree_node.content[idx])?;
+                    let deleted_ticket = Box::new(current_btree_node.content[idx].data_ticket.clone());
 
                     let current_pid = current_btree_node.pid;
                     let subtree_pid = current_btree_node.indexes[idx + 1];
@@ -175,7 +186,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                             Ok(Some(DeleteBackwardItem {
                                 is_leaf: false,
                                 child_size: current_item_size,
-                                deleted_item,
+                                deleted_ticket,
                             }))
                         }
 
@@ -351,9 +362,13 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         Ok(())
     }
 
-    fn erase_item(&mut self, item: &BTreeNodeDataItem) -> DbResult<Rc<Document>> {
-        let bytes = self.base.page_handler.free_data_ticket(&item.data_ticket)?;
-        let doc = Document::from_bytes(bytes.borrow())?;
+    fn erase_item(&mut self, item: &DataTicket) -> DbResult<Rc<Document>> {
+        let bytes = self.base.page_handler.free_data_ticket(&item)?;
+        #[cfg(debug_assertions)]
+        if bytes.is_empty() {
+            panic!("bytes is empty");
+        }
+        let doc = Document::from_bytes(bytes.as_ref())?;
         Ok(Rc::new(doc))
     }
 
@@ -380,7 +395,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
     }
 
     fn delete_item_on_leaf(&mut self, mut btree_node: Box<BTreeNode>, index: usize) -> DbResult<DeleteBackwardItem> {
-        let deleted_item = self.erase_item(&btree_node.content[index])?;
+        let deleted_ticket = Box::new(btree_node.content[index].data_ticket.clone());
 
         btree_node.content.remove(index);
         btree_node.indexes.remove(index);
@@ -392,7 +407,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         Ok(DeleteBackwardItem {
             is_leaf: true,
             child_size: remain_content_len,
-            deleted_item,
+            deleted_ticket,
         })
     }
 

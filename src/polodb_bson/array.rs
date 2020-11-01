@@ -142,15 +142,15 @@ impl Array {
     pub unsafe fn from_bytes(bytes: &[u8]) -> BsonResult<Array> {
         let mut arr = Array::new();
 
-        let mut ptr = bytes.as_ptr();
+        let mut ptr: usize = 0;
 
-        let (arr_len, to_ptr) = vli::decode_u64_raw(ptr)?;
-        ptr = to_ptr;
+        let (arr_len, offset) = vli::decode_u64(&bytes[ptr..])?;
+        ptr += offset;
 
         let mut counter: u64 = 0;
-        while ptr.read() != 0 && counter < arr_len {
-            let byte = ptr.read();
-            ptr = ptr.add(1);
+        while bytes[ptr] != 0 && counter < arr_len {
+            let byte = bytes[ptr];
+            ptr += 1;
 
             match byte {
                 ty_int::NULL => {
@@ -159,17 +159,17 @@ impl Array {
 
                 ty_int::DOUBLE => {
                     let mut buffer: [u8; 8] = [0; 8];
-                    ptr.copy_to_nonoverlapping(buffer.as_mut_ptr(), 8);
+                    buffer.copy_from_slice(&bytes[ptr..(ptr+8)]);
 
                     let num = f64::from_be_bytes(buffer);
                     arr.0.push(Value::Double(num));
 
-                    ptr = ptr.add(8);
+                    ptr += 8;
                 }
 
                 ty_int::BOOLEAN => {
-                    let bl_value = ptr.read();
-                    ptr = ptr.add(1);
+                    let bl_value = bytes[ptr];
+                    ptr += 1;
 
                     arr.0.push(Value::Boolean(if bl_value != 0 {
                         true
@@ -179,14 +179,14 @@ impl Array {
                 }
 
                 ty_int::INT => {
-                    let (integer, to_ptr) = vli::decode_u64_raw(ptr)?;
-                    ptr = to_ptr;
+                    let (integer, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
 
                     arr.0.push(Value::Int(integer as i64));
                 }
 
                 ty_int::STRING => {
-                    let (value, to_ptr) = Document::parse_key(ptr)?;
+                    let (value, to_ptr) = Document::parse_key(bytes, ptr)?;
                     ptr = to_ptr;
 
                     arr.0.push(value.into());
@@ -194,9 +194,9 @@ impl Array {
 
                 ty_int::OBJECT_ID => {
                     let mut buffer: [u8; 12] = [0; 12];
-                    ptr.copy_to_nonoverlapping(buffer.as_mut_ptr(), 12);
+                    buffer.copy_from_slice(&bytes[ptr..(ptr+12)]);
 
-                    ptr = ptr.add(12);
+                    ptr += 12;
 
                     let oid = ObjectId::deserialize(&buffer)?;
 
@@ -204,39 +204,39 @@ impl Array {
                 }
 
                 ty_int::ARRAY => {
-                    let (len, to_ptr) = vli::decode_u64_raw(ptr)?;
-                    ptr = to_ptr;
+                    let (len, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
 
                     let mut buffer = Vec::with_capacity(len as usize);
-                    ptr.copy_to(buffer.as_mut_ptr(), len as usize);
+                    buffer.extend_from_slice(&bytes[ptr..(ptr+len as usize)]);
 
-                    ptr = ptr.add(len as usize);
+                    ptr += len as usize;
 
                     let sub_arr = Array::from_bytes(&buffer)?;
                     arr.0.push(sub_arr.into());
                 }
 
                 ty_int::DOCUMENT => {
-                    let (len, to_ptr) = vli::decode_u64_raw(ptr)?;
-                    ptr = to_ptr;
+                    let (len, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
 
                     let mut buffer = Vec::with_capacity(len as usize);
-                    ptr.copy_to(buffer.as_mut_ptr(), len as usize);
+                    buffer.extend_from_slice(&bytes[ptr..(ptr+len as usize)]);
 
-                    ptr = ptr.add(len as usize);
+                    ptr += len as usize;
 
                     let sub_doc = Document::from_bytes(&buffer)?;
                     arr.0.push(sub_doc.into());
                 }
 
                 ty_int::BINARY => {
-                    let (len, to_ptr) = vli::decode_u64_raw(ptr)?;
-                    ptr = to_ptr;
+                    let (len, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
 
                     let mut buffer = Vec::with_capacity(len as usize);
-                    ptr.copy_to(buffer.as_mut_ptr(), len as usize);
+                    buffer.extend_from_slice(&bytes[ptr..(ptr+len as usize)]);
 
-                    ptr = ptr.add(len as usize);
+                    ptr += len as usize;
 
                     arr.0.push(buffer.into());
                 }

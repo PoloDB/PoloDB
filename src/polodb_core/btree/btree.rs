@@ -175,11 +175,7 @@ impl BTreeNode {
             ty_int::INT => {
                 let value_begin_offset = (begin_offset + 6) as usize;
 
-                let int_value = unsafe {
-                    let buffer_ptr = page.data.as_ptr();
-                    let (result, _) = vli::decode_u64_raw(buffer_ptr.add(value_begin_offset))?;
-                    result
-                };
+                let (int_value, _) = vli::decode_u64(&page.data[value_begin_offset..])?;
 
                 Value::Int(int_value as i64)
             }
