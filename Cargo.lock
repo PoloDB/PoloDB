@@ -229,6 +229,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "polodb_bson"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9408fd031c18bb20bdcf1f32efd86bac0c5b0236a13099c63991a3e5ab2eb33c"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "polodb_cli"
 version = "0.1.0"
 dependencies = [
@@ -242,7 +251,7 @@ dependencies = [
 name = "polodb_clib"
 version = "0.2.0"
 dependencies = [
- "polodb_bson",
+ "polodb_bson 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "polodb_core",
 ]
 
@@ -251,7 +260,7 @@ name = "polodb_core"
 version = "0.2.0"
 dependencies = [
  "libc",
- "polodb_bson",
+ "polodb_bson 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.3.9",
 ]
 
