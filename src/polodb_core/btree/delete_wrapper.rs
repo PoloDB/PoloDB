@@ -116,7 +116,34 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                 }
 
                 let page_id = current_btree_node.indexes[idx];
-                self.delete_item_on_subtree(pid, page_id, id)  // recursively delete
+                let backward_item_opt = self.delete_item_on_subtree(pid, page_id, id)?;  // recursively delete
+
+                if let Some(backward_item) = backward_item_opt {
+                    let mut current_item_size = current_btree_node.content.len();
+
+                    if !self.is_content_size_satisfied(backward_item.child_size) {
+                        if backward_item.is_leaf {
+                            let borrow_ok = self.try_borrow_brothers(idx, current_btree_node.borrow_mut())?;
+                            if !borrow_ok {
+                                self.merge_leaves(idx, current_btree_node.borrow_mut())?;
+                                current_item_size = current_btree_node.content.len();
+                            }
+                            self.write_btree(current_btree_node);
+                        } else {
+                            let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
+                            if current_btree_node.content.len() == 1 {
+                                let _opt = self.try_merge_head(current_btree_node)?;
+                            }
+                        }
+                    }
+                    return Ok(Some(DeleteBackwardItem {
+                        is_leaf: false,
+                        child_size: current_item_size,
+                        deleted_ticket: backward_item.deleted_ticket,
+                    }))
+                }
+
+                return Ok(None)
             }
 
             // find the target node
@@ -142,9 +169,9 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                             if !self.is_content_size_satisfied(backward_item.child_size) {
                                 if backward_item.is_leaf {  // borrow or merge leaves
                                     let mut current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
-                                    let borrow_ok = self.try_borrow_brothers(idx, current_btree_node.borrow_mut())?;
+                                    let borrow_ok = self.try_borrow_brothers(idx + 1, current_btree_node.borrow_mut())?;
                                     if !borrow_ok {
-                                        self.merge_leaves(idx, current_btree_node.borrow_mut())?;
+                                        self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
                                         current_item_size = current_btree_node.content.len();
                                     }
                                     self.write_btree(current_btree_node);
@@ -205,8 +232,8 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         let current_pid = current_btree_node.pid;
 
         // node_idx's element on current_btree_node is deleted
-        // node on [node_idx + 1] is borrowed
-        let subtree_pid = current_btree_node.indexes[node_idx + 1];  // subtree need to shift
+        // node on [node_idx] is borrowed
+        let subtree_pid = current_btree_node.indexes[node_idx];  // subtree need to shift
 
         let (left_opt, right_opt) = self.get_brothers_id(&current_btree_node, node_idx);
 
@@ -274,7 +301,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
     // merge the nth elements of the current_btree_node
     fn merge_leaves(&mut self, node_idx: usize, current_btree_node: &mut BTreeNode) -> DbResult<()> {
         let current_pid = current_btree_node.pid;
-        let subtree_pid = current_btree_node.indexes[node_idx + 1];  // subtree need to shift
+        let subtree_pid = current_btree_node.indexes[node_idx];  // subtree need to shift
 
         let (left_opt, right_opt) = self.get_brothers_id(&current_btree_node, node_idx);
 
@@ -307,14 +334,15 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         if !is_brother_right {  // left
             let mut left_node = left_node_opt.unwrap();
 
-            left_node.content.push(current_btree_node.content[node_idx].clone());
+            left_node.content.push(current_btree_node.content[node_idx - 1].clone());
             left_node.content.extend_from_slice(&subtree_node.content);
-            while left_node.indexes.len() != left_node.content.len() + 1 {  // fill zero
-                left_node.indexes.push(0);
-            }
+            left_node.indexes.extend_from_slice(&subtree_node.indexes);
 
-            current_btree_node.content.remove(node_idx);
-            current_btree_node.indexes.remove(node_idx + 1);
+            current_btree_node.content.remove(node_idx - 1);
+            current_btree_node.indexes.remove(node_idx);
+
+            #[cfg(debug_assertions)]
+            assert_eq!(current_btree_node.indexes[node_idx], subtree_node.pid);
 
             self.base.page_handler.free_page(subtree_node.pid)?;
 
@@ -322,14 +350,16 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         } else {  // right
             let right_node = right_node_opt.unwrap();
 
-            subtree_node.content.push(current_btree_node.content[node_idx + 1].clone());
+            subtree_node.content.push(current_btree_node.content[node_idx].clone());
             subtree_node.content.extend_from_slice(&right_node.content);
-            while subtree_node.indexes.len() != subtree_node.content.len() + 1 {  // fill zero
-                subtree_node.indexes.push(0);
-            }
 
-            current_btree_node.content.remove(node_idx + 1);
-            current_btree_node.indexes.remove(node_idx + 2);
+            subtree_node.indexes.extend_from_slice(&right_node.indexes);
+
+            #[cfg(debug_assertions)]
+            assert_eq!(current_btree_node.indexes[node_idx + 1], right_node.pid);
+
+            current_btree_node.content.remove(node_idx);
+            current_btree_node.indexes.remove(node_idx + 1);
 
             self.base.page_handler.free_page(right_node.pid)?;
 
@@ -358,14 +388,14 @@ impl<'a> BTreePageDeleteWrapper<'a> {
     fn get_brothers_id(&self, btree_node: &BTreeNode, node_idx: usize) -> (Option<u32>, Option<u32>) {
         let item_size = self.base.item_size as usize;
         if node_idx == 0 {
-            let pid = btree_node.indexes[2];
-            (Some(btree_node.indexes[0]), Some(pid))
+            let pid = btree_node.indexes[1];
+            (None, Some(pid))
         } else if node_idx >= item_size - 1 {
-            let pid = btree_node.indexes[node_idx];
+            let pid = btree_node.indexes[node_idx - 1];
             (Some(pid), None)
         } else {
-            let left_pid = btree_node.indexes[node_idx];
-            let right_pid = btree_node.indexes[node_idx + 2];
+            let left_pid = btree_node.indexes[node_idx - 1];
+            let right_pid = btree_node.indexes[node_idx + 1];
             (Some(left_pid), Some(right_pid))
         }
     }

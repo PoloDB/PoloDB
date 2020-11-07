@@ -142,7 +142,7 @@ impl DbContext {
         match result {
             SearchKeyResult::Node(node_index) => {
                 let item = &btree_node.content[node_index];
-                let doc = self.page_handler.get_doc_from_ticket(&item.data_ticket)?;
+                let doc = self.page_handler.get_doc_from_ticket(&item.data_ticket)?.unwrap();
                 let entry = MetaDocEntry::from_doc(doc.borrow());
                 Ok((entry, doc))
             }

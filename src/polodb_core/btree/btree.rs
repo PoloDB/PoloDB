@@ -226,7 +226,7 @@ impl BTreeNode {
 
     fn parse_complex_data_item(page: &RawPage, begin_offset: u32, page_handler: &mut PageHandler) -> DbResult<BTreeNodeDataItem> {
         let data_ticket = BTreeNode::parse_data_item_ticket(page, begin_offset);
-        let doc = page_handler.get_doc_from_ticket(&data_ticket)?;
+        let doc = page_handler.get_doc_from_ticket(&data_ticket)?.unwrap();
         let pkey = doc.pkey_id().unwrap();
         Ok(BTreeNodeDataItem {
             key: pkey,
