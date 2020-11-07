@@ -125,14 +125,24 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                         if backward_item.is_leaf {
                             let borrow_ok = self.try_borrow_brothers(idx, current_btree_node.borrow_mut())?;
                             if !borrow_ok {
-                                self.merge_leaves(idx, current_btree_node.borrow_mut())?;
-                                current_item_size = current_btree_node.content.len();
+                                if current_btree_node.content.len() == 1 {
+                                    let _opt = self.try_merge_head(current_btree_node)?;
+                                    #[cfg(debug_assertions)]
+                                    assert!(_opt);
+                                } else {
+                                    self.merge_leaves(idx, current_btree_node.borrow_mut())?;
+                                    current_item_size = current_btree_node.content.len();
+                                    self.write_btree(current_btree_node);
+                                }
+                            } else {
+                                self.write_btree(current_btree_node);
                             }
-                            self.write_btree(current_btree_node);
                         } else {
-                            let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
+                            // let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
                             if current_btree_node.content.len() == 1 {
                                 let _opt = self.try_merge_head(current_btree_node)?;
+                                #[cfg(debug_assertions)]
+                                assert!(_opt);
                             }
                         }
                     }
@@ -171,14 +181,27 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                                     let mut current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
                                     let borrow_ok = self.try_borrow_brothers(idx + 1, current_btree_node.borrow_mut())?;
                                     if !borrow_ok {
-                                        self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
-                                        current_item_size = current_btree_node.content.len();
+                                        // self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
+                                        // current_item_size = current_btree_node.content.len();
+
+                                        if current_btree_node.content.len() == 1 {
+                                            let _opt = self.try_merge_head(current_btree_node)?;
+                                            #[cfg(debug_assertions)]
+                                            assert!(_opt);
+                                        } else {
+                                            self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
+                                            current_item_size = current_btree_node.content.len();
+                                            self.write_btree(current_btree_node);
+                                        }
+                                    } else {
+                                        self.write_btree(current_btree_node);
                                     }
-                                    self.write_btree(current_btree_node);
                                 } else {
                                     let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
                                     if current_btree_node.content.len() == 1 {
                                         let _opt = self.try_merge_head(current_btree_node)?;
+                                        #[cfg(debug_assertions)]
+                                        assert!(_opt);
                                     }
                                 }
                             }
@@ -205,8 +228,6 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         let right_node = self.get_btree_by_pid(right_pid, parent_btree_node.pid)?;
 
         if left_node.content.len() + right_node.content.len() + 1 > self.base.item_size as usize {
-            self.write_btree(left_node);
-            self.write_btree(right_node);
             return Ok(false);
         }
 
@@ -223,7 +244,10 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
         self.base.page_handler.free_pages(&[left_pid, right_pid])?;
 
-        self.write_btree(parent_btree_node);
+        // move
+        let new_node: Box<BTreeNode> = Box::new(parent_btree_node.clone_with_contents(new_content, new_indexes));
+
+        self.write_btree(new_node);
 
         Ok(true)
     }
@@ -300,6 +324,9 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
     // merge the nth elements of the current_btree_node
     fn merge_leaves(&mut self, node_idx: usize, current_btree_node: &mut BTreeNode) -> DbResult<()> {
+        #[cfg(debug_assertions)]
+        assert!(current_btree_node.content.len() > 1);
+
         let current_pid = current_btree_node.pid;
         let subtree_pid = current_btree_node.indexes[node_idx];  // subtree need to shift
 
@@ -386,11 +413,10 @@ impl<'a> BTreePageDeleteWrapper<'a> {
     }
 
     fn get_brothers_id(&self, btree_node: &BTreeNode, node_idx: usize) -> (Option<u32>, Option<u32>) {
-        let item_size = self.base.item_size as usize;
         if node_idx == 0 {
             let pid = btree_node.indexes[1];
             (None, Some(pid))
-        } else if node_idx >= item_size - 1 {
+        } else if node_idx >= btree_node.indexes.len() - 1 {
             let pid = btree_node.indexes[node_idx - 1];
             (Some(pid), None)
         } else {

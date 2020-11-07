@@ -87,6 +87,16 @@ impl BTreeNode {
         }
     }
 
+    #[inline]
+    pub fn clone_with_contents(&self, content: Vec<BTreeNodeDataItem>, indexes: Vec<u32>) -> BTreeNode {
+        BTreeNode {
+            parent_pid: self.parent_pid,
+            pid: self.pid,
+            content,
+            indexes,
+        }
+    }
+
     // Offset 0: magic(2 bytes)
     // Offset 2: items_len(2 bytes)
     // Offset 4: left_pid (4 bytes)
