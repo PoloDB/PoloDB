@@ -122,6 +122,11 @@ pub enum DbOp {
 
     Pop,
 
+    // 5 bytes
+    //
+    // count: pop offset count
+    Pop2,
+
     // check if top 2 values on the stack are qual
     // the result is stored in r0
     //
@@ -137,6 +142,10 @@ pub enum DbOp {
     // 0 for equal
     // 1 for great
     Cmp,
+
+    // check if top0 is in top2
+    // the result is stored in r0
+    In,
 
     // open a cursor with op0 as root_pid
     //
@@ -157,6 +166,10 @@ pub enum DbOp {
 
     // Close cursor
     Close,
+
+    SaveStackPos,
+
+    RecoverStackPos,
 
     // Exit
     // Close cursor automatically

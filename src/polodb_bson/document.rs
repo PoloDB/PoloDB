@@ -62,147 +62,144 @@ impl Document {
     pub fn from_bytes(bytes: &[u8]) -> BsonResult<Document> {
         let mut doc = Document::new_without_id();
 
-        unsafe {
-            let mut ptr = bytes.as_ptr();
-            while ptr.read() != 0 {
-                let byte = ptr.read();
-                ptr = ptr.add(1);
+        let mut ptr = 0;
+        while bytes[ptr] != 0 {
+            let byte = bytes[ptr];
+            ptr += 1;
 
-                match byte {
-                    ty_int::NULL => {
-                        let (key, to_ptr) = Document::parse_key(ptr)?;
-                        ptr = to_ptr;
+            match byte {
+                ty_int::NULL => {
+                    let (key, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
 
-                        doc.map.insert(key, Value::Null);
-                    }
-
-                    ty_int::DOUBLE => {
-                        let (key, to_ptr) = Document::parse_key(ptr)?;
-                        ptr = to_ptr;
-
-                        let mut buffer: [u8; 8] = [0; 8];
-                        ptr.copy_to_nonoverlapping(buffer.as_mut_ptr(), 8);
-
-                        let num = f64::from_be_bytes(buffer);
-                        doc.map.insert(key, Value::Double(num));
-
-                        ptr = ptr.add(8);
-                    }
-
-                    ty_int::BOOLEAN => {
-                        let (key, to_ptr) = Document::parse_key(ptr)?;
-                        ptr = to_ptr;
-
-                        let bl_value = ptr.read();
-                        ptr = ptr.add(1);
-
-                        doc.map.insert(key, Value::Boolean(if bl_value != 0 {
-                            true
-                        } else {
-                            false
-                        }));
-                    }
-
-                    ty_int::INT => {
-                        let (key, to_ptr) = Document::parse_key(ptr)?;
-                        ptr = to_ptr;
-
-                        let (integer, to_ptr) = vli::decode_u64_raw(ptr)?;
-                        ptr = to_ptr;
-
-                        doc.map.insert(key, Value::Int(integer as i64));
-                    }
-
-                    ty_int::STRING => {
-                        let (key, to_ptr) = Document::parse_key(ptr)?;
-                        ptr = to_ptr;
-
-                        let (value, to_ptr) = Document::parse_key(ptr)?;
-                        ptr = to_ptr;
-
-                        doc.map.insert(key, Value::String(Rc::new(value)));
-                    }
-
-                    ty_int::OBJECT_ID => {
-                        let (key, to_ptr) = Document::parse_key(ptr)?;
-                        ptr = to_ptr;
-
-                        let mut buffer: [u8; 12] = [0; 12];
-                        ptr.copy_to_nonoverlapping(buffer.as_mut_ptr(), 12);
-
-                        ptr = ptr.add(12);
-
-                        let oid = ObjectId::deserialize(&buffer)?;
-
-                        doc.map.insert(key, oid.into());
-                    }
-
-                    ty_int::ARRAY => {
-                        let (key, to_ptr) = Document::parse_key(ptr)?;
-                        ptr = to_ptr;
-
-                        let (len, to_ptr) = vli::decode_u64_raw(ptr)?;
-                        ptr = to_ptr;
-
-                        let mut buffer = Vec::with_capacity(len as usize);
-                        ptr.copy_to(buffer.as_mut_ptr(), len as usize);
-
-                        ptr = ptr.add(len as usize);
-
-                        let sub_arr = Array::from_bytes(&buffer)?;
-                        doc.map.insert(key, sub_arr.into());
-                    }
-
-                    ty_int::DOCUMENT => {
-                        let (key, to_ptr) = Document::parse_key(ptr)?;
-                        ptr = to_ptr;
-
-                        let (len, to_ptr) = vli::decode_u64_raw(ptr)?;
-                        ptr = to_ptr;
-
-                        let mut buffer = Vec::with_capacity(len as usize);
-                        ptr.copy_to(buffer.as_mut_ptr(), len as usize);
-
-                        ptr = ptr.add(len as usize);
-
-                        let sub_doc = Document::from_bytes(&buffer)?;
-
-                        doc.map.insert(key, sub_doc.into());
-                    }
-
-                    ty_int::BINARY => {
-                        let (key, to_ptr) = Document::parse_key(ptr)?;
-                        ptr = to_ptr;
-
-                        let (len, to_ptr) = vli::decode_u64_raw(ptr)?;
-                        ptr = to_ptr;
-
-                        let mut buffer = Vec::with_capacity(len as usize);
-                        ptr.copy_to(buffer.as_mut_ptr(), len as usize);
-
-                        ptr = ptr.add(len as usize);
-
-                        doc.map.insert(key, buffer.into());
-                    }
-
-                    _ => return Err(BsonErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
+                    doc.map.insert(key, Value::Null);
                 }
 
+                ty_int::DOUBLE => {
+                    let (key, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
+
+                    let mut buffer: [u8; 8] = [0; 8];
+                    buffer.copy_from_slice(&bytes[ptr..(ptr+8)]);
+
+                    let num = f64::from_be_bytes(buffer);
+                    doc.map.insert(key, Value::Double(num));
+
+                    ptr += 8;
+                }
+
+                ty_int::BOOLEAN => {
+                    let (key, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
+
+                    let bl_value = bytes[ptr];
+                    ptr += 1;
+
+                    doc.map.insert(key, Value::Boolean(if bl_value != 0 {
+                        true
+                    } else {
+                        false
+                    }));
+                }
+
+                ty_int::INT => {
+                    let (key, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
+
+                    let (integer, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
+
+                    doc.map.insert(key, Value::Int(integer as i64));
+                }
+
+                ty_int::STRING => {
+                    let (key, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
+
+                    let (value, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
+
+                    doc.map.insert(key, Value::String(Rc::new(value)));
+                }
+
+                ty_int::OBJECT_ID => {
+                    let (key, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
+
+                    let mut buffer: [u8; 12] = [0; 12];
+                    buffer.copy_from_slice(&bytes[ptr..(ptr + 12)]);
+
+                    ptr += 12;
+
+                    let oid = ObjectId::deserialize(&buffer)?;
+
+                    doc.map.insert(key, oid.into());
+                }
+
+                ty_int::ARRAY => {
+                    let (key, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
+
+                    let (len, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
+
+                    let mut buffer = Vec::with_capacity(len as usize);
+                    buffer.extend_from_slice(&bytes[ptr..(ptr + len as usize)]);
+
+                    ptr += len as usize;
+
+                    let sub_arr = unsafe{ Array::from_bytes(&buffer)? };
+                    doc.map.insert(key, sub_arr.into());
+                }
+
+                ty_int::DOCUMENT => {
+                    let (key, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
+
+                    let (len, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
+
+                    let mut buffer = Vec::with_capacity(len as usize);
+                    buffer.extend_from_slice(&bytes[ptr..(ptr + len as usize)]);
+
+                    ptr += len as usize;
+
+                    let sub_doc = Document::from_bytes(&buffer)?;
+
+                    doc.map.insert(key, sub_doc.into());
+                }
+
+                ty_int::BINARY => {
+                    let (key, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
+
+                    let (len, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
+
+                    let mut buffer = Vec::with_capacity(len as usize);
+                    buffer.extend_from_slice(&bytes[ptr..(ptr + len as usize)]);
+
+                    ptr += len as usize;
+
+                    doc.map.insert(key, buffer.into());
+                }
+
+                _ => return Err(BsonErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
             }
         }
 
         Ok(doc)
     }
 
-    pub unsafe fn parse_key(ptr: *const u8) -> BsonResult<(String, *const u8)> {
-        let mut ptr = ptr;
+    pub fn parse_key(bytes: &[u8], mut ptr: usize) -> BsonResult<(String, usize)> {
         let mut buffer = Vec::with_capacity(128);
-        while ptr.read() != 0 {
-            buffer.push(ptr.read());
-            ptr = ptr.add(1);
+        while bytes[ptr] != 0 {
+            buffer.push(bytes[ptr]);
+            ptr += 1;
         }
 
-        Ok((String::from_utf8_unchecked(buffer), ptr.add(1)))
+        let str = unsafe { String::from_utf8_unchecked(buffer) };
+        Ok((str, ptr + 1))
     }
 
     fn value_to_bytes(key: &str, value: &Value, buffer: &mut Vec<u8>) -> BsonResult<()> {

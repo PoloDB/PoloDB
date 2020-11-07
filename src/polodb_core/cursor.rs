@@ -207,7 +207,7 @@ impl Cursor {
 
         let top = self.btree_stack.pop_back().unwrap();
         let result_ticket = &top.node.content[top.index].data_ticket;
-        let result = page_handler.get_doc_from_ticket(&result_ticket)?;
+        let result = page_handler.get_doc_from_ticket(&result_ticket)?.unwrap();
 
         let next_index = top.index + 1;
 

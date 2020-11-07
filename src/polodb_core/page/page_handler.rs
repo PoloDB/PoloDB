@@ -264,12 +264,15 @@ impl PageHandler {
         Ok(result)
     }
 
-    pub(crate) fn get_doc_from_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Rc<Document>> {
+    pub(crate) fn get_doc_from_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Option<Rc<Document>>> {
         let page = self.pipeline_read_page(data_ticket.pid)?;
         let wrapper = DataPageWrapper::from_raw(page);
         let bytes = wrapper.get(data_ticket.index as u32);
-        let doc = Document::from_bytes(bytes)?;
-        Ok(Rc::new(doc))
+        if let Some(bytes) = bytes {
+            let doc = Document::from_bytes(bytes)?;
+            return Ok(Some(Rc::new(doc)));
+        }
+        return Ok(None);
     }
 
     pub(crate) fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
@@ -290,9 +293,12 @@ impl PageHandler {
     }
 
     pub(crate) fn free_data_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> {
+        #[cfg(feature = "log")]
+        eprintln!("free data ticket: {}", data_ticket);
+
         let page = self.pipeline_read_page(data_ticket.pid)?;
         let mut wrapper = DataPageWrapper::from_raw(page);
-        let bytes = wrapper.get(data_ticket.index as u32).to_vec();
+        let bytes = wrapper.get(data_ticket.index as u32).unwrap().to_vec();
         wrapper.remove(data_ticket.index as u32);
         if wrapper.is_empty() {
             self.free_page(data_ticket.pid)?;

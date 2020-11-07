@@ -32,6 +32,7 @@ pub(crate) fn mk_field_name_type_unexpected(option_name: &str, expected_ty: &str
 pub enum DbErr {
     UnexpectedIdType(u8, u8),
     NotAValidKeyType(String),
+    NotAValidField(String),
     ValidationError(String),
     InvalidOrderOfIndex(String),
     IndexAlreadyExists(String),
@@ -81,6 +82,7 @@ impl fmt::Display for DbErr {
             }
 
             DbErr::NotAValidKeyType(ty_name) => write!(f, "type {} is not a valid key type", ty_name),
+            DbErr::NotAValidField(field) => write!(f, "the value of field: \"{}\" is invalid", field),
             DbErr::ValidationError(reason) => write!(f, "ValidationError: {}", reason),
             DbErr::InvalidOrderOfIndex(index_key_name) => write!(f, "invalid order of index: {}", index_key_name),
             DbErr::IndexAlreadyExists(index_key_name) => write!(f, "index for {} already exists", index_key_name),

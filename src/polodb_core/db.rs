@@ -43,6 +43,11 @@ impl<'a>  Collection<'a> {
     }
 
     #[inline]
+    pub fn count(&mut self) -> DbResult<u64> {
+        self.db.ctx.count(&self.name)
+    }
+
+    #[inline]
     pub fn update(&mut self, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         self.db.ctx.update(&self.name, query, update)
     }
@@ -188,6 +193,10 @@ mod tests {
         };
 
         let mut collection = db.collection("test");
+
+        let count = collection.count().unwrap();
+        assert_eq!(TEST_SIZE, count as usize);
+
         let all = collection.find( None).unwrap();
 
         for doc in &all {
@@ -340,9 +349,10 @@ mod tests {
 
         let mut doc_collection  = vec![];
 
-        for i in 0..100 {
+        for i in 0..1000 {
             let content = i.to_string();
             let new_doc = mk_document! {
+                "_id": i,
                 "content": content,
             };
             let ret_doc = collection.insert(Rc::new(new_doc)).unwrap();
@@ -351,7 +361,13 @@ mod tests {
 
         for doc in &doc_collection {
             let key = doc.get("_id").unwrap();
-            collection.delete(key).unwrap();
+            let deleted = collection.delete(key).unwrap();
+            assert!(deleted.is_some(), "delete nothing with key: {}", key);
+            let find_doc = mk_document! {
+                "_id": key.clone(),
+            };
+            let result = collection.find(Some(&find_doc)).unwrap();
+            assert_eq!(result.len(), 0, "item with key: {}", key);
         }
     }
 

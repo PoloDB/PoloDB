@@ -142,7 +142,7 @@ impl DbContext {
         match result {
             SearchKeyResult::Node(node_index) => {
                 let item = &btree_node.content[node_index];
-                let doc = self.page_handler.get_doc_from_ticket(&item.data_ticket)?;
+                let doc = self.page_handler.get_doc_from_ticket(&item.data_ticket)?.unwrap();
                 let entry = MetaDocEntry::from_doc(doc.borrow());
                 Ok((entry, doc))
             }
@@ -447,6 +447,7 @@ impl DbContext {
             collection_meta.root_pid as u32
         );
         let result = delete_wrapper.delete_item(key)?;
+        delete_wrapper.flush_pages()?;
 
         if let Some(deleted_item) = &result {
             let index_ctx_opt = IndexCtx::from_meta_doc(meta_doc.borrow());
@@ -458,6 +459,12 @@ impl DbContext {
         }
 
         Ok(None)
+    }
+
+    pub fn count(&mut self, col_name: &str) -> DbResult<u64> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        counter_helper::count(&mut self.page_handler, collection_meta)
     }
 
     pub fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {

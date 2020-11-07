@@ -41,6 +41,7 @@ pub struct VM<'a> {
     r0:                  i32,  // usually the logic register
     r1:                  Option<Box<Cursor>>,
     pub(crate) r2:       i64,  // usually the counter
+    r3:                  usize,
     page_handler:        &'a mut PageHandler,
     stack:               Vec<Value>,
     pub(crate) program:  Box<SubProgram>,
@@ -58,6 +59,7 @@ impl<'a> VM<'a> {
             r0: 0,
             r1: None,
             r2: 0,
+            r3: 0,
             page_handler,
             stack,
             program,
@@ -94,7 +96,7 @@ impl<'a> VM<'a> {
         cursor.reset(self.page_handler)?;
         if cursor.has_next() {
             let item = cursor.peek().unwrap();
-            let doc = self.page_handler.get_doc_from_ticket(&item)?;
+            let doc = self.page_handler.get_doc_from_ticket(&item)?.unwrap();
             self.stack.push(Value::Document(doc));
             is_empty.set(false);
         } else {
@@ -116,9 +118,12 @@ impl<'a> VM<'a> {
 
         let ticket = cursor.peek().unwrap();
         let doc = self.page_handler.get_doc_from_ticket(&ticket)?;
-        self.stack.push(Value::Document(doc));
-
-        Ok(true)
+        if let Some(doc) = doc {
+            self.stack.push(Value::Document(doc));
+            return Ok(true);
+        } else {
+            panic!("unexpected: item with key '{}' has been deleted, pid: {}, index: {}", op, ticket.pid, ticket.index);
+        }
     }
 
     fn next(&mut self) -> DbResult<()> {
@@ -126,7 +131,7 @@ impl<'a> VM<'a> {
         let _ = cursor.next(self.page_handler)?;
         match cursor.peek() {
             Some(ticket) => {
-                let doc = self.page_handler.get_doc_from_ticket(&ticket)?;
+                let doc = self.page_handler.get_doc_from_ticket(&ticket)?.unwrap();
                 self.stack.push(Value::Document(doc));
 
                 #[cfg(debug_assertions)]
@@ -399,10 +404,18 @@ impl<'a> VM<'a> {
                         let location = self.pc.add(5).cast::<u32>().read();
 
                         let key = self.borrow_static(key_stat_id as usize);
+                        let key_name = key.unwrap_string();
                         let top = self.stack[self.stack.len() - 1].clone();
-                        let doc = top.unwrap_document();
+                        let doc = match top {
+                            Value::Document(doc) => doc,
+                            _ => {
+                                let err = mk_field_name_type_unexpected(key_name, "Document", top.ty_name());
+                                self.state = VmState::Halt;
+                                return Err(err)
+                            }
+                        };
 
-                        match doc.get(key.unwrap_string()) {
+                        match doc.get(key_name) {
                             Some(val) => {
                                 self.stack.push(val.clone());
                                 self.pc = self.pc.add(9);
@@ -474,6 +487,14 @@ impl<'a> VM<'a> {
                         self.pc = self.pc.add(1);
                     }
 
+                    DbOp::Pop2 => {
+                        let offset = self.pc.add(1).cast::<u32>().read();
+
+                        self.stack.set_len(self.stack.len() - (offset as usize));
+
+                        self.pc = self.pc.add(5);
+                    }
+
                     DbOp::Equal => {
                         let top1 = &self.stack[self.stack.len() - 1];
                         let top2 = &self.stack[self.stack.len() - 2];
@@ -527,6 +548,28 @@ impl<'a> VM<'a> {
                         self.pc = self.pc.add(1);
                     }
 
+                    // stack
+                    // -1: Aarry
+                    // -2: value
+                    //
+                    // check value in Array
+                    DbOp::In => {
+                        let top1 = &self.stack[self.stack.len() - 1];
+                        let top2 = &self.stack[self.stack.len() - 2];
+
+                        self.r0 = 0;
+
+                        for item in top1.unwrap_array().iter() {
+                            let cmp_result = top2.value_cmp(item);
+                            if let Ok(Ordering::Equal) = cmp_result {
+                                self.r0 = 1;
+                                break;
+                            }
+                        }
+
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::OpenRead => {
                         let root_pid = self.pc.add(1).cast::<u32>().read();
 
@@ -554,6 +597,16 @@ impl<'a> VM<'a> {
                         self.page_handler.auto_commit()?;
                         self.rollback_on_drop = false;
 
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::SaveStackPos => {
+                        self.r3 = self.stack.len();
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::RecoverStackPos => {
+                        self.stack.resize(self.r3, Value::Null);
                         self.pc = self.pc.add(1);
                     }
 

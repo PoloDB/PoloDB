@@ -9,7 +9,7 @@
   "scripts": {
     "install": "node scripts/download-lib.js",
     "compile": "cmake-js compile",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "mocha"
   },
   "repository": {
     "type": "git",
@@ -25,6 +25,8 @@
   },
   "homepage": "https://github.com/vincentdchan/PoloDB#readme",
   "devDependencies": {
-    "bindings": "^1.5.0"
+    "bindings": "^1.5.0",
+    "chai": "^4.2.0",
+    "mocha": "^8.2.0"
   }
 }

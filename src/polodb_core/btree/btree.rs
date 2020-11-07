@@ -87,6 +87,16 @@ impl BTreeNode {
         }
     }
 
+    #[inline]
+    pub fn clone_with_contents(&self, content: Vec<BTreeNodeDataItem>, indexes: Vec<u32>) -> BTreeNode {
+        BTreeNode {
+            parent_pid: self.parent_pid,
+            pid: self.pid,
+            content,
+            indexes,
+        }
+    }
+
     // Offset 0: magic(2 bytes)
     // Offset 2: items_len(2 bytes)
     // Offset 4: left_pid (4 bytes)
@@ -175,11 +185,7 @@ impl BTreeNode {
             ty_int::INT => {
                 let value_begin_offset = (begin_offset + 6) as usize;
 
-                let int_value = unsafe {
-                    let buffer_ptr = page.data.as_ptr();
-                    let (result, _) = vli::decode_u64_raw(buffer_ptr.add(value_begin_offset))?;
-                    result
-                };
+                let (int_value, _) = vli::decode_u64(&page.data[value_begin_offset..])?;
 
                 Value::Int(int_value as i64)
             }
@@ -230,7 +236,7 @@ impl BTreeNode {
 
     fn parse_complex_data_item(page: &RawPage, begin_offset: u32, page_handler: &mut PageHandler) -> DbResult<BTreeNodeDataItem> {
         let data_ticket = BTreeNode::parse_data_item_ticket(page, begin_offset);
-        let doc = page_handler.get_doc_from_ticket(&data_ticket)?;
+        let doc = page_handler.get_doc_from_ticket(&data_ticket)?.unwrap();
         let pkey = doc.pkey_id().unwrap();
         Ok(BTreeNodeDataItem {
             key: pkey,

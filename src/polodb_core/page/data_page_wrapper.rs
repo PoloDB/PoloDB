@@ -63,14 +63,19 @@ impl DataPageWrapper {
         self.remain_size -= data_size + 2;
     }
 
-    pub(crate) fn get(&self, index: u32) -> &[u8] {
+    // None representes the item with the index has been removed
+    pub(crate) fn get(&self, index: u32) -> Option<&[u8]> {
         if index >= self.len() {
             panic!("index {} is greater than length {}", index, self.len());
         }
 
         let (begin_bar, end_bar) = self.get_bars_by_index(index);
 
-        &self.page.data[(begin_bar as usize)..(end_bar as usize)]
+        if begin_bar == end_bar {
+            return None;
+        }
+
+        Some(&self.page.data[(begin_bar as usize)..(end_bar as usize)])
     }
 
     fn get_bars_by_index(&self, index: u32) -> (u16, u16) {
@@ -100,7 +105,7 @@ impl DataPageWrapper {
     pub(crate) fn remove(&mut self, index: u32) {
         let total_len = self.len();
         if index >= total_len {
-            panic!("index {} is creater than length {}", index, self.len());
+            panic!("index {} is greater than length {}", index, self.len());
         }
 
         let (begin_bar, end_bar) = self.get_bars_by_index(index);
@@ -214,12 +219,12 @@ mod tests {
 
         assert_eq!(wrapper.len(), 1);
 
-        assert_eq!(wrapper.get(0), first_item);
+        assert_eq!(wrapper.get(0).unwrap(), first_item);
 
         let raw_page = wrapper.consume_page();
         let wrapper2 = DataPageWrapper::from_raw(raw_page);
         assert_eq!(wrapper2.len(), 1);
-        assert_eq!(wrapper2.get(0), first_item);
+        assert_eq!(wrapper2.get(0).unwrap(), first_item);
     }
 
     #[test]
@@ -260,7 +265,7 @@ mod tests {
         wrapper.remove(0);
         assert_eq!(wrapper.len(), 3);
 
-        let first = wrapper.get(0);
+        let first = wrapper.get(0).unwrap();
         assert_eq!(first.len(), 4);
         let expected: [u8; 4] = [1, 2, 3, 4];
         for i in 0..4 {
@@ -269,7 +274,7 @@ mod tests {
 
         wrapper.remove(1);
 
-        let second = wrapper.get(1);
+        let second = wrapper.get(1).unwrap();
         assert_eq!(wrapper.len(), 2);
         let expected: [u8; 4] = [3, 4, 5, 6];
         for i in 0..4 {

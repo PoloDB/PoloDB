@@ -50,6 +50,8 @@ int PLDB_commit(Database* db);
 
 int PLDB_rollback(Database* db);
 
+int64_t PLDB_count(Database* db, const char* name);
+
 int PLDB_create_collection(Database* db, const char* name);
 
 int PLDB_insert(Database* db, const char* col_name, const DbDocument* doc);
