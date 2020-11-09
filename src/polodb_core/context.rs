@@ -332,6 +332,27 @@ impl DbContext {
         Ok(vm.r2 as usize)
     }
 
+    pub fn drop(&mut self, col_name: &str) -> DbResult<()> {
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+
+        try_db_op!(self, self.internal_drop(col_name));
+
+        Ok(())
+    }
+
+    fn internal_drop(&mut self, col_name: &str) -> DbResult<()> {
+        let meta_page_id = self.get_meta_page_id()?;
+        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        delete_all_helper::delete_all(&mut self.page_handler, collection_meta)?;
+
+        let mut btree_wrapper = BTreePageDeleteWrapper::new(&mut self.page_handler, meta_page_id);
+
+        let pkey: Value = col_name.into();
+        btree_wrapper.delete_item(&pkey)?;
+
+        Ok(())
+    }
+
     pub fn delete(&mut self, col_name: &str, query: &Document) -> DbResult<usize> {
         let primary_keys = self.get_primary_keys_by_query(col_name, Some(query))?;
 
