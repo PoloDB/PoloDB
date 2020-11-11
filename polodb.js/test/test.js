@@ -98,6 +98,16 @@ describe('Database', function() {
       }
     })
 
+    it('drop', function() {
+      const col2 = db.collection('test-2');
+      col2.drop();
+      expect(() => {
+        col2.find({
+          _id: 3,
+        })
+      }).to.throw(Error);
+    })
+
   });
 
 });

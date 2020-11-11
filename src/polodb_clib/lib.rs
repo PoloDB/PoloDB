@@ -135,6 +135,20 @@ pub extern "C" fn PLDB_create_collection(db: *mut DbContext, name: *const c_char
 }
 
 #[no_mangle]
+pub extern "C" fn PLDB_drop(db: *mut DbContext, name: *const c_char) -> c_int {
+    unsafe {
+        let name_str = CStr::from_ptr(name);
+        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
+        let result = db.as_mut().unwrap().drop(name_utf8);
+        if let Err(err) = result {
+            set_global_error(err);
+            return PLDB_error_code();
+        }
+    }
+    0
+}
+
+#[no_mangle]
 pub extern "C" fn PLDB_insert(db: *mut DbContext, name: *const c_char, doc: *const Rc<Document>) -> c_int {
     unsafe {
         let local_db = db.as_mut().unwrap();

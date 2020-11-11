@@ -791,6 +791,26 @@ static napi_value Collection_delete_all(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
+static napi_value Collection_drop(napi_env env, napi_callback_info info) {
+  napi_status status;
+  napi_value this_arg;
+
+  status = napi_get_cb_info(env, info, NULL, NULL, &this_arg, NULL);
+  CHECK_STAT(status);
+
+  InternalCollection* internal_collection;
+  status = napi_unwrap(env, this_arg, (void**)&internal_collection);
+  CHECK_STAT(status);
+
+  int ec = PLDB_drop(internal_collection->db, internal_collection->name);
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
+
+  return NULL;
+}
+
 static napi_value Database_create_collection(napi_env env, napi_callback_info info) {
   napi_status status;
 
@@ -1018,7 +1038,7 @@ static napi_value Database_Init(napi_env env, napi_value exports) {
 static napi_value Collection_Init(napi_env env, napi_value exports) {
   napi_status status;
 
-  size_t collection_prop_size = 6;
+  size_t collection_prop_size = 7;
   napi_property_descriptor collection_props[] = {
     DECLARE_NAPI_METHOD("insert", Collection_insert),
     DECLARE_NAPI_METHOD("find", Collection_find),
@@ -1026,6 +1046,7 @@ static napi_value Collection_Init(napi_env env, napi_value exports) {
     DECLARE_NAPI_METHOD("update", Collection_update),
     DECLARE_NAPI_METHOD("delete", Collection_delete),
     DECLARE_NAPI_METHOD("deleteAll", Collection_delete_all),
+    DECLARE_NAPI_METHOD("drop", Collection_drop),
     {NULL}
   };
 
