@@ -202,7 +202,7 @@ impl PageHandler {
             return;
         }
 
-        if wrapper.len() >= (u16::max_value() as u32) / 2 {  // len too large
+        if wrapper.bar_len() >= (u16::max_value() as u32) / 2 {  // len too large
             return;
         }
 
@@ -278,7 +278,7 @@ impl PageHandler {
     pub(crate) fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
         let bytes = doc.to_bytes()?;
         let mut wrapper = self.distribute_data_page_wrapper(bytes.len() as u32)?;
-        let index = wrapper.len() as u16;
+        let index = wrapper.bar_len() as u16;
         let pid = wrapper.pid();
         wrapper.put(&bytes);
 
