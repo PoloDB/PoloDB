@@ -20,14 +20,16 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
 
 pub struct Collection<'a> {
     db: &'a mut Database,
+    meta_version: u32,
     name: String,
 }
 
 impl<'a>  Collection<'a> {
 
-    fn new(db: &'a mut Database, name: &str) -> Collection<'a> {
+    fn new(db: &'a mut Database, meta_version: u32, name: &str) -> Collection<'a> {
         Collection {
             db,
+            meta_version,
             name: name.into(),
         }
     }
@@ -97,7 +99,8 @@ impl Database {
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<Collection> {
         self.ctx.create_collection(name)?;
-        Ok(Collection::new(self, name))
+        let meta_source = self.ctx.get_meta_source()?;
+        Ok(Collection::new(self, meta_source.meta_version, name))
     }
 
     #[inline]
@@ -105,9 +108,9 @@ impl Database {
         DbContext::get_version()
     }
 
-    #[inline]
-    pub fn collection(&mut self, col_name: &str) -> Collection {
-        Collection::new(self, col_name)
+    pub fn collection(&mut self, col_name: &str) -> DbResult<Collection> {
+        let meta_source = self.ctx.get_meta_source()?;
+        Ok(Collection::new(self, meta_source.meta_version, col_name))
     }
 
     #[allow(dead_code)]
@@ -164,7 +167,7 @@ mod tests {
     fn test_create_collection_and_find_all() {
         let mut db = create_and_return_db_with_items("test-collection", TEST_SIZE);
 
-        let mut test_collection = db.collection("test");
+        let mut test_collection = db.collection("test").unwrap();
         let all = test_collection.find( None).unwrap();
 
         for doc in &all {
@@ -192,7 +195,7 @@ mod tests {
             db
         };
 
-        let mut collection = db.collection("test");
+        let mut collection = db.collection("test").unwrap();
 
         let count = collection.count().unwrap();
         assert_eq!(TEST_SIZE, count as usize);
@@ -209,7 +212,7 @@ mod tests {
     #[test]
     fn test_find() {
         let mut db = create_and_return_db_with_items("test-find", TEST_SIZE);
-        let mut collection = db.collection("test");
+        let mut collection = db.collection("test").unwrap();
 
         let result = collection.find(
             Some(mk_document! {
@@ -226,7 +229,7 @@ mod tests {
     #[test]
     fn test_create_collection_and_find_by_pkey() {
         let mut db = create_and_return_db_with_items("test-find-pkey", 10);
-        let mut collection = db.collection("test");
+        let mut collection = db.collection("test").unwrap();
 
         let all = collection.find(None).unwrap();
 
@@ -263,8 +266,8 @@ mod tests {
             "value": "something",
         };
 
-        let mut collection = db.collection("test");
-        collection.insert(Rc::new(doc)).expect_err("should not succuess");
+        let mut collection = db.collection("test").unwrap();
+        collection.insert(Rc::new(doc)).expect_err("should not success");
     }
 
     #[test]

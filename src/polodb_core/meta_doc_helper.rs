@@ -75,6 +75,7 @@ impl MetaDocEntry {
 pub(crate) mod meta_doc_key {
     pub(crate) static ID: &str       = "_id";
     pub(crate) static ROOT_PID: &str = "root_pid";
+    pub(crate) static NAME: &str     = "name";
     pub(crate) static FLAGS: &str    = "flags";
     pub(crate) static INDEXES: &str  = "indexes";
 

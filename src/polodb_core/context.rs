@@ -44,6 +44,13 @@ pub struct DbContext {
 
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct MetaSource {
+    pub meta_version: u32,
+    pub meta_id_counter: u32,
+    pub meta_pid: u32,
+}
+
 impl DbContext {
 
     pub fn new(path: &Path) -> DbResult<DbContext> {
@@ -62,16 +69,17 @@ impl DbContext {
         Ok(ctx)
     }
 
-    pub(crate) fn get_meta_page_id(&mut self) -> DbResult<u32> {
+    pub(crate) fn get_meta_source(&mut self) -> DbResult<MetaSource> {
         let head_page = self.page_handler.pipeline_read_page(0)?;
         let head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
-        let result = head_page_wrapper.get_meta_page_id();
-
-        if result == 0 {  // unexpected
-            return Err(DbErr::MetaPageIdError);
-        }
-
-        Ok(result)
+        let meta_id_counter = head_page_wrapper.get_meta_id_counter();
+        let meta_version = head_page_wrapper.get_meta_version();
+        let meta_pid = head_page_wrapper.get_meta_page_id();
+        Ok(MetaSource {
+            meta_id_counter,
+            meta_version,
+            meta_pid,
+        })
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<()> {
@@ -86,37 +94,49 @@ impl DbContext {
         if name.is_empty() {
             return Err(DbErr::IllegalCollectionName(name.into()));
         }
+        let mut meta_source = self.get_meta_source()?;
 
         let mut doc = Document::new_without_id();
-        doc.insert(meta_doc_key::ID.into(), Value::from(name));
+
+        let collection_id = meta_source.meta_id_counter;
+        doc.insert(meta_doc_key::ID.into(), collection_id.into());
+
+        doc.insert(meta_doc_key::NAME.into(), name.into());
 
         let root_pid = self.page_handler.alloc_page_id()?;
         doc.insert(meta_doc_key::ROOT_PID.into(), Value::Int(root_pid as i64));
 
         doc.insert(meta_doc_key::FLAGS.into(), Value::Int(0));
 
-        let meta_page_id: u32 = self.get_meta_page_id()?;
-
-        let mut btree_wrapper = BTreePageInsertWrapper::new(&mut self.page_handler, meta_page_id);
+        let mut btree_wrapper = BTreePageInsertWrapper::new(
+            &mut self.page_handler, meta_source.meta_pid);
 
         let insert_result = btree_wrapper.insert_item(&doc, false)?;
 
         if let Some(backward_item) = insert_result.backward_item {
             let new_root_id = self.page_handler.alloc_page_id()?;
 
-            let raw_page = backward_item.write_to_page(&mut self.page_handler, new_root_id, meta_page_id)?;
+            let raw_page = backward_item.write_to_page(&mut self.page_handler,
+                                                       new_root_id, meta_source.meta_pid)?;
             self.page_handler.pipeline_write_page(&raw_page)?;
 
-            self.update_meta_page_id_of_db(new_root_id)?;
+            meta_source.meta_pid = new_root_id;
         }
+
+        meta_source.meta_id_counter += 1;
+        meta_source.meta_version += 1;
+
+        self.update_meta_source(&meta_source)?;
 
         Ok(())
     }
 
-    fn update_meta_page_id_of_db(&mut self, new_meta_page_root_pid: u32) -> DbResult<()> {
+    fn update_meta_source(&mut self, meta_source: &MetaSource) -> DbResult<()> {
         let head_page = self.page_handler.pipeline_read_page(0)?;
         let mut head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
-        head_page_wrapper.set_meta_page_id(new_meta_page_root_pid);
+        head_page_wrapper.set_meta_page_id(meta_source.meta_pid);
+        head_page_wrapper.set_meta_id_counter(meta_source.meta_id_counter);
+        head_page_wrapper.set_meta_version(meta_source.meta_version);
         self.page_handler.pipeline_write_page(&head_page_wrapper.0)
     }
 
@@ -168,8 +188,9 @@ impl DbContext {
     }
 
     fn internal_create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        let meta_page_id = self.get_meta_page_id()?;
-        let (_, mut meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let meta_source = self.get_meta_source()?;
+        let (_, mut meta_doc) = self.find_collection_root_pid_by_name(
+            0, meta_source.meta_pid, col_name)?;
         let mut_meta_doc = Rc::get_mut(&mut meta_doc).unwrap();
 
         for (key_name, value_of_key) in keys.iter() {
@@ -210,7 +231,10 @@ impl DbContext {
         }
 
         let key_col = Value::String(Rc::new(col_name.into()));
-        let inserted = self.update_by_root_pid(0, meta_page_id, &key_col, mut_meta_doc)?;
+
+        let meta_source = self.get_meta_source()?;
+        let inserted = self.update_by_root_pid(
+            0, meta_source.meta_pid, &key_col, mut_meta_doc)?;
         if !inserted {
             panic!("update failed");
         }
@@ -239,10 +263,11 @@ impl DbContext {
     }
 
     fn internal_insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
-        let meta_page_id = self.get_meta_page_id()?;
+        let meta_source = self.get_meta_source()?;
         let doc_value = self.fix_doc(doc);
 
-        let (mut collection_meta, mut meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let (mut collection_meta, mut meta_doc) = self.find_collection_root_pid_by_name(
+            0, meta_source.meta_pid, col_name)?;
         let meta_doc_mut = Rc::get_mut(&mut meta_doc).unwrap();
 
         let mut is_pkey_check_skipped = false;
@@ -287,7 +312,8 @@ impl DbContext {
         // update meta begin
         if is_meta_changed {
             let key = Value::String(Rc::new(col_name.to_string()));
-            let updated= self.update_by_root_pid(0, meta_page_id, &key, meta_doc_mut)?;
+            let updated= self.update_by_root_pid(
+                0, meta_source.meta_pid, &key, meta_doc_mut)?;
             if !updated {
                 panic!("unexpected: update meta page failed")
             }
@@ -299,8 +325,9 @@ impl DbContext {
 
     /// query: None for findAll
     pub fn find(&mut self, col_name: &str, query: Option<&Document>) -> DbResult<DbHandle> {
-        let meta_page_id = self.get_meta_page_id()?;
-        let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let meta_source = self.get_meta_source()?;
+        let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(
+            0, meta_source.meta_pid, col_name)?;
 
         let subprogram = match query {
             Some(query) => SubProgram::compile_query(&collection_meta, meta_doc.borrow(), query),
@@ -321,8 +348,9 @@ impl DbContext {
     }
 
     fn internal_update(&mut self, col_name: &str, query: Option<&Document>, update: &Document) -> DbResult<usize> {
-        let meta_page_id = self.get_meta_page_id()?;
-        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let meta_source = self.get_meta_source()?;
+        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(
+            0, meta_source.meta_pid, col_name)?;
 
         let subprogram = SubProgram::compile_update(&collection_meta, query, update)?;
 
@@ -341,11 +369,13 @@ impl DbContext {
     }
 
     fn internal_drop(&mut self, col_name: &str) -> DbResult<()> {
-        let meta_page_id = self.get_meta_page_id()?;
-        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let meta_source = self.get_meta_source()?;
+        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(
+            0, meta_source.meta_pid, col_name)?;
         delete_all_helper::delete_all(&mut self.page_handler, collection_meta)?;
 
-        let mut btree_wrapper = BTreePageDeleteWrapper::new(&mut self.page_handler, meta_page_id);
+        let mut btree_wrapper = BTreePageDeleteWrapper::new(
+            &mut self.page_handler, meta_source.meta_pid);
 
         let pkey: Value = col_name.into();
         btree_wrapper.delete_item(&pkey)?;
@@ -460,8 +490,9 @@ impl DbContext {
     }
 
     fn internal_delete_by_pkey(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
-        let meta_page_id = self.get_meta_page_id()?;
-        let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let meta_source = self.get_meta_source()?;
+        let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(
+            0, meta_source.meta_pid, col_name)?;
 
         let mut delete_wrapper = BTreePageDeleteWrapper::new(
             &mut self.page_handler,
@@ -483,8 +514,9 @@ impl DbContext {
     }
 
     pub fn count(&mut self, col_name: &str) -> DbResult<u64> {
-        let meta_page_id = self.get_meta_page_id()?;
-        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(0, meta_page_id, col_name)?;
+        let meta_source = self.get_meta_source()?;
+        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(
+            0, meta_source.meta_pid, col_name)?;
         counter_helper::count(&mut self.page_handler, collection_meta)
     }
 
