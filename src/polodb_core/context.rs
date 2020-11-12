@@ -1,10 +1,10 @@
 use std::rc::Rc;
 use std::borrow::Borrow;
 use std::path::Path;
-use polodb_bson::{Document, Value, ObjectIdMaker};
+use polodb_bson::{Document, Value, ObjectIdMaker, mk_document};
 use super::page::{header_page_wrapper, PageHandler};
 use super::error::DbErr;
-use crate::vm::{SubProgram, VM};
+use crate::vm::{SubProgram, VM, VmState};
 use crate::db::DbResult;
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::index_ctx::{IndexCtx, merge_options_into_default};
@@ -69,6 +69,41 @@ impl DbContext {
         Ok(ctx)
     }
 
+    pub fn get_collection_id_by_name(&mut self, name: &str) -> DbResult<u32> {
+        self.page_handler.auto_start_transaction(TransactionType::Read)?;
+
+        let id = try_db_op!(self, self.internal_get_collection_id_by_name(name));
+
+        Ok(id)
+    }
+
+    fn internal_get_collection_id_by_name(&mut self, name: &str) -> DbResult<u32> {
+        let meta_src = self.get_meta_source()?;
+
+        let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
+
+        let query_doc = mk_document! {
+            "name": name,
+        };
+
+        let meta_doc = mk_document!{};
+
+        let subprogram = SubProgram::compile_query(&collection_meta, &meta_doc, &query_doc)?;
+
+        let mut handle = self.make_handle(subprogram);
+        handle.step()?;
+
+        if handle.state() == (VmState::HasRow as i8) {
+            let doc = handle.get().unwrap_document();
+            let int_raw = doc.pkey_id().unwrap().unwrap_int();
+
+            handle.commit_and_close_vm()?;
+            return Ok(int_raw as u32);
+        }
+
+        Err(DbErr::CollectionNotFound(name.into()))
+    }
+
     pub(crate) fn get_meta_source(&mut self) -> DbResult<MetaSource> {
         let head_page = self.page_handler.pipeline_read_page(0)?;
         let head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
@@ -82,15 +117,15 @@ impl DbContext {
         })
     }
 
-    pub fn create_collection(&mut self, name: &str) -> DbResult<()> {
+    pub fn create_collection(&mut self, name: &str) -> DbResult<u32> {
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        try_db_op!(self, self.internal_create_collection(name));
+        let id = try_db_op!(self, self.internal_create_collection(name));
 
-        Ok(())
+        Ok(id)
     }
 
-    fn internal_create_collection(&mut self, name: &str) -> DbResult<()> {
+    fn internal_create_collection(&mut self, name: &str) -> DbResult<u32> {
         if name.is_empty() {
             return Err(DbErr::IllegalCollectionName(name.into()));
         }
@@ -128,7 +163,7 @@ impl DbContext {
 
         self.update_meta_source(&meta_source)?;
 
-        Ok(())
+        Ok(collection_id)
     }
 
     fn update_meta_source(&mut self, meta_source: &MetaSource) -> DbResult<()> {
@@ -150,13 +185,13 @@ impl DbContext {
         DbHandle::new(vm)
     }
 
-    pub(crate) fn find_collection_root_pid_by_name(&mut self, parent_pid: u32, root_pid: u32, col_name: &str) -> DbResult<(MetaDocEntry, Rc<Document>)> {
+    pub(crate) fn find_collection_root_pid_by_id(&mut self, parent_pid: u32, root_pid: u32, id: u32) -> DbResult<(MetaDocEntry, Rc<Document>)> {
         let raw_page = self.page_handler.pipeline_read_page(root_pid)?;
         let item_size = self.item_size();
         let btree_node = BTreeNode::from_raw(&raw_page, parent_pid, item_size, &mut self.page_handler)?;
-        let key = Value::String(Rc::new(col_name.to_string()));
+        let key = Value::from(id);
         if btree_node.is_empty() {
-            return Err(DbErr::CollectionNotFound(col_name.into()));
+            return Err(DbErr::CollectionIdNotFound(id));
         }
         let result = btree_node.search(&key)?;
         match result {
@@ -170,27 +205,27 @@ impl DbContext {
             SearchKeyResult::Index(child_index) => {
                 let next_pid = btree_node.indexes[child_index];
                 if next_pid == 0 {
-                    return Err(DbErr::CollectionNotFound(col_name.into()));
+                    return Err(DbErr::CollectionIdNotFound(id));
                 }
 
-                self.find_collection_root_pid_by_name(root_pid, next_pid, col_name)
+                self.find_collection_root_pid_by_id(root_pid, next_pid, id)
             }
 
         }
     }
 
-    pub fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+    pub fn create_index(&mut self, col_id: u32, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        try_db_op!(self, self.internal_create_index(col_name, keys, options));
+        try_db_op!(self, self.internal_create_index(col_id, keys, options));
 
         Ok(())
     }
 
-    fn internal_create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+    fn internal_create_index(&mut self, col_id: u32, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         let meta_source = self.get_meta_source()?;
-        let (_, mut meta_doc) = self.find_collection_root_pid_by_name(
-            0, meta_source.meta_pid, col_name)?;
+        let (_, mut meta_doc) = self.find_collection_root_pid_by_id(
+            0, meta_source.meta_pid, col_id)?;
         let mut_meta_doc = Rc::get_mut(&mut meta_doc).unwrap();
 
         for (key_name, value_of_key) in keys.iter() {
@@ -230,7 +265,7 @@ impl DbContext {
             }
         }
 
-        let key_col = Value::String(Rc::new(col_name.into()));
+        let key_col = Value::from(col_id);
 
         let meta_source = self.get_meta_source()?;
         let inserted = self.update_by_root_pid(
@@ -254,20 +289,20 @@ impl DbContext {
         doc
     }
 
-    pub fn insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
+    pub fn insert(&mut self, col_id: u32, doc: Rc<Document>) -> DbResult<Rc<Document>> {
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(self, self.internal_insert(col_name, doc));
+        let result = try_db_op!(self, self.internal_insert(col_id, doc));
 
         Ok(result)
     }
 
-    fn internal_insert(&mut self, col_name: &str, doc: Rc<Document>) -> DbResult<Rc<Document>> {
+    fn internal_insert(&mut self, col_id: u32, doc: Rc<Document>) -> DbResult<Rc<Document>> {
         let meta_source = self.get_meta_source()?;
         let doc_value = self.fix_doc(doc);
 
-        let (mut collection_meta, mut meta_doc) = self.find_collection_root_pid_by_name(
-            0, meta_source.meta_pid, col_name)?;
+        let (mut collection_meta, mut meta_doc) = self.find_collection_root_pid_by_id(
+            0, meta_source.meta_pid, col_id)?;
         let meta_doc_mut = Rc::get_mut(&mut meta_doc).unwrap();
 
         let mut is_pkey_check_skipped = false;
@@ -311,7 +346,7 @@ impl DbContext {
 
         // update meta begin
         if is_meta_changed {
-            let key = Value::String(Rc::new(col_name.to_string()));
+            let key = Value::from(col_id);
             let updated= self.update_by_root_pid(
                 0, meta_source.meta_pid, &key, meta_doc_mut)?;
             if !updated {
@@ -324,10 +359,10 @@ impl DbContext {
     }
 
     /// query: None for findAll
-    pub fn find(&mut self, col_name: &str, query: Option<&Document>) -> DbResult<DbHandle> {
+    pub fn find(&mut self, col_id: u32, query: Option<&Document>) -> DbResult<DbHandle> {
         let meta_source = self.get_meta_source()?;
-        let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(
-            0, meta_source.meta_pid, col_name)?;
+        let (collection_meta, meta_doc) = self.find_collection_root_pid_by_id(
+            0, meta_source.meta_pid, col_id)?;
 
         let subprogram = match query {
             Some(query) => SubProgram::compile_query(&collection_meta, meta_doc.borrow(), query),
@@ -339,18 +374,18 @@ impl DbContext {
         Ok(handle)
     }
 
-    pub fn update(&mut self, col_name: &str, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+    pub fn update(&mut self, col_id: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(self, self.internal_update(col_name, query, update));
+        let result = try_db_op!(self, self.internal_update(col_id, query, update));
 
         Ok(result)
     }
 
-    fn internal_update(&mut self, col_name: &str, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+    fn internal_update(&mut self, col_id: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         let meta_source = self.get_meta_source()?;
-        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(
-            0, meta_source.meta_pid, col_name)?;
+        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_id(
+            0, meta_source.meta_pid, col_id)?;
 
         let subprogram = SubProgram::compile_update(&collection_meta, query, update)?;
 
@@ -360,59 +395,59 @@ impl DbContext {
         Ok(vm.r2 as usize)
     }
 
-    pub fn drop(&mut self, col_name: &str) -> DbResult<()> {
+    pub fn drop(&mut self, col_id: u32) -> DbResult<()> {
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        try_db_op!(self, self.internal_drop(col_name));
+        try_db_op!(self, self.internal_drop(col_id));
 
         Ok(())
     }
 
-    fn internal_drop(&mut self, col_name: &str) -> DbResult<()> {
+    fn internal_drop(&mut self, col_id: u32) -> DbResult<()> {
         let meta_source = self.get_meta_source()?;
-        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(
-            0, meta_source.meta_pid, col_name)?;
+        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_id(
+            0, meta_source.meta_pid, col_id)?;
         delete_all_helper::delete_all(&mut self.page_handler, collection_meta)?;
 
         let mut btree_wrapper = BTreePageDeleteWrapper::new(
             &mut self.page_handler, meta_source.meta_pid);
 
-        let pkey: Value = col_name.into();
+        let pkey = Value::from(col_id);
         btree_wrapper.delete_item(&pkey)?;
 
         Ok(())
     }
 
-    pub fn delete(&mut self, col_name: &str, query: &Document) -> DbResult<usize> {
-        let primary_keys = self.get_primary_keys_by_query(col_name, Some(query))?;
+    pub fn delete(&mut self, col_id: u32, query: &Document) -> DbResult<usize> {
+        let primary_keys = self.get_primary_keys_by_query(col_id, Some(query))?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(self, self.internal_delete(col_name, &primary_keys));
+        let result = try_db_op!(self, self.internal_delete(col_id, &primary_keys));
 
         Ok(result)
     }
 
-    fn internal_delete(&mut self, col_name: &str, primary_keys: &Vec<Value>) -> DbResult<usize> {
+    fn internal_delete(&mut self, col_id: u32, primary_keys: &Vec<Value>) -> DbResult<usize> {
         for pkey in primary_keys {
-            let _ = self.internal_delete_by_pkey(col_name, pkey)?;
+            let _ = self.internal_delete_by_pkey(col_id, pkey)?;
         }
 
         Ok(primary_keys.len())
     }
 
-    pub fn delete_all(&mut self, col_name: &str) -> DbResult<usize> {
-        let primary_keys = self.get_primary_keys_by_query(col_name, None)?;
+    pub fn delete_all(&mut self, col_id: u32) -> DbResult<usize> {
+        let primary_keys = self.get_primary_keys_by_query(col_id, None)?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(self, self.internal_delete(col_name, &primary_keys));
+        let result = try_db_op!(self, self.internal_delete(col_id, &primary_keys));
 
         Ok(result)
     }
 
-    fn get_primary_keys_by_query(&mut self, col_name: &str, query: Option<&Document>) -> DbResult<Vec<Value>> {
-        let mut handle = self.find(col_name, query)?;
+    fn get_primary_keys_by_query(&mut self, col_id: u32, query: Option<&Document>) -> DbResult<Vec<Value>> {
+        let mut handle = self.find(col_id, query)?;
         let mut buffer = vec![];
 
         handle.step()?;
@@ -481,18 +516,18 @@ impl DbContext {
         Ok(())
     }
 
-    pub(crate) fn delete_by_pkey(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
+    pub(crate) fn delete_by_pkey(&mut self, col_id: u32, key: &Value) -> DbResult<Option<Rc<Document>>> {
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(self, self.internal_delete_by_pkey(col_name, key));
+        let result = try_db_op!(self, self.internal_delete_by_pkey(col_id, key));
 
         Ok(result)
     }
 
-    fn internal_delete_by_pkey(&mut self, col_name: &str, key: &Value) -> DbResult<Option<Rc<Document>>> {
+    fn internal_delete_by_pkey(&mut self, col_id: u32, key: &Value) -> DbResult<Option<Rc<Document>>> {
         let meta_source = self.get_meta_source()?;
-        let (collection_meta, meta_doc) = self.find_collection_root_pid_by_name(
-            0, meta_source.meta_pid, col_name)?;
+        let (collection_meta, meta_doc) = self.find_collection_root_pid_by_id(
+            0, meta_source.meta_pid, col_id)?;
 
         let mut delete_wrapper = BTreePageDeleteWrapper::new(
             &mut self.page_handler,
@@ -513,10 +548,10 @@ impl DbContext {
         Ok(None)
     }
 
-    pub fn count(&mut self, col_name: &str) -> DbResult<u64> {
+    pub fn count(&mut self, col_id: u32) -> DbResult<u64> {
         let meta_source = self.get_meta_source()?;
-        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_name(
-            0, meta_source.meta_pid, col_name)?;
+        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_id(
+            0, meta_source.meta_pid, col_id)?;
         counter_helper::count(&mut self.page_handler, collection_meta)
     }
 

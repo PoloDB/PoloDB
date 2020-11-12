@@ -20,22 +20,24 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
 
 pub struct Collection<'a> {
     db: &'a mut Database,
+    id: u32,
     meta_version: u32,
     name: String,
 }
 
 impl<'a>  Collection<'a> {
 
-    fn new(db: &'a mut Database, meta_version: u32, name: &str) -> Collection<'a> {
+    fn new(db: &'a mut Database, id: u32, meta_version: u32, name: &str) -> Collection<'a> {
         Collection {
             db,
+            id,
             meta_version,
             name: name.into(),
         }
     }
 
     pub fn find(&mut self, query: Option<&Document>) -> DbResult<Vec<Rc<Document>>> {
-        let mut handle = self.db.ctx.find(&self.name, query)?;
+        let mut handle = self.db.ctx.find(self.id, query)?;
 
         let mut result = Vec::new();
 
@@ -44,30 +46,34 @@ impl<'a>  Collection<'a> {
         Ok(result)
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     #[inline]
     pub fn count(&mut self) -> DbResult<u64> {
-        self.db.ctx.count(&self.name)
+        self.db.ctx.count(self.id)
     }
 
     #[inline]
     pub fn update(&mut self, query: Option<&Document>, update: &Document) -> DbResult<usize> {
-        self.db.ctx.update(&self.name, query, update)
+        self.db.ctx.update(self.id, query, update)
     }
 
     #[inline]
     pub fn insert(&mut self, doc: Rc<Document>) -> DbResult<Rc<Document>> {
-        self.db.ctx.insert(&self.name, doc)
+        self.db.ctx.insert(self.id, doc)
     }
 
     #[inline]
     pub fn delete(&mut self, key: &Value) -> DbResult<Option<Rc<Document>>> {
-        self.db.ctx.delete_by_pkey(&self.name, key)
+        self.db.ctx.delete_by_pkey(self.id, key)
     }
 
-    // release in 0.2
+    // // release in 0.2
     #[inline]
     fn create_index(&mut self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        self.db.ctx.create_index(&self.name, keys, options)
+        self.db.ctx.create_index(self.id, keys, options)
     }
 
 }
@@ -98,9 +104,9 @@ impl Database {
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<Collection> {
-        self.ctx.create_collection(name)?;
+        let collection_id = self.ctx.create_collection(name)?;
         let meta_source = self.ctx.get_meta_source()?;
-        Ok(Collection::new(self, meta_source.meta_version, name))
+        Ok(Collection::new(self, collection_id, meta_source.meta_version, name))
     }
 
     #[inline]
@@ -110,7 +116,8 @@ impl Database {
 
     pub fn collection(&mut self, col_name: &str) -> DbResult<Collection> {
         let meta_source = self.ctx.get_meta_source()?;
-        Ok(Collection::new(self, meta_source.meta_version, col_name))
+        let collection_id = self.ctx.get_collection_id_by_name(col_name)?;
+        Ok(Collection::new(self, collection_id, meta_source.meta_version, col_name))
     }
 
     #[allow(dead_code)]

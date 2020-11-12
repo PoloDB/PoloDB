@@ -35,6 +35,11 @@ impl<'a> DbHandle<'a> {
         self.0.execute()
     }
 
+    #[inline]
+    pub fn commit_and_close_vm(self) -> DbResult<()> {
+        self.0.commit_and_close()
+    }
+
 }
 
 impl<'a> fmt::Display for DbHandle<'a> {

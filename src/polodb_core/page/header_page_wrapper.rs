@@ -140,12 +140,6 @@ impl HeaderPageWrapper {
         self.0.put_u32(version);
     }
 
-    pub(crate) fn incre_meta_version(&mut self) -> u32 {
-        let current =self.get_meta_page_id();
-        self.set_meta_page_id(current + 1);
-        current
-    }
-
     #[inline]
     pub(crate) fn get_meta_id_counter(&self) -> u32 {
         self.0.get_u32(META_ID_COUNTER_OFFSET)

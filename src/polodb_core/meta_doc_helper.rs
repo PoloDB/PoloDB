@@ -14,7 +14,8 @@ use crate::error::DbErr;
 // ...
 //
 pub(crate) struct MetaDocEntry {
-    pub id: String,
+    pub id: u32,
+    pub name: String,
     pub root_pid: u32,
     flags: u32,
 }
@@ -23,20 +24,23 @@ pub(crate) const KEY_TY_FLAG: u32 = 0b11111111;
 
 impl MetaDocEntry {
 
-    pub fn new(id: String, root_pid: u32) -> MetaDocEntry {
+    pub fn new(id: u32, name: String, root_pid: u32) -> MetaDocEntry {
         MetaDocEntry {
             id,
+            name,
             root_pid,
             flags: 0
         }
     }
 
     pub(crate) fn from_doc(doc: &Document) -> MetaDocEntry {
-        let id = doc.get(meta_doc_key::ID.into()).unwrap().unwrap_string();
+        let id = doc.get(meta_doc_key::ID.into()).unwrap().unwrap_int() as u32;
+        let name = doc.get(meta_doc_key::NAME.into()).unwrap().unwrap_string();
         let root_pid = doc.get(meta_doc_key::ROOT_PID.into()).unwrap().unwrap_int();
         let flags = doc.get(meta_doc_key::FLAGS.into()).unwrap().unwrap_int();
         MetaDocEntry {
-            id: id.into(),
+            id,
+            name: name.into(),
             root_pid: root_pid as u32,
             flags: flags as u32,
         }

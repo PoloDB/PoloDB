@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn print_program() {
-        let meta_entry = MetaDocEntry::new("test".into(), 100);
+        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
         let program = SubProgram::compile_query_all(&meta_entry).unwrap();
         println!("Program: \n\n{}", program);
     }
@@ -295,7 +295,7 @@ mod tests {
             "name": "Vincent Chan",
             "age": 32,
         };
-        let meta_entry = MetaDocEntry::new("test".into(), 100);
+        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
         let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
         println!("Program: \n\n{}", program);
     }
@@ -307,7 +307,7 @@ mod tests {
             "_id": 6,
             "age": 32,
         };
-        let meta_entry = MetaDocEntry::new("test".into(), 100);
+        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
         let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
         println!("Program: \n\n{}", program);
     }
@@ -323,14 +323,14 @@ mod tests {
                 "$in": mk_array! [ 1, 2 ],
             },
         };
-        let meta_entry = MetaDocEntry::new("test".into(), 100);
+        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
         let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
         println!("Program: \n\n{}", program);
     }
 
     #[test]
     fn print_update() {
-        let meta_entry = MetaDocEntry::new("test".into(), 100);
+        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
         let query_doc = mk_document! {
             "name": "Vincent Chan",
             "age": 32,
