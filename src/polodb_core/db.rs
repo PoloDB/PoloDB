@@ -37,7 +37,7 @@ impl<'a>  Collection<'a> {
     }
 
     pub fn find(&mut self, query: Option<&Document>) -> DbResult<Vec<Rc<Document>>> {
-        let mut handle = self.db.ctx.find(self.id, query)?;
+        let mut handle = self.db.ctx.find(self.id, self.meta_version, query)?;
 
         let mut result = Vec::new();
 
@@ -57,12 +57,12 @@ impl<'a>  Collection<'a> {
 
     #[inline]
     pub fn update(&mut self, query: Option<&Document>, update: &Document) -> DbResult<usize> {
-        self.db.ctx.update(self.id, query, update)
+        self.db.ctx.update(self.id, self.meta_version, query, update)
     }
 
     #[inline]
     pub fn insert(&mut self, doc: Rc<Document>) -> DbResult<Rc<Document>> {
-        self.db.ctx.insert(self.id, doc)
+        self.db.ctx.insert(self.id, self.meta_version, doc)
     }
 
     #[inline]
@@ -115,9 +115,8 @@ impl Database {
     }
 
     pub fn collection(&mut self, col_name: &str) -> DbResult<Collection> {
-        let meta_source = self.ctx.get_meta_source()?;
-        let collection_id = self.ctx.get_collection_id_by_name(col_name)?;
-        Ok(Collection::new(self, collection_id, meta_source.meta_version, col_name))
+        let (collection_id, meta_version) = self.ctx.get_collection_meta_by_name(col_name)?;
+        Ok(Collection::new(self, collection_id, meta_version, col_name))
     }
 
     #[allow(dead_code)]

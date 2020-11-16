@@ -68,6 +68,7 @@ pub enum DbErr {
     UnknownUpdateOperation(String),
     IncrementNullField,
     VmIsHalt,
+    MetaVersionMismatched(u32, u32),
     Busy
 }
 
@@ -122,6 +123,7 @@ impl fmt::Display for DbErr {
             DbErr::UnknownUpdateOperation(op) => write!(f, "unknown update operation: '{}'", op),
             DbErr::IncrementNullField => write!(f, "can not increment a field which is null"),
             DbErr::VmIsHalt => write!(f, "Vm can not execute because it's halt"),
+            DbErr::MetaVersionMismatched(expected, actual) => write!(f, "meta version mismatched, expect: {}, actual: {}", expected, actual),
             DbErr::Busy => write!(f, "database busy"),
         }
     }

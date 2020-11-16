@@ -52,23 +52,23 @@ int PLDB_rollback(Database* db);
 
 int PLDB_create_collection(Database* db, const char* name);
 
-int PLDB_get_collection_id_by_name(Database* db, const char* name);
+int PLDB_get_collection_meta_by_name(Database* db, const char* name, uint32_t* id, uint32_t* version);
 
 int64_t PLDB_count(Database* db, uint32_t);
 
-int PLDB_insert(Database* db, uint32_t col_id, const DbDocument* doc);
+int PLDB_insert(Database* db, uint32_t col_id, uint32_t meta_version, const DbDocument* doc);
 
 // <query> is nullable
-int PLDB_find(Database* db, uint32_t col_id, const DbDocument* query, DbHandle** out_handle);
+int PLDB_find(Database* db, uint32_t col_id, uint32_t meta_version, const DbDocument* query, DbHandle** out_handle);
 
 // <query> is nullable
-int64_t PLDB_update(Database* db, uint32_t col_id, const DbDocument* query, const DbDocument* update);
+int64_t PLDB_update(Database* db, uint32_t col_id, uint32_t meta_version, const DbDocument* query, const DbDocument* update);
 
-int64_t PLDB_delete(Database* db, uint32_t col_id, const DbDocument* query);
+int64_t PLDB_delete(Database* db, uint32_t col_id, uint32_t meta_version, const DbDocument* query);
 
-int64_t PLDB_delete_all(Database* db, uint32_t col_id);
+int64_t PLDB_delete_all(Database* db, uint32_t col_id, uint32_t meta_version);
 
-int PLDB_drop(Database* db, uint32_t col_id);
+int PLDB_drop(Database* db, uint32_t col_id, uint32_t meta_version);
 
 const char* PLDB_error_msg();
 

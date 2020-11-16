@@ -38,9 +38,9 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
  * API for all platforms
  */
 pub struct DbContext {
-    page_handler :        Box<PageHandler>,
-
-    obj_id_maker:         ObjectIdMaker,
+    page_handler:        Box<PageHandler>,
+    obj_id_maker:        ObjectIdMaker,
+    meta_version:        u32,
 
 }
 
@@ -60,24 +60,35 @@ impl DbContext {
 
         let obj_id_maker = ObjectIdMaker::new();
 
-        let ctx = DbContext {
+        let mut ctx = DbContext {
             page_handler: Box::new(page_handler),
-
             // first_page,
             obj_id_maker,
+            meta_version: 0,
         };
+
+        let meta_source = ctx.get_meta_source()?;
+        ctx.meta_version = meta_source.meta_version;
+
         Ok(ctx)
     }
 
-    pub fn get_collection_id_by_name(&mut self, name: &str) -> DbResult<u32> {
-        self.page_handler.auto_start_transaction(TransactionType::Read)?;
-
-        let id = try_db_op!(self, self.internal_get_collection_id_by_name(name));
-
-        Ok(id)
+    fn check_meta_version(&self, actual_meta_version: u32) -> DbResult<()> {
+        if self.meta_version != actual_meta_version {
+            return Err(DbErr::MetaVersionMismatched(self.meta_version, actual_meta_version));
+        }
+        return Ok(())
     }
 
-    fn internal_get_collection_id_by_name(&mut self, name: &str) -> DbResult<u32> {
+    pub fn get_collection_meta_by_name(&mut self, name: &str) -> DbResult<(u32, u32)> {
+        self.page_handler.auto_start_transaction(TransactionType::Read)?;
+
+        let result = try_db_op!(self, self.internal_get_collection_id_by_name(name));
+
+        Ok(result)
+    }
+
+    fn internal_get_collection_id_by_name(&mut self, name: &str) -> DbResult<(u32, u32)> {
         let meta_src = self.get_meta_source()?;
 
         let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
@@ -98,7 +109,7 @@ impl DbContext {
             let int_raw = doc.pkey_id().unwrap().unwrap_int();
 
             handle.commit_and_close_vm()?;
-            return Ok(int_raw as u32);
+            return Ok((int_raw as u32, self.meta_version));
         }
 
         Err(DbErr::CollectionNotFound(name.into()))
@@ -172,6 +183,7 @@ impl DbContext {
         head_page_wrapper.set_meta_page_id(meta_source.meta_pid);
         head_page_wrapper.set_meta_id_counter(meta_source.meta_id_counter);
         head_page_wrapper.set_meta_version(meta_source.meta_version);
+        self.meta_version = meta_source.meta_version;
         self.page_handler.pipeline_write_page(&head_page_wrapper.0)
     }
 
@@ -289,7 +301,9 @@ impl DbContext {
         doc
     }
 
-    pub fn insert(&mut self, col_id: u32, doc: Rc<Document>) -> DbResult<Rc<Document>> {
+    pub fn insert(&mut self, col_id: u32, meta_version: u32, doc: Rc<Document>) -> DbResult<Rc<Document>> {
+        self.check_meta_version(meta_version)?;
+
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
         let result = try_db_op!(self, self.internal_insert(col_id, doc));
@@ -359,7 +373,9 @@ impl DbContext {
     }
 
     /// query: None for findAll
-    pub fn find(&mut self, col_id: u32, query: Option<&Document>) -> DbResult<DbHandle> {
+    pub fn find(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>) -> DbResult<DbHandle> {
+        self.check_meta_version(meta_version)?;
+
         let meta_source = self.get_meta_source()?;
         let (collection_meta, meta_doc) = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
@@ -374,7 +390,9 @@ impl DbContext {
         Ok(handle)
     }
 
-    pub fn update(&mut self, col_id: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+    pub fn update(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+        self.check_meta_version(meta_version)?;
+
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
         let result = try_db_op!(self, self.internal_update(col_id, query, update));
@@ -395,7 +413,9 @@ impl DbContext {
         Ok(vm.r2 as usize)
     }
 
-    pub fn drop(&mut self, col_id: u32) -> DbResult<()> {
+    pub fn drop(&mut self, col_id: u32, meta_version: u32) -> DbResult<()> {
+        self.check_meta_version(meta_version)?;
+
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
         try_db_op!(self, self.internal_drop(col_id));
@@ -404,7 +424,7 @@ impl DbContext {
     }
 
     fn internal_drop(&mut self, col_id: u32) -> DbResult<()> {
-        let meta_source = self.get_meta_source()?;
+        let mut meta_source = self.get_meta_source()?;
         let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
         delete_all_helper::delete_all(&mut self.page_handler, collection_meta)?;
@@ -415,11 +435,12 @@ impl DbContext {
         let pkey = Value::from(col_id);
         btree_wrapper.delete_item(&pkey)?;
 
-        Ok(())
+        meta_source.meta_version += 1;
+        self.update_meta_source(&meta_source)
     }
 
-    pub fn delete(&mut self, col_id: u32, query: &Document) -> DbResult<usize> {
-        let primary_keys = self.get_primary_keys_by_query(col_id, Some(query))?;
+    pub fn delete(&mut self, col_id: u32, meta_version: u32, query: &Document) -> DbResult<usize> {
+        let primary_keys = self.get_primary_keys_by_query(col_id, meta_version, Some(query))?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
@@ -436,8 +457,8 @@ impl DbContext {
         Ok(primary_keys.len())
     }
 
-    pub fn delete_all(&mut self, col_id: u32) -> DbResult<usize> {
-        let primary_keys = self.get_primary_keys_by_query(col_id, None)?;
+    pub fn delete_all(&mut self, col_id: u32, meta_version: u32) -> DbResult<usize> {
+        let primary_keys = self.get_primary_keys_by_query(col_id, meta_version, None)?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
@@ -446,8 +467,8 @@ impl DbContext {
         Ok(result)
     }
 
-    fn get_primary_keys_by_query(&mut self, col_id: u32, query: Option<&Document>) -> DbResult<Vec<Value>> {
-        let mut handle = self.find(col_id, query)?;
+    fn get_primary_keys_by_query(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>) -> DbResult<Vec<Value>> {
+        let mut handle = self.find(col_id, meta_version, query)?;
         let mut buffer = vec![];
 
         handle.step()?;

@@ -133,9 +133,9 @@ pub extern "C" fn PLDB_create_collection(db: *mut DbContext, name: *const c_char
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_drop(db: *mut DbContext, col_id: c_uint) -> c_int {
+pub extern "C" fn PLDB_drop(db: *mut DbContext, col_id: c_uint, meta_version: c_uint) -> c_int {
     unsafe {
-        let result = db.as_mut().unwrap().drop(col_id);
+        let result = db.as_mut().unwrap().drop(col_id, meta_version);
         if let Err(err) = result {
             set_global_error(err);
             return PLDB_error_code();
@@ -145,13 +145,18 @@ pub extern "C" fn PLDB_drop(db: *mut DbContext, col_id: c_uint) -> c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_get_collection_id_by_name(db: *mut DbContext, name: *const c_char) -> c_int {
+pub extern "C" fn PLDB_get_collection_meta_by_name(db: *mut DbContext, name: *const c_char, id: *mut c_uint, version: *mut c_uint) -> c_int {
     unsafe {
         let str = CStr::from_ptr(name);
         let utf8str = try_read_utf8!(str.to_str(), PLDB_error_code());
-        let result = db.as_mut().unwrap().get_collection_id_by_name(utf8str);
+        let result = db.as_mut().unwrap().get_collection_meta_by_name(utf8str);
         return match result {
-            Ok(id) => id as c_int,
+            Ok((col_id, meta_version)) => {
+                id.write(col_id);
+                version.write(meta_version);
+                0
+            }
+
             Err(err) => {
                 set_global_error(err);
                 PLDB_error_code()
@@ -161,11 +166,11 @@ pub extern "C" fn PLDB_get_collection_id_by_name(db: *mut DbContext, name: *cons
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_insert(db: *mut DbContext, col_id: c_uint, doc: *const Rc<Document>) -> c_int {
+pub extern "C" fn PLDB_insert(db: *mut DbContext, col_id: c_uint, meta_version: c_uint, doc: *const Rc<Document>) -> c_int {
     unsafe {
         let local_db = db.as_mut().unwrap();
         let local_doc = doc.as_ref().unwrap().clone();
-        let insert_result = local_db.insert(col_id, local_doc);
+        let insert_result = local_db.insert(col_id, meta_version, local_doc);
         if let Err(err) = insert_result {
             set_global_error(err);
             return PLDB_error_code();
@@ -178,14 +183,15 @@ pub extern "C" fn PLDB_insert(db: *mut DbContext, col_id: c_uint, doc: *const Rc
 #[no_mangle]
 pub extern "C" fn PLDB_find(db: *mut DbContext,
                             col_id: c_uint,
+                            meta_version: c_uint,
                             query: *const Rc<Document>,
                             out_handle: *mut *mut DbHandle) -> c_int {
     unsafe {
         let rust_db = db.as_mut().unwrap();
 
         let handle_result = match query.as_ref() {
-            Some(query_doc) => rust_db.find(col_id, Some(query_doc.borrow())),
-            None => rust_db.find(col_id, None),
+            Some(query_doc) => rust_db.find(col_id, meta_version, Some(query_doc.borrow())),
+            None => rust_db.find(col_id, meta_version, None),
         };
 
         let handle = match handle_result {
@@ -209,6 +215,7 @@ pub extern "C" fn PLDB_find(db: *mut DbContext,
 #[no_mangle]
 pub extern "C" fn PLDB_update(db: *mut DbContext,
                               col_id: c_uint,
+                              meta_version: c_uint,
                               query: *const Rc<Document>,
                               update: *const Rc<Document>) -> c_longlong {
     let result = unsafe {
@@ -217,8 +224,8 @@ pub extern "C" fn PLDB_update(db: *mut DbContext,
         let update_doc = update.as_ref().unwrap();
 
         match query.as_ref() {
-            Some(query) => rust_db.update(col_id, Some(query.as_ref()), update_doc),
-            None => rust_db.update(col_id, None, update_doc),
+            Some(query) => rust_db.update(col_id, meta_version, Some(query.as_ref()), update_doc),
+            None => rust_db.update(col_id, meta_version, None, update_doc),
         }
     };
 
@@ -233,13 +240,13 @@ pub extern "C" fn PLDB_update(db: *mut DbContext,
 
 /// return value represents how many rows are deleted
 #[no_mangle]
-pub extern "C" fn PLDB_delete(db: *mut DbContext, col_id: c_uint, query: *const Rc<Document>) -> c_longlong {
+pub extern "C" fn PLDB_delete(db: *mut DbContext, col_id: c_uint, meta_version: c_uint, query: *const Rc<Document>) -> c_longlong {
     let result = unsafe {
         let rust_db = db.as_mut().unwrap();
 
         let query_doc = query.as_ref().unwrap();
 
-        rust_db.delete(col_id, query_doc.as_ref())
+        rust_db.delete(col_id, meta_version, query_doc.as_ref())
     };
 
     match result {
@@ -252,10 +259,10 @@ pub extern "C" fn PLDB_delete(db: *mut DbContext, col_id: c_uint, query: *const 
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_delete_all(db: *mut DbContext, col_id: c_uint) -> c_longlong {
+pub extern "C" fn PLDB_delete_all(db: *mut DbContext, col_id: c_uint, meta_version: c_uint) -> c_longlong {
     let result = unsafe {
         let rust_db = db.as_mut().unwrap();
-        rust_db.delete_all(col_id)
+        rust_db.delete_all(col_id, meta_version)
     };
 
     match result {
@@ -854,8 +861,9 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::UnknownUpdateOperation(_) => 37,
         DbErr::IncrementNullField => 38,
         DbErr::VmIsHalt => 39,
-        DbErr::Busy => 40,
-        DbErr::NotAValidField(_) => 41,
+        DbErr::MetaVersionMismatched(_, _) => 40,
+        DbErr::Busy => 41,
+        DbErr::NotAValidField(_) => 42,
 
     }
 }
