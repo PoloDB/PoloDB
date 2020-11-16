@@ -54,7 +54,7 @@ int PLDB_create_collection(Database* db, const char* name);
 
 int PLDB_get_collection_meta_by_name(Database* db, const char* name, uint32_t* id, uint32_t* version);
 
-int64_t PLDB_count(Database* db, uint32_t);
+int64_t PLDB_count(Database* db, uint32_t col_id, uint32_t meta_version);
 
 int PLDB_insert(Database* db, uint32_t col_id, uint32_t meta_version, const DbDocument* doc);
 

@@ -53,6 +53,7 @@ static napi_value db_version(napi_env env, napi_callback_info info) {
 typedef struct {
   Database* db;
   uint32_t  id;
+  uint32_t  meta_version;
   size_t    name_size;
   size_t    name_capacity;
   char*     name;
@@ -64,6 +65,7 @@ InternalCollection* NewInternalCollection(Database* db) {
 
   collection->db = db;
   collection->id = 0;
+  collection->meta_version = 0;
   collection->name_size = 0;
   collection->name_capacity = 512;
   collection->name = malloc(512);
@@ -127,13 +129,11 @@ static napi_value Collection_constructor(napi_env env, napi_callback_info info) 
   );
   CHECK_STAT(status);
 
-  int ec = PLDB_get_collection_id_by_name(db, internal_collection->name);
+  int ec = PLDB_get_collection_meta_by_name(db, internal_collection->name, &internal_collection->id, &internal_collection->meta_version);
   if (ec < 0) {
     napi_throw_error(env, NULL, PLDB_error_msg());
     return NULL;
   }
-
-  internal_collection->id = (uint32_t)ec;
 
   return this_arg;
 }
@@ -550,7 +550,7 @@ static napi_value Collection_insert(napi_env env, napi_callback_info info) {
 
   napi_value result = 0;
   int ec = 0;
-  ec = PLDB_insert(internal_collection->db, internal_collection->id, doc);
+  ec = PLDB_insert(internal_collection->db, internal_collection->id, internal_collection->meta_version, doc);
   if (ec < 0) {
     napi_throw_error(env, NULL, PLDB_error_msg());
     goto clean;
@@ -597,6 +597,7 @@ static napi_value Collection_find(napi_env env, napi_callback_info info) {
   ec = PLDB_find(
     internal_collection->db,
     internal_collection->id,
+    internal_collection->meta_version,
     query_doc,
     &handle
   );
@@ -665,7 +666,11 @@ static napi_value Collection_count(napi_env env, napi_callback_info info) {
   status = napi_unwrap(env, this_arg, (void**)&internal_collection);
   CHECK_STAT(status);
 
-  int64_t ec = PLDB_count(internal_collection->db, internal_collection->id);
+  int64_t ec = PLDB_count(
+    internal_collection->db,
+    internal_collection->id,
+    internal_collection->meta_version
+  );
   if (ec < 0) {
     napi_throw_error(env, NULL, PLDB_error_msg());
     return NULL;
@@ -716,7 +721,7 @@ static napi_value Collection_update(napi_env env, napi_callback_info info) {
     goto ret;
   }
 
-  int ec = PLDB_update(internal_collection->db, internal_collection->id, query_doc, update_doc);
+  int ec = PLDB_update(internal_collection->db, internal_collection->id, internal_collection->meta_version, query_doc, update_doc);
   if (ec < 0) {
     napi_throw_error(env, NULL, PLDB_error_msg());
     goto ret;
@@ -763,6 +768,7 @@ static napi_value Collection_delete(napi_env env, napi_callback_info info) {
   int ec = PLDB_delete(
     internal_collection->db,
     internal_collection->id,
+    internal_collection->meta_version,
     query_doc
   );
 
@@ -792,7 +798,11 @@ static napi_value Collection_delete_all(napi_env env, napi_callback_info info) {
   status = napi_unwrap(env, this_arg, (void**)&internal_collection);
   CHECK_STAT(status);
 
-  int ec = PLDB_delete_all(internal_collection->db, internal_collection->id);
+  int ec = PLDB_delete_all(
+    internal_collection->db,
+    internal_collection->id,
+    internal_collection->meta_version
+  );
   if (ec < 0) {
     napi_throw_error(env, NULL, PLDB_error_msg());
     return NULL;
@@ -812,7 +822,11 @@ static napi_value Collection_drop(napi_env env, napi_callback_info info) {
   status = napi_unwrap(env, this_arg, (void**)&internal_collection);
   CHECK_STAT(status);
 
-  int ec = PLDB_drop(internal_collection->db, internal_collection->id);
+  int ec = PLDB_drop(
+    internal_collection->db,
+    internal_collection->id,
+    internal_collection->meta_version
+  );
   if (ec < 0) {
     napi_throw_error(env, NULL, PLDB_error_msg());
     return NULL;
