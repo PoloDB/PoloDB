@@ -151,9 +151,9 @@ pub extern "C" fn PLDB_get_collection_meta_by_name(db: *mut DbContext, name: *co
         let utf8str = try_read_utf8!(str.to_str(), PLDB_error_code());
         let result = db.as_mut().unwrap().get_collection_meta_by_name(utf8str);
         return match result {
-            Ok((col_id, meta_version)) => {
-                id.write(col_id);
-                version.write(meta_version);
+            Ok(info) => {
+                id.write(info.id);
+                version.write(info.meta_version);
                 0
             }
 

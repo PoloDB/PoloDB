@@ -23,6 +23,7 @@ macro_rules! try_db_op {
 
             Err(err) => {
                 $self.page_handler.auto_rollback()?;
+                $self.reset_meta_version()?;
                 return Err(err);
             }
         }
@@ -51,6 +52,12 @@ pub struct MetaSource {
     pub meta_pid: u32,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct CollectionMeta {
+    pub id: u32,
+    pub meta_version: u32,
+}
+
 impl DbContext {
 
     pub fn new(path: &Path) -> DbResult<DbContext> {
@@ -73,6 +80,16 @@ impl DbContext {
         Ok(ctx)
     }
 
+    /**
+     * when the database rollback,
+     * the cached meta_version maybe rollback, so read it again
+     */
+    fn reset_meta_version(&mut self) -> DbResult<()> {
+        let meta = self.get_meta_source()?;
+        self.meta_version = meta.meta_version;
+        Ok(())
+    }
+
     fn check_meta_version(&self, actual_meta_version: u32) -> DbResult<()> {
         if self.meta_version != actual_meta_version {
             return Err(DbErr::MetaVersionMismatched(self.meta_version, actual_meta_version));
@@ -80,7 +97,7 @@ impl DbContext {
         return Ok(())
     }
 
-    pub fn get_collection_meta_by_name(&mut self, name: &str) -> DbResult<(u32, u32)> {
+    pub fn get_collection_meta_by_name(&mut self, name: &str) -> DbResult<CollectionMeta> {
         self.page_handler.auto_start_transaction(TransactionType::Read)?;
 
         let result = try_db_op!(self, self.internal_get_collection_id_by_name(name));
@@ -88,7 +105,7 @@ impl DbContext {
         Ok(result)
     }
 
-    fn internal_get_collection_id_by_name(&mut self, name: &str) -> DbResult<(u32, u32)> {
+    fn internal_get_collection_id_by_name(&mut self, name: &str) -> DbResult<CollectionMeta> {
         let meta_src = self.get_meta_source()?;
 
         let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
@@ -109,7 +126,10 @@ impl DbContext {
             let int_raw = doc.pkey_id().unwrap().unwrap_int();
 
             handle.commit_and_close_vm()?;
-            return Ok((int_raw as u32, self.meta_version));
+            return Ok(CollectionMeta {
+                id: int_raw as u32,
+                meta_version: self.meta_version
+            });
         }
 
         Err(DbErr::CollectionNotFound(name.into()))

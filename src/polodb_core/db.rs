@@ -115,8 +115,8 @@ impl Database {
     }
 
     pub fn collection(&mut self, col_name: &str) -> DbResult<Collection> {
-        let (collection_id, meta_version) = self.ctx.get_collection_meta_by_name(col_name)?;
-        Ok(Collection::new(self, collection_id, meta_version, col_name))
+        let info = self.ctx.get_collection_meta_by_name(col_name)?;
+        Ok(Collection::new(self, info.id, info.meta_version, col_name))
     }
 
     #[allow(dead_code)]
