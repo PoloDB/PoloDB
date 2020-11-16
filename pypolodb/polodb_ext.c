@@ -217,6 +217,8 @@ typedef struct {
   PyObject_HEAD
   DatabaseObject* db_obj;
   char* name;
+  uint32_t id;
+  uint32_t meta_version;
 } CollectionObject;
 
 static PyObject* CollectionObject_new(PyTypeObject* type, PyObject* args, PyObject* kwds) {
@@ -225,6 +227,8 @@ static PyObject* CollectionObject_new(PyTypeObject* type, PyObject* args, PyObje
   if (self != NULL) {
     self->db_obj = NULL;
     self->name = NULL;
+    self->id = 0;
+    self->meta_version = 0;
   }
   return (PyObject*)self;
 }
@@ -249,6 +253,11 @@ static int CollectionObject_init(CollectionObject* self, PyObject* args, PyObjec
   memset(buffer, 0, name_len);
 
   self->name = buffer;
+
+  if (PLDB_get_collection_meta_by_name(self->db_obj->db, self->name, &self->id, &self->meta_version) < 0) {
+    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+    return -1;
+  }
 
   return 0;
 }
@@ -283,7 +292,7 @@ static PyObject* CollectionObject_insert(CollectionObject* self, PyObject* args)
     return NULL;
   }
 
-  if (PLDB_insert(self->db_obj->db, self->name, doc) < 0) {
+  if (PLDB_insert(self->db_obj->db, self->id, self->meta_version, doc) < 0) {
     PLDB_free_doc(doc);
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     return NULL;
@@ -318,7 +327,7 @@ static PyObject* CollectionObject_find(CollectionObject* self, PyObject* args) {
 
   PyObject* result = NULL;
 
-  ec = PLDB_find(self->db_obj->db, self->name, doc, &handle);
+  ec = PLDB_find(self->db_obj->db, self->id, self->meta_version, doc, &handle);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     goto handle_err;
@@ -398,7 +407,7 @@ static PyObject* CollectionObject_update(CollectionObject* self, PyObject* args)
 
   update = PyDictToDbDocument(update_dict_obj);
 
-  int64_t count = PLDB_update(self->db_obj->db, self->name, query, update);
+  int64_t count = PLDB_update(self->db_obj->db, self->id, self->meta_version, query, update);
   if (count < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     goto result;
@@ -434,7 +443,7 @@ static PyObject* CollectionObject_delete(CollectionObject* self, PyObject* args)
   PyObject* result = NULL;
   DbDocument* doc = PyDictToDbDocument(query_obj);
 
-  int64_t ec = PLDB_delete(self->db_obj->db, self->name, doc);
+  int64_t ec = PLDB_delete(self->db_obj->db, self->id, self->meta_version, doc);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     goto result;
@@ -453,7 +462,7 @@ result:
 static PyObject* CollectionObject_delete_all(CollectionObject* self, PyObject* args) {
   CHECK_DB_OPEND(self->db_obj);
 
-  int64_t ec = PLDB_delete_all(self->db_obj->db, self->name);
+  int64_t ec = PLDB_delete_all(self->db_obj->db, self->id, self->meta_version);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     return NULL;
@@ -465,7 +474,7 @@ static PyObject* CollectionObject_delete_all(CollectionObject* self, PyObject* a
 static PyObject* CollectionObject_count(CollectionObject* self, PyObject* args) {
   CHECK_DB_OPEND(self->db_obj);
 
-  int64_t ec = PLDB_count(self->db_obj->db, self->name);
+  int64_t ec = PLDB_count(self->db_obj->db, self->id, self->meta_version);
 
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());

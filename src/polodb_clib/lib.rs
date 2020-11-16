@@ -102,10 +102,10 @@ pub extern "C" fn PLDB_commit(db: *mut DbContext) -> c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_count(db: *mut DbContext, col_id: c_uint) -> c_longlong {
+pub extern "C" fn PLDB_count(db: *mut DbContext, col_id: c_uint, meta_version: u32) -> c_longlong {
     unsafe {
         let rust_db = db.as_mut().unwrap();
-        let result = rust_db.count(col_id);
+        let result = rust_db.count(col_id, meta_version);
         match result {
             Ok(result) => {
                 return result as c_longlong;

@@ -52,7 +52,7 @@ impl<'a>  Collection<'a> {
 
     #[inline]
     pub fn count(&mut self) -> DbResult<u64> {
-        self.db.ctx.count(self.id)
+        self.db.ctx.count(self.id, self.meta_version)
     }
 
     #[inline]

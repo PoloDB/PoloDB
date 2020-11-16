@@ -569,7 +569,8 @@ impl DbContext {
         Ok(None)
     }
 
-    pub fn count(&mut self, col_id: u32) -> DbResult<u64> {
+    pub fn count(&mut self, col_id: u32, meta_version: u32) -> DbResult<u64> {
+        self.check_meta_version(meta_version)?;
         let meta_source = self.get_meta_source()?;
         let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
