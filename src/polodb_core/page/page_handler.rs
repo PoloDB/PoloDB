@@ -55,17 +55,17 @@ impl PageHandler {
         Ok(wrapper.0)
     }
 
-    fn init_db(file: &mut File, page_size: u32) -> std::io::Result<(RawPage, u32)> {
+    fn init_db(file: &mut File, page_size: u32) -> std::io::Result<(RawPage, u32, u64)> {
         let meta = file.metadata()?;
         let file_len = meta.len();
         if file_len < page_size as u64 {
             file.set_len((page_size as u64) * (DB_INIT_BLOCK_COUNT as u64))?;
             let first_page = PageHandler::force_write_first_block(file, page_size)?;
-            Ok((first_page, DB_INIT_BLOCK_COUNT as u32))
+            Ok((first_page, DB_INIT_BLOCK_COUNT as u32, file_len))
         } else {
             let block_count = file_len / (page_size as u64);
             let first_page = PageHandler::read_first_block(file, page_size)?;
-            Ok((first_page, block_count as u32))
+            Ok((first_page, block_count as u32, file_len))
         }
     }
 
@@ -84,10 +84,10 @@ impl PageHandler {
             .read(true)
             .open(path)?;
 
-        let (_, page_count) = PageHandler::init_db(&mut file, page_size)?;
+        let (_, page_count, db_file_size) = PageHandler::init_db(&mut file, page_size)?;
 
         let journal_file_path: PathBuf = PageHandler::mk_journal_path(path);
-        let journal_manager = JournalManager::open(&journal_file_path, page_size)?;
+        let journal_manager = JournalManager::open(&journal_file_path, page_size, db_file_size)?;
 
         let page_cache = PageCache::new_default(page_size);
 
@@ -426,7 +426,7 @@ impl PageHandler {
     }
 
     #[inline]
-    pub fn transaction_type(&mut self) -> &Option<TransactionType> {
+    pub fn transaction_type(&mut self) -> Option<TransactionType> {
         self.journal_manager.transaction_type()
     }
 
