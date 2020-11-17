@@ -866,7 +866,18 @@ static napi_value Database_create_collection(napi_env env, napi_callback_info in
   uint32_t meta_version = 0;
   STD_CALL(PLDB_create_collection(db, path_buffer, &col_id, &meta_version));
 
-  return NULL;
+  napi_value collection_ctor;
+  status = napi_get_reference_value(env, collection_object_ref, &collection_ctor);
+  CHECK_STAT(status);
+
+  size_t arg_size = 2;
+  napi_value pass_args[] = { this_arg, args[0] };
+
+  napi_value result = NULL;;
+  status = napi_new_instance(env, collection_ctor, arg_size, pass_args, &result);
+  CHECK_STAT(status);
+
+  return result;
 }
 
 static napi_value Database_collection(napi_env env, napi_callback_info info) {

@@ -1,8 +1,8 @@
 const { Database, version } = require("..");
 const path = require('path');
 const os = require('os');
-const fs = require('fs');
 const { expect } = require("chai");
+const fs = require('fs');
 
 let temp;
 
@@ -15,6 +15,9 @@ describe('Transaction', function() {
       console.log('temp dir: ', temp);
     }
     const dbPath = path.join(temp, 'test-db.db');
+    if (fs.existsSync(dbPath)) {
+      fs.unlinkSync(dbPath);
+    }
     db = new Database(dbPath);
   });
 
@@ -28,6 +31,7 @@ describe('Transaction', function() {
   it('commit', function() {
     db.startTransaction();
     const collection = db.createCollection('test-trans');
+    expect(collection).to.not.be.undefined;
     collection.insert({
       _id: 3,
       name: "2333",
@@ -36,7 +40,30 @@ describe('Transaction', function() {
     const result = collection.find({
       name: "2333",
     });
-    expect(result.length).to.be(1);
+    expect(result.length).to.equals(1);
+  });
+
+  it('rollback', function() {
+    db.startTransaction();
+    const collection = db.createCollection('test-trans');
+    let result;
+    result = collection.find({
+      name: "rollback",
+    })
+    expect(result.length).to.equals(0);
+    collection.insert({
+      _id: 4,
+      name: "rollback",
+    });
+    result = collection.find({
+      name: "rollback",
+    })
+    expect(result.length).to.equals(1);
+    db.rollback();
+    result = collection.find({
+      name: "rollback",
+    });
+    expect(result.length).to.equals(0);
   });
 
 });

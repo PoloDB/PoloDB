@@ -3,7 +3,7 @@ use std::path::Path;
 use polodb_bson::{Document, ObjectId, Value};
 use super::error::DbErr;
 use crate::context::DbContext;
-use crate::DbHandle;
+use crate::{DbHandle, TransactionType};
 
 fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
     handle.step()?;
@@ -121,6 +121,21 @@ impl Database {
         Ok(Collection::new(self, info.id, info.meta_version, col_name))
     }
 
+    #[inline]
+    pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
+        self.ctx.start_transaction(ty)
+    }
+
+    #[inline]
+    pub fn commit(&mut self) -> DbResult<()> {
+        self.ctx.commit()
+    }
+
+    #[inline]
+    pub fn rollback(&mut self) -> DbResult<()> {
+        self.ctx.rollback()
+    }
+
     #[allow(dead_code)]
     pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
         self.ctx.query_all_meta()
@@ -183,6 +198,23 @@ mod tests {
         }
 
         assert_eq!(TEST_SIZE, all.len())
+    }
+
+    #[test]
+    fn test_transaction_commit() {
+        let mut db = prepare_db("test-transaction");
+        db.start_transaction(None).unwrap();
+        let mut collection = db.create_collection("test").unwrap();
+
+        for i in 0..TEST_SIZE {
+            let content = i.to_string();
+            let new_doc = mk_document! {
+                    "_id": i,
+                    "content": content,
+                };
+            collection.insert(Rc::new(new_doc)).unwrap();
+        }
+        db.commit().unwrap()
     }
 
     #[test]

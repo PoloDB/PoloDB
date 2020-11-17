@@ -17,8 +17,17 @@ const FRAME_HEADER_SIZE: u32  = 40;
 
 // 24 bytes
 pub(crate) struct FrameHeader {
+    // the page_id of the main database
+    // page_id * offset represents the real offset from the beginning
     page_id:       u32,  // offset 0
+
+    // usually 0
+    // if this frame is the final commit of a transaction
+    // this field represents the read db_size
     db_size:       u64,  // offset 8
+
+    // should be the same as the header of journal file
+    // is they are not equal, abandon this frame
     salt1:         u32,  // offset 16
     salt2:         u32,  // offset 20
 }
@@ -75,6 +84,8 @@ pub(crate) struct JournalManager {
 
     // page_id => file_position
     pub offset_map_list:       LinkedList<BTreeMap<u32, u64>>,
+
+    // count of all frames
     count:            u32,
 }
 
@@ -432,7 +443,14 @@ impl JournalManager {
     }
 
     pub(crate) fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
-        self.exclusive_lock_file()
+        #[cfg(debug_assertions)]
+        if self.transaction_ty.is_none() {
+            panic!("can not upgrade transaction because there is no transaction");
+        }
+
+        self.exclusive_lock_file()?;
+        self.transaction_ty = Some(TransactionType::Write);
+        Ok(())
     }
 
     #[cfg(target_os = "windows")]
