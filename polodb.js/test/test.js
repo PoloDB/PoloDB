@@ -22,7 +22,10 @@ describe('Database', function() {
     });
 
     this.afterAll(function() {
-      db.close();
+      if (db) {
+        db.close();
+        db = null;
+      }
     });
 
     it('print version', function() {

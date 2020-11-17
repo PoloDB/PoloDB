@@ -862,7 +862,9 @@ static napi_value Database_create_collection(napi_env env, napi_callback_info in
   assert(status == napi_ok);
 
   int ec = 0;
-  STD_CALL(PLDB_create_collection(db, path_buffer));
+  uint32_t col_id = 0;
+  uint32_t meta_version = 0;
+  STD_CALL(PLDB_create_collection(db, path_buffer, &col_id, &meta_version));
 
   return NULL;
 }
@@ -893,7 +895,7 @@ static napi_value Database_collection(napi_env env, napi_callback_info info) {
   size_t arg_size = 2;
   napi_value pass_args[] = { this_arg, args[0] };
 
-  napi_value result;
+  napi_value result = NULL;;
   status = napi_new_instance(env, collection_ctor, arg_size, pass_args, &result);
   CHECK_STAT(status);
 
@@ -914,6 +916,70 @@ static napi_value Database_close(napi_env env, napi_callback_info info) {
   CHECK_STAT(status);
 
   PLDB_close(db);
+
+  return NULL;
+}
+
+static napi_value Database_start_transaction(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  napi_value this_arg;
+
+  status = napi_get_cb_info(env, info, NULL, NULL, &this_arg, NULL);
+  CHECK_STAT(status);
+
+  Database* db = NULL;
+  status = napi_unwrap(env, this_arg, (void*)&db);
+  CHECK_STAT(status);
+
+  int ec = PLDB_start_transaction(db, PLDB_TRANS_AUTO);
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
+
+  return NULL;
+}
+
+static napi_value Database_commit(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  napi_value this_arg;
+
+  status = napi_get_cb_info(env, info, NULL, NULL, &this_arg, NULL);
+  CHECK_STAT(status);
+
+  Database* db = NULL;
+  status = napi_unwrap(env, this_arg, (void*)&db);
+  CHECK_STAT(status);
+
+  int ec = PLDB_commit(db);
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
+
+  return NULL;
+}
+
+static napi_value Database_rollback(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  napi_value this_arg;
+
+  status = napi_get_cb_info(env, info, NULL, NULL, &this_arg, NULL);
+  CHECK_STAT(status);
+
+  Database* db = NULL;
+  status = napi_unwrap(env, this_arg, (void*)&db);
+  CHECK_STAT(status);
+
+  int ec = PLDB_rollback(db);
+
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
 
   return NULL;
 }
@@ -1032,11 +1098,14 @@ static napi_value Database_Init(napi_env env, napi_value exports) {
   napi_value temp;
   napi_create_int64(env, 100, &temp);
 
-  size_t db_prop_size = 3; 
+  size_t db_prop_size = 6; 
   napi_property_descriptor db_props[] = {
     DECLARE_NAPI_METHOD("createCollection", Database_create_collection),
     DECLARE_NAPI_METHOD("collection", Database_collection),
     DECLARE_NAPI_METHOD("close", Database_close),
+    DECLARE_NAPI_METHOD("startTransaction", Database_start_transaction),
+    DECLARE_NAPI_METHOD("commit", Database_commit),
+    DECLARE_NAPI_METHOD("rollback", Database_rollback),
     {NULL}
   };
 

@@ -50,7 +50,7 @@ int PLDB_commit(Database* db);
 
 int PLDB_rollback(Database* db);
 
-int PLDB_create_collection(Database* db, const char* name);
+int PLDB_create_collection(Database* db, const char* name, uint32_t* col_id, uint32_t* meta_verison);
 
 int PLDB_get_collection_meta_by_name(Database* db, const char* name, uint32_t* id, uint32_t* version);
 

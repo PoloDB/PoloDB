@@ -104,9 +104,11 @@ impl Database {
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<Collection> {
-        let collection_id = self.ctx.create_collection(name)?;
-        let meta_source = self.ctx.get_meta_source()?;
-        Ok(Collection::new(self, collection_id, meta_source.meta_version, name))
+        let collection_meta = self.ctx.create_collection(name)?;
+        Ok(Collection::new(self,
+                           collection_meta.id,
+                           collection_meta.meta_version,
+                           name))
     }
 
     #[inline]

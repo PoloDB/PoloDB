@@ -119,17 +119,28 @@ pub extern "C" fn PLDB_count(db: *mut DbContext, col_id: c_uint, meta_version: u
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_create_collection(db: *mut DbContext, name: *const c_char) -> c_int {
+pub extern "C" fn PLDB_create_collection(db: *mut DbContext,
+                                         name: *const c_char,
+                                         col_id: *mut c_uint,
+                                         meta_version: *mut c_uint) -> c_int {
     unsafe {
         let name_str= CStr::from_ptr(name);
         let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
         let oid_result = db.as_mut().unwrap().create_collection(name_utf8);
-        if let Err(err) = oid_result {
-            set_global_error(err);
-            return PLDB_error_code();
+        match oid_result {
+            Ok(meta) => {
+                col_id.write(meta.id);
+                meta_version.write(meta.meta_version);
+                0
+            }
+
+            Err(err) => {
+                set_global_error(err);
+                PLDB_error_code()
+            }
+
         }
     }
-    0
 }
 
 #[no_mangle]

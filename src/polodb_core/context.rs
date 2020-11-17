@@ -148,15 +148,15 @@ impl DbContext {
         })
     }
 
-    pub fn create_collection(&mut self, name: &str) -> DbResult<u32> {
+    pub fn create_collection(&mut self, name: &str) -> DbResult<CollectionMeta> {
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let id = try_db_op!(self, self.internal_create_collection(name));
+        let meta = try_db_op!(self, self.internal_create_collection(name));
 
-        Ok(id)
+        Ok(meta)
     }
 
-    fn internal_create_collection(&mut self, name: &str) -> DbResult<u32> {
+    fn internal_create_collection(&mut self, name: &str) -> DbResult<CollectionMeta> {
         if name.is_empty() {
             return Err(DbErr::IllegalCollectionName(name.into()));
         }
@@ -194,7 +194,10 @@ impl DbContext {
 
         self.update_meta_source(&meta_source)?;
 
-        Ok(collection_id)
+        Ok(CollectionMeta {
+            id: collection_id,
+            meta_version: meta_source.meta_version,
+        })
     }
 
     fn update_meta_source(&mut self, meta_source: &MetaSource) -> DbResult<()> {
