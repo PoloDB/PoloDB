@@ -261,9 +261,14 @@ impl JournalManager {
         self.transaction_state = Some(new_state);
     }
 
+    #[inline]
+    fn full_frame_size(&self) -> u64 {
+        (self.page_size as u64) + (FRAME_HEADER_SIZE as u64)
+    }
+
     fn load_all_pages(&mut self, file_size: u64) -> DbResult<()> {
         let mut current_pos = self.journal_file.seek(SeekFrom::Current(0))?;
-        let frame_size = (self.page_size as u64) + (FRAME_HEADER_SIZE as u64);
+        let frame_size = self.full_frame_size();
 
         while current_pos + frame_size <= file_size {
             if self.transaction_state.is_none() {
@@ -365,12 +370,11 @@ impl JournalManager {
     }
 
     fn update_last_frame(&mut self) -> DbResult<()> {
-        let full_frame_size = (FRAME_HEADER_SIZE as u64) + (self.page_size as u64);
+        let full_frame_size = self.full_frame_size();
         let begin_loc = self.journal_file.seek(SeekFrom::End((full_frame_size as i64) * -1))?;
         let mut data: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
         self.journal_file.read_exact(&mut data)?;
         let mut frame_header = FrameHeader::from_bytes(&data);
-        debug_assert_eq!(frame_header.db_size, 0);
 
         frame_header.db_size = self.db_file_size;
 

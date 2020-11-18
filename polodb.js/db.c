@@ -51,7 +51,6 @@ static napi_value db_version(napi_env env, napi_callback_info info) {
   { name, 0, func, 0, 0, 0, napi_default, 0 }
 
 typedef struct {
-  Database* db;
   uint32_t  id;
   uint32_t  meta_version;
   size_t    name_size;
@@ -63,7 +62,6 @@ InternalCollection* NewInternalCollection(Database* db) {
   InternalCollection* collection = (InternalCollection*)malloc(sizeof(InternalCollection));
   memset(collection, 0, sizeof(InternalCollection));
 
-  collection->db = db;
   collection->id = 0;
   collection->meta_version = 0;
   collection->name_size = 0;
@@ -529,6 +527,23 @@ static napi_value DbValueToJsValue(napi_env env, DbValue* value) {
   }
 }
 
+#define CHECK_DB_ALIVE(stat) \
+  if ((stat) != napi_ok) { \
+    napi_throw_error(env, NULL, "db has been closed"); \
+    return NULL; \
+  }
+
+static napi_status get_db_from_js_collection(napi_env env, napi_value collection, Database** db) {
+  napi_status status;
+
+  napi_value js_db;
+  status = napi_get_named_property(env, collection, "__db", &js_db);
+  if (status != napi_ok) return status;
+
+  status = napi_unwrap(env, js_db, (void**)db);
+  return status;
+}
+
 static napi_value Collection_insert(napi_env env, napi_callback_info info) {
   napi_status status;
 
@@ -538,6 +553,10 @@ static napi_value Collection_insert(napi_env env, napi_callback_info info) {
   napi_value args[1];
   status = napi_get_cb_info(env, info, &argc, args, &this_arg, NULL);
   CHECK_STAT(status);
+
+  Database* db;
+  status = get_db_from_js_collection(env, this_arg, &db);
+  CHECK_DB_ALIVE(status);
 
   InternalCollection* internal_collection;
   status = napi_unwrap(env, this_arg, (void**)&internal_collection);
@@ -550,7 +569,7 @@ static napi_value Collection_insert(napi_env env, napi_callback_info info) {
 
   napi_value result = 0;
   int ec = 0;
-  ec = PLDB_insert(internal_collection->db, internal_collection->id, internal_collection->meta_version, doc);
+  ec = PLDB_insert(db, internal_collection->id, internal_collection->meta_version, doc);
   if (ec < 0) {
     napi_throw_error(env, NULL, PLDB_error_msg());
     goto clean;
@@ -570,6 +589,10 @@ static napi_value Collection_find(napi_env env, napi_callback_info info) {
   napi_value args[1];
   status = napi_get_cb_info(env, info, &argc, args, &this_arg, NULL);
   CHECK_STAT(status);
+
+  Database* db;
+  status = get_db_from_js_collection(env, this_arg, &db);
+  CHECK_DB_ALIVE(status);
 
   InternalCollection* internal_collection;
   status = napi_unwrap(env, this_arg, (void**)&internal_collection);
@@ -594,8 +617,7 @@ static napi_value Collection_find(napi_env env, napi_callback_info info) {
   int ec = 0;
 
   DbHandle* handle = NULL;
-  ec = PLDB_find(
-    internal_collection->db,
+  ec = PLDB_find(db,
     internal_collection->id,
     internal_collection->meta_version,
     query_doc,
@@ -662,12 +684,15 @@ static napi_value Collection_count(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, NULL, NULL, &this_arg, NULL);
   CHECK_STAT(status);
 
+  Database* db;
+  status = get_db_from_js_collection(env, this_arg, &db);
+  CHECK_DB_ALIVE(status);
+
   InternalCollection* internal_collection;
   status = napi_unwrap(env, this_arg, (void**)&internal_collection);
   CHECK_STAT(status);
 
-  int64_t ec = PLDB_count(
-    internal_collection->db,
+  int64_t ec = PLDB_count(db,
     internal_collection->id,
     internal_collection->meta_version
   );
@@ -704,6 +729,10 @@ static napi_value Collection_update(napi_env env, napi_callback_info info) {
     return NULL;
   }
 
+  Database* db;
+  status = get_db_from_js_collection(env, this_arg, &db);
+  CHECK_DB_ALIVE(status);
+
   InternalCollection* internal_collection;
   status = napi_unwrap(env, this_arg, (void**)&internal_collection);
   CHECK_STAT(status);
@@ -721,7 +750,7 @@ static napi_value Collection_update(napi_env env, napi_callback_info info) {
     goto ret;
   }
 
-  int ec = PLDB_update(internal_collection->db, internal_collection->id, internal_collection->meta_version, query_doc, update_doc);
+  int ec = PLDB_update(db, internal_collection->id, internal_collection->meta_version, query_doc, update_doc);
   if (ec < 0) {
     napi_throw_error(env, NULL, PLDB_error_msg());
     goto ret;
@@ -754,6 +783,10 @@ static napi_value Collection_delete(napi_env env, napi_callback_info info) {
     return NULL;
   }
 
+  Database* db;
+  status = get_db_from_js_collection(env, this_arg, &db);
+  CHECK_DB_ALIVE(status);
+
   InternalCollection* internal_collection;
   status = napi_unwrap(env, this_arg, (void**)&internal_collection);
   CHECK_STAT(status);
@@ -765,8 +798,7 @@ static napi_value Collection_delete(napi_env env, napi_callback_info info) {
     goto ret;
   }
 
-  int ec = PLDB_delete(
-    internal_collection->db,
+  int ec = PLDB_delete(db,
     internal_collection->id,
     internal_collection->meta_version,
     query_doc
@@ -794,12 +826,15 @@ static napi_value Collection_delete_all(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, NULL, NULL, &this_arg, NULL);
   CHECK_STAT(status);
 
+  Database* db;
+  status = get_db_from_js_collection(env, this_arg, &db);
+  CHECK_DB_ALIVE(status);
+
   InternalCollection* internal_collection;
   status = napi_unwrap(env, this_arg, (void**)&internal_collection);
   CHECK_STAT(status);
 
-  int ec = PLDB_delete_all(
-    internal_collection->db,
+  int ec = PLDB_delete_all(db,
     internal_collection->id,
     internal_collection->meta_version
   );
@@ -818,12 +853,15 @@ static napi_value Collection_drop(napi_env env, napi_callback_info info) {
   status = napi_get_cb_info(env, info, NULL, NULL, &this_arg, NULL);
   CHECK_STAT(status);
 
+  Database* db;
+  status = get_db_from_js_collection(env, this_arg, &db);
+  CHECK_DB_ALIVE(status);
+
   InternalCollection* internal_collection;
   status = napi_unwrap(env, this_arg, (void**)&internal_collection);
   CHECK_STAT(status);
 
-  int ec = PLDB_drop(
-    internal_collection->db,
+  int ec = PLDB_drop(db,
     internal_collection->id,
     internal_collection->meta_version
   );

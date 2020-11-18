@@ -212,7 +212,7 @@ pub(crate) struct PageCache {
     page_count: usize,
     page_size:  u32,
     data:       *mut u8,
-    lru_map:    Box<LruMap>,
+    lru_map:    LruMap,
 }
 
 impl PageCache {
@@ -228,13 +228,11 @@ impl PageCache {
             malloc(cache_size).cast()
         };
 
-        let lru_map = LruMap::new(page_count);
-
         PageCache {
             page_count,
             page_size,
             data,
-            lru_map: Box::new(lru_map),
+            lru_map: LruMap::new(page_count),
         }
     }
 

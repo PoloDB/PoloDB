@@ -32,7 +32,7 @@ pub(crate) struct PageHandler {
 
     pub page_size:            u32,
     page_count:               u32,
-    page_cache:               PageCache,
+    page_cache:               Box<PageCache>,
     journal_manager:          Box<JournalManager>,
 
     data_page_map:            BTreeMap<u32, Vec<u32>>,
@@ -104,7 +104,7 @@ impl PageHandler {
 
             page_size,
             page_count,
-            page_cache,
+            page_cache: Box::new(page_cache),
             journal_manager: Box::new(journal_manager),
 
             data_page_map: BTreeMap::new(),
@@ -445,9 +445,12 @@ impl PageHandler {
         Ok(())
     }
 
+    // after the rollback
+    // all the cache are wrong
+    // cleat it
     pub fn rollback(&mut self) -> DbResult<()> {
         self.journal_manager.rollback()?;
-        self.page_cache = PageCache::new_default(self.page_size);
+        self.page_cache = Box::new(PageCache::new_default(self.page_size));
         Ok(())
     }
 

@@ -50,7 +50,9 @@ describe('Database', function() {
     });
 
     this.afterAll(function() {
-      db.close();
+      if (db) {
+        db.close();
+      }
     });
 
     it('create collection', function() {
@@ -108,6 +110,17 @@ describe('Database', function() {
         col2.find({
           _id: 3,
         })
+      }).to.throw(Error);
+    })
+
+    it('use collection after close', function() {
+      const col2 = db.createCollection('test-3');
+      db.close();
+      db = null;
+      expect(() => {
+        col2.find({
+          _id: 2,
+        });
       }).to.throw(Error);
     })
 
