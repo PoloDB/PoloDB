@@ -5,6 +5,7 @@ const { expect } = require("chai");
 const fs = require('fs');
 
 let temp;
+let dbPath;
 
 describe('Transaction', function() {
   let db;
@@ -14,7 +15,7 @@ describe('Transaction', function() {
       temp = os.tmpdir()
       console.log('temp dir: ', temp);
     }
-    const dbPath = path.join(temp, 'test-db.db');
+    dbPath = path.join(temp, 'test-db.db');
     if (fs.existsSync(dbPath)) {
       fs.unlinkSync(dbPath);
     }
@@ -30,13 +31,17 @@ describe('Transaction', function() {
 
   it('commit', function() {
     db.startTransaction();
-    const collection = db.createCollection('test-trans');
+    let collection = db.createCollection('test-trans');
     expect(collection).to.not.be.undefined;
     collection.insert({
       _id: 3,
       name: "2333",
     });
     db.commit();
+    db.close();
+
+    db = new Database(dbPath);
+    collection = db.collection('test-trans');
     const result = collection.find({
       name: "2333",
     });
@@ -44,8 +49,9 @@ describe('Transaction', function() {
   });
 
   it('rollback', function() {
+    db.createCollection('test-trans');
     db.startTransaction();
-    const collection = db.createCollection('test-trans');
+    const collection = db.collection('test-trans');
     let result;
     result = collection.find({
       name: "rollback",

@@ -2,6 +2,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::collections::BTreeMap;
 use std::io::{Seek, Write, SeekFrom, Read};
+use std::cell::Cell;
 use libc::rand;
 use crate::page::RawPage;
 use crate::crc64::crc64;
@@ -57,6 +58,21 @@ impl FrameHeader {
             db_size,
             salt1, salt2
         }
+    }
+
+    fn to_bytes(&self, buffer: &mut [u8]) {
+        debug_assert!(buffer.len() >= 24);
+        let page_id_be = self.page_id.to_be_bytes();
+        buffer[0..4].copy_from_slice(&page_id_be);
+
+        let db_size_be = self.db_size.to_be_bytes();
+        buffer[8..16].copy_from_slice(&db_size_be);
+
+        let salt1_be = self.salt1.to_be_bytes();
+        buffer[16..20].copy_from_slice(&salt1_be);
+
+        let salt2_be = self.salt2.to_be_bytes();
+        buffer[20..24].copy_from_slice(&salt2_be);
     }
 
 }
@@ -184,13 +200,13 @@ impl JournalManager {
         header48[44..48].copy_from_slice(&salt_2_be);
 
         self.journal_file.seek(SeekFrom::Start(0))?;
-        self.journal_file.write(&header48)?;
+        self.journal_file.write_all(&header48)?;
 
         let checksum = crc64(0, &header48);
         let checksum_be = checksum.to_be_bytes();
 
         self.journal_file.seek(SeekFrom::Start(48))?;
-        self.journal_file.write(&checksum_be)?;
+        self.journal_file.write_all(&checksum_be)?;
 
         Ok(())
     }
@@ -239,17 +255,28 @@ impl JournalManager {
         Ok(u64::from_be_bytes(buffer))
     }
 
+    fn new_write_state(&mut self) {
+        let new_state = Box::new(TransactionState::new(
+            TransactionType::Write, self.count, self.db_file_size));
+        self.transaction_state = Some(new_state);
+    }
+
     fn load_all_pages(&mut self, file_size: u64) -> DbResult<()> {
         let mut current_pos = self.journal_file.seek(SeekFrom::Current(0))?;
         let frame_size = (self.page_size as u64) + (FRAME_HEADER_SIZE as u64);
 
         while current_pos + frame_size <= file_size {
+            if self.transaction_state.is_none() {
+                self.new_write_state();
+            }
+
             let mut buffer = vec![];
             buffer.resize(frame_size as usize, 0);
 
             self.journal_file.read_exact(&mut buffer)?;
 
-            match self.check_and_load_frame(current_pos, &buffer) {
+            let is_commit = Cell::new(false);
+            match self.check_and_load_frame(current_pos, &buffer, &is_commit) {
                 Ok(()) => (),
                 Err(DbErr::SaltMismatch) |
                 Err(DbErr::ChecksumMismatch) => {
@@ -262,12 +289,30 @@ impl JournalManager {
 
             self.count += 1;
             current_pos = self.journal_file.seek(SeekFrom::Current(0))?;
+
+            if is_commit.get() {
+                self.merge_transaction_state();
+            }
+        }
+
+        // remain transaction, abandon
+        if self.transaction_state.is_some() {
+            self.recover_file_and_state()?;
         }
 
         Ok(())
     }
 
-    fn check_and_load_frame(&mut self, current_pos: u64, bytes: &[u8]) -> DbResult<()> {
+    fn recover_file_and_state(&mut self) -> DbResult<()> {
+        self.transaction_state = None;
+        let frame_size = (FRAME_HEADER_SIZE as u64) + (self.page_size as u64);
+        let expected_journal_file_size = (JOURNAL_DATA_BEGIN as u64) + frame_size * (self.count as u64);
+        self.journal_file.set_len(expected_journal_file_size)?;
+        self.journal_file.seek(SeekFrom::End(0))?;
+        Ok(())
+    }
+
+    fn check_and_load_frame(&mut self, current_pos: u64, bytes: &[u8], is_commit: &Cell<bool>) -> DbResult<()> {
         let frame_header = FrameHeader::from_bytes(&bytes[0..24]);
         let checksum1 = {
             let mut buffer: [u8; 8] = [0; 8];
@@ -299,19 +344,47 @@ impl JournalManager {
 
         // load frame
         self.offset_map.insert(frame_header.page_id, current_pos);
+
+        // is a commit frame
         if frame_header.db_size != 0 {
             self.db_file_size = frame_header.db_size;
+            is_commit.set(true);
         }
         Ok(())
     }
 
-    fn merge_transaction_state(&mut self) {
+    fn merge_transaction_state(&mut self) -> TransactionType {
         let state = self.transaction_state.take().unwrap();
         for (page_id, offset) in &state.offset_map {
             self.offset_map.insert(*page_id, *offset);
         }
         self.db_file_size = state.db_file_size;
         self.count = state.frame_count;
+        state.ty
+    }
+
+    fn update_last_frame(&mut self) -> DbResult<()> {
+        let full_frame_size = (FRAME_HEADER_SIZE as u64) + (self.page_size as u64);
+        self.journal_file.seek(SeekFrom::End((full_frame_size as i64) * -1))?;
+        let mut data: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
+        self.journal_file.read_exact(&mut data)?;
+        let mut frame_header = FrameHeader::from_bytes(&data);
+        debug_assert_eq!(frame_header.db_size, 0);
+
+        frame_header.db_size = self.db_file_size;
+
+        // update header
+        let mut header24: [u8; 24] = [0; 24];
+        frame_header.to_bytes(&mut header24);
+        self.journal_file.write_all(&header24)?;
+
+        // update header checksum
+        let checksum1 = crc64(0, &header24);
+        let checksum1_be = checksum1.to_be_bytes();
+        self.journal_file.write_all(&checksum1_be)?;
+
+        self.journal_file.seek(SeekFrom::End(0))?;
+        Ok(())
     }
 
     // frame_header: 24 bytes
@@ -319,29 +392,17 @@ impl JournalManager {
     // checksum2:    8 bytes(offset 32)  page checksum
     // data_begin:   page size(offset 40)
     pub fn append_frame_header(&mut self, frame_header: &FrameHeader, checksum2: u64) -> std::io::Result<()> {
-        let mut header24 = vec![];
-        header24.resize(24, 0);
+        let mut header24: [u8; 24] = [0; 24];
+        frame_header.to_bytes(&mut header24);
 
-        let page_id_be = frame_header.page_id.to_be_bytes();
-        header24[0..4].copy_from_slice(&page_id_be);
-
-        let db_size_be = frame_header.db_size.to_be_bytes();
-        header24[8..16].copy_from_slice(&db_size_be);
-
-        let salt1_be = frame_header.salt1.to_be_bytes();
-        header24[16..20].copy_from_slice(&salt1_be);
-
-        let salt2_be = frame_header.salt2.to_be_bytes();
-        header24[20..24].copy_from_slice(&salt2_be);
-
-        self.journal_file.write(&header24)?;
+        self.journal_file.write_all(&header24)?;
 
         let checksum1 = crc64(0, &header24);
         let checksum1_be = checksum1.to_be_bytes();
-        self.journal_file.write(&checksum1_be)?;
+        self.journal_file.write_all(&checksum1_be)?;
 
         let checksum2_be = checksum2.to_be_bytes();
-        self.journal_file.write(&checksum2_be)?;
+        self.journal_file.write_all(&checksum2_be)?;
 
         Ok(())
     }
@@ -366,10 +427,16 @@ impl JournalManager {
 
         self.append_frame_header(&frame_header, checksum2)?;
 
-        self.journal_file.write(&raw_page.data)?;
+        self.journal_file.write_all(&raw_page.data)?;
 
-        self.transaction_state.as_mut().unwrap().offset_map.insert(raw_page.page_id, start_pos);
-        self.count += 1;
+        let state = self.transaction_state.as_mut().unwrap();
+        state.offset_map.insert(raw_page.page_id, start_pos);
+        state.frame_count += 1;
+
+        let expected_db_size = (raw_page.page_id as u64) * (self.page_size as u64);
+        if expected_db_size > state.db_file_size {
+            state.db_file_size = expected_db_size;
+        }
 
         #[cfg(feature = "log")]
             eprintln!("append page to journal, page_id: {}, start_pos:\t\t0x{:0>8X}", raw_page.page_id, start_pos);
@@ -378,16 +445,32 @@ impl JournalManager {
     }
 
     pub(crate) fn read_page(&mut self, page_id: u32) -> std::io::Result<Option<RawPage>> {
-        let offset = {
-            let offset_opt = match &self.transaction_state {
-                Some(state) => state.offset_map.get(&page_id),
-                None => self.offset_map.get(&page_id)
-            };
+        let offset = match &self.transaction_state {
 
-            match offset_opt {
-                Some(offset) => *offset,
-                None => return Ok(None),
+            // currently in transaction state
+            // find it in state firstly
+            Some(state) => {
+                match state.offset_map.get(&page_id) {
+                    Some(offset) => *offset,
+
+                    // not found in transaction_state
+                    // find offset in original journal
+                    None => {
+                        match self.offset_map.get(&page_id) {
+                            Some(offset) => *offset,
+                            None => return Ok(None),
+                        }
+                    }
+                }
             }
+
+            None => {
+                match self.offset_map.get(&page_id) {
+                    Some(offset) => *offset,
+                    None => return Ok(None),
+                }
+            }
+
         };
 
         let data_offset = offset + (FRAME_HEADER_SIZE as u64);
@@ -470,7 +553,10 @@ impl JournalManager {
             return Err(DbErr::CannotWriteDbWithoutTransaction);
         }
 
-        self.merge_transaction_state();
+        let transaction_ty = self.merge_transaction_state();
+        if transaction_ty == TransactionType::Write {
+            self.update_last_frame()?;
+        }
         self.unlock_file()?;
 
         Ok(())
@@ -481,17 +567,14 @@ impl JournalManager {
             return Err(DbErr::RollbackNotInTransaction);
         }
 
+        self.recover_file_and_state()?;
         self.unlock_file()?;
-        self.transaction_state = None;
 
         Ok(())
     }
 
     pub(crate) fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
-        #[cfg(debug_assertions)]
-        if self.transaction_state.is_none() {
-            panic!("can not upgrade transaction because there is no transaction");
-        }
+        debug_assert!(self.transaction_state.is_some(), "can not upgrade transaction because there is no transaction");
 
         self.exclusive_lock_file()?;
 

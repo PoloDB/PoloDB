@@ -206,7 +206,7 @@ mod tests {
         db.start_transaction(None).unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
-        for i in 0..TEST_SIZE {
+        for i in 0..10{
             let content = i.to_string();
             let new_doc = mk_document! {
                     "_id": i,
@@ -215,6 +215,32 @@ mod tests {
             collection.insert(Rc::new(new_doc)).unwrap();
         }
         db.commit().unwrap()
+    }
+
+    #[test]
+    fn test_rollback() {
+        let mut db = prepare_db("test-rollback");
+        let mut collection = db.create_collection("test").unwrap();
+
+        assert_eq!(collection.count().unwrap(), 0);
+
+        db.start_transaction(None).unwrap();
+
+        let mut collection = db.collection("test").unwrap();
+        for i in 0..10{
+            let content = i.to_string();
+            let new_doc = mk_document! {
+                    "_id": i,
+                    "content": content,
+                };
+            collection.insert(Rc::new(new_doc)).unwrap();
+        }
+        assert_eq!(collection.count().unwrap(), 10);
+
+        db.rollback().unwrap();
+
+        let mut collection = db.collection("test").unwrap();
+        assert_eq!(collection.count().unwrap(), 0);
     }
 
     #[test]

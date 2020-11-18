@@ -151,12 +151,6 @@ impl HeaderPageWrapper {
         self.0.put_u32(data);
     }
 
-    pub(crate) fn incre_meta_id(&mut self) -> u32 {
-        let current = self.get_meta_id_counter();
-        self.set_meta_id_counter(current + 1);
-        current
-    }
-
     #[inline]
     pub(crate) fn get_free_list_size(&self) -> u32 {
         self.0.get_u32(FREE_LIST_OFFSET)

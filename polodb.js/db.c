@@ -908,7 +908,12 @@ static napi_value Database_collection(napi_env env, napi_callback_info info) {
 
   napi_value result = NULL;;
   status = napi_new_instance(env, collection_ctor, arg_size, pass_args, &result);
-  CHECK_STAT(status);
+  if (status == napi_generic_failure) { // an error is thrown
+    return NULL;
+  } else if (status != napi_ok) {
+    napi_throw_error(env, NULL, "new collection failed");
+    return NULL;
+  }
 
   return result;
 }
@@ -924,7 +929,10 @@ static napi_value Database_close(napi_env env, napi_callback_info info) {
   Database* db;
 
   status = napi_remove_wrap(env, this_arg, (void**)&db);
-  CHECK_STAT(status);
+  if (status != napi_ok) {
+    napi_throw_error(env, NULL, "database has been closed");
+    return NULL;
+  }
 
   PLDB_close(db);
 

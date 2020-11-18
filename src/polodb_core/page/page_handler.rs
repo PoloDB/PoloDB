@@ -59,9 +59,10 @@ impl PageHandler {
         let meta = file.metadata()?;
         let file_len = meta.len();
         if file_len < page_size as u64 {
-            file.set_len((page_size as u64) * (DB_INIT_BLOCK_COUNT as u64))?;
+            let expected_file_size: u64 = (page_size as u64) * (DB_INIT_BLOCK_COUNT as u64);
+            file.set_len(expected_file_size)?;
             let first_page = PageHandler::force_write_first_block(file, page_size)?;
-            Ok((first_page, DB_INIT_BLOCK_COUNT as u32, file_len))
+            Ok((first_page, DB_INIT_BLOCK_COUNT as u32, expected_file_size))
         } else {
             let block_count = file_len / (page_size as u64);
             let first_page = PageHandler::read_first_block(file, page_size)?;
@@ -223,12 +224,6 @@ impl PageHandler {
     // 3. write to page_cache
     pub fn pipeline_write_page(&mut self, page: &RawPage) -> Result<(), DbErr> {
         self.journal_manager.as_mut().append_raw_page(page)?;
-
-        if self.is_journal_full() {
-            self.checkpoint_journal()?;
-            #[cfg(feature = "log")]
-            eprintln!("checkpoint journal finished");
-        }
 
         self.page_cache.insert_to_cache(page);
         Ok(())
@@ -440,14 +435,20 @@ impl PageHandler {
         self.transaction_state = state;
     }
 
-    #[inline]
     pub fn commit(&mut self) -> DbResult<()> {
-        self.journal_manager.commit()
+        self.journal_manager.commit()?;
+        if self.is_journal_full() {
+            self.checkpoint_journal()?;
+            #[cfg(feature = "log")]
+            eprintln!("checkpoint journal finished");
+        }
+        Ok(())
     }
 
-    #[inline]
     pub fn rollback(&mut self) -> DbResult<()> {
-        self.journal_manager.rollback()
+        self.journal_manager.rollback()?;
+        self.page_cache = PageCache::new_default(self.page_size);
+        Ok(())
     }
 
 }
