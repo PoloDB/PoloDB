@@ -287,7 +287,8 @@ impl JournalManager {
                 Err(err) => return Err(err),
             }
 
-            self.count += 1;
+            let state = self.transaction_state.as_mut().unwrap();
+            state.frame_count += 1;
             current_pos = self.journal_file.seek(SeekFrom::Current(0))?;
 
             if is_commit.get() {
@@ -365,7 +366,7 @@ impl JournalManager {
 
     fn update_last_frame(&mut self) -> DbResult<()> {
         let full_frame_size = (FRAME_HEADER_SIZE as u64) + (self.page_size as u64);
-        self.journal_file.seek(SeekFrom::End((full_frame_size as i64) * -1))?;
+        let begin_loc = self.journal_file.seek(SeekFrom::End((full_frame_size as i64) * -1))?;
         let mut data: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
         self.journal_file.read_exact(&mut data)?;
         let mut frame_header = FrameHeader::from_bytes(&data);
@@ -376,6 +377,8 @@ impl JournalManager {
         // update header
         let mut header24: [u8; 24] = [0; 24];
         frame_header.to_bytes(&mut header24);
+
+        self.journal_file.seek(SeekFrom::Start(begin_loc))?;
         self.journal_file.write_all(&header24)?;
 
         // update header checksum
@@ -732,6 +735,7 @@ impl JournalManager {
 mod tests {
     use crate::journal::JournalManager;
     use crate::page::RawPage;
+    use crate::TransactionType;
 
     static TEST_PAGE_LEN: u32 = 100;
 
@@ -769,6 +773,36 @@ mod tests {
                 assert_eq!(*ch, ten_pages[i as usize].data[index])
             }
         }
+    }
+
+    #[test]
+    fn test_commit() {
+        const TEST_PAGE_LEN: u32 = 10;
+        const TEST_FILE: &str = "/tmp/test-journal-commit";
+
+        let _ = std::fs::remove_file(TEST_FILE);
+        let mem_count;
+        {
+            let mut journal_manager = JournalManager::open(TEST_FILE.as_ref(), 4096, 4096).unwrap();
+
+            journal_manager.start_transaction(TransactionType::Write).unwrap();
+
+            let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);
+
+            for i in 0..TEST_PAGE_LEN {
+                ten_pages.push(make_raw_page(i))
+            }
+
+            for item in &ten_pages {
+                journal_manager.append_raw_page(item).unwrap();
+            }
+
+            journal_manager.commit().unwrap();
+            mem_count = journal_manager.count;
+        }
+
+        let journal_manager = JournalManager::open(TEST_FILE.as_ref(), 4096, 4096).unwrap();
+        assert_eq!(mem_count, journal_manager.count);
     }
 
 }
