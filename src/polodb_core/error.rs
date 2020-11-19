@@ -53,6 +53,7 @@ pub enum DbErr {
     PageMagicMismatch(u32),
     ItemSizeGreaterThanExpected,
     CollectionNotFound(String),
+    CollectionIdNotFound(u32),
     MetaPageIdError,
     CannotWriteDbWithoutTransaction,
     StartTransactionInAnotherTransaction,
@@ -67,6 +68,7 @@ pub enum DbErr {
     UnknownUpdateOperation(String),
     IncrementNullField,
     VmIsHalt,
+    MetaVersionMismatched(u32, u32),
     Busy
 }
 
@@ -106,10 +108,11 @@ impl fmt::Display for DbErr {
             DbErr::PageMagicMismatch(pid) => write!(f, "PageMagicMismatch({})", pid),
             DbErr::ItemSizeGreaterThanExpected => write!(f, "the size of the item is greater than expected"),
             DbErr::CollectionNotFound(name) => write!(f, "collection \"{}\" not found", name),
+            DbErr::CollectionIdNotFound(id) => write!(f, "colleciton id {} not found", id),
             DbErr::MetaPageIdError => write!(f, "meta page id should not be zero"),
             DbErr::CannotWriteDbWithoutTransaction => write!(f, "cannot write database without transaction"),
             DbErr::StartTransactionInAnotherTransaction => write!(f, "start transaction in another transaction"),
-            DbErr::RollbackNotInTransaction => write!(f, "can not rollback because not int transaction"),
+            DbErr::RollbackNotInTransaction => write!(f, "can not rollback because not in transaction"),
             DbErr::IllegalCollectionName(name) => write!(f, "collection name \"{}\" is illegal", name),
             DbErr::UnexpectedHeaderForBtreePage => write!(f, "unexpected header for btree page"),
             DbErr::KeyTypeOfBtreeShouldNotBeZero => write!(f, "key type of btree should not be zero"),
@@ -120,6 +123,7 @@ impl fmt::Display for DbErr {
             DbErr::UnknownUpdateOperation(op) => write!(f, "unknown update operation: '{}'", op),
             DbErr::IncrementNullField => write!(f, "can not increment a field which is null"),
             DbErr::VmIsHalt => write!(f, "Vm can not execute because it's halt"),
+            DbErr::MetaVersionMismatched(expected, actual) => write!(f, "meta version mismatched, expect: {}, actual: {}", expected, actual),
             DbErr::Busy => write!(f, "database busy"),
         }
     }

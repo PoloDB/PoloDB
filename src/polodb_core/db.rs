@@ -3,7 +3,7 @@ use std::path::Path;
 use polodb_bson::{Document, ObjectId, Value};
 use super::error::DbErr;
 use crate::context::DbContext;
-use crate::DbHandle;
+use crate::{DbHandle, TransactionType};
 
 fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
     handle.step()?;
@@ -20,20 +20,24 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
 
 pub struct Collection<'a> {
     db: &'a mut Database,
+    id: u32,
+    meta_version: u32,
     name: String,
 }
 
 impl<'a>  Collection<'a> {
 
-    fn new(db: &'a mut Database, name: &str) -> Collection<'a> {
+    fn new(db: &'a mut Database, id: u32, meta_version: u32, name: &str) -> Collection<'a> {
         Collection {
             db,
+            id,
+            meta_version,
             name: name.into(),
         }
     }
 
     pub fn find(&mut self, query: Option<&Document>) -> DbResult<Vec<Rc<Document>>> {
-        let mut handle = self.db.ctx.find(&self.name, query)?;
+        let mut handle = self.db.ctx.find(self.id, self.meta_version, query)?;
 
         let mut result = Vec::new();
 
@@ -42,30 +46,34 @@ impl<'a>  Collection<'a> {
         Ok(result)
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     #[inline]
     pub fn count(&mut self) -> DbResult<u64> {
-        self.db.ctx.count(&self.name)
+        self.db.ctx.count(self.id, self.meta_version)
     }
 
     #[inline]
     pub fn update(&mut self, query: Option<&Document>, update: &Document) -> DbResult<usize> {
-        self.db.ctx.update(&self.name, query, update)
+        self.db.ctx.update(self.id, self.meta_version, query, update)
     }
 
     #[inline]
     pub fn insert(&mut self, doc: Rc<Document>) -> DbResult<Rc<Document>> {
-        self.db.ctx.insert(&self.name, doc)
+        self.db.ctx.insert(self.id, self.meta_version, doc)
     }
 
     #[inline]
     pub fn delete(&mut self, key: &Value) -> DbResult<Option<Rc<Document>>> {
-        self.db.ctx.delete_by_pkey(&self.name, key)
+        self.db.ctx.delete_by_pkey(self.id, key)
     }
 
-    // release in 0.2
+    // // release in 0.2
     #[inline]
     fn create_index(&mut self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        self.db.ctx.create_index(&self.name, keys, options)
+        self.db.ctx.create_index(self.id, keys, options)
     }
 
 }
@@ -96,8 +104,11 @@ impl Database {
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<Collection> {
-        self.ctx.create_collection(name)?;
-        Ok(Collection::new(self, name))
+        let collection_meta = self.ctx.create_collection(name)?;
+        Ok(Collection::new(self,
+                           collection_meta.id,
+                           collection_meta.meta_version,
+                           name))
     }
 
     #[inline]
@@ -105,9 +116,24 @@ impl Database {
         DbContext::get_version()
     }
 
+    pub fn collection(&mut self, col_name: &str) -> DbResult<Collection> {
+        let info = self.ctx.get_collection_meta_by_name(col_name)?;
+        Ok(Collection::new(self, info.id, info.meta_version, col_name))
+    }
+
     #[inline]
-    pub fn collection(&mut self, col_name: &str) -> Collection {
-        Collection::new(self, col_name)
+    pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
+        self.ctx.start_transaction(ty)
+    }
+
+    #[inline]
+    pub fn commit(&mut self) -> DbResult<()> {
+        self.ctx.commit()
+    }
+
+    #[inline]
+    pub fn rollback(&mut self) -> DbResult<()> {
+        self.ctx.rollback()
     }
 
     #[allow(dead_code)]
@@ -164,7 +190,7 @@ mod tests {
     fn test_create_collection_and_find_all() {
         let mut db = create_and_return_db_with_items("test-collection", TEST_SIZE);
 
-        let mut test_collection = db.collection("test");
+        let mut test_collection = db.collection("test").unwrap();
         let all = test_collection.find( None).unwrap();
 
         for doc in &all {
@@ -172,6 +198,49 @@ mod tests {
         }
 
         assert_eq!(TEST_SIZE, all.len())
+    }
+
+    #[test]
+    fn test_transaction_commit() {
+        let mut db = prepare_db("test-transaction");
+        db.start_transaction(None).unwrap();
+        let mut collection = db.create_collection("test").unwrap();
+
+        for i in 0..10{
+            let content = i.to_string();
+            let new_doc = mk_document! {
+                    "_id": i,
+                    "content": content,
+                };
+            collection.insert(Rc::new(new_doc)).unwrap();
+        }
+        db.commit().unwrap()
+    }
+
+    #[test]
+    fn test_rollback() {
+        let mut db = prepare_db("test-rollback");
+        let mut collection = db.create_collection("test").unwrap();
+
+        assert_eq!(collection.count().unwrap(), 0);
+
+        db.start_transaction(None).unwrap();
+
+        let mut collection = db.collection("test").unwrap();
+        for i in 0..10{
+            let content = i.to_string();
+            let new_doc = mk_document! {
+                    "_id": i,
+                    "content": content,
+                };
+            collection.insert(Rc::new(new_doc)).unwrap();
+        }
+        assert_eq!(collection.count().unwrap(), 10);
+
+        db.rollback().unwrap();
+
+        let mut collection = db.collection("test").unwrap();
+        assert_eq!(collection.count().unwrap(), 0);
     }
 
     #[test]
@@ -192,7 +261,7 @@ mod tests {
             db
         };
 
-        let mut collection = db.collection("test");
+        let mut collection = db.collection("test").unwrap();
 
         let count = collection.count().unwrap();
         assert_eq!(TEST_SIZE, count as usize);
@@ -209,7 +278,7 @@ mod tests {
     #[test]
     fn test_find() {
         let mut db = create_and_return_db_with_items("test-find", TEST_SIZE);
-        let mut collection = db.collection("test");
+        let mut collection = db.collection("test").unwrap();
 
         let result = collection.find(
             Some(mk_document! {
@@ -226,7 +295,7 @@ mod tests {
     #[test]
     fn test_create_collection_and_find_by_pkey() {
         let mut db = create_and_return_db_with_items("test-find-pkey", 10);
-        let mut collection = db.collection("test");
+        let mut collection = db.collection("test").unwrap();
 
         let all = collection.find(None).unwrap();
 
@@ -263,8 +332,8 @@ mod tests {
             "value": "something",
         };
 
-        let mut collection = db.collection("test");
-        collection.insert(Rc::new(doc)).expect_err("should not succuess");
+        let mut collection = db.collection("test").unwrap();
+        collection.insert(Rc::new(doc)).expect_err("should not success");
     }
 
     #[test]

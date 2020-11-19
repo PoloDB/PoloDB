@@ -622,6 +622,12 @@ impl<'a> VM<'a> {
         }
     }
 
+    pub(crate) fn commit_and_close(mut self) -> DbResult<()> {
+        self.page_handler.auto_commit()?;
+        self.rollback_on_drop = false;
+        Ok(())
+    }
+
 }
 
 impl<'a> Drop for VM<'a> {

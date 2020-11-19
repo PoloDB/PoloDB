@@ -1,7 +1,8 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::collections::{LinkedList, BTreeMap};
+use std::collections::BTreeMap;
 use std::io::{Seek, Write, SeekFrom, Read};
+use std::cell::Cell;
 use libc::rand;
 use crate::page::RawPage;
 use crate::crc64::crc64;
@@ -17,8 +18,17 @@ const FRAME_HEADER_SIZE: u32  = 40;
 
 // 24 bytes
 pub(crate) struct FrameHeader {
+    // the page_id of the main database
+    // page_id * offset represents the real offset from the beginning
     page_id:       u32,  // offset 0
+
+    // usually 0
+    // if this frame is the final commit of a transaction
+    // this field represents the read db_size
     db_size:       u64,  // offset 8
+
+    // should be the same as the header of journal file
+    // is they are not equal, abandon this frame
     salt1:         u32,  // offset 16
     salt2:         u32,  // offset 20
 }
@@ -50,11 +60,47 @@ impl FrameHeader {
         }
     }
 
+    fn to_bytes(&self, buffer: &mut [u8]) {
+        debug_assert!(buffer.len() >= 24);
+        let page_id_be = self.page_id.to_be_bytes();
+        buffer[0..4].copy_from_slice(&page_id_be);
+
+        let db_size_be = self.db_size.to_be_bytes();
+        buffer[8..16].copy_from_slice(&db_size_be);
+
+        let salt1_be = self.salt1.to_be_bytes();
+        buffer[16..20].copy_from_slice(&salt1_be);
+
+        let salt2_be = self.salt2.to_be_bytes();
+        buffer[20..24].copy_from_slice(&salt2_be);
+    }
+
 }
 
+#[derive(Eq, PartialEq, Copy, Clone)]
 pub enum TransactionType {
     Read,
     Write,
+}
+
+struct TransactionState {
+    ty: TransactionType,
+    offset_map: BTreeMap<u32, u64>,
+    frame_count: u32,
+    db_file_size: u64,
+}
+
+impl TransactionState {
+
+    fn new(ty: TransactionType, frame_count: u32, db_file_size: u64) -> TransactionState {
+        TransactionState {
+            ty,
+            offset_map: BTreeMap::new(),
+            frame_count,
+            db_file_size,
+        }
+    }
+
 }
 
 // name:       32 bytes
@@ -71,10 +117,15 @@ pub(crate) struct JournalManager {
     page_size:        u32,
     salt1:            u32,
     salt2:            u32,
-    transaction_ty:   Option<TransactionType>,
+    transaction_state:   Option<Box<TransactionState>>,
+
+    // origin_state
+    db_file_size:     u64,
 
     // page_id => file_position
-    pub offset_map_list:       LinkedList<BTreeMap<u32, u64>>,
+    pub offset_map:       BTreeMap<u32, u64>,
+
+    // count of all frames
     count:            u32,
 }
 
@@ -86,7 +137,7 @@ fn generate_a_salt() -> u32 {
 
 impl JournalManager {
 
-    pub fn open(path: &Path, page_size: u32) -> DbResult<JournalManager> {
+    pub fn open(path: &Path, page_size: u32, db_file_size: u64) -> DbResult<JournalManager> {
         let journal_file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -94,20 +145,18 @@ impl JournalManager {
             .open(path)?;
         let meta = journal_file.metadata()?;
 
-        let mut offset_map_list: LinkedList<BTreeMap<u32, u64>> = LinkedList::new();
-        offset_map_list.push_back(BTreeMap::new());
-
         let file_path: PathBuf = path.to_path_buf();
         let mut result = JournalManager {
             file_path,
             journal_file,
             version: [0, 0, 1, 0],
             page_size,
+            db_file_size,
             salt1: 0,
             salt2: 0,
-            transaction_ty: None,
+            transaction_state: None,
 
-            offset_map_list,
+            offset_map: BTreeMap::new(),
             count: 0,
         };
 
@@ -151,13 +200,13 @@ impl JournalManager {
         header48[44..48].copy_from_slice(&salt_2_be);
 
         self.journal_file.seek(SeekFrom::Start(0))?;
-        self.journal_file.write(&header48)?;
+        self.journal_file.write_all(&header48)?;
 
         let checksum = crc64(0, &header48);
         let checksum_be = checksum.to_be_bytes();
 
         self.journal_file.seek(SeekFrom::Start(48))?;
-        self.journal_file.write(&checksum_be)?;
+        self.journal_file.write_all(&checksum_be)?;
 
         Ok(())
     }
@@ -206,17 +255,33 @@ impl JournalManager {
         Ok(u64::from_be_bytes(buffer))
     }
 
+    fn new_write_state(&mut self) {
+        let new_state = Box::new(TransactionState::new(
+            TransactionType::Write, self.count, self.db_file_size));
+        self.transaction_state = Some(new_state);
+    }
+
+    #[inline]
+    fn full_frame_size(&self) -> u64 {
+        (self.page_size as u64) + (FRAME_HEADER_SIZE as u64)
+    }
+
     fn load_all_pages(&mut self, file_size: u64) -> DbResult<()> {
         let mut current_pos = self.journal_file.seek(SeekFrom::Current(0))?;
-        let frame_size = (self.page_size as u64) + (FRAME_HEADER_SIZE as u64);
+        let frame_size = self.full_frame_size();
 
         while current_pos + frame_size <= file_size {
+            if self.transaction_state.is_none() {
+                self.new_write_state();
+            }
+
             let mut buffer = vec![];
             buffer.resize(frame_size as usize, 0);
 
             self.journal_file.read_exact(&mut buffer)?;
 
-            match self.check_and_load_frame(current_pos, &buffer) {
+            let is_commit = Cell::new(false);
+            match self.check_and_load_frame(current_pos, &buffer, &is_commit) {
                 Ok(()) => (),
                 Err(DbErr::SaltMismatch) |
                 Err(DbErr::ChecksumMismatch) => {
@@ -227,14 +292,33 @@ impl JournalManager {
                 Err(err) => return Err(err),
             }
 
-            self.count += 1;
+            let state = self.transaction_state.as_mut().unwrap();
+            state.frame_count += 1;
             current_pos = self.journal_file.seek(SeekFrom::Current(0))?;
+
+            if is_commit.get() {
+                self.merge_transaction_state();
+            }
+        }
+
+        // remain transaction, abandon
+        if self.transaction_state.is_some() {
+            self.recover_file_and_state()?;
         }
 
         Ok(())
     }
 
-    fn check_and_load_frame(&mut self, current_pos: u64, bytes: &[u8]) -> DbResult<()> {
+    fn recover_file_and_state(&mut self) -> DbResult<()> {
+        self.transaction_state = None;
+        let frame_size = (FRAME_HEADER_SIZE as u64) + (self.page_size as u64);
+        let expected_journal_file_size = (JOURNAL_DATA_BEGIN as u64) + frame_size * (self.count as u64);
+        self.journal_file.set_len(expected_journal_file_size)?;
+        self.journal_file.seek(SeekFrom::End(0))?;
+        Ok(())
+    }
+
+    fn check_and_load_frame(&mut self, current_pos: u64, bytes: &[u8], is_commit: &Cell<bool>) -> DbResult<()> {
         let frame_header = FrameHeader::from_bytes(&bytes[0..24]);
         let checksum1 = {
             let mut buffer: [u8; 8] = [0; 8];
@@ -264,7 +348,49 @@ impl JournalManager {
             return Err(DbErr::SaltMismatch);
         }
 
-        self.offset_map_list.back_mut().unwrap().insert(frame_header.page_id, current_pos);
+        // load frame
+        self.offset_map.insert(frame_header.page_id, current_pos);
+
+        // is a commit frame
+        if frame_header.db_size != 0 {
+            self.db_file_size = frame_header.db_size;
+            is_commit.set(true);
+        }
+        Ok(())
+    }
+
+    fn merge_transaction_state(&mut self) -> TransactionType {
+        let state = self.transaction_state.take().unwrap();
+        for (page_id, offset) in &state.offset_map {
+            self.offset_map.insert(*page_id, *offset);
+        }
+        self.db_file_size = state.db_file_size;
+        self.count = state.frame_count;
+        state.ty
+    }
+
+    fn update_last_frame(&mut self) -> DbResult<()> {
+        let full_frame_size = self.full_frame_size();
+        let begin_loc = self.journal_file.seek(SeekFrom::End((full_frame_size as i64) * -1))?;
+        let mut data: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
+        self.journal_file.read_exact(&mut data)?;
+        let mut frame_header = FrameHeader::from_bytes(&data);
+
+        frame_header.db_size = self.db_file_size;
+
+        // update header
+        let mut header24: [u8; 24] = [0; 24];
+        frame_header.to_bytes(&mut header24);
+
+        self.journal_file.seek(SeekFrom::Start(begin_loc))?;
+        self.journal_file.write_all(&header24)?;
+
+        // update header checksum
+        let checksum1 = crc64(0, &header24);
+        let checksum1_be = checksum1.to_be_bytes();
+        self.journal_file.write_all(&checksum1_be)?;
+
+        self.journal_file.seek(SeekFrom::End(0))?;
         Ok(())
     }
 
@@ -273,36 +399,24 @@ impl JournalManager {
     // checksum2:    8 bytes(offset 32)  page checksum
     // data_begin:   page size(offset 40)
     pub fn append_frame_header(&mut self, frame_header: &FrameHeader, checksum2: u64) -> std::io::Result<()> {
-        let mut header24 = vec![];
-        header24.resize(24, 0);
+        let mut header24: [u8; 24] = [0; 24];
+        frame_header.to_bytes(&mut header24);
 
-        let page_id_be = frame_header.page_id.to_be_bytes();
-        header24[0..4].copy_from_slice(&page_id_be);
-
-        let db_size_be = frame_header.db_size.to_be_bytes();
-        header24[8..16].copy_from_slice(&db_size_be);
-
-        let salt1_be = frame_header.salt1.to_be_bytes();
-        header24[16..20].copy_from_slice(&salt1_be);
-
-        let salt2_be = frame_header.salt2.to_be_bytes();
-        header24[20..24].copy_from_slice(&salt2_be);
-
-        self.journal_file.write(&header24)?;
+        self.journal_file.write_all(&header24)?;
 
         let checksum1 = crc64(0, &header24);
         let checksum1_be = checksum1.to_be_bytes();
-        self.journal_file.write(&checksum1_be)?;
+        self.journal_file.write_all(&checksum1_be)?;
 
         let checksum2_be = checksum2.to_be_bytes();
-        self.journal_file.write(&checksum2_be)?;
+        self.journal_file.write_all(&checksum2_be)?;
 
         Ok(())
     }
 
     pub(crate) fn append_raw_page(&mut self, raw_page: &RawPage) -> DbResult<()> {
-        match self.transaction_ty {
-            Some(TransactionType::Write) => (),
+        match &self.transaction_state {
+            Some(state) if state.ty == TransactionType::Write => (),
             _ => return Err(DbErr::CannotWriteDbWithoutTransaction),
         }
 
@@ -320,10 +434,16 @@ impl JournalManager {
 
         self.append_frame_header(&frame_header, checksum2)?;
 
-        self.journal_file.write(&raw_page.data)?;
+        self.journal_file.write_all(&raw_page.data)?;
 
-        self.offset_map_list.back_mut().unwrap().insert(raw_page.page_id, start_pos);
-        self.count += 1;
+        let state = self.transaction_state.as_mut().unwrap();
+        state.offset_map.insert(raw_page.page_id, start_pos);
+        state.frame_count += 1;
+
+        let expected_db_size = (raw_page.page_id as u64) * (self.page_size as u64);
+        if expected_db_size > state.db_file_size {
+            state.db_file_size = expected_db_size;
+        }
 
         #[cfg(feature = "log")]
             eprintln!("append page to journal, page_id: {}, start_pos:\t\t0x{:0>8X}", raw_page.page_id, start_pos);
@@ -332,10 +452,34 @@ impl JournalManager {
     }
 
     pub(crate) fn read_page(&mut self, page_id: u32) -> std::io::Result<Option<RawPage>> {
-        let offset = match self.offset_map_list.back().unwrap().get(&page_id) {
-            Some(offset) => *offset,
-            None => return Ok(None),
+        let offset = match &self.transaction_state {
+
+            // currently in transaction state
+            // find it in state firstly
+            Some(state) => {
+                match state.offset_map.get(&page_id) {
+                    Some(offset) => *offset,
+
+                    // not found in transaction_state
+                    // find offset in original journal
+                    None => {
+                        match self.offset_map.get(&page_id) {
+                            Some(offset) => *offset,
+                            None => return Ok(None),
+                        }
+                    }
+                }
+            }
+
+            None => {
+                match self.offset_map.get(&page_id) {
+                    Some(offset) => *offset,
+                    None => return Ok(None),
+                }
+            }
+
         };
+
         let data_offset = offset + (FRAME_HEADER_SIZE as u64);
 
         self.journal_file.seek(SeekFrom::Start(data_offset))?;
@@ -350,7 +494,7 @@ impl JournalManager {
     }
 
     pub(crate) fn checkpoint_journal(&mut self, db_file: &mut File) -> DbResult<()> {
-        for (page_id, offset) in self.offset_map_list.back().unwrap() {
+        for (page_id, offset) in &self.offset_map {
             let data_offset = offset + (FRAME_HEADER_SIZE as u64);
 
             self.journal_file.seek(SeekFrom::Start(data_offset))?;
@@ -380,8 +524,7 @@ impl JournalManager {
         // clear all data
         self.count = 0;
 
-        self.offset_map_list.clear();
-        self.offset_map_list.push_back(BTreeMap::new());
+        self.offset_map.clear();
 
         self.plus_salt1();
         self.salt2 = generate_a_salt();
@@ -389,7 +532,7 @@ impl JournalManager {
     }
 
     pub(crate) fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        if self.transaction_ty.is_some() {
+        if self.transaction_state.is_some() {
             return Err(DbErr::StartTransactionInAnotherTransaction);
         }
 
@@ -404,35 +547,49 @@ impl JournalManager {
 
         }
 
-        self.transaction_ty = Some(ty);
+        let new_state = {
+            Box::new(TransactionState::new(ty, self.count, self.db_file_size))
+        };
+        self.transaction_state = Some(new_state);
 
         Ok(())
     }
 
     pub(crate) fn commit(&mut self) -> DbResult<()> {
-        if self.transaction_ty.is_none() {
+        if self.transaction_state.is_none() {
             return Err(DbErr::CannotWriteDbWithoutTransaction);
         }
 
+        let transaction_ty = self.merge_transaction_state();
+        if transaction_ty == TransactionType::Write {
+            self.update_last_frame()?;
+        }
         self.unlock_file()?;
-        self.transaction_ty = None;
 
         Ok(())
     }
 
     pub(crate) fn rollback(&mut self) -> DbResult<()> {
-        if self.transaction_ty.is_none() {
+        if self.transaction_state.is_none() {
             return Err(DbErr::RollbackNotInTransaction);
         }
 
+        self.recover_file_and_state()?;
         self.unlock_file()?;
-        self.transaction_ty = None;
 
         Ok(())
     }
 
     pub(crate) fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
-        self.exclusive_lock_file()
+        debug_assert!(self.transaction_state.is_some(), "can not upgrade transaction because there is no transaction");
+
+        self.exclusive_lock_file()?;
+
+        let new_state = {
+            Box::new(TransactionState::new(TransactionType::Write, self.count, self.db_file_size))
+        };
+        self.transaction_state = Some(new_state);
+        Ok(())
     }
 
     #[cfg(target_os = "windows")]
@@ -572,9 +729,8 @@ impl JournalManager {
         self.count
     }
 
-    #[inline]
-    pub(crate) fn transaction_type(&self) -> &Option<TransactionType> {
-        &self.transaction_ty
+    pub(crate) fn transaction_type(&self) -> Option<TransactionType> {
+        self.transaction_state.as_ref().map(|state| state.ty)
     }
 
 }
@@ -583,6 +739,7 @@ impl JournalManager {
 mod tests {
     use crate::journal::JournalManager;
     use crate::page::RawPage;
+    use crate::TransactionType;
 
     static TEST_PAGE_LEN: u32 = 100;
 
@@ -601,7 +758,7 @@ mod tests {
     #[test]
     fn test_journal() {
         let _ = std::fs::remove_file("/tmp/test-journal");
-        let mut journal_manager = JournalManager::open("/tmp/test-journal".as_ref(), 4096).unwrap();
+        let mut journal_manager = JournalManager::open("/tmp/test-journal".as_ref(), 4096, 4096).unwrap();
 
         let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);
 
@@ -620,6 +777,36 @@ mod tests {
                 assert_eq!(*ch, ten_pages[i as usize].data[index])
             }
         }
+    }
+
+    #[test]
+    fn test_commit() {
+        const TEST_PAGE_LEN: u32 = 10;
+        const TEST_FILE: &str = "/tmp/test-journal-commit";
+
+        let _ = std::fs::remove_file(TEST_FILE);
+        let mem_count;
+        {
+            let mut journal_manager = JournalManager::open(TEST_FILE.as_ref(), 4096, 4096).unwrap();
+
+            journal_manager.start_transaction(TransactionType::Write).unwrap();
+
+            let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);
+
+            for i in 0..TEST_PAGE_LEN {
+                ten_pages.push(make_raw_page(i))
+            }
+
+            for item in &ten_pages {
+                journal_manager.append_raw_page(item).unwrap();
+            }
+
+            journal_manager.commit().unwrap();
+            mem_count = journal_manager.count;
+        }
+
+        let journal_manager = JournalManager::open(TEST_FILE.as_ref(), 4096, 4096).unwrap();
+        assert_eq!(mem_count, journal_manager.count);
     }
 
 }

@@ -102,12 +102,10 @@ pub extern "C" fn PLDB_commit(db: *mut DbContext) -> c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_count(db: *mut DbContext, name: *const c_char) -> c_longlong {
+pub extern "C" fn PLDB_count(db: *mut DbContext, col_id: c_uint, meta_version: u32) -> c_longlong {
     unsafe {
-        let name_str= CStr::from_ptr(name);
-        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code() as c_longlong);
         let rust_db = db.as_mut().unwrap();
-        let result = rust_db.count(name_utf8);
+        let result = rust_db.count(col_id, meta_version);
         match result {
             Ok(result) => {
                 return result as c_longlong;
@@ -121,12 +119,35 @@ pub extern "C" fn PLDB_count(db: *mut DbContext, name: *const c_char) -> c_longl
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_create_collection(db: *mut DbContext, name: *const c_char) -> c_int {
+pub extern "C" fn PLDB_create_collection(db: *mut DbContext,
+                                         name: *const c_char,
+                                         col_id: *mut c_uint,
+                                         meta_version: *mut c_uint) -> c_int {
     unsafe {
         let name_str= CStr::from_ptr(name);
         let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
         let oid_result = db.as_mut().unwrap().create_collection(name_utf8);
-        if let Err(err) = oid_result {
+        match oid_result {
+            Ok(meta) => {
+                col_id.write(meta.id);
+                meta_version.write(meta.meta_version);
+                0
+            }
+
+            Err(err) => {
+                set_global_error(err);
+                PLDB_error_code()
+            }
+
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_drop(db: *mut DbContext, col_id: c_uint, meta_version: c_uint) -> c_int {
+    unsafe {
+        let result = db.as_mut().unwrap().drop(col_id, meta_version);
+        if let Err(err) = result {
             set_global_error(err);
             return PLDB_error_code();
         }
@@ -135,13 +156,32 @@ pub extern "C" fn PLDB_create_collection(db: *mut DbContext, name: *const c_char
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_insert(db: *mut DbContext, name: *const c_char, doc: *const Rc<Document>) -> c_int {
+pub extern "C" fn PLDB_get_collection_meta_by_name(db: *mut DbContext, name: *const c_char, id: *mut c_uint, version: *mut c_uint) -> c_int {
+    unsafe {
+        let str = CStr::from_ptr(name);
+        let utf8str = try_read_utf8!(str.to_str(), PLDB_error_code());
+        let result = db.as_mut().unwrap().get_collection_meta_by_name(utf8str);
+        return match result {
+            Ok(info) => {
+                id.write(info.id);
+                version.write(info.meta_version);
+                0
+            }
+
+            Err(err) => {
+                set_global_error(err);
+                PLDB_error_code()
+            }
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_insert(db: *mut DbContext, col_id: c_uint, meta_version: c_uint, doc: *const Rc<Document>) -> c_int {
     unsafe {
         let local_db = db.as_mut().unwrap();
-        let name_str = CStr::from_ptr(name);
-        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
         let local_doc = doc.as_ref().unwrap().clone();
-        let insert_result = local_db.insert(name_utf8, local_doc);
+        let insert_result = local_db.insert(col_id, meta_version, local_doc);
         if let Err(err) = insert_result {
             set_global_error(err);
             return PLDB_error_code();
@@ -153,17 +193,16 @@ pub extern "C" fn PLDB_insert(db: *mut DbContext, name: *const c_char, doc: *con
 /// query is nullable
 #[no_mangle]
 pub extern "C" fn PLDB_find(db: *mut DbContext,
-                            name: *const c_char,
+                            col_id: c_uint,
+                            meta_version: c_uint,
                             query: *const Rc<Document>,
                             out_handle: *mut *mut DbHandle) -> c_int {
     unsafe {
         let rust_db = db.as_mut().unwrap();
-        let name_str = CStr::from_ptr(name);
-        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code());
 
         let handle_result = match query.as_ref() {
-            Some(query_doc) => rust_db.find(name_utf8, Some(query_doc.borrow())),
-            None => rust_db.find(name_utf8, None),
+            Some(query_doc) => rust_db.find(col_id, meta_version, Some(query_doc.borrow())),
+            None => rust_db.find(col_id, meta_version, None),
         };
 
         let handle = match handle_result {
@@ -186,19 +225,18 @@ pub extern "C" fn PLDB_find(db: *mut DbContext,
 /// query is nullable
 #[no_mangle]
 pub extern "C" fn PLDB_update(db: *mut DbContext,
-                              name: *const c_char,
+                              col_id: c_uint,
+                              meta_version: c_uint,
                               query: *const Rc<Document>,
                               update: *const Rc<Document>) -> c_longlong {
     let result = unsafe {
         let rust_db = db.as_mut().unwrap();
-        let name_str = CStr::from_ptr(name);
-        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code() as c_longlong);
 
         let update_doc = update.as_ref().unwrap();
 
         match query.as_ref() {
-            Some(query) => rust_db.update(name_utf8, Some(query.as_ref()), update_doc),
-            None => rust_db.update(name_utf8, None, update_doc),
+            Some(query) => rust_db.update(col_id, meta_version, Some(query.as_ref()), update_doc),
+            None => rust_db.update(col_id, meta_version, None, update_doc),
         }
     };
 
@@ -213,15 +251,13 @@ pub extern "C" fn PLDB_update(db: *mut DbContext,
 
 /// return value represents how many rows are deleted
 #[no_mangle]
-pub extern "C" fn PLDB_delete(db: *mut DbContext, name: *const c_char, query: *const Rc<Document>) -> c_longlong {
+pub extern "C" fn PLDB_delete(db: *mut DbContext, col_id: c_uint, meta_version: c_uint, query: *const Rc<Document>) -> c_longlong {
     let result = unsafe {
         let rust_db = db.as_mut().unwrap();
-        let name_str = CStr::from_ptr(name);
-        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code() as c_longlong);
 
         let query_doc = query.as_ref().unwrap();
 
-        rust_db.delete(name_utf8, query_doc.as_ref())
+        rust_db.delete(col_id, meta_version, query_doc.as_ref())
     };
 
     match result {
@@ -234,12 +270,10 @@ pub extern "C" fn PLDB_delete(db: *mut DbContext, name: *const c_char, query: *c
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_delete_all(db: *mut DbContext, name: *const c_char) -> c_longlong {
+pub extern "C" fn PLDB_delete_all(db: *mut DbContext, col_id: c_uint, meta_version: c_uint) -> c_longlong {
     let result = unsafe {
         let rust_db = db.as_mut().unwrap();
-        let name_str = CStr::from_ptr(name);
-        let name_utf8 = try_read_utf8!(name_str.to_str(), PLDB_error_code() as c_longlong);
-        rust_db.delete_all(name_utf8)
+        rust_db.delete_all(col_id, meta_version)
     };
 
     match result {
@@ -823,22 +857,24 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::PageMagicMismatch(_) => 22,
         DbErr::ItemSizeGreaterThanExpected => 23,
         DbErr::CollectionNotFound(_) => 24,
-        DbErr::MetaPageIdError => 25,
-        DbErr::CannotWriteDbWithoutTransaction => 26,
-        DbErr::StartTransactionInAnotherTransaction => 27,
-        DbErr::RollbackNotInTransaction => 28,
-        DbErr::IllegalCollectionName(_) => 29,
-        DbErr::UnexpectedHeaderForBtreePage => 30,
-        DbErr::KeyTypeOfBtreeShouldNotBeZero => 31,
-        DbErr::UnexpectedPageHeader => 32,
-        DbErr::UnexpectedPageType => 33,
-        DbErr::UnknownTransactionType => 34,
-        DbErr::BufferNotEnough(_) => 35,
-        DbErr::UnknownUpdateOperation(_) => 36,
-        DbErr::IncrementNullField => 37,
-        DbErr::VmIsHalt => 38,
-        DbErr::Busy => 39,
-        DbErr::NotAValidField(_) => 40,
+        DbErr::CollectionIdNotFound(_) => 25,
+        DbErr::MetaPageIdError => 26,
+        DbErr::CannotWriteDbWithoutTransaction => 27,
+        DbErr::StartTransactionInAnotherTransaction => 28,
+        DbErr::RollbackNotInTransaction => 29,
+        DbErr::IllegalCollectionName(_) => 30,
+        DbErr::UnexpectedHeaderForBtreePage => 31,
+        DbErr::KeyTypeOfBtreeShouldNotBeZero => 32,
+        DbErr::UnexpectedPageHeader => 33,
+        DbErr::UnexpectedPageType => 34,
+        DbErr::UnknownTransactionType => 35,
+        DbErr::BufferNotEnough(_) => 36,
+        DbErr::UnknownUpdateOperation(_) => 37,
+        DbErr::IncrementNullField => 38,
+        DbErr::VmIsHalt => 39,
+        DbErr::MetaVersionMismatched(_, _) => 40,
+        DbErr::Busy => 41,
+        DbErr::NotAValidField(_) => 42,
 
     }
 }

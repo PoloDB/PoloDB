@@ -32,7 +32,7 @@ pub(crate) struct PageHandler {
 
     pub page_size:            u32,
     page_count:               u32,
-    page_cache:               PageCache,
+    page_cache:               Box<PageCache>,
     journal_manager:          Box<JournalManager>,
 
     data_page_map:            BTreeMap<u32, Vec<u32>>,
@@ -55,17 +55,18 @@ impl PageHandler {
         Ok(wrapper.0)
     }
 
-    fn init_db(file: &mut File, page_size: u32) -> std::io::Result<(RawPage, u32)> {
+    fn init_db(file: &mut File, page_size: u32) -> std::io::Result<(RawPage, u32, u64)> {
         let meta = file.metadata()?;
         let file_len = meta.len();
         if file_len < page_size as u64 {
-            file.set_len((page_size as u64) * (DB_INIT_BLOCK_COUNT as u64))?;
+            let expected_file_size: u64 = (page_size as u64) * (DB_INIT_BLOCK_COUNT as u64);
+            file.set_len(expected_file_size)?;
             let first_page = PageHandler::force_write_first_block(file, page_size)?;
-            Ok((first_page, DB_INIT_BLOCK_COUNT as u32))
+            Ok((first_page, DB_INIT_BLOCK_COUNT as u32, expected_file_size))
         } else {
             let block_count = file_len / (page_size as u64);
             let first_page = PageHandler::read_first_block(file, page_size)?;
-            Ok((first_page, block_count as u32))
+            Ok((first_page, block_count as u32, file_len))
         }
     }
 
@@ -84,10 +85,10 @@ impl PageHandler {
             .read(true)
             .open(path)?;
 
-        let (_, page_count) = PageHandler::init_db(&mut file, page_size)?;
+        let (_, page_count, db_file_size) = PageHandler::init_db(&mut file, page_size)?;
 
         let journal_file_path: PathBuf = PageHandler::mk_journal_path(path);
-        let journal_manager = JournalManager::open(&journal_file_path, page_size)?;
+        let journal_manager = JournalManager::open(&journal_file_path, page_size, db_file_size)?;
 
         let page_cache = PageCache::new_default(page_size);
 
@@ -103,7 +104,7 @@ impl PageHandler {
 
             page_size,
             page_count,
-            page_cache,
+            page_cache: Box::new(page_cache),
             journal_manager: Box::new(journal_manager),
 
             data_page_map: BTreeMap::new(),
@@ -202,7 +203,7 @@ impl PageHandler {
             return;
         }
 
-        if wrapper.len() >= (u16::max_value() as u32) / 2 {  // len too large
+        if wrapper.bar_len() >= (u16::max_value() as u32) / 2 {  // len too large
             return;
         }
 
@@ -223,12 +224,6 @@ impl PageHandler {
     // 3. write to page_cache
     pub fn pipeline_write_page(&mut self, page: &RawPage) -> Result<(), DbErr> {
         self.journal_manager.as_mut().append_raw_page(page)?;
-
-        if self.is_journal_full() {
-            self.checkpoint_journal()?;
-            #[cfg(feature = "log")]
-            eprintln!("checkpoint journal finished");
-        }
 
         self.page_cache.insert_to_cache(page);
         Ok(())
@@ -278,7 +273,7 @@ impl PageHandler {
     pub(crate) fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
         let bytes = doc.to_bytes()?;
         let mut wrapper = self.distribute_data_page_wrapper(bytes.len() as u32)?;
-        let index = wrapper.len() as u16;
+        let index = wrapper.bar_len() as u16;
         let pid = wrapper.pid();
         wrapper.put(&bytes);
 
@@ -426,7 +421,7 @@ impl PageHandler {
     }
 
     #[inline]
-    pub fn transaction_type(&mut self) -> &Option<TransactionType> {
+    pub fn transaction_type(&mut self) -> Option<TransactionType> {
         self.journal_manager.transaction_type()
     }
 
@@ -440,14 +435,23 @@ impl PageHandler {
         self.transaction_state = state;
     }
 
-    #[inline]
     pub fn commit(&mut self) -> DbResult<()> {
-        self.journal_manager.commit()
+        self.journal_manager.commit()?;
+        if self.is_journal_full() {
+            self.checkpoint_journal()?;
+            #[cfg(feature = "log")]
+            eprintln!("checkpoint journal finished");
+        }
+        Ok(())
     }
 
-    #[inline]
+    // after the rollback
+    // all the cache are wrong
+    // cleat it
     pub fn rollback(&mut self) -> DbResult<()> {
-        self.journal_manager.rollback()
+        self.journal_manager.rollback()?;
+        self.page_cache = Box::new(PageCache::new_default(self.page_size));
+        Ok(())
     }
 
 }

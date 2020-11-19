@@ -22,7 +22,10 @@ describe('Database', function() {
     });
 
     this.afterAll(function() {
-      db.close();
+      if (db) {
+        db.close();
+        db = null;
+      }
     });
 
     it('print version', function() {
@@ -47,7 +50,9 @@ describe('Database', function() {
     });
 
     this.afterAll(function() {
-      db.close();
+      if (db) {
+        db.close();
+      }
     });
 
     it('create collection', function() {
@@ -96,6 +101,27 @@ describe('Database', function() {
         });
         expect(result.length, 0);
       }
+    })
+
+    it('drop', function() {
+      const col2 = db.collection('test-2');
+      col2.drop();
+      expect(() => {
+        col2.find({
+          _id: 3,
+        })
+      }).to.throw(Error);
+    })
+
+    it('use collection after close', function() {
+      const col2 = db.createCollection('test-3');
+      db.close();
+      db = null;
+      expect(() => {
+        col2.find({
+          _id: 2,
+        });
+      }).to.throw(Error);
     })
 
   });

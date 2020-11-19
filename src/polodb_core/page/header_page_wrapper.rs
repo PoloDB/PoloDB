@@ -1,11 +1,13 @@
 use super::page::RawPage;
 
-static HEADER_DESP: &str         = "PipeappleDB Format v0.1";
-const SECTOR_SIZE_OFFSET: u32   = 40;
-const PAGE_SIZE_OFFSET: u32     = 44;
-const NULL_PAGE_BAR_OFFSET: u32 = 48;
-const META_PAGE_ID: u32         = 52;
-pub const FREE_LIST_OFFSET: u32 = 2048;
+static HEADER_DESP: &str          = "PipeappleDB Format v0.1";
+const SECTOR_SIZE_OFFSET: u32     = 40;
+const PAGE_SIZE_OFFSET: u32       = 44;
+const NULL_PAGE_BAR_OFFSET: u32   = 48;
+const META_PAGE_ID: u32           = 52;
+const META_VERSION_OFFSET: u32    = 56;
+const META_ID_COUNTER_OFFSET: u32 = 60;
+pub const FREE_LIST_OFFSET: u32   = 2048;
 const FREE_LIST_PAGE_LINK_OFFSET: u32 = 2048 + 4;
 pub const HEADER_FREE_LIST_MAX_SIZE: usize = (2048 - 8) / 4;
 
@@ -16,6 +18,8 @@ pub const HEADER_FREE_LIST_MAX_SIZE: usize = (2048 - 8) / 4;
  * Offset 44 (4 bytes) : PageSize;
  * Offset 48 (4 bytes) : NullPageBarId;
  * Offset 52 (4 bytes) : MetaPageId(usually 1);
+ * Offset 56 (4 bytes) : MetaVersionId;
+ * Offset 60 (4 bytes) : MetaIdCounter;
  *
  * Free list offset: 2048;
  * | 4b   | 4b                  | 4b     | 4b    | ... |
@@ -123,6 +127,28 @@ impl HeaderPageWrapper {
     pub(crate) fn set_meta_page_id(&mut self, data: u32) {
         self.0.seek(META_PAGE_ID);
         self.0.put_u32(data)
+    }
+
+    #[inline]
+    pub(crate) fn get_meta_version(&self) -> u32 {
+        self.0.get_u32(META_VERSION_OFFSET)
+    }
+
+    #[inline]
+    pub(crate) fn set_meta_version(&mut self, version: u32) {
+        self.0.seek(META_VERSION_OFFSET);
+        self.0.put_u32(version);
+    }
+
+    #[inline]
+    pub(crate) fn get_meta_id_counter(&self) -> u32 {
+        self.0.get_u32(META_ID_COUNTER_OFFSET)
+    }
+
+    #[inline]
+    pub(crate) fn set_meta_id_counter(&mut self, data: u32) {
+        self.0.seek(META_ID_COUNTER_OFFSET);
+        self.0.put_u32(data);
     }
 
     #[inline]
