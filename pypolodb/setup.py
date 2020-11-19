@@ -5,7 +5,7 @@ import urllib.request
 from os import path
 from distutils.core import setup, Extension
 
-LIB_VERSION = '0.1.0'
+LIB_VERSION = '0.3.0'
 
 def get_download_url():
        return 'https://www.polodb.org/resources/' + LIB_VERSION + '/lib/darwin/x64/libpolodb_clib.a'
@@ -30,7 +30,7 @@ module1 = Extension('polodb',
                     extra_objects=['../target/debug/libpolodb_clib.a'])
 
 setup (name = 'polodb',
-       version = '0.1.0',
+       version = '0.3.0',
        description = 'This is a demo package',
        author = 'Vincent Chan',
        author_email = 'okcdz@diverse.space',

@@ -46,6 +46,12 @@ Limited by my time, I only compile and test on the following platform:
 - Linux x64 (Tested on Fedora 30)
 - Windows 10 x64
 
+# Manual
+
+- [Rust](./docs/en-US/Rust/READEME.md)
+- [Node.js](./docs/en-US/Node.js/READEME.md)
+- [Python](WIP)
+
 # Developing Plan
 
 The feature will be implemented one by on in order.
@@ -74,23 +80,3 @@ The feature will be implemented one by on in order.
   - [ ] Data Encryption
   - [ ] JavaScript Engine
 - [ ] Visualization Tools
-
-# Languages
-
-- [Rust](./docs/en-US/Rust/READEME.md)
-- [Node.js](./docs/en-US/Node.js/READEME.md)
-- [Python](WIP)
-
-# Command Line Tool
-
-The core part of PoloDB has no dependency. But PoloDB provides
-a standalone bool to help user handle the database interactively.
-
-The command line tool is based on [QuickJS](https://bellard.org/quickjs/),
-which provides a full-feature JavaScript enverionment.
-
-# FAQ
-
-## Does PoloDB support multi-threads?
-
-Currently **NOT**. It's already in the developing plan.

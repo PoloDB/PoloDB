@@ -36,6 +36,12 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
 - Linux x64 (Tested on Fedora 30)
 - Windows 10 x64
 
+# 使用方法
+
+- [Rust](./docs/zh-CN/Rust/READEME.md)
+- [Node.js](./docs/zh-CN/Node.js/READEME.md)
+- [Python](WIP)
+
 # 开发计划
 
 以下特性会按计划一个一个来：
@@ -61,22 +67,3 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
   - [ ] JavaScript 引擎
 - [ ] 可视化工具
 
-# 语言版本
-
-- [Rust](./docs/zh-CN/Rust/READEME.md)
-- [Node.js](./docs/zh-CN/Node.js/READEME.md)
-- [Python](WIP)
-
-# 命令行工具
-
-PoloDB 的核心部分是没有任何依赖的。不过 PoloDB 提供
-一个独立的工具来帮助用户和数据库进行交互。
-
-这个命令行工具是基于 [QuickJS](https://bellard.org/quickjs/)
-实现的，QuickJS 提供了一个完整的 JavaScript 执行环境。
-
-# FAQ
-
-## PoloDB 支持多线程吗？
-
-暂时**不支持**，不过已经在需求池了。
