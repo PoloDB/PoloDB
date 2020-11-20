@@ -5,10 +5,10 @@ const { expect } = require("chai");
 const fs = require('fs');
 
 let temp;
-let dbPath;
 
 describe('Transaction', function() {
   let db;
+  let dbPath;
 
   this.beforeAll(function() {
     if (temp === undefined) {
@@ -70,6 +70,60 @@ describe('Transaction', function() {
       name: "rollback",
     });
     expect(result.length).to.equals(0);
+  });
+
+});
+
+describe('abandon uncommited changes', function() {
+  let db;
+  let dbPath;
+
+  this.beforeAll(function() {
+    if (temp === undefined) {
+      temp = os.tmpdir()
+      console.log('temp dir: ', temp);
+    }
+    dbPath = path.join(temp, 'test-uncommit.db');
+    if (fs.existsSync(dbPath)) {
+      fs.unlinkSync(dbPath);
+    }
+    db = new Database(dbPath);
+  });
+
+  this.afterAll(function() {
+    if (db) {
+      db.close();
+      db = null;
+    }
+  });
+
+  it('run', function() {
+    let collection = db.createCollection('test');
+
+    for (let i = 0; i < 10; i++) {
+      collection.insert({
+        _id: i,
+        hello: 'world',
+      });
+    }
+
+    expect(collection.count()).to.equals(10);
+
+    db.startTransaction();
+
+    for (let i = 10; i < 20; i++) {
+      collection.insert({
+        _id: i,
+        hello: 'world',
+      });
+    }
+
+    db.close();
+
+    db = new Database(dbPath);
+
+    collection = db.collection('test');
+    expect(collection.count()).to.equals(10);
   });
 
 });
