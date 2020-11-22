@@ -49,9 +49,9 @@ describe('Transaction', function() {
   });
 
   it('rollback', function() {
-    db.createCollection('test-trans');
+    db.createCollection('test-trans-2');
     db.startTransaction();
-    const collection = db.collection('test-trans');
+    const collection = db.collection('test-trans-2');
     let result;
     result = collection.find({
       name: "rollback",

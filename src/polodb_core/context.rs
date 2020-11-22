@@ -149,6 +149,28 @@ impl DbContext {
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<CollectionMeta> {
+        self.page_handler.auto_start_transaction(TransactionType::Read)?;
+        match self.get_collection_meta_by_name(name) {
+            // collection found
+            Ok(_) => {
+                self.page_handler.auto_commit()?;
+                return Err(DbErr::CollectionAlreadyExits(name.into()));
+            }
+
+            // ok
+            Err(DbErr::CollectionNotFound(_)) => {
+                self.page_handler.auto_commit()?;
+                ()
+            },
+
+            // other errors
+            Err(err) => {
+                self.page_handler.auto_commit()?;
+                return Err(err);
+            },
+
+        };
+
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
         let meta = try_db_op!(self, self.internal_create_collection(name));

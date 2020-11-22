@@ -114,7 +114,7 @@ describe('Database', function() {
     })
 
     it('use collection after close', function() {
-      const col2 = db.createCollection('test-3');
+      const col2 = db.collection('test-3');
       db.close();
       db = null;
       expect(() => {
@@ -125,5 +125,36 @@ describe('Database', function() {
     })
 
   });
+
+});
+
+describe('create collection with same name', function() {
+
+    let db;
+    this.beforeAll(function() {
+      const dbPath = path.join(temp, 'test-same-name.db');
+      if (fs.existsSync(dbPath)) {
+        fs.unlinkSync(dbPath);
+      }
+      const journalPath = dbPath + '.journal';
+      if (fs.existsSync(journalPath)) {
+        fs.unlinkSync(journalPath);
+      }
+      db = new Database(dbPath);
+    });
+
+    this.afterAll(function() {
+      if (db) {
+        db.close();
+      }
+    });
+
+    it('test', function() {
+      db.createCollection('test');
+      expect(function() {
+        db.createCollection('test');
+      }).to.throw(Error);
+
+    });
 
 });

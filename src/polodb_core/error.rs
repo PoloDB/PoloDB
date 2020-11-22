@@ -69,6 +69,7 @@ pub enum DbErr {
     IncrementNullField,
     VmIsHalt,
     MetaVersionMismatched(u32, u32),
+    CollectionAlreadyExits(String),
     Busy
 }
 
@@ -125,6 +126,7 @@ impl fmt::Display for DbErr {
             DbErr::VmIsHalt => write!(f, "Vm can not execute because it's halt"),
             DbErr::MetaVersionMismatched(expected, actual) => write!(f, "meta version mismatched, expect: {}, actual: {}", expected, actual),
             DbErr::Busy => write!(f, "database busy"),
+            DbErr::CollectionAlreadyExits(name) => write!(f, "collection name '{}' already exists", name),
         }
     }
 
