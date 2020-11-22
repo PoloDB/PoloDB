@@ -5,7 +5,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
-const version = '0.3.0';
+const version = '0.3.1';
 
 const platform = os.platform();
 const arch = os.arch();
@@ -14,9 +14,11 @@ const downloadChecksumUrl = `${downloadUrl}.SHA256`;
 
 function getDownloadPath() {
   const tmpDir = os.tmpdir();
-  const projectDir = path.join(tmpDir, 'polodb-node');
+  const projectDir = path.join(tmpDir, version, 'polodb-node');
   if (!fs.existsSync(projectDir)) {
-    fs.mkdirSync(projectDir);
+    fs.mkdirSync(projectDir, {
+      recursive: true,
+    });
   }
   const nodeFilePath = path.join(projectDir, 'polodb-js.node');
   return nodeFilePath;
