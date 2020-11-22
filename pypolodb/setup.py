@@ -99,7 +99,7 @@ module1 = Extension('polodb',
 long_description = ''
 
 setup (name = 'polodb',
-       version = '0.3.7',
+       version = '0.3.8',
        description = 'PoloDB for Python',
        long_description=long_description,
        long_description_content_type="text/markdown",
