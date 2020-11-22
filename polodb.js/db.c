@@ -358,7 +358,14 @@ static napi_value DbDocumentToJsValue(napi_env env, DbDocument* doc) {
   while (ec) {
     napi_value item_value = DbValueToJsValue(env, item);
 
-    napi_property_descriptor prop = { buffer, NULL, 0, 0, 0, item_value, napi_default, 0 };
+    napi_property_descriptor prop = {
+      buffer,
+      NULL,
+      0, 0, 0,
+      item_value,
+      napi_default | napi_enumerable | napi_writable,
+      0
+    };
     status = napi_define_properties(env, result, 1, &prop);
     if (status != napi_ok) {
       PLDB_free_value(item);
