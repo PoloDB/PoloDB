@@ -50,7 +50,7 @@ Limited by my time, I only compile and test on the following platform:
 
 - [Rust](./docs/en-US/Rust/READEME.md)
 - [Node.js](./docs/en-US/Node.js/READEME.md)
-- [Python](WIP)
+- [Python](./docs/en-US/Python/READEME.md)
 
 # Developing Plan
 
@@ -70,7 +70,7 @@ The feature will be implemented one by on in order.
   - [x] C/C++
   - [ ] Go
   - [ ] Swift
-  - [x] Python
+  - [x] Python ([Doc](./docs/en-US/Python/READEME.md))
   - [x] Node.js ([Doc](./docs/en-US/Node.js/READEME.md))
   - [ ] Java/Kotlin
   - [ ] Dart
