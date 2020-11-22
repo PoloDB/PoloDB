@@ -5,3 +5,5 @@
 .vscode
 
 MANIFEST
+
+*.egg-info
