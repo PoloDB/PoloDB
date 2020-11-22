@@ -41,6 +41,11 @@ pub(crate) struct PageHandler {
 
 }
 
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct AutoStartResult {
+    pub auto_start: bool,
+}
+
 impl PageHandler {
 
     fn read_first_block(file: &mut File, page_size: u32) -> std::io::Result<RawPage> {
@@ -114,11 +119,13 @@ impl PageHandler {
         })
     }
 
-    pub(crate) fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+    pub(crate) fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<AutoStartResult> {
+        let mut result = AutoStartResult { auto_start: false };
         match self.transaction_state {
             TransactionState::NoTrans => {
                 self.start_transaction(ty)?;
                 self.transaction_state = TransactionState::DbAuto;
+                result.auto_start = true;
             }
 
             // current is auto-read, but going to write
@@ -134,7 +141,7 @@ impl PageHandler {
 
             _ => ()
         }
-        Ok(())
+        Ok(result)
     }
 
     pub(crate) fn auto_rollback(&mut self) -> DbResult<()> {

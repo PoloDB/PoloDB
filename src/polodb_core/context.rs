@@ -149,28 +149,6 @@ impl DbContext {
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<CollectionMeta> {
-        self.page_handler.auto_start_transaction(TransactionType::Read)?;
-        match self.get_collection_meta_by_name(name) {
-            // collection found
-            Ok(_) => {
-                self.page_handler.auto_commit()?;
-                return Err(DbErr::CollectionAlreadyExits(name.into()));
-            }
-
-            // ok
-            Err(DbErr::CollectionNotFound(_)) => {
-                self.page_handler.auto_commit()?;
-                ()
-            },
-
-            // other errors
-            Err(err) => {
-                self.page_handler.auto_commit()?;
-                return Err(err);
-            },
-
-        };
-
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
         let meta = try_db_op!(self, self.internal_create_collection(name));
@@ -178,11 +156,39 @@ impl DbContext {
         Ok(meta)
     }
 
+    fn check_collection_exist(&mut self, name: &str, meta_src: &MetaSource) -> DbResult<bool> {
+        let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
+
+        let query_doc = mk_document! {
+            "name": name,
+        };
+
+        let meta_doc = mk_document!{};
+
+        let subprogram = SubProgram::compile_query(&collection_meta, &meta_doc, &query_doc)?;
+
+        let mut handle = self.make_handle(subprogram);
+        handle.set_rollback_on_drop(false);
+
+        handle.step()?;
+
+        if handle.state() == (VmState::HasRow as i8) {
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
     fn internal_create_collection(&mut self, name: &str) -> DbResult<CollectionMeta> {
         if name.is_empty() {
             return Err(DbErr::IllegalCollectionName(name.into()));
         }
         let mut meta_source = self.get_meta_source()?;
+
+        let exist = self.check_collection_exist(name, &meta_source)?;
+        if exist {
+            return Err(DbErr::CollectionAlreadyExits(name.into()));
+        }
 
         let mut doc = Document::new_without_id();
 

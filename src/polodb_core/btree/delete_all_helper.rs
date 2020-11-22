@@ -11,16 +11,16 @@ pub(crate) fn delete_all(page_handler: &mut PageHandler, collection_meta: MetaDo
 
 fn delete_all_by_btree_pid(page_handler: &mut PageHandler, item_size: u32, parent_id: u32, pid: u32) -> DbResult<()> {
     let page = page_handler.pipeline_read_page(pid)?;
-    let btree = BTreeNode::from_raw(&page, parent_id, item_size, page_handler)?;
-    if btree.content.is_empty() {
+    let btree_node = BTreeNode::from_raw(&page, parent_id, item_size, page_handler)?;
+    if btree_node.content.is_empty() {
         return Ok(())
     }
 
-    for item in btree.content {
+    for item in btree_node.content {
         page_handler.free_data_ticket(&item.data_ticket)?;
     }
 
-    for child_pid in btree.indexes {
+    for child_pid in btree_node.indexes {
         delete_all_by_btree_pid(page_handler, item_size, pid, child_pid)?;
     }
 
