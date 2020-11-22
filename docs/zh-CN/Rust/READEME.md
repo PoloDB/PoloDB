@@ -5,7 +5,7 @@
 
 ```toml
 [dependencies]
-polodb_core = "0.3.0"
+polodb_core = "0.3.1"
 polodb_bson = "0.2.0"
 ```
 
