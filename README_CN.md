@@ -40,7 +40,7 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
 
 - [Rust](./docs/zh-CN/Rust/READEME.md)
 - [Node.js](./docs/zh-CN/Node.js/READEME.md)
-- [Python](WIP)
+- [Python](./docs/zh-CN/Python/READEME.md)
 
 # 开发计划
 

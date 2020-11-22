@@ -105,3 +105,11 @@ const collection = db.collection('students');
 collection.deleteAll();
 
 ```
+
+## 事务
+
+```javascript
+db.startTransaction();
+db.commit();
+db.rollback();
+```

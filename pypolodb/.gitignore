@@ -1,4 +1,9 @@
 
 /build
+/dist
 
 .vscode
+
+MANIFEST
+
+*.egg-info
