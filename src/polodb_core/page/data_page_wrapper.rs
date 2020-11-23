@@ -278,23 +278,17 @@ mod tests {
         assert_eq!(wrapper.bar_len(), 4);
 
         wrapper.remove(0);
-        assert_eq!(wrapper.bar_len(), 3);
+        assert_eq!(wrapper.data_len(), 3);
 
-        let first = wrapper.get(0).unwrap();
+        let first = wrapper.get(1).unwrap();
         assert_eq!(first.len(), 4);
-        let expected: [u8; 4] = [1, 2, 3, 4];
-        for i in 0..4 {
+        let expected: [u8; 4] = [0, 2, 3, 4];
+        for i in 1..4 {
             assert_eq!(first[i], expected[i]);
         }
 
         wrapper.remove(1);
-
-        let second = wrapper.get(1).unwrap();
-        assert_eq!(wrapper.bar_len(), 2);
-        let expected: [u8; 4] = [3, 4, 5, 6];
-        for i in 0..4 {
-            assert_eq!(second[i], expected[i]);
-        }
+        assert!(wrapper.get(1).is_none());
     }
 
 }

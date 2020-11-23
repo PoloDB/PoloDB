@@ -11,17 +11,6 @@
 //! For most cases, you can simply use the `decode()`, `encode()` and
 //! `encode_upper()` functions. If you need a bit more control, use the traits
 //! `ToHex` and `FromHex` instead.
-//!
-//! # Example
-//!
-//! ```
-//! extern crate hex;
-//!
-//! fn main() {
-//!     let hex_string = hex::encode("Hello world!");
-//!     println!("{}", hex_string); // Prints '48656c6c6f20776f726c6421'
-//! }
-//! ```
 
 use std::error;
 use std::fmt;
@@ -30,16 +19,6 @@ use std::fmt;
 ///
 /// This trait is implemented for all `T` which implement `AsRef<[u8]>`. This
 /// includes `String`, `str`, `Vec<u8>` and `[u8]`.
-///
-/// # Example
-///
-/// ```
-/// use hex::ToHex;
-///
-/// let mut s = String::new();
-/// "Hello world!".write_hex(&mut s).unwrap();
-/// println!("{}", s);
-/// ```
 ///
 /// *Note*: instead of using this trait, you might want to use `encode()`.
 pub trait ToHex {
@@ -124,23 +103,6 @@ impl fmt::Display for FromHexError {
 /// Types that can be decoded from a hex string.
 ///
 /// This trait is implemented for `Vec<u8>` and small `u8`-arrays.
-///
-/// # Example
-///
-/// ```
-/// use hex::FromHex;
-///
-/// match Vec::from_hex("48656c6c6f20776f726c6421") {
-///     Ok(vec) => {
-///         for b in vec {
-///             println!("{}", b as char);
-///         }
-///     }
-///     Err(e) => {
-///         // Deal with the error ...
-///     }
-/// }
-/// ```
 pub trait FromHex: Sized {
     type Error;
 
@@ -240,13 +202,6 @@ impl_from_hex_for_array!(64);
 /// length is always even, each byte in `data` is always encoded using two hex
 /// digits. Thus, the resulting string contains exactly twice as many bytes as
 /// the input data.
-///
-/// # Example
-///
-/// ```
-/// assert_eq!(hex::encode("Hello world!"), "48656c6c6f20776f726c6421");
-/// assert_eq!(hex::encode(vec![1, 2, 3, 15, 16]), "0102030f10");
-/// ```
 pub fn encode<T: AsRef<[u8]>>(data: T) -> String {
     let mut s = String::with_capacity(data.as_ref().len() * 2);
 
@@ -258,13 +213,6 @@ pub fn encode<T: AsRef<[u8]>>(data: T) -> String {
 /// Encodes `data` as hex string using uppercase characters.
 ///
 /// Apart from the characters' casing, this works exactly like `encode()`.
-///
-/// # Example
-///
-/// ```
-/// assert_eq!(hex::encode_upper("Hello world!"), "48656C6C6F20776F726C6421");
-/// assert_eq!(hex::encode_upper(vec![1, 2, 3, 15, 16]), "0102030F10");
-/// ```
 #[allow(dead_code)]
 pub fn encode_upper<T: AsRef<[u8]>>(data: T) -> String {
     let mut s = String::with_capacity(data.as_ref().len() * 2);
@@ -278,17 +226,6 @@ pub fn encode_upper<T: AsRef<[u8]>>(data: T) -> String {
 ///
 /// Both, upper and lower case characters are valid in the input string and can
 /// even be mixed (e.g. `f9b4ca`, `F9B4CA` and `f9B4Ca` are all valid strings).
-///
-/// # Example
-/// ```
-/// assert_eq!(
-///     hex::decode("48656c6c6f20776f726c6421"),
-///     Ok("Hello world!".to_owned().into_bytes())
-/// );
-///
-/// assert_eq!(hex::decode("123"), Err(hex::FromHexError::OddLength));
-/// assert!(hex::decode("foo").is_err());
-/// ```
 pub fn decode<T: AsRef<[u8]>>(data: T) -> Result<Vec<u8>, FromHexError> {
     FromHex::from_hex(data)
 }
