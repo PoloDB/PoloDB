@@ -123,15 +123,30 @@ static PyObject* DatabaseObject_rollback(DatabaseObject* self, PyObject* Py_UNUS
 static PyObject* DatabaseObject_create_collection(DatabaseObject* self, PyObject* args) {
   CHECK_DB_OPEND(self);
 
-  const char* content;
-  if (!PyArg_ParseTuple(args, "s", &content)) {
+  PyObject* name;
+  if (!PyArg_ParseTuple(args, "O", &name)) {
     return NULL;
   }
 
-  int ec = 0;
-  POLO_CALL(PLDB_create_collection(self->db, content));
+  const char* content = PyUnicode_AsUTF8(name);
 
-  Py_RETURN_NONE;
+  int ec = 0;
+  uint32_t col_id = 0;
+  uint32_t meta_version = 0;
+  POLO_CALL(PLDB_create_collection(self->db, content, &col_id, &meta_version));
+
+  Py_INCREF(self);
+  Py_INCREF(name);
+
+  PyObject* argList = PyTuple_New(2);
+  PyTuple_SetItem(argList, 0, (PyObject*)self);
+  PyTuple_SetItem(argList, 1, name);
+
+  PyObject* result = PyObject_CallObject((PyObject*)&CollectionObjectType, argList);
+
+  Py_DECREF(argList);
+
+  return result;
 }
 
 static PyObject* DatabaseObject_collection(DatabaseObject* self, PyObject* args) {
@@ -178,7 +193,7 @@ static PyMethodDef DatabaseObject_methods[] = {
     "close the database"
   },
   {
-    "start_transaction", (PyCFunction)DatabaseObject_start_transaction, METH_VARARGS,
+    "startTransaction", (PyCFunction)DatabaseObject_start_transaction, METH_VARARGS,
     "start a transaction"
   },
   {
@@ -190,7 +205,7 @@ static PyMethodDef DatabaseObject_methods[] = {
     "rollback"
   },
   {
-    "create_collection", (PyCFunction)DatabaseObject_create_collection, METH_VARARGS,
+    "createCollection", (PyCFunction)DatabaseObject_create_collection, METH_VARARGS,
     "create a collection"
   },
   {
@@ -253,6 +268,7 @@ static int CollectionObject_init(CollectionObject* self, PyObject* args, PyObjec
   memset(buffer, 0, name_len);
 
   self->name = buffer;
+  memcpy(self->name, name, name_len - 1);
 
   if (PLDB_get_collection_meta_by_name(self->db_obj->db, self->name, &self->id, &self->meta_version) < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
@@ -315,7 +331,7 @@ static PyObject* CollectionObject_find(CollectionObject* self, PyObject* args) {
 
   if (dict_obj == Py_None) {
     doc = NULL;
-  } else if (Py_TYPE(dict_obj) != &PyDict_Type) {
+  } else if (Py_TYPE(dict_obj) == &PyDict_Type) {
     doc = PyDictToDbDocument(dict_obj);
   } else {
     PyErr_SetString(PyExc_ValueError, "the second argument should be a dict");
@@ -498,7 +514,7 @@ static PyMethodDef CollectionObject_methods[] = {
     "delete documents"
   },
   {
-    "delete_all", (PyCFunction)CollectionObject_delete_all, METH_NOARGS,
+    "deleteAll", (PyCFunction)CollectionObject_delete_all, METH_NOARGS,
     "delete all documents from a collection",
   },
   {

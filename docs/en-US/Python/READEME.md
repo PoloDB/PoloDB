@@ -29,6 +29,12 @@ finally:
     
 ```
 
+## Create a collection
+
+```python
+collection = db.createCollection('students')
+```
+
 ## Insert a row to the database
 
 ```python

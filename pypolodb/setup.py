@@ -99,11 +99,12 @@ module1 = Extension('polodb',
 long_description = ''
 
 setup (name = 'polodb',
-       version = '0.3.8',
+       version = '0.3.10',
        description = 'PoloDB for Python',
        long_description=long_description,
        long_description_content_type="text/markdown",
        author = 'Vincent Chan',
        author_email = 'okcdz@diverse.space',
+       data_files=[('include', ['include/polodb.h'])],
        license = 'MIT',
        ext_modules = [module1])

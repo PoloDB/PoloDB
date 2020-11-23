@@ -29,6 +29,12 @@ finally:
     
 ```
 
+## 创建一个数据集
+
+```python
+collection = db.createCollection('students')
+```
+
 ## 往数据集插入一条数据
 
 ```python
