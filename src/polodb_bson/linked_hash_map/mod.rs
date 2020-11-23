@@ -3,10 +3,6 @@
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 #![cfg_attr(feature = "clippy", deny(clippy))]
 
-// Optional Heapsize support
-#[cfg(feature = "heapsize_impl")]
-mod heap_size;
-
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::hash_map::{self, HashMap};
@@ -186,7 +182,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     ///
     /// let mut letters = LinkedHashMap::new();
     ///
@@ -223,7 +219,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     ///
     /// # Examples
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     ///
     /// let mut map = LinkedHashMap::new();
     /// map.insert("a", 10);
@@ -259,7 +255,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     /// let mut map = LinkedHashMap::new();
     ///
     /// map.insert(1, "a");
@@ -315,7 +311,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     /// let mut map = LinkedHashMap::new();
     ///
     /// map.insert(1, "a");
@@ -335,7 +331,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     /// let mut map = LinkedHashMap::new();
     ///
     /// map.insert(1, "a");
@@ -356,7 +352,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     /// let mut map = LinkedHashMap::new();
     ///
     /// map.insert(1, "a");
@@ -386,7 +382,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     /// let mut map = LinkedHashMap::new();
     ///
     /// map.insert(2, "a");
@@ -416,7 +412,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     /// let mut map: LinkedHashMap<i32, &str> = LinkedHashMap::new();
     /// let capacity = map.capacity();
     /// ```
@@ -431,7 +427,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     /// let mut map = LinkedHashMap::new();
     /// map.insert(1, 10);
     /// map.insert(2, 20);
@@ -459,7 +455,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     /// let mut map = LinkedHashMap::new();
     /// map.insert(1, 10);
     /// map.insert(2, 20);
@@ -481,7 +477,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     /// let mut map = LinkedHashMap::new();
     /// map.insert(1, 10);
     /// map.insert(2, 20);
@@ -509,7 +505,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     /// let mut map = LinkedHashMap::new();
     /// map.insert(1, 10);
     /// map.insert(2, 20);
@@ -555,7 +551,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     ///
     /// # Examples
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     ///
     /// let mut map = LinkedHashMap::new();
     /// map.insert("a", 10);
@@ -586,7 +582,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     /// Iterator element type is `(&'a K, &'a mut V)`
     /// # Examples
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     ///
     /// let mut map = LinkedHashMap::new();
     /// map.insert("a", 10);
@@ -620,7 +616,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     ///
     /// # Examples
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     ///
     /// let mut map = LinkedHashMap::new();
     /// map.insert('a', 10);
@@ -641,7 +637,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> LinkedHashMap<K, V, S> {
     ///
     /// # Examples
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     ///
     /// let mut map = LinkedHashMap::new();
     /// map.insert('a', 10);
@@ -1140,7 +1136,7 @@ impl<'a, K: Hash + Eq, V, S: BuildHasher> Entry<'a, K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     ///
     /// let mut map = LinkedHashMap::<String, u32>::new();
     ///
@@ -1178,7 +1174,7 @@ impl<'a, K: Hash + Eq, V, S: BuildHasher> OccupiedEntry<'a, K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     ///
     /// let mut map = LinkedHashMap::new();
     ///
@@ -1233,7 +1229,7 @@ impl<'a, K: 'a + Hash + Eq, V: 'a, S: BuildHasher> VacantEntry<'a, K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// use linked_hash_map::LinkedHashMap;
+    /// use polodb_bson::linked_hash_map::LinkedHashMap;
     ///
     /// let mut map = LinkedHashMap::<String, u32>::new();
     ///

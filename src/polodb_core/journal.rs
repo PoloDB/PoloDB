@@ -760,6 +760,8 @@ mod tests {
         let _ = std::fs::remove_file("/tmp/test-journal");
         let mut journal_manager = JournalManager::open("/tmp/test-journal".as_ref(), 4096, 4096).unwrap();
 
+        journal_manager.start_transaction(TransactionType::Write).unwrap();
+
         let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);
 
         for i in 0..TEST_PAGE_LEN {
@@ -777,6 +779,8 @@ mod tests {
                 assert_eq!(*ch, ten_pages[i as usize].data[index])
             }
         }
+
+        journal_manager.commit().unwrap();
     }
 
     #[test]
