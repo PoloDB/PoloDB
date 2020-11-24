@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
@@ -13,6 +14,7 @@ use crate::DbResult;
 use crate::error::DbErr;
 use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::data_ticket::DataTicket;
+use crate::page::free_list_data_wrapper::FreeListDataWrapper;
 
 const DB_INIT_BLOCK_COUNT: u32 = 16;
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
@@ -31,7 +33,6 @@ pub(crate) struct PageHandler {
     pub last_commit_db_size:  u64,
 
     pub page_size:            u32,
-    page_count:               u32,
     page_cache:               Box<PageCache>,
     journal_manager:          Box<JournalManager>,
 
@@ -90,7 +91,7 @@ impl PageHandler {
             .read(true)
             .open(path)?;
 
-        let (_, page_count, db_file_size) = PageHandler::init_db(&mut file, page_size)?;
+        let (_, _, db_file_size) = PageHandler::init_db(&mut file, page_size)?;
 
         let journal_file_path: PathBuf = PageHandler::mk_journal_path(path);
         let journal_manager = JournalManager::open(&journal_file_path, page_size, db_file_size)?;
@@ -108,7 +109,6 @@ impl PageHandler {
             last_commit_db_size,
 
             page_size,
-            page_count,
             page_cache: Box::new(page_cache),
             journal_manager: Box::new(journal_manager),
 
@@ -315,6 +315,17 @@ impl PageHandler {
         self.free_pages(&[pid])
     }
 
+    // for test
+    #[allow(dead_code)]
+    fn first_page_free_list_pid_and_size(&mut self) -> DbResult<(u32, u32)> {
+        let first_page = self.pipeline_read_page(0)?;
+        let first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
+
+        let pid = first_page_wrapper.get_free_list_page_id();
+        let size = first_page_wrapper.get_free_list_size();
+        Ok((pid, size))
+    }
+
     pub fn free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
         #[cfg(feature = "log")]
         for pid in pages {
@@ -325,12 +336,19 @@ impl PageHandler {
         let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
         let free_list_pid = first_page_wrapper.get_free_list_page_id();
         if free_list_pid != 0 {
-            unimplemented!();
+            let raw_page = self.pipeline_read_page(free_list_pid)?;
+            let free_list_wrapper = FreeListDataWrapper::from_raw(raw_page);
+            return self.complex_free_pages(free_list_wrapper, pages);
         }
 
         let current_size = first_page_wrapper.get_free_list_size();
         if (current_size as usize) + pages.len() >= header_page_wrapper::HEADER_FREE_LIST_MAX_SIZE {
-            unimplemented!();
+            let free_list_pid = self.alloc_page_id()?;
+            first_page_wrapper.set_free_list_page_id(free_list_pid);
+            self.pipeline_write_page(&first_page_wrapper.0)?;
+
+            let free_list_wrapper = FreeListDataWrapper::init(free_list_pid, self.page_size);
+            return self.complex_free_pages(free_list_wrapper, pages);
         }
 
         first_page_wrapper.set_free_list_size(current_size + (pages.len() as u32));
@@ -342,9 +360,29 @@ impl PageHandler {
 
         self.pipeline_write_page(&first_page_wrapper.0)?;
 
-        self.page_count -= pages.len() as u32;
-
         Ok(())
+    }
+
+    fn complex_free_pages(&mut self, mut free_list_wrapper: FreeListDataWrapper, pages: &[u32]) -> DbResult<()> {
+        let remain_size = free_list_wrapper.remain_size();
+        if (remain_size as usize) < pages.len() {
+            let front = &pages[0..remain_size as usize];
+            let back = &pages[remain_size as usize..];
+
+            let next_pid = self.alloc_page_id()?;
+            free_list_wrapper.set_next_pid(next_pid);
+
+            self.complex_free_pages(free_list_wrapper, front)?;
+
+            let next_free_list_wrapper = FreeListDataWrapper::init(next_pid, self.page_size);
+            return self.complex_free_pages(next_free_list_wrapper, back);
+        }
+
+        for pid in pages {
+            free_list_wrapper.append_page_id(*pid);
+        }
+
+        self.pipeline_write_page(free_list_wrapper.borrow_page())
     }
 
     pub fn is_journal_full(&self) -> bool {
@@ -359,6 +397,17 @@ impl PageHandler {
         let first_page = self.get_first_page()?;
         let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
 
+        let free_list_page_id = first_page_wrapper.get_free_list_page_id();
+        if free_list_page_id != 0 {
+            let free_and_next: Cell<i64> = Cell::new(-1);
+            let pid = self.get_free_page_id_from_external_page(free_list_page_id, &free_and_next)?;
+            if free_and_next.get() > 0 {
+                first_page_wrapper.set_free_list_page_id(free_and_next.get() as u32);
+                self.pipeline_write_page(&first_page_wrapper.0)?;
+            }
+            return Ok(Some(pid));
+        }
+
         let free_list_size = first_page_wrapper.get_free_list_size();
         if free_list_size == 0 {
             return Ok(None);
@@ -370,6 +419,21 @@ impl PageHandler {
         self.pipeline_write_page(&first_page_wrapper.0)?;
 
         Ok(Some(result))
+    }
+
+    fn get_free_page_id_from_external_page(&mut self, free_list_page_id: u32, free_and_next: &Cell<i64>) -> DbResult<u32> {
+        let raw_page = self.pipeline_read_page(free_list_page_id)?;
+        let mut free_list_page_wrapper = FreeListDataWrapper::from_raw(raw_page);
+        let pid = free_list_page_wrapper.consume_a_free_page();
+        if free_list_page_wrapper.size() == 0 {
+            let next_pid = free_list_page_wrapper.next_pid();
+            self.free_page(pid)?;
+            free_and_next.set(next_pid as i64);
+        } else {
+            self.pipeline_write_page(free_list_page_wrapper.borrow_page())?;
+            free_and_next.set(-1);
+        }
+        Ok(pid)
     }
 
     #[inline]
@@ -392,7 +456,6 @@ impl PageHandler {
             }
         }?;
 
-        self.page_count += 1;
         Ok(page_id)
     }
 
@@ -459,6 +522,58 @@ impl PageHandler {
         self.journal_manager.rollback()?;
         self.page_cache = Box::new(PageCache::new_default(self.page_size));
         Ok(())
+    }
+
+}
+
+#[cfg(test)]
+mod test {
+    use std::env;
+    use crate::page::PageHandler;
+    use crate::TransactionType;
+
+    const TEST_FREE_LIST_SIZE: usize = 10000;
+    const DB_NAME: &str = "test-page-handler";
+
+    #[test]
+    fn test_free_list() {
+        let mut db_path = env::temp_dir();
+        let mut journal_path = env::temp_dir();
+
+        let db_filename = String::from(DB_NAME) + ".db";
+        let journal_filename = String::from(DB_NAME) + ".db.journal";
+
+        db_path.push(db_filename);
+        journal_path.push(journal_filename);
+
+        let _ = std::fs::remove_file(db_path.as_path());
+        let _ = std::fs::remove_file(journal_path);
+
+        let mut page_handler = PageHandler::new(db_path.as_ref(), 4096).unwrap();
+        page_handler.start_transaction(TransactionType::Write).unwrap();
+
+        let (free_pid, free_size) = page_handler.first_page_free_list_pid_and_size().unwrap();
+        assert_eq!(free_pid, 0);
+        assert_eq!(free_size, 0);
+
+        let mut id: Vec<u32> = vec![];
+
+        for _ in 0..TEST_FREE_LIST_SIZE {
+            let pid = page_handler.alloc_page_id().unwrap();
+            id.push(pid);
+        }
+
+        let mut counter = 0;
+        for i in id {
+            page_handler.free_page(i).unwrap();
+            let (free_pid, free_size) = page_handler.first_page_free_list_pid_and_size().unwrap();
+            if free_pid == 0 {
+                assert_eq!(free_size as usize, counter + 1);
+            }
+            counter += 1;
+        }
+
+        page_handler.commit().unwrap();
     }
 
 }

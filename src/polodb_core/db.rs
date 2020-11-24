@@ -71,7 +71,7 @@ impl<'a>  Collection<'a> {
     }
 
     // // release in 0.2
-    #[inline]
+    #[allow(dead_code)]
     fn create_index(&mut self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         self.db.ctx.create_index(self.id, keys, options)
     }

@@ -14,6 +14,8 @@ pub(crate) enum PageType {
 
     Data,
 
+    FreeList,
+
 }
 
 impl PageType {
