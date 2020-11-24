@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::fs::{File, Metadata};
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::ops::Bound::{Included, Unbounded};
@@ -10,6 +10,7 @@ use super::pagecache::PageCache;
 use super::header_page_wrapper;
 use super::header_page_wrapper::HeaderPageWrapper;
 use crate::journal::{JournalManager, TransactionType};
+use crate::dump::JournalDump;
 use crate::DbResult;
 use crate::error::DbErr;
 use crate::page::data_page_wrapper::DataPageWrapper;
@@ -522,6 +523,16 @@ impl PageHandler {
         self.journal_manager.rollback()?;
         self.page_cache = Box::new(PageCache::new_default(self.page_size));
         Ok(())
+    }
+
+    #[inline]
+    pub fn file_meta(&mut self) -> std::io::Result<Metadata> {
+        self.file.metadata()
+    }
+
+    pub fn dump_journal(&mut self) -> DbResult<Box<JournalDump>> {
+        let journal_dump = self.journal_manager.dump()?;
+        Ok(Box::new(journal_dump))
     }
 
 }

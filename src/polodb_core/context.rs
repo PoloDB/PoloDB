@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use std::borrow::Borrow;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use polodb_bson::{Document, Value, ObjectIdMaker, mk_document};
 use super::page::{header_page_wrapper, PageHandler};
 use super::error::DbErr;
@@ -12,6 +12,8 @@ use crate::btree::*;
 use crate::page::{RawPage, TransactionState};
 use crate::db_handle::DbHandle;
 use crate::journal::TransactionType;
+use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeListPageDump, BTreePageDump};
+use crate::page::header_page_wrapper::HeaderPageWrapper;
 
 macro_rules! try_db_op {
     ($self: tt, $action: expr) => {
@@ -39,6 +41,7 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
  * API for all platforms
  */
 pub struct DbContext {
+    path:                PathBuf,
     page_handler:        Box<PageHandler>,
     obj_id_maker:        ObjectIdMaker,
     meta_version:        u32,
@@ -68,6 +71,7 @@ impl DbContext {
         let obj_id_maker = ObjectIdMaker::new();
 
         let mut ctx = DbContext {
+            path: path.to_path_buf(),
             page_handler: Box::new(page_handler),
             // first_page,
             obj_id_maker,
@@ -679,11 +683,85 @@ impl DbContext {
         &mut self.obj_id_maker
     }
 
+    pub fn dump(&mut self) -> DbResult<FullDump> {
+        let file_meta = self.page_handler.file_meta()?;
+        let first_page = self.page_handler.pipeline_read_page(0)?;
+        let first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
+        let version = first_page_wrapper.get_version();
+        let meta_pid = first_page_wrapper.get_meta_page_id();
+        let free_list_pid = first_page_wrapper.get_free_list_page_id();
+        let free_list_size = first_page_wrapper.get_free_list_size();
+        let page_size = self.page_handler.page_size;
+
+        let pages = self.dump_all_pages(file_meta.len())?;
+        let journal_dump = self.page_handler.dump_journal()?;
+        let full_dump = FullDump {
+            path: self.path.clone(),
+            identifier: first_page_wrapper.get_title(),
+            version: dump_version(&version),
+            file_meta,
+            journal_dump,
+            meta_pid,
+            free_list_pid,
+            free_list_size,
+            page_size,
+            pages,
+        };
+        Ok(full_dump)
+    }
+
+    fn dump_all_pages(&mut self, file_len: u64) -> DbResult<Vec<PageDump>> {
+        let page_count = file_len / (self.page_handler.page_size as u64);
+        let mut result = Vec::with_capacity(page_count as usize);
+
+        for index in 0..page_count {
+            let raw_page = self.page_handler.pipeline_read_page(index as u32)?;
+            result.push(dump_page(&raw_page)?);
+        }
+
+        Ok(result)
+    }
+
     pub fn get_version() -> String {
         const VERSION: &'static str = env!("CARGO_PKG_VERSION");
         return VERSION.into();
     }
 
+}
+
+fn dump_page(raw_page: &RawPage) -> DbResult<PageDump> {
+    let first = raw_page.data[0];
+    let second = raw_page.data[1];
+    if first != 0xFF {
+        return Ok(PageDump::Undefined(raw_page.page_id));
+    }
+
+    let result = match second {
+        1 => PageDump::BTreePage(Box::new(BTreePageDump::from_page(raw_page)?)),
+        2 => PageDump::OverflowDataPage(Box::new(OverflowDataPageDump)),
+        3 => PageDump::DataPage(Box::new(DataPageDump::from_page(raw_page)?)),
+        4 => PageDump::FreeListPage(Box::new(FreeListPageDump)),
+        _ => PageDump::Undefined(raw_page.page_id),
+    };
+
+    Ok(result)
+}
+
+fn dump_version(version: &[u8]) -> String {
+    let mut result = String::new();
+
+    let mut i: usize = 0;
+    while i < version.len() {
+        let digit = version[i] as u32;
+        let ch: char = std::char::from_digit(digit, 10).unwrap();
+        result.push(ch);
+        if i != version.len() - 1 {
+            result.push('.');
+        }
+        i += 1;
+    }
+
+    result
 }
 
 impl Drop for DbContext {

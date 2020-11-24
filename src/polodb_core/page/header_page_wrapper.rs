@@ -51,7 +51,6 @@ impl HeaderPageWrapper {
         let _ = self.0.put_str(title);
     }
 
-    #[allow(dead_code)]
     pub(crate) fn get_title(&self) -> String {
         let mut zero_pos: i32 = -1;
         for i in 0..32 {

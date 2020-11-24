@@ -8,6 +8,7 @@ use crate::page::RawPage;
 use crate::crc64::crc64;
 use crate::DbResult;
 use crate::error::DbErr;
+use crate::dump::JournalDump;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::io::AsRawHandle;
@@ -17,7 +18,7 @@ const JOURNAL_DATA_BEGIN: u32 = 64;
 const FRAME_HEADER_SIZE: u32  = 40;
 
 // 24 bytes
-pub(crate) struct FrameHeader {
+pub struct FrameHeader {
     // the page_id of the main database
     // page_id * offset represents the real offset from the beginning
     page_id:       u32,  // offset 0
@@ -110,7 +111,7 @@ impl TransactionState {
 // salt_2:     4bytes(offset 44)
 // checksum before 48:   8bytes(offset 48)
 // data begin: 64 bytes
-pub(crate) struct JournalManager {
+pub struct JournalManager {
     file_path:        PathBuf,
     journal_file:     File,
     version:          [u8; 4],
@@ -731,6 +732,15 @@ impl JournalManager {
 
     pub(crate) fn transaction_type(&self) -> Option<TransactionType> {
         self.transaction_state.as_ref().map(|state| state.ty)
+    }
+
+    pub(crate) fn dump(&mut self) -> DbResult<JournalDump> {
+        let file_meta =self.journal_file.metadata()?;
+        let dump = JournalDump {
+            path: self.file_path.clone(),
+            file_meta,
+        };
+        Ok(dump)
     }
 
 }

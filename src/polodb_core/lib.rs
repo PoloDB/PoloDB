@@ -12,6 +12,7 @@ mod index_ctx;
 mod meta_doc_helper;
 mod context;
 mod db_handle;
+pub mod dump;
 
 pub use db::{Database, DbResult};
 pub use journal::TransactionType;
