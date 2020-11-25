@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::fs::Metadata;
-use crate::page::RawPage;
+use crate::page::{RawPage, FreeListDataWrapper};
 use crate::DbResult;
 
 pub enum PageDump {
@@ -61,4 +61,22 @@ impl DataPageDump {
 
 }
 
-pub struct FreeListPageDump;
+pub struct FreeListPageDump {
+    pub pid: u32,
+    pub size: usize,
+    pub next_pid: u32
+}
+
+impl FreeListPageDump {
+
+    pub(crate) fn from_page(page: RawPage) -> DbResult<FreeListPageDump> {
+        let pid = page.page_id;
+        let wrapper = FreeListDataWrapper::from_raw(page);
+        Ok(FreeListPageDump {
+            pid,
+            size: wrapper.size() as usize,
+            next_pid: wrapper.next_pid(),
+        })
+    }
+
+}

@@ -716,7 +716,7 @@ impl DbContext {
 
         for index in 0..page_count {
             let raw_page = self.page_handler.pipeline_read_page(index as u32)?;
-            result.push(dump_page(&raw_page)?);
+            result.push(dump_page(raw_page)?);
         }
 
         Ok(result)
@@ -729,7 +729,7 @@ impl DbContext {
 
 }
 
-fn dump_page(raw_page: &RawPage) -> DbResult<PageDump> {
+fn dump_page(raw_page: RawPage) -> DbResult<PageDump> {
     let first = raw_page.data[0];
     let second = raw_page.data[1];
     if first != 0xFF {
@@ -737,10 +737,10 @@ fn dump_page(raw_page: &RawPage) -> DbResult<PageDump> {
     }
 
     let result = match second {
-        1 => PageDump::BTreePage(Box::new(BTreePageDump::from_page(raw_page)?)),
+        1 => PageDump::BTreePage(Box::new(BTreePageDump::from_page(&raw_page)?)),
         2 => PageDump::OverflowDataPage(Box::new(OverflowDataPageDump)),
-        3 => PageDump::DataPage(Box::new(DataPageDump::from_page(raw_page)?)),
-        4 => PageDump::FreeListPage(Box::new(FreeListPageDump)),
+        3 => PageDump::DataPage(Box::new(DataPageDump::from_page(&raw_page)?)),
+        4 => PageDump::FreeListPage(Box::new(FreeListPageDump::from_page(raw_page)?)),
         _ => PageDump::Undefined(raw_page.page_id),
     };
 
