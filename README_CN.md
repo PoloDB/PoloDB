@@ -67,3 +67,12 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
   - [ ] JavaScript 引擎
 - [ ] 可视化工具
 
+# 贡献指南
+
+| 模块 | 路径 | 描述 |
+| ----| --- | ---- |
+| Core | `src/polodb_core`  | 数据库功能的核心实现 |
+| C Library | `src/polodb_clib` | 数据库的 C FFI 实现 |
+| CLI tool | `src/polodb_cli` | 命令行工具 |
+| Node.js bindings | `polodb.js` | Node.js 绑定，用 N-API 实现 |
+| Python bindings | `pypolodb` | CPython 绑定，Extension API 实现 |
