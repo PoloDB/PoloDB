@@ -25,7 +25,10 @@ pub struct FullDump {
 }
 
 pub struct JournalFrameDump {
-    pub frame_id:      u64,
+    pub frame_id:      u32,
+    pub db_size:       u64,
+    pub salt1:         u32,
+    pub salt2:         u32,
 }
 
 pub struct JournalDump {

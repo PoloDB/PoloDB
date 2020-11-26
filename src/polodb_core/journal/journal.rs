@@ -747,7 +747,27 @@ impl JournalManager {
     }
 
     pub(crate) fn dump_frames(&mut self) -> DbResult<Vec<JournalFrameDump>> {
-        unimplemented!()
+        let mut result = vec![];
+
+        for index in 0..self.count {
+            let frame_header_offset: u64 =
+                (JOURNAL_DATA_BEGIN as u64) + (self.page_size as u64 + FRAME_HEADER_SIZE as u64) * (index as u64);
+
+            let mut header_buffer: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
+            self.journal_file.seek(SeekFrom::Start(frame_header_offset))?;
+            self.journal_file.read_exact(&mut header_buffer)?;
+
+            let header = FrameHeader::from_bytes(&header_buffer);
+
+            result.push(JournalFrameDump {
+                frame_id: index,
+                db_size: header.db_size,
+                salt1: header.salt1,
+                salt2: header.salt2,
+            });
+        }
+
+        Ok(result)
     }
 
 }
