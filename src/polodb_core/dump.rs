@@ -24,9 +24,15 @@ pub struct FullDump {
     pub pages:          Vec<PageDump>,
 }
 
+pub struct JournalFrameDump {
+    pub frame_id:      u64,
+}
+
 pub struct JournalDump {
-    pub path     : PathBuf,
-    pub file_meta:  Metadata,
+    pub path     :   PathBuf,
+    pub file_meta:   Metadata,
+    pub frame_count: usize,
+    pub frames:      Vec<JournalFrameDump>,
 }
 
 pub struct BTreePageDump {

@@ -81,7 +81,12 @@ fn main() {
         .author("Vincent Chan <okcdz@diverse.space>")
         .subcommand(App::new("dump")
             .about("dump the database to text")
-            .arg(Arg::with_name("path").index(1).required(true)))
+            .arg(
+                Arg::with_name("path")
+                    .index(1)
+                    .required(true)
+            )
+            .arg(Arg::with_name("detail").required(false)))
         .subcommand(App::new("attach")
             .about("attach the database")
             .arg(Arg::with_name("path").index(1).required(true)))
@@ -89,7 +94,8 @@ fn main() {
 
     if let Some(sub) = matches.subcommand_matches("dump") {
         let path = sub.value_of("path").expect("no input path");
-        dump(path);
+        let detail = sub.is_present("detail");
+        dump(path, detail);
         return;
     }
 

@@ -8,7 +8,7 @@ use crate::page::RawPage;
 use crate::crc64::crc64;
 use crate::DbResult;
 use crate::error::DbErr;
-use crate::dump::JournalDump;
+use crate::dump::{JournalDump, JournalFrameDump};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::io::AsRawHandle;
@@ -736,11 +736,18 @@ impl JournalManager {
 
     pub(crate) fn dump(&mut self) -> DbResult<JournalDump> {
         let file_meta =self.journal_file.metadata()?;
+        let frames = self.dump_frames()?;
         let dump = JournalDump {
             path: self.file_path.clone(),
             file_meta,
+            frame_count: self.count as usize,
+            frames,
         };
         Ok(dump)
+    }
+
+    pub(crate) fn dump_frames(&mut self) -> DbResult<Vec<JournalFrameDump>> {
+        unimplemented!()
     }
 
 }

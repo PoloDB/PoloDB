@@ -1,6 +1,6 @@
 use super::page::RawPage;
 
-static HEADER_DESP: &str          = "PipeappleDB Format v0.1";
+static HEADER_DESP: &str          = "PoloDB Format v0.2";
 const SECTOR_SIZE_OFFSET: u32     = 40;
 const PAGE_SIZE_OFFSET: u32       = 44;
 const NULL_PAGE_BAR_OFFSET: u32   = 48;
@@ -12,8 +12,8 @@ const FREE_LIST_PAGE_LINK_OFFSET: u32 = 2048 + 4;
 pub const HEADER_FREE_LIST_MAX_SIZE: usize = (2048 - 8) / 4;
 
 /**
- * Offset 0 (32 bytes) : "PipeappleDB Format v0.1";
- * Offset 32 (8 bytes) : Version 0.0.0.0;
+ * Offset 0 (32 bytes) : "PoloDB Format v0.2";
+ * Offset 32 (8 bytes) : Version 0.0.0.2;
  * Offset 40 (4 bytes) : SectorSize;
  * Offset 44 (4 bytes) : PageSize;
  * Offset 48 (4 bytes) : NullPageBarId;
@@ -33,7 +33,7 @@ impl HeaderPageWrapper {
         let raw_page = RawPage::new(page_id, page_size);
         let mut wrapper = HeaderPageWrapper::from_raw_page(raw_page);
         wrapper.set_title(HEADER_DESP);
-        wrapper.set_version(&[0, 0, 0, 1]);
+        wrapper.set_version(&[0, 0, 0, 2]);
         wrapper.set_sector_size(4096);
         wrapper.set_page_size(4096);
         wrapper.set_meta_page_id(1);
