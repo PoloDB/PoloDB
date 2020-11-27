@@ -542,6 +542,7 @@ mod test {
     use std::env;
     use crate::page::PageHandler;
     use crate::TransactionType;
+    use std::collections::HashSet;
 
     const TEST_FREE_LIST_SIZE: usize = 10000;
     const DB_NAME: &str = "test-page-handler";
@@ -568,6 +569,7 @@ mod test {
         assert_eq!(free_size, 0);
 
         let mut id: Vec<u32> = vec![];
+        let mut freed_pid: HashSet<u32> = HashSet::new();
 
         for _ in 0..TEST_FREE_LIST_SIZE {
             let pid = page_handler.alloc_page_id().unwrap();
@@ -577,10 +579,19 @@ mod test {
         let mut counter = 0;
         for i in id {
             page_handler.free_page(i).unwrap();
+            freed_pid.insert(i);
             let (free_pid, free_size) = page_handler.first_page_free_list_pid_and_size().unwrap();
             if free_pid == 0 {
                 assert_eq!(free_size as usize, counter + 1);
             }
+            counter += 1;
+        }
+
+        let mut counter = 0;
+        for _ in 0..TEST_FREE_LIST_SIZE {
+            let pid = page_handler.alloc_page_id().unwrap();
+            assert!(freed_pid.contains(&pid), "free page leak: {}", counter);
+            freed_pid.remove(&pid);
             counter += 1;
         }
 
