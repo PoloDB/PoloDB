@@ -69,7 +69,7 @@ fn value_to_str(val: &JsValue) -> String {
             result
         }
 
-        _ => panic!("not implment")
+        _ => unimplemented!()
 
     }
 }
