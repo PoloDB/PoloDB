@@ -13,7 +13,7 @@ use crate::dump::{JournalDump, JournalFrameDump};
 #[cfg(target_os = "windows")]
 use std::os::windows::io::AsRawHandle;
 
-static HEADER_DESP: &str       = "PipeappleDB Journal v0.1";
+static HEADER_DESP: &str       = "PoloDB Journal v0.2";
 const JOURNAL_DATA_BEGIN: u32 = 64;
 const FRAME_HEADER_SIZE: u32  = 40;
 
