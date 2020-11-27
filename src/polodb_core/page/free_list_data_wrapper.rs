@@ -39,6 +39,7 @@ impl FreeListDataWrapper {
     }
 
     pub(crate) fn append_page_id(&mut self, pid: u32) {
+        debug_assert_ne!(self.remain_size(), 0);
         let current_size = self.size();
         let data_offset = DATA_FRAGMENT_OFFSET + current_size * 4;
         self.page.seek(data_offset);
@@ -80,6 +81,11 @@ impl FreeListDataWrapper {
     fn get_pid_by_index(&self, index: u32) -> u32 {
         let data_offset: u32 = DATA_FRAGMENT_OFFSET + index * 4;
         self.page.get_u32(data_offset)
+    }
+
+    #[inline]
+    pub(crate) fn can_store(&self, len: usize) -> bool {
+        (self.remain_size() as usize) >= len
     }
 
     #[inline]
