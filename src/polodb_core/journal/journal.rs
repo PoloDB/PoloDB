@@ -8,16 +8,17 @@ use crate::page::RawPage;
 use crate::crc64::crc64;
 use crate::DbResult;
 use crate::error::DbErr;
+use crate::dump::{JournalDump, JournalFrameDump};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::io::AsRawHandle;
 
-static HEADER_DESP: &str       = "PipeappleDB Journal v0.1";
+static HEADER_DESP: &str       = "PoloDB Journal v0.2";
 const JOURNAL_DATA_BEGIN: u32 = 64;
 const FRAME_HEADER_SIZE: u32  = 40;
 
 // 24 bytes
-pub(crate) struct FrameHeader {
+pub struct FrameHeader {
     // the page_id of the main database
     // page_id * offset represents the real offset from the beginning
     page_id:       u32,  // offset 0
@@ -110,7 +111,7 @@ impl TransactionState {
 // salt_2:     4bytes(offset 44)
 // checksum before 48:   8bytes(offset 48)
 // data begin: 64 bytes
-pub(crate) struct JournalManager {
+pub struct JournalManager {
     file_path:        PathBuf,
     journal_file:     File,
     version:          [u8; 4],
@@ -731,6 +732,42 @@ impl JournalManager {
 
     pub(crate) fn transaction_type(&self) -> Option<TransactionType> {
         self.transaction_state.as_ref().map(|state| state.ty)
+    }
+
+    pub(crate) fn dump(&mut self) -> DbResult<JournalDump> {
+        let file_meta =self.journal_file.metadata()?;
+        let frames = self.dump_frames()?;
+        let dump = JournalDump {
+            path: self.file_path.clone(),
+            file_meta,
+            frame_count: self.count as usize,
+            frames,
+        };
+        Ok(dump)
+    }
+
+    pub(crate) fn dump_frames(&mut self) -> DbResult<Vec<JournalFrameDump>> {
+        let mut result = vec![];
+
+        for index in 0..self.count {
+            let frame_header_offset: u64 =
+                (JOURNAL_DATA_BEGIN as u64) + (self.page_size as u64 + FRAME_HEADER_SIZE as u64) * (index as u64);
+
+            let mut header_buffer: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
+            self.journal_file.seek(SeekFrom::Start(frame_header_offset))?;
+            self.journal_file.read_exact(&mut header_buffer)?;
+
+            let header = FrameHeader::from_bytes(&header_buffer);
+
+            result.push(JournalFrameDump {
+                frame_id: index,
+                db_size: header.db_size,
+                salt1: header.salt1,
+                salt2: header.salt2,
+            });
+        }
+
+        Ok(result)
     }
 
 }

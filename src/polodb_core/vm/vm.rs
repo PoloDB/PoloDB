@@ -72,10 +72,11 @@ impl<'a> VM<'a> {
         (self.page_handler.page_size - HEADER_SIZE) / ITEM_SIZE
     }
 
-    #[inline]
     fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        self.page_handler.auto_start_transaction(ty)?;
-        self.rollback_on_drop = true;
+        let result = self.page_handler.auto_start_transaction(ty)?;
+        if result.auto_start {
+            self.rollback_on_drop = true;
+        }
         Ok(())
     }
 
@@ -594,8 +595,10 @@ impl<'a> VM<'a> {
 
                     DbOp::Close => {
                         self.r1 = None;
-                        self.page_handler.auto_commit()?;
-                        self.rollback_on_drop = false;
+                        if self.rollback_on_drop {
+                            self.page_handler.auto_commit()?;
+                            self.rollback_on_drop = false;
+                        }
 
                         self.pc = self.pc.add(1);
                     }
@@ -626,6 +629,10 @@ impl<'a> VM<'a> {
         self.page_handler.auto_commit()?;
         self.rollback_on_drop = false;
         Ok(())
+    }
+
+    pub(crate) fn set_rollback_on_drop(&mut self, value: bool) {
+        self.rollback_on_drop = value;
     }
 
 }

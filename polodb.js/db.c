@@ -53,9 +53,6 @@ static napi_value db_version(napi_env env, napi_callback_info info) {
 typedef struct {
   uint32_t  id;
   uint32_t  meta_version;
-  size_t    name_size;
-  size_t    name_capacity;
-  char*     name;
 } InternalCollection;
 
 InternalCollection* NewInternalCollection(Database* db) {
@@ -64,20 +61,12 @@ InternalCollection* NewInternalCollection(Database* db) {
 
   collection->id = 0;
   collection->meta_version = 0;
-  collection->name_size = 0;
-  collection->name_capacity = 512;
-  collection->name = malloc(512);
-  memset(collection->name, 0, collection->name_capacity);
 
   return collection;
 }
 
 void InternalCollection_finalizer(napi_env env, void* finalize_data, void* finalize_hint) {
   InternalCollection* internal_collection = (InternalCollection*)finalize_data;
-  if (internal_collection->name != NULL) {
-    free(internal_collection->name);
-    internal_collection->name = NULL;
-  }
   free(internal_collection);
 }
 
@@ -86,8 +75,8 @@ static napi_value Collection_constructor(napi_env env, napi_callback_info info) 
 
   napi_value this_arg;
 
-  size_t argc = 2;
-  napi_value args[2];
+  size_t argc = 4;
+  napi_value args[4];
   status = napi_get_cb_info(env, info, &argc, args, &this_arg, NULL);
   CHECK_STAT(status);
 
@@ -97,7 +86,17 @@ static napi_value Collection_constructor(napi_env env, napi_callback_info info) 
   }
 
   if (!check_type(env, args[1], napi_string)) {
-    napi_throw_type_error(env, NULL, "the first arg should be an object");
+    napi_throw_type_error(env, NULL, "the second arg should be an object");
+    return NULL;
+  }
+
+  if (!check_type(env, args[2], napi_number)) {
+    napi_throw_type_error(env, NULL, "the third arg should be a number");
+    return NULL;
+  }
+
+  if (!check_type(env, args[3], napi_number)) {
+    napi_throw_type_error(env, NULL, "the forth arg should be a number");
     return NULL;
   }
 
@@ -108,10 +107,12 @@ static napi_value Collection_constructor(napi_env env, napi_callback_info info) 
   napi_property_descriptor db_prop[] = {
     { "__db", 0, 0, 0, 0, args[0], napi_default, 0 },
     { "__name", 0, 0, 0, 0, args[1], napi_default, 0 },
+    { "__id", 0, 0, 0, 0, args[2], napi_default, 0 },
+    { "__metaVersion", 0, 0, 0, 0, args[3], napi_default, 0 },
     { NULL }
   };
 
-  status = napi_define_properties(env, this_arg, 2, db_prop);
+  status = napi_define_properties(env, this_arg, 4, db_prop);
   CHECK_STAT(status);
 
   InternalCollection* internal_collection = NewInternalCollection(db);
@@ -119,19 +120,11 @@ static napi_value Collection_constructor(napi_env env, napi_callback_info info) 
   status = napi_wrap(env, this_arg, internal_collection, InternalCollection_finalizer, 0, NULL);
   CHECK_STAT(status);
 
-  status = napi_get_value_string_utf8(
-    env, args[1],
-    internal_collection->name,
-    internal_collection->name_capacity,
-    &internal_collection->name_size
-  );
+  status = napi_get_value_uint32(env, args[2], &internal_collection->id);
   CHECK_STAT(status);
 
-  int ec = PLDB_get_collection_meta_by_name(db, internal_collection->name, &internal_collection->id, &internal_collection->meta_version);
-  if (ec < 0) {
-    napi_throw_error(env, NULL, PLDB_error_msg());
-    return NULL;
-  }
+  status = napi_get_value_uint32(env, args[3], &internal_collection->meta_version);
+  CHECK_STAT(status);
 
   return this_arg;
 }
@@ -915,11 +908,23 @@ static napi_value Database_create_collection(napi_env env, napi_callback_info in
   status = napi_get_reference_value(env, collection_object_ref, &collection_ctor);
   CHECK_STAT(status);
 
-  size_t arg_size = 2;
-  napi_value pass_args[] = { this_arg, args[0] };
+  napi_value js_col_id;
+  napi_value js_meta_version;
+
+  status = napi_create_uint32(env, col_id, &js_col_id);
+  CHECK_STAT(status);
+
+  status = napi_create_uint32(env, meta_version, &js_meta_version);
+  CHECK_STAT(status);
+
+  size_t arg_size = 4;
+  napi_value pass_args[] = { this_arg, args[0], js_col_id, js_meta_version };
 
   napi_value result = NULL;;
   status = napi_new_instance(env, collection_ctor, arg_size, pass_args, &result);
+  if (status == napi_generic_failure) {
+    return NULL;
+  }
   CHECK_STAT(status);
 
   return result;
@@ -948,8 +953,33 @@ static napi_value Database_collection(napi_env env, napi_callback_info info) {
   status = napi_get_reference_value(env, collection_object_ref, &collection_ctor);
   CHECK_STAT(status);
 
-  size_t arg_size = 2;
-  napi_value pass_args[] = { this_arg, args[0] };
+  static char name_buffer[BUFFER_SIZE];
+  memset(name_buffer, 0 , BUFFER_SIZE);
+
+  size_t value_len = 0;
+  status = napi_get_value_string_utf8(env, args[0], name_buffer, BUFFER_SIZE, &value_len);
+  CHECK_STAT(status);
+
+  uint32_t col_id = 0;
+  uint32_t meta_version = 0;
+
+  int ec = PLDB_get_collection_meta_by_name(db, name_buffer, &col_id, &meta_version);
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
+
+  napi_value js_col_id;
+  napi_value js_meta_version;
+
+  status = napi_create_uint32(env, col_id, &js_col_id);
+  CHECK_STAT(status);
+
+  status = napi_create_uint32(env, meta_version, &js_meta_version);
+  CHECK_STAT(status);
+
+  size_t arg_size = 4;
+  napi_value pass_args[] = { this_arg, args[0], js_col_id, js_meta_version };
 
   napi_value result = NULL;;
   status = napi_new_instance(env, collection_ctor, arg_size, pass_args, &result);

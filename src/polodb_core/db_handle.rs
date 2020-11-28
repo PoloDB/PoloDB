@@ -40,6 +40,11 @@ impl<'a> DbHandle<'a> {
         self.0.commit_and_close()
     }
 
+    #[inline]
+    pub fn set_rollback_on_drop(&mut self, value: bool) {
+        self.0.set_rollback_on_drop(value)
+    }
+
 }
 
 impl<'a> fmt::Display for DbHandle<'a> {

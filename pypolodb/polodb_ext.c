@@ -138,9 +138,11 @@ static PyObject* DatabaseObject_create_collection(DatabaseObject* self, PyObject
   Py_INCREF(self);
   Py_INCREF(name);
 
-  PyObject* argList = PyTuple_New(2);
+  PyObject* argList = PyTuple_New(4);
   PyTuple_SetItem(argList, 0, (PyObject*)self);
   PyTuple_SetItem(argList, 1, name);
+  PyTuple_SetItem(argList, 2, PyLong_FromUnsignedLong(col_id));
+  PyTuple_SetItem(argList, 3, PyLong_FromUnsignedLong(meta_version));
 
   PyObject* result = PyObject_CallObject((PyObject*)&CollectionObjectType, argList);
 
@@ -160,12 +162,23 @@ static PyObject* DatabaseObject_collection(DatabaseObject* self, PyObject* args)
     return NULL;
   }
 
+  uint32_t col_id = 0;
+  uint32_t meta_version = 0;
+  const char* name_utf8 = PyUnicode_AsUTF8(name);
+  int ec = PLDB_get_collection_meta_by_name(self->db, name_utf8, &col_id, &meta_version);
+  if (ec < 0) {
+    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+    return NULL;
+  }
+
   Py_INCREF(self);
   Py_INCREF(name);
   
-  PyObject* argList = PyTuple_New(2); 
+  PyObject* argList = PyTuple_New(4); 
   PyTuple_SetItem(argList, 0, (PyObject*)self);
   PyTuple_SetItem(argList, 1, name);
+  PyTuple_SetItem(argList, 2, PyLong_FromUnsignedLong(col_id));
+  PyTuple_SetItem(argList, 3, PyLong_FromUnsignedLong(meta_version));
 
   PyObject* result = PyObject_CallObject((PyObject*)&CollectionObjectType, argList);
 
@@ -251,7 +264,9 @@ static PyObject* CollectionObject_new(PyTypeObject* type, PyObject* args, PyObje
 static int CollectionObject_init(CollectionObject* self, PyObject* args, PyObject* kwds) {
   PyObject* db_obj;
   const char* name;
-  if (!PyArg_ParseTuple(args, "Os", &db_obj, &name)) {
+  uint32_t col_id = 0;
+  uint32_t meta_version = 0;
+  if (!PyArg_ParseTuple(args, "Oskk", &db_obj, &name, &col_id, &meta_version)) {
     return -1;
   }
 
@@ -270,10 +285,8 @@ static int CollectionObject_init(CollectionObject* self, PyObject* args, PyObjec
   self->name = buffer;
   memcpy(self->name, name, name_len - 1);
 
-  if (PLDB_get_collection_meta_by_name(self->db_obj->db, self->name, &self->id, &self->meta_version) < 0) {
-    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
-    return -1;
-  }
+  self->id = col_id;
+  self->meta_version = meta_version;
 
   return 0;
 }

@@ -1,6 +1,6 @@
 [package]
 name = "polodb_cli"
-version = "0.1.0"
+version = "0.4.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 edition = "2018"
 
@@ -11,3 +11,4 @@ polodb_core = { path = "../polodb_core" }
 rustyline = "6.2.0"
 quick-js = "0.3.4"
 clap = "2.33.2"
+chrono = "0.4"
