@@ -10,6 +10,9 @@
 		BEDD5D69257292BE0014923B /* SwiftyPoloDB.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BEDD5D5F257292BE0014923B /* SwiftyPoloDB.framework */; };
 		BEDD5D6E257292BE0014923B /* SwiftyPoloDBTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEDD5D6D257292BE0014923B /* SwiftyPoloDBTests.swift */; };
 		BEDD5D70257292BE0014923B /* SwiftyPoloDB.h in Headers */ = {isa = PBXBuildFile; fileRef = BEDD5D62257292BE0014923B /* SwiftyPoloDB.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BEDD5D7F2572953A0014923B /* polodb.h in Headers */ = {isa = PBXBuildFile; fileRef = BEDD5D7E2572953A0014923B /* polodb.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BEDD5D89257296090014923B /* RustPoloDB.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEDD5D88257296090014923B /* RustPoloDB.swift */; };
+		BEDD5D9C2572A01D0014923B /* libpolodb_clib.a in Frameworks */ = {isa = PBXBuildFile; fileRef = BEDD5D7D257294900014923B /* libpolodb_clib.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -29,6 +32,10 @@
 		BEDD5D68257292BE0014923B /* SwiftyPoloDBTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwiftyPoloDBTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BEDD5D6D257292BE0014923B /* SwiftyPoloDBTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftyPoloDBTests.swift; sourceTree = "<group>"; };
 		BEDD5D6F257292BE0014923B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		BEDD5D7C2572943B0014923B /* libresolv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libresolv.tbd; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.0.sdk/usr/lib/libresolv.tbd; sourceTree = DEVELOPER_DIR; };
+		BEDD5D7D257294900014923B /* libpolodb_clib.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libpolodb_clib.a; path = ../target/universal/release/libpolodb_clib.a; sourceTree = "<group>"; };
+		BEDD5D7E2572953A0014923B /* polodb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = polodb.h; path = ../../headers/polodb.h; sourceTree = "<group>"; };
+		BEDD5D88257296090014923B /* RustPoloDB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustPoloDB.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -36,6 +43,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BEDD5D9C2572A01D0014923B /* libpolodb_clib.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -56,6 +64,7 @@
 				BEDD5D61257292BE0014923B /* SwiftyPoloDB */,
 				BEDD5D6C257292BE0014923B /* SwiftyPoloDBTests */,
 				BEDD5D60257292BE0014923B /* Products */,
+				BEDD5D7B2572943B0014923B /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -71,8 +80,10 @@
 		BEDD5D61257292BE0014923B /* SwiftyPoloDB */ = {
 			isa = PBXGroup;
 			children = (
+				BEDD5D7E2572953A0014923B /* polodb.h */,
 				BEDD5D62257292BE0014923B /* SwiftyPoloDB.h */,
 				BEDD5D63257292BE0014923B /* Info.plist */,
+				BEDD5D88257296090014923B /* RustPoloDB.swift */,
 			);
 			path = SwiftyPoloDB;
 			sourceTree = "<group>";
@@ -86,6 +97,15 @@
 			path = SwiftyPoloDBTests;
 			sourceTree = "<group>";
 		};
+		BEDD5D7B2572943B0014923B /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				BEDD5D7D257294900014923B /* libpolodb_clib.a */,
+				BEDD5D7C2572943B0014923B /* libresolv.tbd */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -93,6 +113,7 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BEDD5D7F2572953A0014923B /* polodb.h in Headers */,
 				BEDD5D70257292BE0014923B /* SwiftyPoloDB.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -147,6 +168,7 @@
 				TargetAttributes = {
 					BEDD5D5E257292BE0014923B = {
 						CreatedOnToolsVersion = 12.2;
+						LastSwiftMigration = 1220;
 					};
 					BEDD5D67257292BE0014923B = {
 						CreatedOnToolsVersion = 12.2;
@@ -194,6 +216,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BEDD5D89257296090014923B /* RustPoloDB.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -341,6 +364,7 @@
 		BEDD5D74257292BE0014923B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DEFINES_MODULE = YES;
 				DYLIB_COMPATIBILITY_VERSION = 1;
@@ -353,17 +377,22 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/../target/universal/release";
 				PRODUCT_BUNDLE_IDENTIFIER = "Vincent-Chan.SwiftyPoloDB";
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
 		BEDD5D75257292BE0014923B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				DEFINES_MODULE = YES;
 				DYLIB_COMPATIBILITY_VERSION = 1;
@@ -376,17 +405,21 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/../target/universal/release";
 				PRODUCT_BUNDLE_IDENTIFIER = "Vincent-Chan.SwiftyPoloDB";
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
 		BEDD5D77257292BE0014923B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				INFOPLIST_FILE = SwiftyPoloDBTests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -404,6 +437,7 @@
 		BEDD5D78257292BE0014923B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				INFOPLIST_FILE = SwiftyPoloDBTests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
