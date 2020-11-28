@@ -152,7 +152,8 @@ impl RawPage {
 
     pub fn sync_to_file(&self, file: &mut File, offset: u64) -> std::io::Result<()> {
         file.seek(SeekFrom::Start(offset))?;
-        file.write(self.data.as_slice())?;
+        file.write_all(self.data.as_slice())?;
+        file.flush()?;
         Ok(())
     }
 
