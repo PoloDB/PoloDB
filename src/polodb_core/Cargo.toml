@@ -1,11 +1,12 @@
 [package]
 name = "polodb_core"
-version = "0.3.1"
+version = "0.4.2"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 license = "MIT"
 edition = "2018"
 repository = "https://github.com/vincentdchan/PoloDB"
-description = "PoloDB is a embedded JSON-based database"
+description = "PoloDB is an embedded JSON-based database"
+keywords = ["database", "embedded", "cross-platform"]
 
 [lib]
 name="polodb_core"

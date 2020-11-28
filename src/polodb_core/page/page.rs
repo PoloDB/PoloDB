@@ -4,7 +4,6 @@ use crate::DbResult;
 use crate::error::{DbErr};
 
 #[repr(u8)]
-#[allow(dead_code)]
 pub(crate) enum PageType {
     Undefined = 0,
 
@@ -13,6 +12,8 @@ pub(crate) enum PageType {
     OverflowData,
 
     Data,
+
+    FreeList,
 
 }
 

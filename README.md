@@ -6,7 +6,7 @@
 [![npm version](https://img.shields.io/npm/v/polodb.svg)](https://www.npmjs.com/package/polodb)
 [![PYPI version](https://img.shields.io/pypi/v/polodb.svg)](https://pypi.org/project/polodb/)
 
-PoloDB is a embedded JSON-based database.
+PoloDB is an embedded JSON-based database.
 
 [中文版](README_CN.md)
 
@@ -70,7 +70,7 @@ The feature will be implemented one by on in order.
   - [ ] Flutter
 - [ ] Language bindings
   - [x] C/C++
-  - [ ] Go
+  |- [ ] Go
   - [ ] Swift
   - [x] Python ([Doc](./docs/en-US/Python/READEME.md))
   - [x] Node.js ([Doc](./docs/en-US/Node.js/READEME.md))
@@ -82,3 +82,13 @@ The feature will be implemented one by on in order.
   - [ ] Data Encryption
   - [ ] JavaScript Engine
 - [ ] Visualization Tools
+
+# Contribute
+
+| Module | Path | Description |
+| -------| ---- | ----------- |
+| Core | `src/polodb_core`  | The core implementation of the Database |
+| C Library | `src/polodb_clib` | The C FFI implementation of PoloDb |
+| CLI tool | `src/polodb_cli` | The command line tool of PoloDB |
+| Node.js bindings | `polodb.js` | The Node.js binding using N-API |
+| Python bindings | `pypolodb` | The CPython binding using Extension API |

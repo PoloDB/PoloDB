@@ -4,6 +4,7 @@ use polodb_bson::{Document, ObjectId, Value};
 use super::error::DbErr;
 use crate::context::DbContext;
 use crate::{DbHandle, TransactionType};
+use crate::dump::FullDump;
 
 fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
     handle.step()?;
@@ -71,7 +72,7 @@ impl<'a>  Collection<'a> {
     }
 
     // // release in 0.2
-    #[inline]
+    #[allow(dead_code)]
     fn create_index(&mut self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         self.db.ctx.create_index(self.id, keys, options)
     }
@@ -119,6 +120,11 @@ impl Database {
     pub fn collection(&mut self, col_name: &str) -> DbResult<Collection> {
         let info = self.ctx.get_collection_meta_by_name(col_name)?;
         Ok(Collection::new(self, info.id, info.meta_version, col_name))
+    }
+
+    #[inline]
+    pub fn dump(&mut self) -> DbResult<FullDump> {
+        self.ctx.dump()
     }
 
     #[inline]
