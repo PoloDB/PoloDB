@@ -6,7 +6,7 @@
 [![npm version](https://img.shields.io/npm/v/polodb.svg)](https://www.npmjs.com/package/polodb)
 [![PYPI version](https://img.shields.io/pypi/v/polodb.svg)](https://pypi.org/project/polodb/)
 
-PoloDB is a embedded JSON-based database.
+PoloDB is an embedded JSON-based database.
 
 [中文版](README_CN.md)
 

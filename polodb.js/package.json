@@ -1,7 +1,7 @@
 {
   "name": "polodb",
-  "version": "0.4.0",
-  "description": "",
+  "version": "0.4.2",
+  "description": "PoloDB is an embedded JSON-based database.",
   "main": "index.js",
   "engines": {
     "node": ">= 0.12"
@@ -16,7 +16,8 @@
     "url": "git+https://github.com/vincentdchan/PoloDB.git"
   },
   "keywords": [
-    "database"
+    "database",
+    "embedded"
   ],
   "author": "Vincent Chan",
   "license": "MIT",

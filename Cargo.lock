@@ -282,7 +282,7 @@ dependencies = [
 
 [[package]]
 name = "polodb_clib"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "polodb_bson 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "polodb_core",
@@ -290,7 +290,7 @@ dependencies = [
 
 [[package]]
 name = "polodb_core"
-version = "0.4.0"
+version = "0.4.2"
 dependencies = [
  "libc",
  "polodb_bson 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
