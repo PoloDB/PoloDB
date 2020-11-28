@@ -44,7 +44,6 @@ impl<'a> fmt::Display for FullDumpWrapper<'a> {
         write_kv!(f, "Meta Page Id", self.dump.meta_pid)?;
         write_kv!(f, "Free List Page Id" ,self.dump.free_list_pid)?;
         write_kv!(f, "Free List Size", self.dump.free_list_size)?;
-        writeln!(f, "")?;
 
         let created_datetime: DateTime<Local> = self.dump.file_meta.created().unwrap().into();
         write_kv!(f, "Created Time", format_datetime(&created_datetime))?;
@@ -71,10 +70,11 @@ fn dump_journal(journal_dump: &JournalDump, f: &mut Formatter<'_>) -> fmt::Resul
     writeln!(f, "")?;
     write_kv!(f, "Journal Path", journal_dump.path.to_str().unwrap())?;
     write_kv!(f, "Frame Count", journal_dump.frame_count)?;
+    write_kv!(f, "Size", journal_dump.file_meta.len())?;
     let created_datetime: DateTime<Local> = journal_dump.file_meta.created().unwrap().into();
-    write_kv!(f, "Journal Created Time", format_datetime(&created_datetime))?;
+    write_kv!(f, "Created Time", format_datetime(&created_datetime))?;
     let modified_datetime: DateTime<Local> = journal_dump.file_meta.modified().unwrap().into();
-    write_kv!(f, "Journal Modified Time", format_datetime(&modified_datetime))?;
+    write_kv!(f, "Modified Time", format_datetime(&modified_datetime))?;
 
     Ok(())
 }
