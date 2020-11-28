@@ -19,6 +19,7 @@ use crate::page::free_list_data_wrapper::FreeListDataWrapper;
 
 const DB_INIT_BLOCK_COUNT: u32 = 16;
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
+const JOURNAL_FULL_SIZE: usize = 1000;
 
 #[derive(Eq, PartialEq)]
 pub(crate) enum TransactionState {
@@ -411,31 +412,10 @@ impl PageHandler {
 
         Ok(())
     }
-    //
-    // fn complex_free_pages(&mut self, mut free_list_wrapper: FreeListDataWrapper, pages: &[u32]) -> DbResult<()> {
-    //     let remain_size = free_list_wrapper.remain_size();
-    //     if (remain_size as usize) < pages.len() {
-    //         let front = &pages[0..remain_size as usize];
-    //         let back = &pages[remain_size as usize..];
-    //
-    //         let next_pid = self.alloc_page_id()?;
-    //         free_list_wrapper.set_next_pid(next_pid);
-    //
-    //         self.complex_free_pages(free_list_wrapper, front)?;
-    //
-    //         let next_free_list_wrapper = FreeListDataWrapper::init(next_pid, self.page_size);
-    //         return self.complex_free_pages(next_free_list_wrapper, back);
-    //     }
-    //
-    //     for pid in pages {
-    //         free_list_wrapper.append_page_id(*pid);
-    //     }
-    //
-    //     self.pipeline_write_page(free_list_wrapper.borrow_page())
-    // }
 
+    #[inline]
     pub fn is_journal_full(&self) -> bool {
-        self.journal_manager.len() >= 1000
+        (self.journal_manager.len() as usize) >= JOURNAL_FULL_SIZE
     }
 
     pub fn checkpoint_journal(&mut self) -> DbResult<()> {
