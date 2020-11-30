@@ -9,74 +9,14 @@ use crate::crc64::crc64;
 use crate::DbResult;
 use crate::error::DbErr;
 use crate::dump::{JournalDump, JournalFrameDump};
+use super::frame_header::FrameHeader;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::io::AsRawHandle;
 
 static HEADER_DESP: &str       = "PoloDB Journal v0.2";
-const JOURNAL_DATA_BEGIN: u32 = 64;
-const FRAME_HEADER_SIZE: u32  = 40;
-
-// 24 bytes
-pub struct FrameHeader {
-    // the page_id of the main database
-    // page_id * offset represents the real offset from the beginning
-    page_id:       u32,  // offset 0
-
-    // usually 0
-    // if this frame is the final commit of a transaction
-    // this field represents the read db_size
-    db_size:       u64,  // offset 8
-
-    // should be the same as the header of journal file
-    // is they are not equal, abandon this frame
-    salt1:         u32,  // offset 16
-    salt2:         u32,  // offset 20
-}
-
-impl FrameHeader {
-
-    fn from_bytes(bytes: &[u8]) -> FrameHeader {
-        let mut buffer: [u8; 4] = [0; 4];
-        buffer.copy_from_slice(&bytes[0..4]);
-
-        let page_id = u32::from_be_bytes(buffer);
-
-        let mut buffer: [u8; 8] = [0; 8];
-        buffer.copy_from_slice(&bytes[8..16]);
-        let db_size = u64::from_be_bytes(buffer);
-
-        let mut buffer: [u8; 4] = [0; 4];
-        buffer.copy_from_slice(&bytes[16..20]);
-        let salt1 = u32::from_be_bytes(buffer);
-
-        let mut buffer: [u8; 4] = [0; 4];
-        buffer.copy_from_slice(&bytes[20..24]);
-        let salt2 = u32::from_be_bytes(buffer);
-
-        FrameHeader {
-            page_id,
-            db_size,
-            salt1, salt2
-        }
-    }
-
-    fn to_bytes(&self, buffer: &mut [u8]) {
-        debug_assert!(buffer.len() >= 24);
-        let page_id_be = self.page_id.to_be_bytes();
-        buffer[0..4].copy_from_slice(&page_id_be);
-
-        let db_size_be = self.db_size.to_be_bytes();
-        buffer[8..16].copy_from_slice(&db_size_be);
-
-        let salt1_be = self.salt1.to_be_bytes();
-        buffer[16..20].copy_from_slice(&salt1_be);
-
-        let salt2_be = self.salt2.to_be_bytes();
-        buffer[20..24].copy_from_slice(&salt2_be);
-    }
-
-}
+const JOURNAL_DATA_BEGIN: u64 = 64;
+const FRAME_HEADER_SIZE: u64  = 40;
 
 #[derive(Eq, PartialEq, Copy, Clone)]
 pub enum TransactionType {
@@ -167,7 +107,7 @@ impl JournalManager {
             result.read_and_check_from_file()?;
         }
 
-        result.journal_file.seek(SeekFrom::Start(JOURNAL_DATA_BEGIN as u64))?;
+        result.journal_file.seek(SeekFrom::Start(JOURNAL_DATA_BEGIN))?;
         result.load_all_pages(meta.len())?;
 
         Ok(result)
@@ -264,7 +204,7 @@ impl JournalManager {
 
     #[inline]
     fn full_frame_size(&self) -> u64 {
-        (self.page_size as u64) + (FRAME_HEADER_SIZE as u64)
+        (self.page_size as u64) + FRAME_HEADER_SIZE
     }
 
     fn load_all_pages(&mut self, file_size: u64) -> DbResult<()> {
@@ -312,8 +252,8 @@ impl JournalManager {
 
     fn recover_file_and_state(&mut self) -> DbResult<()> {
         self.transaction_state = None;
-        let frame_size = (FRAME_HEADER_SIZE as u64) + (self.page_size as u64);
-        let expected_journal_file_size = (JOURNAL_DATA_BEGIN as u64) + frame_size * (self.count as u64);
+        let frame_size = FRAME_HEADER_SIZE + (self.page_size as u64);
+        let expected_journal_file_size = JOURNAL_DATA_BEGIN + frame_size * (self.count as u64);
         self.journal_file.set_len(expected_journal_file_size)?;
         self.journal_file.seek(SeekFrom::End(0))?;
         Ok(())
@@ -399,7 +339,7 @@ impl JournalManager {
     // checksum1:    8 bytes(offset 24)  header24 checksum
     // checksum2:    8 bytes(offset 32)  page checksum
     // data_begin:   page size(offset 40)
-    pub fn append_frame_header(&mut self, frame_header: &FrameHeader, checksum2: u64) -> std::io::Result<()> {
+    pub(super) fn append_frame_header(&mut self, frame_header: &FrameHeader, checksum2: u64) -> std::io::Result<()> {
         let mut header24: [u8; 24] = [0; 24];
         frame_header.to_bytes(&mut header24);
 
@@ -481,7 +421,7 @@ impl JournalManager {
 
         };
 
-        let data_offset = offset + (FRAME_HEADER_SIZE as u64);
+        let data_offset = offset + FRAME_HEADER_SIZE;
 
         self.journal_file.seek(SeekFrom::Start(data_offset))?;
 
@@ -495,8 +435,10 @@ impl JournalManager {
     }
 
     pub(crate) fn checkpoint_journal(&mut self, db_file: &mut File) -> DbResult<()> {
+        debug_assert!(self.transaction_state.is_none());
+
         for (page_id, offset) in &self.offset_map {
-            let data_offset = offset + (FRAME_HEADER_SIZE as u64);
+            let data_offset = offset + FRAME_HEADER_SIZE;
 
             self.journal_file.seek(SeekFrom::Start(data_offset))?;
 
@@ -751,7 +693,7 @@ impl JournalManager {
 
         for index in 0..self.count {
             let frame_header_offset: u64 =
-                (JOURNAL_DATA_BEGIN as u64) + (self.page_size as u64 + FRAME_HEADER_SIZE as u64) * (index as u64);
+                JOURNAL_DATA_BEGIN + (self.page_size as u64 + FRAME_HEADER_SIZE) * (index as u64);
 
             let mut header_buffer: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
             self.journal_file.seek(SeekFrom::Start(frame_header_offset))?;

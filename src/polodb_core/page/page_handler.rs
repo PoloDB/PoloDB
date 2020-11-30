@@ -427,6 +427,7 @@ impl PageHandler {
         (self.journal_manager.len() as usize) >= self.config.journal_full_size
     }
 
+    #[inline]
     pub fn checkpoint_journal(&mut self) -> DbResult<()> {
         self.journal_manager.checkpoint_journal(&mut self.file)
     }
