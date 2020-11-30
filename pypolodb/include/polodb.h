@@ -98,8 +98,6 @@ void PLDB_free_arr(DbArray* arr);
 
 unsigned int PLDB_arr_len(DbArray* arr);
 
-DbValue* PLDB_arr_to_value(DbArray* arr);
-
 void PLDB_arr_push(DbArray* arr, DbValue* value);
 
 int PLDB_arr_set_null(DbArray* arr, unsigned int index);
@@ -161,23 +159,9 @@ int PLDB_doc_iter_next(DbDocumentIter* iter,
 
 void PLDB_free_doc_iter(DbDocumentIter* iter);
 
-DbValue* PLDB_doc_to_value(DbDocument* doc);
-
 // }
 
 // DbValue {
-DbValue* PLDB_mk_null();
-
-DbValue* PLDB_mk_double(double value);
-
-DbValue* PLDB_mk_bool(int bl);
-
-DbValue* PLDB_mk_int(int64_t value);
-
-DbValue* PLDB_mk_str(const char* content);
-
-DbValue* PLDB_mk_binary(unsigned char* content, unsigned int size);
-
 int PLDB_value_type(const DbValue* value);
 
 int PLDB_value_get_i64(const DbValue* value, int64_t* out_value);
@@ -205,8 +189,6 @@ DbObjectId* PLDB_mk_object_id(Database* db);
 void PLDB_free_object_id(DbObjectId*);
 
 int PLDB_object_id_to_hex(const DbObjectId* oid, char* buffer, unsigned int size);
-
-DbValue* PLDB_object_id_to_value(const DbObjectId* oid);
 // }
 
 // DbUTCDateTime {
@@ -214,8 +196,6 @@ DbValue* PLDB_object_id_to_value(const DbObjectId* oid);
 DbUTCDateTime*  PLDB_mk_UTCDateTime(int64_t time);
 
 int64_t PLDB_UTCDateTime_get_timestamp(const DbUTCDateTime* dt);
-
-DbValue* PLDB_UTCDateTime_to_value(const DbUTCDateTime* dt);
 
 void PLDB_free_UTCDateTime(DbUTCDateTime* dt);
 // }

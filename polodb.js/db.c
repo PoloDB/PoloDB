@@ -293,30 +293,6 @@ normal:
   return arr;
 }
 
-static DbValue* JsStringValueToDbValue(napi_env env, napi_value value) {
-  napi_status status;
-
-  size_t str_len = 0;
-  status = napi_get_value_string_utf8(env, value, NULL, 0, &str_len);
-  if (status != napi_ok) {
-    return NULL;
-  }
-
-  char* buffer = malloc(str_len + 1);
-  memset(buffer, 0, str_len + 1);
-
-  status = napi_get_value_string_utf8(env, value, buffer, str_len + 1, &str_len);
-  if (status != napi_ok) {
-    return NULL;
-  }
-
-  DbValue* result = PLDB_mk_str(buffer);
-
-  free(buffer);
-
-  return result;
-}
-
 static napi_status JsStringValueToDbValue_SetStringProperty(napi_env env, DbDocument* doc, const char* key, napi_value value) {
   napi_status status;
 

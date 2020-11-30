@@ -400,24 +400,6 @@ pub extern "C" fn PLDB_close(db: *mut DbContext) {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_mk_null() -> *mut Value {
-    let val = Box::new(Value::Null);
-    Box::into_raw(val)
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_mk_double(val: c_double) -> *mut Value {
-    let val = Box::new(Value::Double(val));
-    Box::into_raw(val)
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_mk_bool(val: bool) -> *mut Value {
-    let val = Box::new(Value::Boolean(val));
-    Box::into_raw(val)
-}
-
-#[no_mangle]
 pub extern "C" fn PLDB_mk_int(val: i64) -> *mut Value {
     let val = Box::new(Value::Int(val));
     Box::into_raw(val)
@@ -571,14 +553,6 @@ pub extern "C" fn PLDB_value_get_utc_datetime(val: *const Value, out_time: *mut 
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_mk_str(str: *const c_char) -> *mut Value {
-    let str = unsafe { CStr::from_ptr(str) };
-    let rust_str = try_read_utf8!(str.to_str(), null_mut());
-    let val = Box::new(Value::String(Rc::new(rust_str.to_string())));
-    Box::into_raw(val)
-}
-
-#[no_mangle]
 pub extern "C" fn PLDB_mk_arr() -> *mut Rc<Array> {
     let result = Box::new(Rc::new(Array::new()));
     Box::into_raw(result)
@@ -593,16 +567,6 @@ pub extern "C" fn PLDB_mk_arr_with_size(size: c_uint) -> *mut Rc<Array> {
 #[no_mangle]
 pub extern "C" fn PLDB_free_arr(arr: *mut Rc<Array>) {
     let _ptr = unsafe { Box::from_raw(arr) };
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_arr_to_value(arr: *mut Rc<Array>) -> *mut Value {
-    let boxed_value = unsafe {
-        let local_arr = arr.as_ref().unwrap();
-        let local_value = Value::Array(local_arr.clone());
-        Box::new(local_value)
-    };
-    Box::into_raw(boxed_value)
 }
 
 #[no_mangle]
@@ -995,31 +959,10 @@ pub extern "C" fn PLDB_UTCDateTime_get_timestamp(dt: *const UTCDateTime) -> i64 
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_UTCDateTime_to_value(dt: *const UTCDateTime) -> *mut Value {
-    let doc: UTCDateTime = unsafe {
-        dt.as_ref().unwrap().clone()
-    };
-
-    let val = Box::new(Value::from(doc));
-    Box::into_raw(val)
-}
-
-#[no_mangle]
 pub extern "C" fn PLDB_free_UTCDateTime(dt: *mut UTCDateTime) {
     unsafe {
         let _ = Box::from_raw(dt);
     }
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_mk_binary(data: *mut c_uchar, size: c_uint) -> *mut Value {
-    let mut buffer: Vec<u8> = Vec::with_capacity(size as usize);
-    buffer.resize(size as usize, 0);
-    unsafe {
-        data.copy_to(buffer.as_mut_ptr(), size as usize);
-    }
-    let val = Box::new(Value::Binary(Rc::new(buffer)));
-    Box::into_raw(val)
 }
 
 #[no_mangle]
@@ -1034,26 +977,6 @@ pub extern "C" fn PLDB_mk_object_id(db: *mut DbContext) -> *mut ObjectId {
 pub extern "C" fn PLDB_free_object_id(oid: *mut ObjectId) {
     unsafe {
         let _ptr = Box::from_raw(oid);
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_object_id_to_value(oid: *const ObjectId) -> *mut Value {
-    unsafe {
-        let rust_oid = oid.as_ref().unwrap();
-        let value: Value = rust_oid.clone().into();
-        let boxed_value = Box::new(value);
-        Box::into_raw(boxed_value)
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_doc_to_value(oid: *const Rc<Document>) -> *mut Value {
-    unsafe {
-        let rust_doc = oid.as_ref().unwrap();
-        let value = Value::Document(rust_doc.clone());
-        let boxed_value = Box::new(value);
-        Box::into_raw(boxed_value)
     }
 }
 
