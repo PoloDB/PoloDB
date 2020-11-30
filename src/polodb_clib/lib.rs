@@ -585,6 +585,12 @@ pub extern "C" fn PLDB_mk_arr() -> *mut Rc<Array> {
 }
 
 #[no_mangle]
+pub extern "C" fn PLDB_mk_arr_with_size(size: c_uint) -> *mut Rc<Array> {
+    let result = Box::new(Rc::new(Array::new_with_size(size as usize)));
+    Box::into_raw(result)
+}
+
+#[no_mangle]
 pub extern "C" fn PLDB_free_arr(arr: *mut Rc<Array>) {
     let _ptr = unsafe { Box::from_raw(arr) };
 }
@@ -607,6 +613,114 @@ pub extern "C" fn PLDB_arr_push(arr: *mut Rc<Array>, val: *const Value) {
         let local_val = val.as_ref().unwrap();
         arr_mut.push(local_val.clone())
     }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_set_null(doc: *mut Rc<Array>, index: c_uint) -> c_int {
+    unsafe {
+        let local_arr = doc.as_mut().unwrap();
+        let local_arr_mut = Rc::get_mut(local_arr).unwrap();
+        local_arr_mut[index as usize] = Value::Null;
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_set_int(arr: *mut Rc<Array>, index: c_uint, value: i64) -> c_int {
+    unsafe {
+        let local_arr = arr.as_mut().unwrap();
+        let local_arr_mut = Rc::get_mut(local_arr).unwrap();
+        local_arr_mut[index as usize] = value.into();
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_set_bool(arr: *mut Rc<Array>, index: c_uint, value: c_int) -> c_int {
+    unsafe {
+        let local_arr = arr.as_mut().unwrap();
+        let local_arr_mut = Rc::get_mut(local_arr).unwrap();
+        local_arr_mut[index as usize] = Value::Boolean(if value == 0 { false } else { true });
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_set_double(arr: *mut Rc<Array>, index: c_uint, value: f64) -> c_int {
+    unsafe {
+        let local_arr = arr.as_mut().unwrap();
+        let local_arr_mut = Rc::get_mut(local_arr).unwrap();
+        local_arr_mut[index as usize] = value.into();
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_set_string(arr: *mut Rc<Array>, index: c_uint, value: *const c_char) -> c_int {
+    unsafe {
+        let local_arr = arr.as_mut().unwrap();
+        let value_str = CStr::from_ptr(value);
+        let utf8_value = try_read_utf8!(value_str.to_str(), PLDB_error_code());
+        let local_arr_mut = Rc::get_mut(local_arr).unwrap();
+        local_arr_mut[index as usize] = utf8_value.into();
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_set_binary(arr: *mut Rc<Array>, index: c_uint, data: *mut c_uchar, size: c_uint) -> c_int {
+    let mut buffer: Vec<u8> = Vec::with_capacity(size as usize);
+    buffer.resize(size as usize, 0);
+    unsafe {
+        data.copy_to(buffer.as_mut_ptr(), size as usize);
+        let local_arr = arr.as_mut().unwrap();
+        let local_arr_mut = Rc::get_mut(local_arr).unwrap();
+        local_arr_mut[index as usize] = buffer.into();
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_set_arr(arr: *mut Rc<Array>, index: c_uint, value: *const Rc<Array>) -> c_int {
+    unsafe {
+        let local_arr = arr.as_mut().unwrap();
+        let local_arr_mut = Rc::get_mut(local_arr).unwrap();
+        let value_arr = value.as_ref().unwrap();
+        local_arr_mut[index as usize] = Value::Array(value_arr.clone());
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_set_doc(arr: *mut Rc<Array>, index: c_uint, value: *const Rc<Document>) -> c_uint {
+    unsafe {
+        let local_arr = arr.as_mut().unwrap();
+        let local_arr_mut = Rc::get_mut(local_arr).unwrap();
+        let value_doc = value.as_ref().unwrap();
+        local_arr_mut[index as usize] = Value::Document(value_doc.clone());
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_set_UTCDateTime(arr: *mut Rc<Array>, index: c_uint, value: i64) -> c_uint {
+    unsafe {
+        let local_arr = arr.as_mut().unwrap();
+        let local_arr_mut = Rc::get_mut(local_arr).unwrap();
+        local_arr_mut[index as usize] = Value::UTCDateTime(Rc::new(UTCDateTime::new(value as u64)));
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_arr_set_object_id(arr: *mut Rc<Array>, index: c_uint, value: *const ObjectId) -> c_uint {
+    unsafe {
+        let local_arr = arr.as_mut().unwrap();
+        let local_arr_mut = Rc::get_mut(local_arr).unwrap();
+        let value_oid = value.as_ref().unwrap();
+        local_arr_mut[index as usize] = Value::ObjectId(Rc::new(value_oid.clone()));
+    }
+    0
 }
 
 #[no_mangle]
@@ -638,11 +752,11 @@ pub extern "C" fn PLDB_mk_doc() -> *mut Rc<Document> {
 #[no_mangle]
 pub extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char, value: *const Value) -> c_int {
     unsafe {
-        let mut local_doc = doc.as_mut().unwrap();
+        let local_doc = doc.as_mut().unwrap();
         let key_str = CStr::from_ptr(key);
         let local_value = value.as_ref().unwrap();
         let key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-        let local_doc_mut = Rc::get_mut(&mut local_doc).unwrap();
+        let local_doc_mut = Rc::get_mut(local_doc).unwrap();
         let result = local_doc_mut.insert(key.to_string(), local_value.clone());
         if let Some(_) = result {
             1
@@ -650,6 +764,134 @@ pub extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char, value
             0
         }
     }
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_set_null(doc: *mut Rc<Document>, key: *const c_char) -> c_int {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+        let local_doc_mut = Rc::get_mut(local_doc).unwrap();
+        local_doc_mut.insert(utf8_key.into(), Value::Null);
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_set_int(doc: *mut Rc<Document>, key: *const c_char, value: i64) -> c_int {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+        let local_doc_mut = Rc::get_mut(local_doc).unwrap();
+        local_doc_mut.insert(utf8_key.into(), value.into());
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_set_bool(doc: *mut Rc<Document>, key: *const c_char, value: c_int) -> c_int {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+        let local_doc_mut = Rc::get_mut(local_doc).unwrap();
+        local_doc_mut.insert(utf8_key.into(), Value::Boolean(if value == 0 { false } else { true }));
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_set_double(doc: *mut Rc<Document>, key: *const c_char, value: f64) -> c_int {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+        let local_doc_mut = Rc::get_mut(local_doc).unwrap();
+        local_doc_mut.insert(utf8_key.into(), value.into());
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_set_string(doc: *mut Rc<Document>, key: *const c_char, value: *const c_char) -> c_int {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+        let value_str = CStr::from_ptr(value);
+        let utf8_value = try_read_utf8!(value_str.to_str(), PLDB_error_code());
+        let local_doc_mut = Rc::get_mut(local_doc).unwrap();
+        local_doc_mut.insert(utf8_key.into(), utf8_value.into());
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_set_binary(doc: *mut Rc<Document>, key: *const c_char, data: *mut c_uchar, size: c_uint) -> c_int {
+    let mut buffer: Vec<u8> = Vec::with_capacity(size as usize);
+    buffer.resize(size as usize, 0);
+    unsafe {
+        data.copy_to(buffer.as_mut_ptr(), size as usize);
+        let local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+        let local_doc_mut = Rc::get_mut(local_doc).unwrap();
+        local_doc_mut.insert(utf8_key.into(), buffer.into());
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_set_doc(doc: *mut Rc<Document>, key: *const c_char, value: *const Rc<Document>) -> c_int {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+        let local_doc_mut = Rc::get_mut(local_doc).unwrap();
+        let value_doc = value.as_ref().unwrap();
+        local_doc_mut.insert(utf8_key.into(), Value::Document(value_doc.clone()));
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_set_arr(doc: *mut Rc<Document>, key: *const c_char, value: *const Rc<Array>) -> c_int {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+        let local_doc_mut = Rc::get_mut(local_doc).unwrap();
+        let value_arr = value.as_ref().unwrap();
+        local_doc_mut.insert(utf8_key.into(), Value::Array(value_arr.clone()));
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_set_object_id(doc: *mut Rc<Document>, key: *const c_char, value: *const ObjectId) -> c_int {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+        let local_doc_mut = Rc::get_mut(local_doc).unwrap();
+        let value_oid = value.as_ref().unwrap();
+        local_doc_mut.insert(utf8_key.into(), Value::ObjectId(Rc::new(value_oid.clone())));
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_doc_set_UTCDateTime(doc: *mut Rc<Document>, key: *const c_char, value: i64) -> c_int {
+    unsafe {
+        let local_doc = doc.as_mut().unwrap();
+        let key_str = CStr::from_ptr(key);
+        let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+        let local_doc_mut = Rc::get_mut(local_doc).unwrap();
+        local_doc_mut.insert(utf8_key.into(), Value::UTCDateTime(Rc::new(UTCDateTime::new(value as u64))));
+    }
+    0
 }
 
 #[no_mangle]

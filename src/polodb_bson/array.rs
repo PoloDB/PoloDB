@@ -34,6 +34,12 @@ impl Array {
         Array(data)
     }
 
+    pub fn new_with_size(size: usize) -> Array {
+        let mut data = Vec::new();
+        data.resize(size, Value::Null);
+        Array(data)
+    }
+
     pub fn iter(&self) -> Iter {
         Iter {
             arr: self,
@@ -257,6 +263,14 @@ impl ops::Index<usize> for Array {
 
     fn index(&self, index: usize) -> &Value {
         &self.0[index]
+    }
+
+}
+
+impl ops::IndexMut<usize> for Array {
+
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
     }
 
 }
