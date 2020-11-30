@@ -20,7 +20,7 @@ use crate::page::free_list_data_wrapper::FreeListDataWrapper;
 const DB_INIT_BLOCK_COUNT: u32 = 16;
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Copy, Clone)]
 pub(crate) enum TransactionState {
     NoTrans,
     User,
@@ -267,7 +267,12 @@ impl PageHandler {
 
         let offset = (page_id as u64) * (self.page_size as u64);
         let mut result = RawPage::new(page_id, self.page_size);
-        result.read_from_file(&mut self.file, offset)?;
+
+        let file_meta = self.file.metadata()?;
+        // TODO: better way to determine reading pages
+        if file_meta.len() >= offset + (self.page_size as u64) {
+            result.read_from_file(&mut self.file, offset)?;
+        }
 
         self.page_cache.insert_to_cache(&result);
 
@@ -544,6 +549,11 @@ impl PageHandler {
         self.transaction_state = state;
     }
 
+    #[inline]
+    pub fn transaction_state(&self) -> TransactionState {
+        self.transaction_state
+    }
+
     pub fn commit(&mut self) -> DbResult<()> {
         self.journal_manager.commit()?;
         if self.is_journal_full() {
@@ -561,6 +571,10 @@ impl PageHandler {
         self.journal_manager.rollback()?;
         self.page_cache = Box::new(PageCache::new_default(self.page_size));
         Ok(())
+    }
+
+    pub fn only_rollback_journal(&mut self) -> DbResult<()> {
+        self.journal_manager.rollback()
     }
 
     #[inline]

@@ -97,7 +97,11 @@ impl Database {
     }
 
     pub fn open<P: AsRef<Path>>(path: P) -> DbResult<Database>  {
-        let ctx = DbContext::new(path.as_ref(), Config::default())?;
+        Database::open_with_config(path, Config::default())
+    }
+
+    pub fn open_with_config<P: AsRef<Path>>(path: P, config: Config) -> DbResult<Database>  {
+        let ctx = DbContext::new(path.as_ref(), config)?;
         let rc_ctx = Box::new(ctx);
 
         Ok(Database {
@@ -155,12 +159,12 @@ mod tests {
     use std::rc::Rc;
     use std::env;
     use polodb_bson::{Document, Value, mk_document};
-    use crate::Database;
+    use crate::{Database, Config};
     use std::borrow::Borrow;
 
     static TEST_SIZE: usize = 1000;
 
-    fn prepare_db(db_name: &str) -> Database {
+    fn prepare_db_with_config(db_name: &str, config: Config) -> Database {
         let mut db_path = env::temp_dir();
         let mut journal_path = env::temp_dir();
 
@@ -173,7 +177,11 @@ mod tests {
         let _ = std::fs::remove_file(db_path.as_path());
         let _ = std::fs::remove_file(journal_path);
 
-        Database::open(db_path.as_path().to_str().unwrap()).unwrap()
+        Database::open_with_config(db_path.as_path().to_str().unwrap(), config).unwrap()
+    }
+
+    fn prepare_db(db_name: &str) -> Database {
+        prepare_db_with_config(db_name, Config::default())
     }
 
     fn create_and_return_db_with_items(db_name: &str, size: usize) -> Database {
@@ -222,6 +230,38 @@ mod tests {
             collection.insert(Rc::new(new_doc)).unwrap();
         }
         db.commit().unwrap()
+    }
+
+    #[test]
+    fn test_commit_after_commit() {
+        let config = Config {
+            journal_full_size: 1,
+        };
+        let mut db = prepare_db_with_config("test-transaction", config);
+        db.start_transaction(None).unwrap();
+        let mut collection = db.create_collection("test").unwrap();
+
+        for i in 0..1000 {
+            let content = i.to_string();
+            let new_doc = mk_document! {
+                    "_id": i,
+                    "content": content,
+                };
+            collection.insert(Rc::new(new_doc)).unwrap();
+        }
+        db.commit().unwrap();
+
+        db.start_transaction(None).unwrap();
+        let mut collection2 = db.create_collection("test-2").unwrap();
+        for i in 0..10{
+            let content = i.to_string();
+            let new_doc = mk_document! {
+                    "_id": i,
+                    "content": content,
+                };
+            collection2.insert(Rc::new(new_doc)).expect(&*format!("insert failed: {}", i));
+        }
+        db.commit().unwrap();
     }
 
     #[test]

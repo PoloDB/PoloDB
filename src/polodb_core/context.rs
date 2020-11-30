@@ -768,8 +768,11 @@ fn dump_version(version: &[u8]) -> String {
 impl Drop for DbContext {
 
     fn drop(&mut self) {
+        if self.page_handler.transaction_state() != TransactionState::NoTrans {
+            let _ = self.page_handler.only_rollback_journal();
+        }
         let checkpoint_result = self.page_handler.checkpoint_journal();  // ignored
-        if checkpoint_result.is_ok() {
+        if let Ok(_) = checkpoint_result {
             let path = self.page_handler.journal_file_path().to_path_buf();
             std::fs::remove_file(path);  // ignore the result
         }

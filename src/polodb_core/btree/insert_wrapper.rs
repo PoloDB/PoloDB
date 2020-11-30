@@ -87,7 +87,6 @@ impl<'a> BTreePageInsertWrapper<'a> {
         BTreePageInsertWrapper(base)
     }
 
-    #[inline]
     pub(crate) fn insert_item(&mut self, doc: &Document, replace: bool) -> DbResult<InsertResult> {
         doc_validation::validate(doc)?;
         // insert to root node
