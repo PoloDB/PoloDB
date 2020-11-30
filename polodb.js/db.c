@@ -152,7 +152,8 @@ static napi_status JsArrayValueToDbArray_SetStringElement(napi_env env, DbArray*
   int ec = PLDB_arr_set_string(arr, index, buffer);
   if (ec < 0) {
     free(buffer);
-    return napi_throw_error(env, NULL, PLDB_error_msg());
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return napi_generic_failure;
   }
 
   free(buffer);
@@ -213,7 +214,8 @@ static napi_status JsArrayValueToDbArray_SetElement(napi_env env, DbArray* arr, 
     case napi_number: {
       ec = JsIsInteger(env, value);
       if (ec < 0) {
-        return napi_throw_error(env, NULL, PLDB_error_msg());
+        napi_throw_error(env, NULL, PLDB_error_msg());
+        return napi_generic_failure;
       } else if (ec) {
         status = napi_get_value_int64(env, value, &int_value);
         if (status != napi_ok) return status;
@@ -227,10 +229,11 @@ static napi_status JsArrayValueToDbArray_SetElement(napi_env env, DbArray* arr, 
     }
 
     case napi_object: {
-      ec = JsIsArray(env, value);
-      if (ec < 0) {
-        return napi_throw_error(env, NULL, PLDB_error_msg());
-      } else if (ec) {
+      bool is_array = false;
+      status = JsIsArray(env, value, &is_array);
+      CHECK_STAT(status);
+
+      if (is_array) {
         return JsArrayValueToDbArray_SetArrayElement(env, arr, index, value);
       }
 
@@ -240,7 +243,8 @@ static napi_status JsArrayValueToDbArray_SetElement(napi_env env, DbArray* arr, 
         CHECK_STAT(status);
 
         if (PLDB_arr_set_object_id(arr, index, oid) < 0) {
-          return napi_throw_error(env, NULL, PLDB_error_msg());
+          napi_throw_error(env, NULL, PLDB_error_msg());
+          return napi_generic_failure;
         }
       } else {
         DbDocument* child_doc = JsValueToDbDocument(env, value);
@@ -249,7 +253,8 @@ static napi_status JsArrayValueToDbArray_SetElement(napi_env env, DbArray* arr, 
         }
 
         if (PLDB_arr_set_doc(arr, index, child_doc) < 0) {
-          return napi_throw_error(env, NULL, PLDB_error_msg());
+          napi_throw_error(env, NULL, PLDB_error_msg());
+          return napi_generic_failure;
         }
 
         PLDB_free_doc(child_doc);
@@ -257,7 +262,8 @@ static napi_status JsArrayValueToDbArray_SetElement(napi_env env, DbArray* arr, 
     }
     
     default:
-      return napi_throw_type_error(env, NULL, "unsupport object type");
+      napi_throw_type_error(env, NULL, "unsupport object type");
+      return napi_generic_failure;
 
   }
 
@@ -269,10 +275,10 @@ static DbArray* JsArrayValueToDbArray(napi_env env, napi_value value) {
   napi_status status;
   uint32_t arr_len = 0;
 
-  DbArray* arr = PLDB_mk_arr_with_size(arr_len);
-
   status = napi_get_array_length(env, value, &arr_len);
   CHECK_STAT2(status);
+
+  DbArray* arr = PLDB_mk_arr_with_size(arr_len);
 
   napi_value item_value;
   DbValue* item_db_value;
@@ -313,7 +319,8 @@ static napi_status JsStringValueToDbValue_SetStringProperty(napi_env env, DbDocu
   int ec = PLDB_doc_set_string(doc, key, buffer);
   if (ec < 0) {
     free(buffer);
-    return napi_throw_error(env, NULL, PLDB_error_msg());
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return napi_generic_failure;
   }
 
   free(buffer);
@@ -373,7 +380,8 @@ static napi_status JsValueToDbDocument_SetProperty(napi_env env, DbDocument* doc
     case napi_number: {
       ec = JsIsInteger(env, value);
       if (ec < 0) {
-        return napi_throw_error(env, NULL, PLDB_error_msg());
+        napi_throw_error(env, NULL, PLDB_error_msg());
+        return napi_generic_failure;
       } else if (ec) {
         status = napi_get_value_int64(env, value, &int_value);
         if (status != napi_ok) return status;
@@ -387,10 +395,11 @@ static napi_status JsValueToDbDocument_SetProperty(napi_env env, DbDocument* doc
     }
 
     case napi_object: {
-      ec = JsIsArray(env, value);
-      if (ec < 0) {
-        return napi_throw_error(env, NULL, PLDB_error_msg());
-      } else if (ec) {
+      bool is_array = false;
+      status = JsIsArray(env, value, &is_array);
+      CHECK_STAT(status);
+
+      if (is_array) {
         return JsStringValueToDbValue_SetArrayProperty(env, doc, key, value);
       }
 
@@ -400,7 +409,8 @@ static napi_status JsValueToDbDocument_SetProperty(napi_env env, DbDocument* doc
         CHECK_STAT(status);
 
         if (PLDB_doc_set_object_id(doc, key, oid) < 0) {
-          return napi_throw_error(env, NULL, PLDB_error_msg());
+           napi_throw_error(env, NULL, PLDB_error_msg());
+           return napi_generic_failure;
         }
       } else {
         DbDocument* child_doc = JsValueToDbDocument(env, value);
@@ -409,7 +419,8 @@ static napi_status JsValueToDbDocument_SetProperty(napi_env env, DbDocument* doc
         }
 
         if (PLDB_doc_set_doc(doc, key, child_doc) < 0) {
-          return napi_throw_error(env, NULL, PLDB_error_msg());
+          napi_throw_error(env, NULL, PLDB_error_msg());
+          return napi_generic_failure;
         }
 
         PLDB_free_doc(child_doc);
@@ -417,7 +428,8 @@ static napi_status JsValueToDbDocument_SetProperty(napi_env env, DbDocument* doc
     }
     
     default:
-      return napi_throw_type_error(env, NULL, "unsupport object type");
+      napi_throw_type_error(env, NULL, "unsupport object type");
+      return napi_generic_failure;
 
   }
 
@@ -445,7 +457,6 @@ static DbDocument* JsValueToDbDocument(napi_env env, napi_value value) {
 
   napi_value element_name;
   napi_value element_value;
-  int ec = 0;
   for (uint32_t i = 0; i < arr_len; i++) {
     status = napi_get_element(env, names_array, i, &element_name);
     CHECK_STAT2(status);
@@ -459,8 +470,8 @@ static DbDocument* JsValueToDbDocument(napi_env env, napi_value value) {
     status = napi_get_value_string_utf8(env, element_name, name_buffer, 512, &size);
     CHECK_STAT2(status);
 
-    ec = JsValueToDbDocument_SetProperty(env, doc, name_buffer, element_value);
-    if (ec < 0) {
+    status = JsValueToDbDocument_SetProperty(env, doc, name_buffer, element_value);
+    if (status != napi_ok) {
       goto err;
     }
   }
@@ -541,16 +552,17 @@ static napi_value DbArrayToJsValue(napi_env env, DbArray* arr) {
   for (uint32_t i = 0; i < len; i++) {
     ec = PLDB_arr_get(arr, i, &value_item);
     if (ec < 0) {
+      napi_throw_error(env, NULL, "get element error #1");
       return NULL;
     }
 
     napi_value js_item = DbValueToJsValue(env, value_item);
-
-    status = napi_set_element(env, result, i, js_item);
-    if (status != napi_ok) {
-      PLDB_free_value(value_item);
+    if (js_item == NULL) {
       return NULL;
     }
+
+    status = napi_set_element(env, result, i, js_item);
+    CHECK_STAT(status);
 
     PLDB_free_value(value_item);
     value_item = NULL;
@@ -594,6 +606,7 @@ static napi_value DbValueToJsValue(napi_env env, DbValue* value) {
 
     case PLDB_VAL_INT:
       ec = PLDB_value_get_i64(value, &long_value);
+      status = napi_create_int64(env, long_value, &result);
       CHECK_STAT(status);
       return result;
 

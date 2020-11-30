@@ -70,6 +70,25 @@ describe('Database', function() {
           hello: i.toString(),
         });
       }
+      expect(col2.count()).to.equals(TEST_COUNT);
+    });
+
+    it('test array', function() {
+      const colArray = db.createCollection('test-array');
+      const arr = [];
+      for (let i = 0; i < 1000; i++) {
+        arr.push(i);
+      }
+      colArray.insert({
+        data: arr,
+      });
+      const result = colArray.find();
+      expect(result.length).to.equals(1);
+      const first = result[0];
+      expect(Array.isArray(first.data)).to.be.true;
+      for (let i = 0; i < 1000; i++) {
+        expect(first.data[i]).to.equals(i);
+      }
     });
 
     it('count', function() {

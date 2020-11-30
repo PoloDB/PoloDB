@@ -30,42 +30,33 @@ int JsIsInteger(napi_env env, napi_value value) {
   return bl_result ? 1 : 0;
 }
 
-int JsIsArray(napi_env env, napi_value value) {
+napi_status JsIsArray(napi_env env, napi_value value, bool* result) {
   napi_status status;
   napi_value global;
 
   status = napi_get_global(env, &global);
-  if (status != napi_ok) {
-    return -1;
-  }
+  CHECK_STAT(status);
 
-  napi_value array_str;
-  status = napi_create_string_utf8(env, "Array", NAPI_AUTO_LENGTH, &array_str);
-  if (status != napi_ok) {
-    return -1;
-  }
+  napi_value array_obj;
+  status = napi_get_named_property(env, global, "Array", &array_obj);
+  CHECK_STAT(status);
 
-  napi_value is_array_str;
-  status = napi_create_string_utf8(env, "isArray", NAPI_AUTO_LENGTH, &is_array_str);
-  if (status != napi_ok) {
-    return -1;
-  }
+  napi_value is_array_fun;
+  status = napi_get_named_property(env, array_obj, "isArray", &is_array_fun);
+  CHECK_STAT(status);
 
   size_t argc = 1;
   napi_value argv[] = { value };
 
-  napi_value result;
-  status = napi_call_function(env, array_str, is_array_str, argc, argv, &result);
+  napi_value js_result;
+
+  status = napi_call_function(env, array_obj, is_array_fun, argc, argv, &js_result);
   if (status != napi_ok) {
-    return -1;
+    return status;
   }
 
-  bool bl_result = false;
+  status = napi_get_value_bool(env, js_result, result);
+  CHECK_STAT(status);
 
-  status = napi_get_value_bool(env, result, &bl_result);
-  if (status != napi_ok) {
-    return -1;
-  }
-
-  return bl_result ? 1 : 0;
+  return napi_ok;
 }

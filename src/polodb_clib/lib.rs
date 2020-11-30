@@ -451,7 +451,7 @@ pub extern "C" fn PLDB_value_get_bool(val: *const Value) -> c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_value_get_double(val: *const Value, out: *mut f64) -> c_int {
+pub extern "C" fn PLDB_value_get_double(val: *const Value, out: *mut c_double) -> c_int {
     unsafe {
         let local_val = val.as_ref().unwrap();
         match local_val {
