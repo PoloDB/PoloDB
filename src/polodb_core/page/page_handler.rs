@@ -11,7 +11,7 @@ use super::header_page_wrapper;
 use super::header_page_wrapper::HeaderPageWrapper;
 use crate::journal::{JournalManager, TransactionType};
 use crate::dump::JournalDump;
-use crate::DbResult;
+use crate::{DbResult, Config};
 use crate::error::DbErr;
 use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::data_ticket::DataTicket;
@@ -19,7 +19,6 @@ use crate::page::free_list_data_wrapper::FreeListDataWrapper;
 
 const DB_INIT_BLOCK_COUNT: u32 = 16;
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
-const JOURNAL_FULL_SIZE: usize = 1000;
 
 #[derive(Eq, PartialEq)]
 pub(crate) enum TransactionState {
@@ -41,6 +40,8 @@ pub(crate) struct PageHandler {
     data_page_map:            BTreeMap<u32, Vec<u32>>,
 
     transaction_state:        TransactionState,
+
+    config:                   Rc<Config>,
 
 }
 
@@ -86,7 +87,13 @@ impl PageHandler {
         buf
     }
 
+    #[allow(dead_code)]
     pub fn new(path: &Path, page_size: u32) -> DbResult<PageHandler> {
+        let config = Rc::new(Config::default());
+        PageHandler::with_config(path, page_size, config)
+    }
+
+    pub fn with_config(path: &Path, page_size: u32, config: Rc<Config>) -> DbResult<PageHandler> {
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -117,6 +124,8 @@ impl PageHandler {
             data_page_map: BTreeMap::new(),
 
             transaction_state: TransactionState::NoTrans,
+
+            config,
 
         })
     }
@@ -415,7 +424,7 @@ impl PageHandler {
 
     #[inline]
     pub fn is_journal_full(&self) -> bool {
-        (self.journal_manager.len() as usize) >= JOURNAL_FULL_SIZE
+        (self.journal_manager.len() as usize) >= self.config.journal_full_size
     }
 
     pub fn checkpoint_journal(&mut self) -> DbResult<()> {

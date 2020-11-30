@@ -1,4 +1,4 @@
-use polodb_core::{DbContext, DbErr, DbHandle, TransactionType};
+use polodb_core::{DbContext, DbErr, DbHandle, TransactionType, Config};
 use polodb_bson::{Value, ObjectId, Document, Array, UTCDateTime};
 use polodb_bson::linked_hash_map::Iter;
 use std::cell::RefCell;
@@ -39,7 +39,7 @@ pub extern "C" fn PLDB_open(path: *const c_char) -> *mut DbContext {
         CStr::from_ptr(path)
     };
     let str = try_read_utf8!(cstr.to_str(), null_mut());
-    let db = match DbContext::new(str.as_ref()) {
+    let db = match DbContext::new(str.as_ref(), Config::default()) {
         Ok(db) => db,
         Err(err) => {
             set_global_error(err);

@@ -2,6 +2,7 @@ use std::rc::Rc;
 use std::path::Path;
 use polodb_bson::{Document, ObjectId, Value};
 use super::error::DbErr;
+use crate::Config;
 use crate::context::DbContext;
 use crate::{DbHandle, TransactionType};
 use crate::dump::FullDump;
@@ -96,7 +97,7 @@ impl Database {
     }
 
     pub fn open<P: AsRef<Path>>(path: P) -> DbResult<Database>  {
-        let ctx = DbContext::new(path.as_ref())?;
+        let ctx = DbContext::new(path.as_ref(), Config::default())?;
         let rc_ctx = Box::new(ctx);
 
         Ok(Database {

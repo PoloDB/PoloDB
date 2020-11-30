@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use polodb_bson::{Document, Value, ObjectIdMaker, mk_document};
 use super::page::{header_page_wrapper, PageHandler};
 use super::error::DbErr;
+use crate::Config;
 use crate::vm::{SubProgram, VM, VmState};
 use crate::db::DbResult;
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
@@ -63,10 +64,10 @@ pub struct CollectionMeta {
 
 impl DbContext {
 
-    pub fn new(path: &Path) -> DbResult<DbContext> {
+    pub fn new(path: &Path, config: Config) -> DbResult<DbContext> {
         let page_size = 4096;
 
-        let page_handler = PageHandler::new(path, page_size)?;
+        let page_handler = PageHandler::with_config(path, page_size, Rc::new(config))?;
 
         let obj_id_maker = ObjectIdMaker::new();
 

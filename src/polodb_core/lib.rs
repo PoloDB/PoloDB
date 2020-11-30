@@ -13,8 +13,10 @@ mod meta_doc_helper;
 mod context;
 mod db_handle;
 pub mod dump;
+mod config;
 
 pub use db::{Database, DbResult};
+pub use config::Config;
 pub use journal::TransactionType;
 pub use context::DbContext;
 pub use db_handle::DbHandle;
