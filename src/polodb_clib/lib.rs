@@ -101,13 +101,13 @@ pub unsafe extern "C" fn PLDB_count(db: *mut DbContext, col_id: c_uint, meta_ver
     let result = rust_db.count(col_id, meta_version);
     match result {
         Ok(result) => {
-            return result as c_longlong;
+            result as c_longlong
         }
         Err(err) => {
             set_global_error(err);
-            return PLDB_error_code() as c_longlong;
+            PLDB_error_code() as c_longlong
         }
-    };
+    }
 }
 
 #[no_mangle]
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn PLDB_get_collection_meta_by_name(db: *mut DbContext, na
     let str = CStr::from_ptr(name);
     let utf8str = try_read_utf8!(str.to_str(), PLDB_error_code());
     let result = db.as_mut().unwrap().get_collection_meta_by_name(utf8str);
-    return match result {
+    match result {
         Ok(info) => {
             id.write(info.id);
             version.write(info.meta_version);
@@ -234,13 +234,9 @@ pub unsafe extern "C" fn PLDB_update(db: *mut DbContext,
 /// return value represents how many rows are deleted
 #[no_mangle]
 pub unsafe extern "C" fn PLDB_delete(db: *mut DbContext, col_id: c_uint, meta_version: c_uint, query: *const Rc<Document>) -> c_longlong {
-    let result = {
-        let rust_db = db.as_mut().unwrap();
-
-        let query_doc = query.as_ref().unwrap();
-
-        rust_db.delete(col_id, meta_version, query_doc.as_ref())
-    };
+    let rust_db = db.as_mut().unwrap();
+    let query_doc = query.as_ref().unwrap();
+    let result = rust_db.delete(col_id, meta_version, query_doc.as_ref());
 
     match result {
         Ok(size) => size as c_longlong,
@@ -252,8 +248,8 @@ pub unsafe extern "C" fn PLDB_delete(db: *mut DbContext, col_id: c_uint, meta_ve
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_delete_all(db: *mut DbContext, col_id: c_uint, meta_version: c_uint) -> c_longlong {
-    let result = unsafe {
+pub unsafe extern "C" fn PLDB_delete_all(db: *mut DbContext, col_id: c_uint, meta_version: c_uint) -> c_longlong {
+    let result = {
         let rust_db = db.as_mut().unwrap();
         rust_db.delete_all(col_id, meta_version)
     };
@@ -322,35 +318,33 @@ pub unsafe extern "C" fn PLDB_free_handle(handle: *mut DbHandle) {
 
 #[no_mangle]
 pub extern "C" fn PLDB_error_code() -> c_int {
-    return DB_GLOBAL_ERROR.with(|f| {
+    DB_GLOBAL_ERROR.with(|f| {
         if let Some(err) = f.borrow().as_ref() {
             let code = error_code_of_db_err(err) * -1;
             return code
         }
         0
-    });
+    })
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_error_msg() -> *const c_char {
-    unsafe {
-        return DB_GLOBAL_ERROR.with(|f| {
-            if let Some(err) = f.borrow_mut().as_ref() {
-                return DB_GLOBAL_ERROR_MSG.with(|msg| {
-                    write_bytes(msg.borrow_mut().as_mut_ptr(), 0, DB_ERROR_MSG_SIZE);
-                    let err_msg = err.to_string();
-                    let str_size = err_msg.len();
-                    let err_cstring = CString::new(err_msg).unwrap();
-                    let expected_size: usize = std::cmp::min(str_size, DB_ERROR_MSG_SIZE - 1);
-                    err_cstring.as_ptr().copy_to(msg.borrow_mut().as_mut_ptr(), expected_size);
+pub unsafe extern "C" fn PLDB_error_msg() -> *const c_char {
+    DB_GLOBAL_ERROR.with(|f| {
+        if let Some(err) = f.borrow_mut().as_ref() {
+            return DB_GLOBAL_ERROR_MSG.with(|msg| {
+                write_bytes(msg.borrow_mut().as_mut_ptr(), 0, DB_ERROR_MSG_SIZE);
+                let err_msg = err.to_string();
+                let str_size = err_msg.len();
+                let err_cstring = CString::new(err_msg).unwrap();
+                let expected_size: usize = std::cmp::min(str_size, DB_ERROR_MSG_SIZE - 1);
+                err_cstring.as_ptr().copy_to(msg.borrow_mut().as_mut_ptr(), expected_size);
 
-                    return msg.borrow().as_ptr();
-                });
-            }
+                msg.borrow().as_ptr()
+            });
+        }
 
-            return null();
-        });
-    }
+        null()
+    })
 }
 
 #[no_mangle]
@@ -549,7 +543,7 @@ pub unsafe extern "C" fn PLDB_arr_set_int(arr: *mut Rc<Array>, index: c_uint, va
 pub unsafe extern "C" fn PLDB_arr_set_bool(arr: *mut Rc<Array>, index: c_uint, value: c_int) -> c_int {
     let local_arr = arr.as_mut().unwrap();
     let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    local_arr_mut[index as usize] = Value::Boolean(if value == 0 { false } else { true });
+    local_arr_mut[index as usize] = Value::Boolean(value != 0);
     0
 }
 
@@ -573,8 +567,7 @@ pub unsafe extern "C" fn PLDB_arr_set_string(arr: *mut Rc<Array>, index: c_uint,
 
 #[no_mangle]
 pub unsafe extern "C" fn PLDB_arr_set_binary(arr: *mut Rc<Array>, index: c_uint, data: *mut c_uchar, size: c_uint) -> c_int {
-    let mut buffer: Vec<u8> = Vec::with_capacity(size as usize);
-    buffer.resize(size as usize, 0);
+    let mut buffer: Vec<u8> = vec![0; size as usize];
     data.copy_to(buffer.as_mut_ptr(), size as usize);
     let local_arr = arr.as_mut().unwrap();
     let local_arr_mut = Rc::get_mut(local_arr).unwrap();
@@ -646,7 +639,7 @@ pub unsafe extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char
     let key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
     let local_doc_mut = Rc::get_mut(local_doc).unwrap();
     let result = local_doc_mut.insert(key.to_string(), local_value.clone());
-    if let Some(_) = result {
+    if result.is_some() {
         1
     } else {
         0
@@ -707,8 +700,7 @@ pub unsafe extern "C" fn PLDB_doc_set_string(doc: *mut Rc<Document>, key: *const
 
 #[no_mangle]
 pub unsafe extern "C" fn PLDB_doc_set_binary(doc: *mut Rc<Document>, key: *const c_char, data: *mut c_uchar, size: c_uint) -> c_int {
-    let mut buffer: Vec<u8> = Vec::with_capacity(size as usize);
-    buffer.resize(size as usize, 0);
+    let mut buffer: Vec<u8> = vec![0; size as usize];
     data.copy_to(buffer.as_mut_ptr(), size as usize);
     let local_doc = doc.as_mut().unwrap();
     let key_str = CStr::from_ptr(key);
@@ -772,7 +764,7 @@ pub unsafe extern "C" fn PLDB_doc_get(doc: *mut Rc<Document>, key: *const c_char
         result.write(Box::into_raw(out_box));
         return 1;
     }
-    return 0;
+    0
 }
 
 #[no_mangle]
