@@ -292,7 +292,6 @@ impl Document {
                 buffer.push(ty_int::UTC_DATETIME);  // not standard, use vli
                 Document::key_to_bytes(&key, buffer);
                 let ts = datetime.timestamp();
-                println!("ts: {}", ts);
                 vli::encode(buffer, ts as i64)?;
             }
 

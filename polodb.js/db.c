@@ -368,6 +368,7 @@ static napi_status JsStringValueToDbValue_SetUTCDateTime(napi_env env, DbDocumen
 
   int64_t utc_datetime = 0;
   status = JsGetUTCDateTime(env, value, &utc_datetime);
+  CHECK_STAT(status);
 
   int ec = PLDB_doc_set_UTCDateTime(doc, key, utc_datetime);
   if (ec < 0) {
@@ -717,9 +718,23 @@ static napi_value DbValueToJsValue(napi_env env, DbValue* value) {
       
       return result;
     }
+
+    case PLDB_VAL_UTC_DATETIME : {
+      DbUTCDateTime* dt = NULL;
+      ec = PLDB_value_get_utc_datetime(value, &dt);
+      if (ec < 0) {
+        napi_throw_error(env, NULL, PLDB_error_msg());
+        return NULL;
+      }
+
+      int64_t utc_datetime = PLDB_UTCDateTime_get_timestamp(dt);
+      PLDB_free_UTCDateTime(dt);
+
+      return JsNewDate(env, utc_datetime);
+    }
     
     default:
-      napi_throw_error(env, NULL, "Uknown DbValue type");
+      napi_throw_error(env, NULL, "Unknown DbValue type");
       return NULL;
 
   }

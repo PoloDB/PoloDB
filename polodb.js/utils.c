@@ -76,3 +76,28 @@ napi_status JsGetUTCDateTime(napi_env env, napi_value value, int64_t* utc_dateti
 
   return status;
 }
+
+napi_value JsNewDate(napi_env env, int64_t timestamp) {
+  napi_status status;
+  napi_value global;
+
+  status = napi_get_global(env, &global);
+  CHECK_STAT(status);
+
+  napi_value js_date;
+  status = napi_get_named_property(env, global, "Date", &js_date);
+  CHECK_STAT(status);
+
+  napi_value js_int;
+  status = napi_create_int64(env, timestamp, &js_int);
+  CHECK_STAT(status);
+
+  size_t argc = 1;
+  napi_value argv[] = { js_int };
+
+  napi_value result;
+  status = napi_new_instance(env, js_date, argc, argv, &result);
+  CHECK_STAT(status);
+
+  return result;
+}
