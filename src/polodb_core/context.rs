@@ -505,7 +505,7 @@ impl DbContext {
         Ok(result)
     }
 
-    fn internal_delete(&mut self, col_id: u32, primary_keys: &Vec<Value>) -> DbResult<usize> {
+    fn internal_delete(&mut self, col_id: u32, primary_keys: &[Value]) -> DbResult<usize> {
         for pkey in primary_keys {
             let _ = self.internal_delete_by_pkey(col_id, pkey)?;
         }
@@ -724,7 +724,7 @@ impl DbContext {
     }
 
     pub fn get_version() -> String {
-        const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+        const VERSION: &str = env!("CARGO_PKG_VERSION");
         VERSION.into()
     }
 
@@ -772,9 +772,9 @@ impl Drop for DbContext {
             let _ = self.page_handler.only_rollback_journal();
         }
         let checkpoint_result = self.page_handler.checkpoint_journal();  // ignored
-        if let Ok(_) = checkpoint_result {
+        if checkpoint_result.is_ok() {
             let path = self.page_handler.journal_file_path().to_path_buf();
-            std::fs::remove_file(path);  // ignore the result
+            let _ = std::fs::remove_file(path);  // ignore the result
         }
     }
 

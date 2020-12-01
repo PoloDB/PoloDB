@@ -4,7 +4,6 @@ use std::cmp::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::ptr::null_mut;
 use std::os::raw::c_uint;
-use libc;
 use super::hex;
 use crate::BsonResult;
 use crate::error::{BsonErr, parse_error_reason};
@@ -118,7 +117,7 @@ impl ObjectIdMaker {
             libc::srand(time as c_uint);
         }
         let counter: u32 = random_i32() as u32;
-        return ObjectIdMaker { counter };
+        ObjectIdMaker { counter }
     }
 
     pub fn mk_object_id(&mut self) -> ObjectId {
@@ -163,6 +162,14 @@ impl ObjectIdMaker {
             timestamp,
             counter,
         })
+    }
+
+}
+
+impl Default for ObjectIdMaker {
+
+    fn default() -> Self {
+        Self::new()
     }
 
 }

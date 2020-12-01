@@ -1,4 +1,4 @@
-use super::page::RawPage;
+use super::RawPage;
 
 static HEADER_DESP: &str          = "PoloDB Format v0.2";
 const SECTOR_SIZE_OFFSET: u32     = 40;

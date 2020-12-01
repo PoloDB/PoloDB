@@ -41,7 +41,7 @@ fn value_to_str(val: &JsValue) -> String {
         }
 
         JsValue::Bool(bl) => {
-            return if *bl {
+            if *bl {
                 "true".into()
             } else {
                 "false".into()
@@ -106,7 +106,7 @@ fn main() {
         let context = Context::new().unwrap();
 
         {
-            let db = Mutex::new(db.clone());
+            let db = Mutex::new(db);
             context.add_callback("__create_collection",  move |name: String| {
                 let db = db.lock().unwrap();
                 let mut db = db.as_ref().borrow_mut();

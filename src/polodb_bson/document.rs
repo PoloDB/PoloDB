@@ -56,7 +56,7 @@ impl Document {
     }
 
     pub fn pkey_id(&self) -> Option<Value> {
-        self.map.get("_id".into()).map(|id| { id.clone() })
+        self.map.get("_id").cloned()
     }
 
     pub fn from_bytes(bytes: &[u8]) -> BsonResult<Document> {
@@ -95,11 +95,7 @@ impl Document {
                     let bl_value = bytes[ptr];
                     ptr += 1;
 
-                    doc.map.insert(key, Value::Boolean(if bl_value != 0 {
-                        true
-                    } else {
-                        false
-                    }));
+                    doc.map.insert(key, Value::Boolean(bl_value != 0));
                 }
 
                 ty_int::INT => {
@@ -148,7 +144,7 @@ impl Document {
 
                     ptr += len as usize;
 
-                    let sub_arr = unsafe{ Array::from_bytes(&buffer)? };
+                    let sub_arr = Array::from_bytes(&buffer)?;
                     doc.map.insert(key, sub_arr.into());
                 }
 

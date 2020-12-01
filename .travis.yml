@@ -5,4 +5,5 @@ rust:
 
 script:
   - cargo build --verbose --workspace
+  - cargo clippy --verbose --workspace
   - cargo test --verbose --workspace

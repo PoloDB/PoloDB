@@ -57,6 +57,10 @@ impl Array {
         self.0.len() as u32
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
 }
 
 impl Array {
@@ -146,7 +150,7 @@ impl Array {
         Ok(result)
     }
 
-    pub unsafe fn from_bytes(bytes: &[u8]) -> BsonResult<Array> {
+    pub fn from_bytes(bytes: &[u8]) -> BsonResult<Array> {
         let mut arr = Array::new();
 
         let mut ptr: usize = 0;
@@ -178,11 +182,7 @@ impl Array {
                     let bl_value = bytes[ptr];
                     ptr += 1;
 
-                    arr.0.push(Value::Boolean(if bl_value != 0 {
-                        true
-                    } else {
-                        false
-                    }));
+                    arr.0.push(Value::Boolean(bl_value != 0));
                 }
 
                 ty_int::INT => {
@@ -279,6 +279,14 @@ impl ops::IndexMut<usize> for Array {
 
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.0[index]
+    }
+
+}
+
+impl Default for Array {
+
+    fn default() -> Self {
+        Self::new()
     }
 
 }

@@ -1,7 +1,7 @@
 use crate::page::PageHandler;
 use crate::meta_doc_helper::MetaDocEntry;
 use crate::DbResult;
-use super::btree::BTreeNode;
+use super::BTreeNode;
 use super::wrapper_base::cal_item_size;
 
 pub(crate) fn count(page_handler: &mut PageHandler, collection_meta: MetaDocEntry) -> DbResult<u64> {

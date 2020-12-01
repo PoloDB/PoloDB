@@ -1,5 +1,5 @@
 use std::ptr;
-use super::page::{RawPage, PageType};
+use super::{RawPage, PageType};
 
 const DATA_PAGE_HEADER_SIZE: u32 = 16;
 

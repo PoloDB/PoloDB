@@ -5,7 +5,7 @@ use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
 use std::path::{Path, PathBuf};
 use polodb_bson::Document;
-use super::page::RawPage;
+use super::RawPage;
 use super::pagecache::PageCache;
 use super::header_page_wrapper;
 use super::header_page_wrapper::HeaderPageWrapper;
@@ -131,12 +131,8 @@ impl PageHandler {
 
             // current is auto-read, but going to write
             TransactionState::UserAuto => {
-                match (ty, self.transaction_type()) {
-                    (TransactionType::Write, Some(TransactionType::Read)) => {
-                        self.upgrade_read_transaction_to_write()?;
-                    }
-
-                    _ => ()
+                if let (TransactionType::Write, Some(TransactionType::Read)) = (ty, self.transaction_type()) {
+                    self.upgrade_read_transaction_to_write()?;
                 }
             }
 
@@ -191,9 +187,9 @@ impl PageHandler {
             }
         };
 
-        removed_key.map(|key| {
+        if let Some(key) = removed_key {
             self.data_page_map.remove(&key);
-        });
+        }
 
         Ok(wrapper)
     }
@@ -362,10 +358,8 @@ impl PageHandler {
         }
 
         first_page_wrapper.set_free_list_size(current_size + (pages.len() as u32));
-        let mut counter = 0;
-        for pid in pages {
-            first_page_wrapper.set_free_list_content(current_size + counter, *pid);
-            counter += 1;
+        for (counter, pid) in pages.iter().enumerate() {
+            first_page_wrapper.set_free_list_content(current_size + (counter as u32), *pid);
         }
 
         self.pipeline_write_page(&first_page_wrapper.0)?;

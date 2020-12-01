@@ -67,7 +67,7 @@ impl<'a> fmt::Display for FullDumpWrapper<'a> {
 }
 
 fn dump_journal(journal_dump: &JournalDump, f: &mut Formatter<'_>) -> fmt::Result {
-    writeln!(f, "")?;
+    writeln!(f)?;
     write_kv!(f, "Journal Path", journal_dump.path.to_str().unwrap())?;
     write_kv!(f, "Frame Count", journal_dump.frame_count)?;
     write_kv!(f, "Size", journal_dump.file_meta.len())?;
