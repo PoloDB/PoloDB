@@ -10,6 +10,7 @@ use crate::DbResult;
 use crate::error::DbErr;
 use crate::dump::{JournalDump, JournalFrameDump};
 use super::frame_header::FrameHeader;
+use super::transaction::{TransactionType, TransactionState};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::io::AsRawHandle;
@@ -17,32 +18,6 @@ use std::os::windows::io::AsRawHandle;
 static HEADER_DESP: &str       = "PoloDB Journal v0.2";
 const JOURNAL_DATA_BEGIN: u64 = 64;
 const FRAME_HEADER_SIZE: u64  = 40;
-
-#[derive(Eq, PartialEq, Copy, Clone)]
-pub enum TransactionType {
-    Read,
-    Write,
-}
-
-struct TransactionState {
-    ty: TransactionType,
-    offset_map: BTreeMap<u32, u64>,
-    frame_count: u32,
-    db_file_size: u64,
-}
-
-impl TransactionState {
-
-    fn new(ty: TransactionType, frame_count: u32, db_file_size: u64) -> TransactionState {
-        TransactionState {
-            ty,
-            offset_map: BTreeMap::new(),
-            frame_count,
-            db_file_size,
-        }
-    }
-
-}
 
 // name:       32 bytes
 // version:    4bytes(offset 32)
@@ -310,6 +285,21 @@ impl JournalManager {
         state.ty
     }
 
+    pub(crate) fn expand_db_size(&mut self, size: u64) -> DbResult<()> {
+        if let Some(state) = &mut self.transaction_state {
+            state.db_file_size += size;
+            return Ok(());
+        }
+        return Err(DbErr::CannotWriteDbWithoutTransaction);
+    }
+
+    pub(crate) fn record_db_size(&self) -> u64 {
+        match &self.transaction_state {
+            Some(state) => state.db_file_size,
+            None => self.db_file_size,
+        }
+    }
+
     fn update_last_frame(&mut self) -> DbResult<()> {
         let full_frame_size = self.full_frame_size();
         let begin_loc = self.journal_file.seek(SeekFrom::End((full_frame_size as i64) * -1))?;
@@ -436,6 +426,8 @@ impl JournalManager {
 
     pub(crate) fn checkpoint_journal(&mut self, db_file: &mut File) -> DbResult<()> {
         debug_assert!(self.transaction_state.is_none());
+
+        db_file.set_len(self.db_file_size)?;
 
         for (page_id, offset) in &self.offset_map {
             let data_offset = offset + FRAME_HEADER_SIZE;

@@ -234,10 +234,9 @@ mod tests {
 
     #[test]
     fn test_commit_after_commit() {
-        let config = Config {
-            journal_full_size: 1,
-        };
-        let mut db = prepare_db_with_config("test-transaction", config);
+        let mut config = Config::default();
+        config.journal_full_size = 1;
+        let mut db = prepare_db_with_config("test-commit-2", config);
         db.start_transaction(None).unwrap();
         let mut collection = db.create_collection("test").unwrap();
 

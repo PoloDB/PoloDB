@@ -17,7 +17,6 @@ use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::data_ticket::DataTicket;
 use crate::page::free_list_data_wrapper::FreeListDataWrapper;
 
-const DB_INIT_BLOCK_COUNT: u32 = 16;
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
 #[derive(Eq, PartialEq, Copy, Clone)]
@@ -30,8 +29,6 @@ pub(crate) enum TransactionState {
 
 pub(crate) struct PageHandler {
     file:                     File,
-
-    pub last_commit_db_size:  u64,
 
     pub page_size:            u32,
     page_cache:               Box<PageCache>,
@@ -64,14 +61,14 @@ impl PageHandler {
         Ok(wrapper.0)
     }
 
-    fn init_db(file: &mut File, page_size: u32) -> std::io::Result<(RawPage, u32, u64)> {
+    fn init_db(file: &mut File, page_size: u32, init_block_count: u64) -> std::io::Result<(RawPage, u32, u64)> {
         let meta = file.metadata()?;
         let file_len = meta.len();
         if file_len < page_size as u64 {
-            let expected_file_size: u64 = (page_size as u64) * (DB_INIT_BLOCK_COUNT as u64);
+            let expected_file_size: u64 = (page_size as u64) * init_block_count;
             file.set_len(expected_file_size)?;
             let first_page = PageHandler::force_write_first_block(file, page_size)?;
-            Ok((first_page, DB_INIT_BLOCK_COUNT as u32, expected_file_size))
+            Ok((first_page, init_block_count as u32, expected_file_size))
         } else {
             let block_count = file_len / (page_size as u64);
             let first_page = PageHandler::read_first_block(file, page_size)?;
@@ -100,22 +97,15 @@ impl PageHandler {
             .read(true)
             .open(path)?;
 
-        let (_, _, db_file_size) = PageHandler::init_db(&mut file, page_size)?;
+        let (_, _, db_file_size) = PageHandler::init_db(&mut file, page_size, config.init_block_count)?;
 
         let journal_file_path: PathBuf = PageHandler::mk_journal_path(path);
         let journal_manager = JournalManager::open(&journal_file_path, page_size, db_file_size)?;
 
         let page_cache = PageCache::new_default(page_size);
 
-        let last_commit_db_size = {
-            let meta = file.metadata()?;
-            meta.len()
-        };
-
         Ok(PageHandler {
             file,
-
-            last_commit_db_size,
 
             page_size,
             page_cache: Box::new(page_cache),
@@ -268,9 +258,7 @@ impl PageHandler {
         let offset = (page_id as u64) * (self.page_size as u64);
         let mut result = RawPage::new(page_id, self.page_size);
 
-        let file_meta = self.file.metadata()?;
-        // TODO: better way to determine reading pages
-        if file_meta.len() >= offset + (self.page_size as u64) {
+        if self.journal_manager.record_db_size() >= offset + (self.page_size as u64) {
             result.read_from_file(&mut self.file, offset)?;
         }
 
@@ -429,7 +417,7 @@ impl PageHandler {
 
     #[inline]
     pub fn is_journal_full(&self) -> bool {
-        (self.journal_manager.len() as usize) >= self.config.journal_full_size
+        (self.journal_manager.len() as u64) >= self.config.journal_full_size
     }
 
     #[inline]
@@ -510,10 +498,9 @@ impl PageHandler {
         let null_page_bar = first_page_wrapper.get_null_page_bar();
         first_page_wrapper.set_null_page_bar(null_page_bar + 1);
 
-        if (null_page_bar as u64) >= self.last_commit_db_size {  // truncate file
-            let expected_size = self.last_commit_db_size + (DB_INIT_BLOCK_COUNT * self.page_size) as u64;
-
-            self.last_commit_db_size = expected_size;
+        if (null_page_bar as u64) >= self.journal_manager.record_db_size() {  // truncate file
+            let exceed_size = self.config.init_block_count * (self.page_size as u64);
+            self.journal_manager.expand_db_size(exceed_size)?;
         }
 
         self.pipeline_write_page(&first_page_wrapper.0)?;
