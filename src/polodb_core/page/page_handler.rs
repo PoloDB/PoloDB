@@ -276,7 +276,7 @@ impl PageHandler {
             let doc = Document::from_bytes(bytes)?;
             return Ok(Some(Rc::new(doc)));
         }
-        return Ok(None);
+        Ok(None)
     }
 
     pub(crate) fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
