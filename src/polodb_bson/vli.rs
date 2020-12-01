@@ -38,10 +38,10 @@ fn encode_u64(writer: &mut dyn Write, num: u64) -> BsonResult<()> {
     } else if num <= 134217727 {  // 4 bytes
         let num: u64 = 0b11100000 << 24 | num;
         writer.write_all(num.to_be_bytes()[4..8].as_ref())?;
-    } else if num <= 34359738368 {  // 5 bytes
+    } else if num <= 34359738367 {  // 5 bytes
         let num: u64 = 0b11101000 << 32 | num;
         writer.write_all(num.to_be_bytes()[3..8].as_ref())?;
-    } else if num <= 0x1FFFFFFFFFF {  // 6 bytes
+    } else if num <= 0xFFFFFFFFFF {  // 6 bytes
         let num: u64 = 0b11111000 << 40 | num;
         writer.write_all(num.to_be_bytes()[2..8].as_ref())?;
     } else if num <= 0xFFFFFFFFFFFFFFF { // 8 bytes
@@ -156,6 +156,16 @@ pub fn decode_u64(bytes: &[u8]) -> BsonResult<(u64, usize)> {
 #[cfg(test)]
 mod tests {
     use crate::vli::{encode_u64, decode_u64};
+
+    #[test]
+    fn test_ts() {
+        let mut bytes = vec![];
+        let num: u64 = 1_606_801_056_488;
+        encode_u64(&mut bytes, num).expect("encode error");
+
+        let (decode_num, _) = decode_u64(&bytes).unwrap();
+        assert_eq!(decode_num, num);
+    }
 
     #[test]
     fn test_encode_1byte() {
