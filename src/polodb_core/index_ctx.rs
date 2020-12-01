@@ -24,12 +24,9 @@ impl IndexCtx {
     // indexes:
     //     key -> index_entry
     pub fn from_meta_doc(doc: &Document) -> Option<IndexCtx> {
-        let indexes_opt = doc.get(meta_doc_key::INDEXES);
-        if indexes_opt.is_none() {  // no indexes
-            return None;
-        }
+        let indexes = doc.get(meta_doc_key::INDEXES)?;
 
-        let meta_doc: &Rc<Document> = indexes_opt.unwrap().unwrap_document();
+        let meta_doc: &Rc<Document> = indexes.unwrap_document();
         if meta_doc.is_empty() {
             return None;
         }
