@@ -60,3 +60,19 @@ napi_status JsIsArray(napi_env env, napi_value value, bool* result) {
 
   return napi_ok;
 }
+
+napi_status JsGetUTCDateTime(napi_env env, napi_value value, int64_t* utc_datetime) {
+  napi_status status;
+  napi_value get_time_fun;
+
+  status = napi_get_named_property(env, value, "getTime", &get_time_fun);
+  CHECK_STAT(status);
+
+  napi_value result;
+  status = napi_call_function(env, value, get_time_fun, 0, NULL, &result);
+  CHECK_STAT(status);
+
+  status = napi_get_value_int64(env, result, utc_datetime);
+
+  return status;
+}

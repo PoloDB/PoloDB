@@ -1,6 +1,7 @@
 use std::ops;
+use std::rc::Rc;
 use super::value::{Value, ty_int};
-use crate::vli;
+use crate::{vli, UTCDateTime};
 use crate::BsonResult;
 use crate::error::{BsonErr, parse_error_reason};
 use crate::document::Document;
@@ -245,6 +246,13 @@ impl Array {
                     ptr += len as usize;
 
                     arr.0.push(buffer.into());
+                }
+
+                ty_int::UTC_DATETIME => {
+                    let (integer, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
+
+                    arr.0.push(Value::UTCDateTime(Rc::new(UTCDateTime::new(integer))));
                 }
 
                 _ => return Err(BsonErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),

@@ -91,6 +91,18 @@ describe('Database', function() {
       }
     });
 
+    it('test datetime', function() {
+      const colDateTime = db.createCollection('test-datetime');
+      const now = new Date();
+      colDateTime.insert({
+        created: now,
+      });
+      const result = colDateTime.find();
+      expect(result.length).to.equals(1);
+      const first = result[0];
+      expect(first.created.getTime()).to.equals(now.getTime());
+    });
+
     it('count', function() {
       const col2 = db.collection('test-2');
       const count = col2.count();

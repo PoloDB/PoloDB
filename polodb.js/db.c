@@ -178,6 +178,22 @@ static napi_status JsArrayValueToDbArray_SetArrayElement(napi_env env, DbArray* 
   return result;
 }
 
+static napi_status JsArrayValueToDbArray_SetUTCDateTime(napi_env env, DbArray* arr, unsigned int index, napi_value value) {
+  napi_status status;
+
+  int64_t utc_datetime = 0;
+  status = JsGetUTCDateTime(env, value, &utc_datetime);
+  CHECK_STAT(status);
+
+  int ec = PLDB_arr_set_UTCDateTime(arr, index, utc_datetime);
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return napi_generic_failure;
+  }
+
+  return napi_ok;
+}
+
 static napi_status JsArrayValueToDbArray_SetElement(napi_env env, DbArray* arr, unsigned int index, napi_value value) {
   napi_status status;
   napi_valuetype ty;
@@ -230,12 +246,15 @@ static napi_status JsArrayValueToDbArray_SetElement(napi_env env, DbArray* arr, 
 
     case napi_object: {
       bool is_array = false;
+      bool is_date = false;
       status = JsIsArray(env, value, &is_array);
       CHECK_STAT(status);
 
       if (is_array) {
         return JsArrayValueToDbArray_SetArrayElement(env, arr, index, value);
       }
+
+      status = napi_is_date(env, value, &is_date);
 
       if (napi_instanceof(env, value, object_id_instance, &bl_value)) {
         DbObjectId* oid = NULL;  // borrowed
@@ -344,6 +363,21 @@ static napi_status JsStringValueToDbValue_SetArrayProperty(napi_env env, DbDocum
   return napi_ok;
 }
 
+static napi_status JsStringValueToDbValue_SetUTCDateTime(napi_env env, DbDocument* doc, const char* key, napi_value value) {
+  napi_status status;
+
+  int64_t utc_datetime = 0;
+  status = JsGetUTCDateTime(env, value, &utc_datetime);
+
+  int ec = PLDB_doc_set_UTCDateTime(doc, key, utc_datetime);
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return napi_generic_failure;
+  }
+
+  return napi_ok;
+}
+
 static napi_status JsValueToDbDocument_SetProperty(napi_env env, DbDocument* doc, const char* key, napi_value value) {
   napi_status status;
   napi_valuetype ty;
@@ -396,11 +430,19 @@ static napi_status JsValueToDbDocument_SetProperty(napi_env env, DbDocument* doc
 
     case napi_object: {
       bool is_array = false;
+      bool is_date = false;
+
       status = JsIsArray(env, value, &is_array);
       CHECK_STAT(status);
 
       if (is_array) {
         return JsStringValueToDbValue_SetArrayProperty(env, doc, key, value);
+      }
+
+      status = napi_is_date(env, value, &is_date);
+      CHECK_STAT(status);
+      if (is_date) {
+        return JsStringValueToDbValue_SetUTCDateTime(env, doc, key, value);
       }
 
       if (napi_instanceof(env, value, object_id_instance, &bl_value)) {

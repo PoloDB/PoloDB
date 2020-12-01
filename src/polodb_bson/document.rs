@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::fmt;
 use super::value::{Value, ty_int};
 use super::linked_hash_map::{LinkedHashMap, Iter};
-use crate::vli;
+use crate::{vli, UTCDateTime};
 use crate::BsonResult;
 use crate::error::{BsonErr, parse_error_reason};
 use crate::array::Array;
@@ -182,6 +182,16 @@ impl Document {
                     ptr += len as usize;
 
                     doc.map.insert(key, buffer.into());
+                }
+
+                ty_int::UTC_DATETIME => {
+                    let (key, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
+
+                    let (integer, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
+
+                    doc.map.insert(key, Value::UTCDateTime(Rc::new(UTCDateTime::new(integer))));
                 }
 
                 _ => return Err(BsonErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
