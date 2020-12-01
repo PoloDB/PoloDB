@@ -106,114 +106,114 @@ impl fmt::Display for SubProgram {
                 match op {
                     DbOp::Goto => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: Goto({})\n", pc, location)?;
+                        writeln!(f, "{}: Goto({})", pc, location)?;
                         pc += 5;
                     }
 
                     DbOp::IfTrue => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: TrueJump({})\n", pc, location)?;
+                        writeln!(f, "{}: TrueJump({})", pc, location)?;
                         pc += 5;
                     }
 
                     DbOp::IfFalse => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: FalseJump({})\n", pc, location)?;
+                        writeln!(f, "{}: FalseJump({})", pc, location)?;
                         pc += 5;
                     }
 
                     DbOp::IfGreater => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: IfGreater({})\n", pc, location)?;
+                        writeln!(f, "{}: IfGreater({})", pc, location)?;
                         pc += 5;
                     }
 
                     DbOp::IfLess => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: IfLess({})\n", pc, location)?;
+                        writeln!(f, "{}: IfLess({})", pc, location)?;
                         pc += 5;
                     }
 
                     DbOp::Rewind => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: Rewind({})\n", pc, location)?;
+                        writeln!(f, "{}: Rewind({})", pc, location)?;
                         pc += 5;
                     }
 
                     DbOp::FindByPrimaryKey => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: FindByPrimaryKey({})\n", pc, location)?;
+                        writeln!(f, "{}: FindByPrimaryKey({})", pc, location)?;
                         pc += 5;
                     }
 
                     DbOp::Next => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: Next({})\n", pc, location)?;
+                        writeln!(f, "{}: Next({})", pc, location)?;
                         pc += 5;
                     }
 
                     DbOp::PushValue => {
                         let index = begin.add(pc + 1).cast::<u32>().read();
                         let val = &self.static_values[index as usize];
-                        write!(f, "{}: PushValue({})\n", pc, val)?;
+                        writeln!(f, "{}: PushValue({})", pc, val)?;
                         pc += 5;
                     }
 
                     DbOp::UpdateCurrent => {
-                        write!(f, "{}: UpdateCurrent\n", pc)?;
+                        writeln!(f, "{}: UpdateCurrent", pc)?;
                         pc += 1;
                     }
 
                     DbOp::Pop => {
-                        write!(f, "{}: Pop\n", pc)?;
+                        writeln!(f, "{}: Pop", pc)?;
                         pc += 1;
                     }
 
                     DbOp::Pop2 => {
                         let index = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: Pop2({})\n", pc, index)?;
+                        writeln!(f, "{}: Pop2({})", pc, index)?;
                         pc += 5;
                     }
 
                     DbOp::Equal => {
-                        write!(f, "{}: Equal\n", pc)?;
+                        writeln!(f, "{}: Equal", pc)?;
                         pc += 1;
                     }
 
                     DbOp::Cmp => {
-                        write!(f, "{}: Cmp\n", pc)?;
+                        writeln!(f, "{}: Cmp", pc)?;
                         pc += 1;
                     }
 
                     DbOp::In => {
-                        write!(f, "{}: In\n", pc)?;
+                        writeln!(f, "{}: In", pc)?;
                         pc += 1;
                     }
 
                     DbOp::OpenRead => {
                         let root_pid = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: OpenRead({})\n", pc, root_pid)?;
+                        writeln!(f, "{}: OpenRead({})", pc, root_pid)?;
                         pc += 5;
                     }
 
                     DbOp::OpenWrite => {
                         let root_pid = begin.add(pc + 1).cast::<u32>().read();
-                        write!(f, "{}: OpenWrite({})\n", pc, root_pid)?;
+                        writeln!(f, "{}: OpenWrite({})", pc, root_pid)?;
                         pc += 5;
                     }
 
                     DbOp::ResultRow => {
-                        write!(f, "{}: ResultRow\n", pc)?;
+                        writeln!(f, "{}: ResultRow", pc)?;
                         pc += 1;
                     }
 
                     DbOp::Close => {
-                        write!(f, "{}: Close\n", pc)?;
+                        writeln!(f, "{}: Close", pc)?;
                         pc += 1;
                     }
 
                     DbOp::Halt => {
-                        write!(f, "{}: Halt\n", pc)?;
+                        writeln!(f, "{}: Halt", pc)?;
                         pc += 1;
                     }
 
@@ -221,50 +221,50 @@ impl fmt::Display for SubProgram {
                         let static_id = begin.add(pc + 1).cast::<u32>().read();
                         let val = &self.static_values[static_id as usize];
                         let location = begin.add(pc + 5).cast::<u32>().read();
-                        write!(f, "{}: GetField({}, {})\n", pc, val, location)?;
+                        writeln!(f, "{}: GetField({}, {})", pc, val, location)?;
                         pc += 9;
                     }
 
                     DbOp::IncField => {
                         let static_id = begin.add(pc + 1).cast::<u32>().read();
                         let val = &self.static_values[static_id as usize];
-                        write!(f, "{}: IncField({})\n", pc, val)?;
+                        writeln!(f, "{}: IncField({})", pc, val)?;
                         pc += 5;
                     }
 
                     DbOp::MulField => {
                         let static_id = begin.add(pc + 1).cast::<u32>().read();
                         let val = &self.static_values[static_id as usize];
-                        write!(f, "{}: MulField({})\n", pc, val)?;
+                        writeln!(f, "{}: MulField({})", pc, val)?;
                         pc += 5;
                     }
 
                     DbOp::SetField => {
                         let static_id = begin.add(pc + 1).cast::<u32>().read();
                         let val = &self.static_values[static_id as usize];
-                        write!(f, "{}: SetField({})\n", pc, val)?;
+                        writeln!(f, "{}: SetField({})", pc, val)?;
                         pc += 5;
                     }
 
                     DbOp::UnsetField => {
                         let static_id = begin.add(pc + 1).cast::<u32>().read();
                         let val = &self.static_values[static_id as usize];
-                        write!(f, "{}: UnsetField({})\n", pc, val)?;
+                        writeln!(f, "{}: UnsetField({})", pc, val)?;
                         pc += 5;
                     }
 
                     DbOp::SaveStackPos => {
-                        write!(f, "{}: SaveStackPos\n", pc)?;
+                        writeln!(f, "{}: SaveStackPos", pc)?;
                         pc += 1;
                     }
 
                     DbOp::RecoverStackPos => {
-                        write!(f, "{}: RecoverStackPos\n", pc)?;
+                        writeln!(f, "{}: RecoverStackPos", pc)?;
                         pc += 1;
                     }
 
                     _ => {
-                        write!(f, "{}: Unknown\n", pc)?;
+                        writeln!(f, "{}: Unknown", pc)?;
                         break;
                     }
                 }
