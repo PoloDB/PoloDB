@@ -98,7 +98,7 @@ impl DbContext {
         if self.meta_version != actual_meta_version {
             return Err(DbErr::MetaVersionMismatched(self.meta_version, actual_meta_version));
         }
-        return Ok(())
+        Ok(())
     }
 
     pub fn get_collection_meta_by_name(&mut self, name: &str) -> DbResult<CollectionMeta> {
@@ -724,7 +724,7 @@ impl DbContext {
 
     pub fn get_version() -> String {
         const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-        return VERSION.into();
+        VERSION.into()
     }
 
 }
