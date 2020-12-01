@@ -98,7 +98,7 @@ impl DbContext {
         if self.meta_version != actual_meta_version {
             return Err(DbErr::MetaVersionMismatched(self.meta_version, actual_meta_version));
         }
-        return Ok(())
+        Ok(())
     }
 
     pub fn get_collection_meta_by_name(&mut self, name: &str) -> DbResult<CollectionMeta> {
@@ -724,7 +724,7 @@ impl DbContext {
 
     pub fn get_version() -> String {
         const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-        return VERSION.into();
+        VERSION.into()
     }
 
 }
@@ -767,10 +767,10 @@ fn dump_version(version: &[u8]) -> String {
 impl Drop for DbContext {
 
     fn drop(&mut self) {
-        let path = self.page_handler.journal_file_path().to_path_buf();
         let checkpoint_result = self.page_handler.checkpoint_journal();  // ignored
-        if let Ok(_) = checkpoint_result {
-            let _ = std::fs::remove_file(path);  // ignore the result
+        if checkpoint_result.is_ok() {
+            let path = self.page_handler.journal_file_path().to_path_buf();
+            std::fs::remove_file(path);  // ignore the result
         }
     }
 

@@ -173,11 +173,7 @@ impl BTreeNode {
                 let value_begin_offset = (begin_offset + 6) as usize;
                 let value = page.data[value_begin_offset];
 
-                let bl_value = if value == 0 {
-                    false
-                } else {
-                    true
-                };
+                let bl_value = value != 0;
 
                 Value::Boolean(bl_value)
             }
@@ -262,12 +258,12 @@ impl BTreeNode {
         page.seek(2);
         page.put_u16(items_len);
 
-        self.content.first().map(|_first| {
+        if let Some(_first) = self.content.first() {
             page.seek(4);
 
             let left_id = self.indexes.first().expect("get first left id failed");
             page.put_u32(*left_id);
-        });
+        };
 
         let mut index = 0;
         while index < self.content.len() {

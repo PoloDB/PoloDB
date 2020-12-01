@@ -48,44 +48,35 @@ impl HeaderPageWrapper {
 
     pub(crate) fn set_title(&mut self, title: &str) {
         self.0.seek(0);
-        let _ = self.0.put_str(title);
+        self.0.put_str(title);
     }
 
     pub(crate) fn get_title(&self) -> String {
-        let mut zero_pos: i32 = -1;
-        for i in 0..32 {
-            if self.0.data[i] == 0 {
-                zero_pos = i as i32;
-                break;
-            }
-        }
+        let zero_pos = self.0.data[0..32]
+                                .iter()
+                                .position(|x| x == &0u8)
+                                .expect("can not find a zero");
 
-        if zero_pos < 0 {
-            panic!("can not find a zero")
-        }
-
-        let title = String::from_utf8_lossy(&self.0.data[0..(zero_pos as usize)]);
+        let title = String::from_utf8_lossy(&self.0.data[0..zero_pos]);
         title.to_string()
     }
 
     pub(crate) fn set_version(&mut self, version: &[u8]) {
         self.0.seek(32);
-        let _ = self.0.put(version);
+        self.0.put(version);
     }
 
     #[allow(dead_code)]
     pub(crate) fn get_version(&self) -> [u8; 4] {
         let mut version: [u8; 4] = [0; 4];
-        for i in 0..4 {
-            version[i] = self.0.data[32 + i];
-        }
+        version[..4].clone_from_slice(&self.0.data[32..(4 + 32)]);
         version
     }
 
     #[inline]
     pub(crate) fn set_sector_size(&mut self, sector_size: u32) {
         self.0.seek(SECTOR_SIZE_OFFSET);
-        let _ = self.0.put_u32(sector_size);
+        self.0.put_u32(sector_size);
     }
 
     #[inline]
@@ -97,7 +88,7 @@ impl HeaderPageWrapper {
     #[inline]
     pub(crate) fn set_page_size(&mut self, page_size: u32) {
         self.0.seek(PAGE_SIZE_OFFSET);
-        let _ = self.0.put_u32(page_size);
+        self.0.put_u32(page_size);
     }
 
     #[inline]
