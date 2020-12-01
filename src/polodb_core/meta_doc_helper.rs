@@ -34,10 +34,10 @@ impl MetaDocEntry {
     }
 
     pub(crate) fn from_doc(doc: &Document) -> MetaDocEntry {
-        let id = doc.get(meta_doc_key::ID.into()).unwrap().unwrap_int() as u32;
-        let name = doc.get(meta_doc_key::NAME.into()).unwrap().unwrap_string();
-        let root_pid = doc.get(meta_doc_key::ROOT_PID.into()).unwrap().unwrap_int();
-        let flags = doc.get(meta_doc_key::FLAGS.into()).unwrap().unwrap_int();
+        let id = doc.get(meta_doc_key::ID).unwrap().unwrap_int() as u32;
+        let name = doc.get(meta_doc_key::NAME).unwrap().unwrap_string();
+        let root_pid = doc.get(meta_doc_key::ROOT_PID).unwrap().unwrap_int();
+        let flags = doc.get(meta_doc_key::FLAGS).unwrap().unwrap_int();
         MetaDocEntry {
             id,
             name: name.into(),
@@ -70,7 +70,7 @@ impl MetaDocEntry {
 
     pub(crate) fn merge_pkey_ty_to_meta(&mut self, meta_doc: &mut Document, value_doc: &Document) {
         let pkey_ty = value_doc.pkey_id().unwrap().ty_int();
-        self.flags = self.flags | ((pkey_ty as u32) & KEY_TY_FLAG);
+        self.flags |= ((pkey_ty as u32) & KEY_TY_FLAG);
         meta_doc.insert(meta_doc_key::FLAGS.into(), Value::Int(self.flags as i64));
     }
 
