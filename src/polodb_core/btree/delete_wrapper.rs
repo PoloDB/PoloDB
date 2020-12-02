@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashMap};
 use polodb_bson::{Value, Document};
 use crate::DbResult;
 use crate::page::{RawPage, PageHandler};
-use super::btree::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
+use super::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;
 use crate::data_ticket::DataTicket;
 
@@ -31,31 +31,17 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         }
     }
 
+    #[inline]
     fn get_btree_by_pid(&mut self, pid: u32, parent_pid: u32) -> DbResult<Box<BTreeNode>> {
         let node = self.base.get_node(pid, parent_pid)?;
         Ok(Box::new(node))
-        // match self.cache_btree.remove(&pid) {
-        //     Some(node) => {
-        //         self.dirty_set.remove(&pid);
-        //         Ok(node)
-        //     }
-        //
-        //     None => {
-        //         let node = self.base.get_node(pid, parent_pid)?;
-        //         Ok(Box::new(node))
-        //     }
-        //
-        // }
     }
 
     // #[inline]
-    fn write_btree(&mut self, node: Box<BTreeNode>) {
+    fn write_btree(&mut self, node: BTreeNode) {
         let mut page = RawPage::new(node.pid, self.base.page_handler.page_size);
         node.to_raw(&mut page).unwrap();
         self.base.page_handler.pipeline_write_page(&page).unwrap();
-        // self.base.page_handler.pipeline_write_page(&page)?;
-        // self.dirty_set.insert(node.pid);
-        // self.cache_btree.insert(node.pid, node);
     }
 
     pub fn flush_pages(&mut self) -> DbResult<()> {
@@ -78,14 +64,14 @@ impl<'a> BTreePageDeleteWrapper<'a> {
     //         - delete item on leaf
     pub fn delete_item(&mut self, id: &Value) -> DbResult<Option<Rc<Document>>> {
         let backward_item_opt = self.delete_item_on_subtree(0, self.base.root_page_id, id)?;
-        return match backward_item_opt {
+        match backward_item_opt {
             Some(backward_item) => {
                 let item = self.erase_item(backward_item.deleted_ticket.as_ref())?;
                 Ok(Some(item))
             }
 
             None => Ok(None)
-        };
+        }
     }
 
     fn find_min_element_in_subtree(&mut self, subtree_pid: u32, parent_pid: u32) -> DbResult<BTreeNodeDataItem> {
@@ -126,21 +112,21 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                             let borrow_ok = self.try_borrow_brothers(idx, current_btree_node.borrow_mut())?;
                             if !borrow_ok {
                                 if current_btree_node.content.len() == 1 {
-                                    let _opt = self.try_merge_head(current_btree_node)?;
+                                    let _opt = self.try_merge_head(*current_btree_node)?;
                                     #[cfg(debug_assertions)]
                                     assert!(_opt);
                                 } else {
                                     self.merge_leaves(idx, current_btree_node.borrow_mut())?;
                                     current_item_size = current_btree_node.content.len();
-                                    self.write_btree(current_btree_node);
+                                    self.write_btree(*current_btree_node);
                                 }
                             } else {
-                                self.write_btree(current_btree_node);
+                                self.write_btree(*current_btree_node);
                             }
                         } else {
                             // let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
                             if current_btree_node.content.len() == 1 {
-                                let _opt = self.try_merge_head(current_btree_node)?;
+                                let _opt = self.try_merge_head(*current_btree_node)?;
                                 #[cfg(debug_assertions)]
                                 assert!(_opt);
                             }
@@ -153,7 +139,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                     }))
                 }
 
-                return Ok(None)
+                Ok(None)
             }
 
             // find the target node
@@ -171,10 +157,10 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                     let next_item = self.find_min_element_in_subtree(subtree_pid, current_pid)?;
                     current_btree_node.content[idx] = next_item.clone();
                     let mut current_item_size = current_btree_node.content.len();
-                    self.write_btree(current_btree_node);
+                    self.write_btree(*current_btree_node);
 
                     let backward_opt = self.delete_item_on_subtree(current_pid, subtree_pid, &next_item.key)?;
-                    return match backward_opt {
+                    match backward_opt {
                         Some(backward_item) => {
                             if !self.is_content_size_satisfied(backward_item.child_size) {
                                 if backward_item.is_leaf {  // borrow or merge leaves
@@ -185,21 +171,21 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                                         // current_item_size = current_btree_node.content.len();
 
                                         if current_btree_node.content.len() == 1 {
-                                            let _opt = self.try_merge_head(current_btree_node)?;
+                                            let _opt = self.try_merge_head(*current_btree_node)?;
                                             #[cfg(debug_assertions)]
                                             assert!(_opt);
                                         } else {
                                             self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
                                             current_item_size = current_btree_node.content.len();
-                                            self.write_btree(current_btree_node);
+                                            self.write_btree(*current_btree_node);
                                         }
                                     } else {
-                                        self.write_btree(current_btree_node);
+                                        self.write_btree(*current_btree_node);
                                     }
                                 } else {
                                     let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
                                     if current_btree_node.content.len() == 1 {
-                                        let _opt = self.try_merge_head(current_btree_node)?;
+                                        let _opt = self.try_merge_head(*current_btree_node)?;
                                         #[cfg(debug_assertions)]
                                         assert!(_opt);
                                     }
@@ -220,7 +206,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         }
     }
 
-    fn try_merge_head(&mut self, parent_btree_node: Box<BTreeNode>) -> DbResult<bool> {
+    fn try_merge_head(&mut self, parent_btree_node: BTreeNode) -> DbResult<bool> {
         let left_pid = parent_btree_node.indexes[0];
         let right_pid = parent_btree_node.indexes[1];
 
@@ -247,7 +233,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         // move
         let new_node: Box<BTreeNode> = Box::new(parent_btree_node.clone_with_contents(new_content, new_indexes));
 
-        self.write_btree(new_node);
+        self.write_btree(*new_node);
 
         Ok(true)
     }
@@ -297,8 +283,8 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
                 subtree_node.insert_back(current_btree_node.content[node_idx].clone(), 0);
 
-                self.write_btree(shift_node);
-                self.write_btree(subtree_node);
+                self.write_btree(*shift_node);
+                self.write_btree(*subtree_node);
 
                 right_head_content
             } else {  // left -(item)-> middle
@@ -307,8 +293,8 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
                 subtree_node.insert_head(0, current_btree_node.content[node_idx].clone());
 
-                self.write_btree(shift_node);
-                self.write_btree(subtree_node);
+                self.write_btree(*shift_node);
+                self.write_btree(*subtree_node);
 
                 left_last_content
             };
@@ -344,17 +330,16 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         // get min size brother to merge
         let is_brother_right = match (&left_node_opt, &right_node_opt) {
             (Some(_), None) => false,
+
             (None, Some(_)) => true,
-            (Some(node1), Some(node2)) => {
-                if node1.content.len() <= node2.content.len() {
-                    false
-                } else {
-                    true
-                }
-            },
+
+            (Some(node1), Some(node2)) =>
+                node1.content.len() > node2.content.len(),
+
             (None, None) => {
                 panic!("no brother nodes, pid: {}", subtree_pid)
             },
+
         };
 
         let mut subtree_node = self.get_btree_by_pid(subtree_pid, current_pid)?;
@@ -373,7 +358,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
             self.base.page_handler.free_page(subtree_node.pid)?;
 
-            self.write_btree(left_node);
+            self.write_btree(*left_node);
         } else {  // right
             let right_node = right_node_opt.unwrap();
 
@@ -390,7 +375,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
             self.base.page_handler.free_page(right_node.pid)?;
 
-            self.write_btree(subtree_node);
+            self.write_btree(*subtree_node);
         }
 
         Ok(())

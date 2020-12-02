@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use polodb_bson::{Document, Value, ObjectIdMaker, mk_document};
 use super::page::{header_page_wrapper, PageHandler};
 use super::error::DbErr;
+use crate::Config;
 use crate::vm::{SubProgram, VM, VmState};
 use crate::db::DbResult;
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
@@ -63,10 +64,10 @@ pub struct CollectionMeta {
 
 impl DbContext {
 
-    pub fn new(path: &Path) -> DbResult<DbContext> {
+    pub fn new(path: &Path, config: Config) -> DbResult<DbContext> {
         let page_size = 4096;
 
-        let page_handler = PageHandler::new(path, page_size)?;
+        let page_handler = PageHandler::with_config(path, page_size, Rc::new(config))?;
 
         let obj_id_maker = ObjectIdMaker::new();
 
@@ -504,7 +505,7 @@ impl DbContext {
         Ok(result)
     }
 
-    fn internal_delete(&mut self, col_id: u32, primary_keys: &Vec<Value>) -> DbResult<usize> {
+    fn internal_delete(&mut self, col_id: u32, primary_keys: &[Value]) -> DbResult<usize> {
         for pkey in primary_keys {
             let _ = self.internal_delete_by_pkey(col_id, pkey)?;
         }
@@ -723,7 +724,7 @@ impl DbContext {
     }
 
     pub fn get_version() -> String {
-        const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+        const VERSION: &str = env!("CARGO_PKG_VERSION");
         VERSION.into()
     }
 
@@ -767,10 +768,13 @@ fn dump_version(version: &[u8]) -> String {
 impl Drop for DbContext {
 
     fn drop(&mut self) {
+        if self.page_handler.transaction_state() != TransactionState::NoTrans {
+            let _ = self.page_handler.only_rollback_journal();
+        }
         let checkpoint_result = self.page_handler.checkpoint_journal();  // ignored
         if checkpoint_result.is_ok() {
             let path = self.page_handler.journal_file_path().to_path_buf();
-            std::fs::remove_file(path);  // ignore the result
+            let _ = std::fs::remove_file(path);  // ignore the result
         }
     }
 

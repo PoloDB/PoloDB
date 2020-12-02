@@ -1,6 +1,7 @@
 use std::ops;
+use std::rc::Rc;
 use super::value::{Value, ty_int};
-use crate::vli;
+use crate::{vli, UTCDateTime};
 use crate::BsonResult;
 use crate::error::{BsonErr, parse_error_reason};
 use crate::document::Document;
@@ -34,6 +35,12 @@ impl Array {
         Array(data)
     }
 
+    pub fn new_with_size(size: usize) -> Array {
+        let mut data = Vec::new();
+        data.resize(size, Value::Null);
+        Array(data)
+    }
+
     pub fn iter(&self) -> Iter {
         Iter {
             arr: self,
@@ -48,6 +55,10 @@ impl Array {
     #[inline]
     pub fn len(&self) -> u32 {
         self.0.len() as u32
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
 }
@@ -128,7 +139,7 @@ impl Array {
                 Value::UTCDateTime(datetime) => {
                     result.push(ty_int::UTC_DATETIME);  // not standard, use vli
                     let ts = datetime.timestamp();
-                    vli::encode(&mut result, ts as i64).expect("encode vli error");
+                    vli::encode(&mut result, ts as i64)?;
                 }
 
             }
@@ -139,7 +150,7 @@ impl Array {
         Ok(result)
     }
 
-    pub unsafe fn from_bytes(bytes: &[u8]) -> BsonResult<Array> {
+    pub fn from_bytes(bytes: &[u8]) -> BsonResult<Array> {
         let mut arr = Array::new();
 
         let mut ptr: usize = 0;
@@ -171,11 +182,7 @@ impl Array {
                     let bl_value = bytes[ptr];
                     ptr += 1;
 
-                    arr.0.push(Value::Boolean(if bl_value != 0 {
-                        true
-                    } else {
-                        false
-                    }));
+                    arr.0.push(Value::Boolean(bl_value != 0));
                 }
 
                 ty_int::INT => {
@@ -241,6 +248,13 @@ impl Array {
                     arr.0.push(buffer.into());
                 }
 
+                ty_int::UTC_DATETIME => {
+                    let (integer, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
+
+                    arr.0.push(Value::UTCDateTime(Rc::new(UTCDateTime::new(integer))));
+                }
+
                 _ => return Err(BsonErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
             }
 
@@ -257,6 +271,22 @@ impl ops::Index<usize> for Array {
 
     fn index(&self, index: usize) -> &Value {
         &self.0[index]
+    }
+
+}
+
+impl ops::IndexMut<usize> for Array {
+
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
+
+}
+
+impl Default for Array {
+
+    fn default() -> Self {
+        Self::new()
     }
 
 }

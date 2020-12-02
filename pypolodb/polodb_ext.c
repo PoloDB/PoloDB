@@ -633,67 +633,57 @@ static PyObject* py_version(PyObject* self, PyObject* args) {
   return PyUnicode_FromString(buffer);
 }
 
-static DbValue* PyObjectToDbValue(PyObject* obj) {
-  if (obj == Py_None) {
-    return PLDB_mk_null();
-  } else if (PyLong_CheckExact(obj)) {
-    int64_t int_value = PyLong_AsLongLong(obj);
-    return PLDB_mk_int(int_value);
-  } else if (PyBool_Check(obj)) {
-    int value = 0;
-    if (obj == Py_True) {
-      value = 1;
+static int PyDictToDbDocument_SetProperty(DbDocument* doc, const char* key, PyObject* value) {
+  if (value == Py_None) {
+    return PLDB_doc_set_null(doc, key);
+  } else if (PyLong_CheckExact(value)) {
+    int64_t int_value = PyLong_AsLongLong(value);
+    return PLDB_doc_set_int(doc, key, int_value);
+  } else if (PyBool_Check(value)) {
+    int bl_value = 0;
+    if (value == Py_True) {
+      bl_value = 1;
     }
-    return PLDB_mk_bool(value);
-  } else if (PyFloat_CheckExact(obj)) {
-    double float_value = PyFloat_AsDouble(obj);
-    return PLDB_mk_double(float_value);
-  } else if (PyUnicode_CheckExact(obj)) {
-    const char* content = PyUnicode_AsUTF8(obj);
-    if (content == NULL) {
-      return NULL;
-    }
-    return PLDB_mk_str(content);
-  } else if (PyCapsule_CheckExact(obj)) {
-    DbValue* value = PyCapsule_GetPointer(obj, KEY_VALUE);
-    return value;
-  } else if (Py_TYPE(obj) == &PyDict_Type) {
-    DbDocument* doc = PyDictToDbDocument(obj);
-    DbValue* result = PLDB_doc_to_value(doc);
-    PLDB_free_doc(doc);
-    return result;
-  } else if (Py_TYPE(obj) == &PyList_Type) {
-    DbArray* arr = PyListToDbArray(obj);
-    DbValue* result = PLDB_arr_to_value(arr);
-    PLDB_free_arr(arr);
-    return result;
-  } else if (Py_TYPE(obj) == &ObjectIdObjectType) {
-    ObjectIdObject* oid = (ObjectIdObject*)obj;
-    return PLDB_object_id_to_value(oid->oid);
-  } else if (Py_TYPE(obj) == &DocumentObjectType) {
-    DocumentObject* doc = (DocumentObject*)obj;
-    return PLDB_doc_to_value(doc->doc);
-  } else if (Py_TYPE(obj) == &ObjectIdObjectType) {
-    ObjectIdObject* oid_obj = (ObjectIdObject*)obj;
-    return PLDB_object_id_to_value(oid_obj->oid);
-  } else if (PyDateTime_CheckExact(obj)) {
-    PyObject* result = PyObject_CallMethod(obj, "timestamp", "");
+    return PLDB_doc_set_bool(doc, key, bl_value);
+  } else if (PyFloat_CheckExact(value)) {
+    double float_value = PyFloat_AsDouble(value);
+    return PLDB_doc_set_double(doc, key, float_value);
+  } else if (PyUnicode_CheckExact(value)) {
+    const char* content = PyUnicode_AsUTF8(value);
+    return PLDB_doc_set_string(doc, key, content);
+  } else if (PyCapsule_CheckExact(value)) {
+    DbValue* db_value = PyCapsule_GetPointer(value, KEY_VALUE);
+    return PLDB_doc_set(doc, key, db_value);
+  } else if (Py_TYPE(value) == &PyDict_Type) {
+    DbDocument* child_doc = PyDictToDbDocument(value);
+    int ec = PLDB_doc_set_doc(doc, key, child_doc);
+    PLDB_free_doc(child_doc);
+    return ec;
+  } else if (Py_TYPE(value) == &PyList_Type) {
+    DbArray* child_arr = PyListToDbArray(value);
+    int ec = PLDB_doc_set_arr(doc, key, child_arr);
+    PLDB_free_arr(child_arr);
+    return ec;
+  } else if (Py_TYPE(value) == &ObjectIdObjectType) {
+    ObjectIdObject* oid = (ObjectIdObject*)value;
+    return PLDB_doc_set_object_id(doc, key, oid->oid);
+  } else if (Py_TYPE(value) == &DocumentObjectType) {
+    DocumentObject* child_doc = (DocumentObject*)value;
+    return PLDB_doc_set_doc(doc, key, child_doc->doc);
+  } else if (PyDateTime_CheckExact(value)) {
+    PyObject* result = PyObject_CallMethod(value, "timestamp", "");
     if (result == NULL) {
-      return NULL;
+      return 1;
     }
     if (!PyFloat_CheckExact(result)) {
       PyErr_SetString(PyExc_TypeError, "return of timestamp should be float");
       Py_DECREF(result);
-      return NULL;
+      return 1;
     }
     double timestamp = PyFloat_AsDouble(result);
-    Py_DECREF(result);
-    DbUTCDateTime* dt = PLDB_mk_UTCDateTime((int64_t)timestamp);
-    DbValue* val = PLDB_UTCDateTime_to_value(dt);
-    PLDB_free_UTCDateTime(dt);
-    return val;
+    return PLDB_doc_set_UTCDateTime(doc, key, (int64_t)timestamp);
   }
-  return NULL;
+  return 0;
 }
 
 static DbDocument* PyDictToDbDocument(PyObject* dict) {
@@ -711,42 +701,93 @@ static DbDocument* PyDictToDbDocument(PyObject* dict) {
 
     const char* key_content = PyUnicode_AsUTF8(item_key);
 
-    DbValue* value = PyObjectToDbValue(item_value);
-    if (value == NULL) {
-      Py_DECREF(list);
-      PLDB_free_doc(result);
-      PyErr_SetString(PyExc_Exception, "python object conversion failed");
-      return NULL;
-    }
-
-    if (PLDB_doc_set(result, key_content, value) < 0) {
+    int ec = PyDictToDbDocument_SetProperty(result, key_content, item_value);
+    if (ec < 0) {  // polodb error
       Py_DECREF(list);
       PLDB_free_doc(result);
       PyErr_SetString(PyExc_Exception, PLDB_error_msg());
-      PLDB_free_value(value);
       return NULL;
     }
 
-    PLDB_free_value(value);
+    if (ec > 0) {  // python error
+      Py_DECREF(list);
+      PLDB_free_doc(result);
+      return NULL;
+    }
   }
 
   Py_DECREF(list);
   return result;
 }
 
-static DbArray* PyListToDbArray(PyObject* arr) {
-  DbArray* result = PLDB_mk_arr();
+static int PyListToDbArray_SetElement(DbArray* arr, unsigned int index, PyObject* value) {
+  if (value == Py_None) {
+    return PLDB_arr_set_null(arr, index);
+  } else if (PyLong_CheckExact(value)) {
+    int64_t int_value = PyLong_AsLongLong(value);
+    return PLDB_arr_set_int(arr, index, int_value);
+  } else if (PyBool_Check(value)) {
+    int bl_value = 0;
+    if (value == Py_True) {
+      bl_value = 1;
+    }
+    return PLDB_arr_set_bool(arr, index, bl_value);
+  } else if (PyFloat_CheckExact(value)) {
+    double float_value = PyFloat_AsDouble(value);
+    return PLDB_arr_set_double(arr, index, float_value);
+  } else if (PyUnicode_CheckExact(value)) {
+    const char* content = PyUnicode_AsUTF8(value);
+    return PLDB_arr_set_string(arr, index, content);
+  } else if (Py_TYPE(value) == &PyDict_Type) {
+    DbDocument* child_doc = PyDictToDbDocument(value);
+    int ec = PLDB_arr_set_doc(arr, index, child_doc);
+    PLDB_free_doc(child_doc);
+    return ec;
+  } else if (Py_TYPE(value) == &PyList_Type) {
+    DbArray* child_arr = PyListToDbArray(value);
+    int ec = PLDB_arr_set_arr(arr, index, child_arr);
+    PLDB_free_arr(child_arr);
+    return ec;
+  } else if (Py_TYPE(value) == &ObjectIdObjectType) {
+    ObjectIdObject* oid = (ObjectIdObject*)value;
+    return PLDB_arr_set_object_id(arr, index, oid->oid);
+  } else if (Py_TYPE(value) == &DocumentObjectType) {
+    DocumentObject* child_doc = (DocumentObject*)value;
+    return PLDB_arr_set_doc(arr, index, child_doc->doc);
+  } else if (PyDateTime_CheckExact(value)) {
+    PyObject* result = PyObject_CallMethod(value, "timestamp", "");
+    if (result == NULL) {
+      return 1;
+    }
+    if (!PyFloat_CheckExact(result)) {
+      PyErr_SetString(PyExc_TypeError, "return of timestamp should be float");
+      Py_DECREF(result);
+      return 1;
+    }
+    double timestamp = PyFloat_AsDouble(result);
+    return PLDB_arr_set_UTCDateTime(arr, index, (int64_t)timestamp);
+  }
+  return 0;
+}
 
+static DbArray* PyListToDbArray(PyObject* arr) {
   Py_ssize_t len = PyList_Size(arr);
+
+  DbArray* result = PLDB_mk_arr_with_size(len);
   for (Py_ssize_t i = 0; i < len; i++) {
     PyObject* item = PyList_GetItem(arr, i);
-    DbValue* item_value = PyObjectToDbValue(item);
-    if (item_value == NULL) {
+
+    int ec = PyListToDbArray_SetElement(result, i, item);
+    if (ec < 0) {  // db error
+      PyErr_SetString(PyExc_Exception, PLDB_error_msg());
       PLDB_free_arr(result);
       return NULL;
     }
-    PLDB_arr_push(result, item_value);
-    PLDB_free_value(item_value);
+
+    if (ec > 0) {  // python error
+      PLDB_free_arr(result);
+      return NULL;
+    }
   }
 
   return result;

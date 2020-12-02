@@ -1,6 +1,6 @@
 use crate::DbResult;
 use crate::page::{RawPage, PageHandler};
-use super::btree::{BTreeNode, HEADER_SIZE, ITEM_SIZE};
+use super::{BTreeNode, HEADER_SIZE, ITEM_SIZE};
 
 pub(super) struct BTreePageWrapperBase<'a> {
     pub(super) page_handler:       &'a mut PageHandler,

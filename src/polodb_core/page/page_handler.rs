@@ -5,23 +5,21 @@ use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
 use std::path::{Path, PathBuf};
 use polodb_bson::Document;
-use super::page::RawPage;
+use super::RawPage;
 use super::pagecache::PageCache;
 use super::header_page_wrapper;
 use super::header_page_wrapper::HeaderPageWrapper;
 use crate::journal::{JournalManager, TransactionType};
 use crate::dump::JournalDump;
-use crate::DbResult;
+use crate::{DbResult, Config};
 use crate::error::DbErr;
 use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::data_ticket::DataTicket;
 use crate::page::free_list_data_wrapper::FreeListDataWrapper;
 
-const DB_INIT_BLOCK_COUNT: u32 = 16;
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
-const JOURNAL_FULL_SIZE: usize = 1000;
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Copy, Clone)]
 pub(crate) enum TransactionState {
     NoTrans,
     User,
@@ -32,8 +30,6 @@ pub(crate) enum TransactionState {
 pub(crate) struct PageHandler {
     file:                     File,
 
-    pub last_commit_db_size:  u64,
-
     pub page_size:            u32,
     page_cache:               Box<PageCache>,
     journal_manager:          Box<JournalManager>,
@@ -41,6 +37,8 @@ pub(crate) struct PageHandler {
     data_page_map:            BTreeMap<u32, Vec<u32>>,
 
     transaction_state:        TransactionState,
+
+    config:                   Rc<Config>,
 
 }
 
@@ -63,14 +61,14 @@ impl PageHandler {
         Ok(wrapper.0)
     }
 
-    fn init_db(file: &mut File, page_size: u32) -> std::io::Result<(RawPage, u32, u64)> {
+    fn init_db(file: &mut File, page_size: u32, init_block_count: u64) -> std::io::Result<(RawPage, u32, u64)> {
         let meta = file.metadata()?;
         let file_len = meta.len();
         if file_len < page_size as u64 {
-            let expected_file_size: u64 = (page_size as u64) * (DB_INIT_BLOCK_COUNT as u64);
+            let expected_file_size: u64 = (page_size as u64) * init_block_count;
             file.set_len(expected_file_size)?;
             let first_page = PageHandler::force_write_first_block(file, page_size)?;
-            Ok((first_page, DB_INIT_BLOCK_COUNT as u32, expected_file_size))
+            Ok((first_page, init_block_count as u32, expected_file_size))
         } else {
             let block_count = file_len / (page_size as u64);
             let first_page = PageHandler::read_first_block(file, page_size)?;
@@ -86,29 +84,28 @@ impl PageHandler {
         buf
     }
 
+    #[allow(dead_code)]
     pub fn new(path: &Path, page_size: u32) -> DbResult<PageHandler> {
+        let config = Rc::new(Config::default());
+        PageHandler::with_config(path, page_size, config)
+    }
+
+    pub fn with_config(path: &Path, page_size: u32, config: Rc<Config>) -> DbResult<PageHandler> {
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .read(true)
             .open(path)?;
 
-        let (_, _, db_file_size) = PageHandler::init_db(&mut file, page_size)?;
+        let (_, _, db_file_size) = PageHandler::init_db(&mut file, page_size, config.init_block_count)?;
 
         let journal_file_path: PathBuf = PageHandler::mk_journal_path(path);
         let journal_manager = JournalManager::open(&journal_file_path, page_size, db_file_size)?;
 
         let page_cache = PageCache::new_default(page_size);
 
-        let last_commit_db_size = {
-            let meta = file.metadata()?;
-            meta.len()
-        };
-
         Ok(PageHandler {
             file,
-
-            last_commit_db_size,
 
             page_size,
             page_cache: Box::new(page_cache),
@@ -117,6 +114,8 @@ impl PageHandler {
             data_page_map: BTreeMap::new(),
 
             transaction_state: TransactionState::NoTrans,
+
+            config,
 
         })
     }
@@ -132,12 +131,8 @@ impl PageHandler {
 
             // current is auto-read, but going to write
             TransactionState::UserAuto => {
-                match (ty, self.transaction_type()) {
-                    (TransactionType::Write, Some(TransactionType::Read)) => {
-                        self.upgrade_read_transaction_to_write()?;
-                    }
-
-                    _ => ()
+                if let (TransactionType::Write, Some(TransactionType::Read)) = (ty, self.transaction_type()) {
+                    self.upgrade_read_transaction_to_write()?;
                 }
             }
 
@@ -192,9 +187,9 @@ impl PageHandler {
             }
         };
 
-        removed_key.map(|key| {
+        if let Some(key) = removed_key {
             self.data_page_map.remove(&key);
-        });
+        }
 
         Ok(wrapper)
     }
@@ -258,7 +253,10 @@ impl PageHandler {
 
         let offset = (page_id as u64) * (self.page_size as u64);
         let mut result = RawPage::new(page_id, self.page_size);
-        result.read_from_file(&mut self.file, offset)?;
+
+        if self.journal_manager.record_db_size() >= offset + (self.page_size as u64) {
+            result.read_from_file(&mut self.file, offset)?;
+        }
 
         self.page_cache.insert_to_cache(&result);
 
@@ -360,10 +358,8 @@ impl PageHandler {
         }
 
         first_page_wrapper.set_free_list_size(current_size + (pages.len() as u32));
-        let mut counter = 0;
-        for pid in pages {
-            first_page_wrapper.set_free_list_content(current_size + counter, *pid);
-            counter += 1;
+        for (counter, pid) in pages.iter().enumerate() {
+            first_page_wrapper.set_free_list_content(current_size + (counter as u32), *pid);
         }
 
         self.pipeline_write_page(&first_page_wrapper.0)?;
@@ -415,9 +411,10 @@ impl PageHandler {
 
     #[inline]
     pub fn is_journal_full(&self) -> bool {
-        (self.journal_manager.len() as usize) >= JOURNAL_FULL_SIZE
+        (self.journal_manager.len() as u64) >= self.config.journal_full_size
     }
 
+    #[inline]
     pub fn checkpoint_journal(&mut self) -> DbResult<()> {
         self.journal_manager.checkpoint_journal(&mut self.file)
     }
@@ -495,10 +492,9 @@ impl PageHandler {
         let null_page_bar = first_page_wrapper.get_null_page_bar();
         first_page_wrapper.set_null_page_bar(null_page_bar + 1);
 
-        if (null_page_bar as u64) >= self.last_commit_db_size {  // truncate file
-            let expected_size = self.last_commit_db_size + (DB_INIT_BLOCK_COUNT * self.page_size) as u64;
-
-            self.last_commit_db_size = expected_size;
+        if (null_page_bar as u64) >= self.journal_manager.record_db_size() {  // truncate file
+            let exceed_size = self.config.init_block_count * (self.page_size as u64);
+            self.journal_manager.expand_db_size(exceed_size)?;
         }
 
         self.pipeline_write_page(&first_page_wrapper.0)?;
@@ -534,6 +530,11 @@ impl PageHandler {
         self.transaction_state = state;
     }
 
+    #[inline]
+    pub fn transaction_state(&self) -> TransactionState {
+        self.transaction_state
+    }
+
     pub fn commit(&mut self) -> DbResult<()> {
         self.journal_manager.commit()?;
         if self.is_journal_full() {
@@ -551,6 +552,10 @@ impl PageHandler {
         self.journal_manager.rollback()?;
         self.page_cache = Box::new(PageCache::new_default(self.page_size));
         Ok(())
+    }
+
+    pub fn only_rollback_journal(&mut self) -> DbResult<()> {
+        self.journal_manager.rollback()
     }
 
     #[inline]

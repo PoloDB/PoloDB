@@ -91,7 +91,7 @@ impl fmt::Display for DbErr {
             DbErr::IndexAlreadyExists(index_key_name) => write!(f, "index for {} already exists", index_key_name),
             DbErr::FieldTypeUnexpected(st) => write!(f, "{}", st),
             DbErr::ParseError(reason) => write!(f, "ParseError: {}", reason),
-            DbErr::IOErr(io_err) => io_err.fmt(f),
+            DbErr::IOErr(io_err) => write!(f, "IOErr: {}", io_err),
             DbErr::UTF8Err(utf8_err) => utf8_err.fmt(f),
             DbErr::BsonErr(bson_err) => write!(f, "bson error: {}", bson_err),
             DbErr::DataSizeTooLarge(expected, actual) =>

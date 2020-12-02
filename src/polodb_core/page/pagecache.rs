@@ -154,7 +154,7 @@ impl LruMap {
     }
 
     pub fn remove(&mut self, key: u32) -> Option<u32> {
-        let ptr: &Box<LruNode> = match self.data.get(&key) {
+        let ptr: &LruNode = match self.data.get(&key) {
             Some(node_ref) => node_ref,
             None => return None,
         };

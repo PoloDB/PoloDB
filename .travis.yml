@@ -3,6 +3,9 @@ language: rust
 rust:
   - stable
 
+before_script:
+  - rustup component add clippy
+
 script:
-  - cargo build --verbose --workspace
+  - cargo clippy --verbose --workspace
   - cargo test --verbose --workspace

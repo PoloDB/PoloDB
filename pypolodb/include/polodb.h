@@ -92,13 +92,33 @@ void PLDB_free_handle(DbHandle* handle);
 // DbArray {
 DbArray* PLDB_mk_arr();
 
+DbArray* PLDB_mk_arr_with_size(unsigned int size);
+
 void PLDB_free_arr(DbArray* arr);
 
 unsigned int PLDB_arr_len(DbArray* arr);
 
-DbValue* PLDB_arr_to_value(DbArray* arr);
-
 void PLDB_arr_push(DbArray* arr, DbValue* value);
+
+int PLDB_arr_set_null(DbArray* arr, unsigned int index);
+
+int PLDB_arr_set_int(DbArray* arr, unsigned int index, int64_t value);
+
+int PLDB_arr_set_bool(DbArray* arr, unsigned int index, int value);
+
+int PLDB_arr_set_double(DbArray* arr, unsigned int index, double value);
+
+int PLDB_arr_set_string(DbArray* arr, unsigned int index, const char* value);
+
+int PLDB_arr_set_binary(DbArray* arr, unsigned int index, const unsigned char* data, unsigned int data_size);
+
+int PLDB_arr_set_arr(DbArray* arr, unsigned int index, DbArray* value);
+
+int PLDB_arr_set_doc(DbArray* arr, unsigned int index, DbDocument* value);
+
+int PLDB_arr_set_object_id(DbArray* arr, unsigned int index, DbObjectId* value);
+
+int PLDB_arr_set_UTCDateTime(DbArray* arr, unsigned int index, int64_t ts);
 
 int PLDB_arr_get(DbArray* arr, unsigned int index, DbValue** out_val);
 // }
@@ -109,6 +129,24 @@ DbDocument* PLDB_mk_doc();
 void PLDB_free_doc(DbDocument* doc);
 
 int PLDB_doc_set(DbDocument* doc, const char* key, DbValue* val);
+
+int PLDB_doc_set_string(DbDocument* doc, const char* key, const char* value);
+
+int PLDB_doc_set_null(DbDocument* doc, const char* key);
+
+int PLDB_doc_set_int(DbDocument* doc, const char* key, int64_t value);
+
+int PLDB_doc_set_bool(DbDocument* doc, const char* key, int value);
+
+int PLDB_doc_set_double(DbDocument* doc, const char* key, double value);
+
+int PLDB_doc_set_doc(DbDocument* doc, const char* key, DbDocument* value);
+
+int PLDB_doc_set_arr(DbDocument* doc, const char* key, DbArray* value);
+
+int PLDB_doc_set_object_id(DbDocument* doc, const char* key, DbObjectId* value);
+
+int PLDB_doc_set_UTCDateTime(DbDocument* doc, const char* key, int64_t ts);
 
 int PLDB_doc_get(DbDocument* doc, const char* key, DbValue** out_val);
 
@@ -121,23 +159,9 @@ int PLDB_doc_iter_next(DbDocumentIter* iter,
 
 void PLDB_free_doc_iter(DbDocumentIter* iter);
 
-DbValue* PLDB_doc_to_value(DbDocument* doc);
-
 // }
 
 // DbValue {
-DbValue* PLDB_mk_null();
-
-DbValue* PLDB_mk_double(double value);
-
-DbValue* PLDB_mk_bool(int bl);
-
-DbValue* PLDB_mk_int(int64_t value);
-
-DbValue* PLDB_mk_str(const char* content);
-
-DbValue* PLDB_mk_binary(unsigned char* content, unsigned int size);
-
 int PLDB_value_type(const DbValue* value);
 
 int PLDB_value_get_i64(const DbValue* value, int64_t* out_value);
@@ -165,8 +189,6 @@ DbObjectId* PLDB_mk_object_id(Database* db);
 void PLDB_free_object_id(DbObjectId*);
 
 int PLDB_object_id_to_hex(const DbObjectId* oid, char* buffer, unsigned int size);
-
-DbValue* PLDB_object_id_to_value(const DbObjectId* oid);
 // }
 
 // DbUTCDateTime {
@@ -174,8 +196,6 @@ DbValue* PLDB_object_id_to_value(const DbObjectId* oid);
 DbUTCDateTime*  PLDB_mk_UTCDateTime(int64_t time);
 
 int64_t PLDB_UTCDateTime_get_timestamp(const DbUTCDateTime* dt);
-
-DbValue* PLDB_UTCDateTime_to_value(const DbUTCDateTime* dt);
 
 void PLDB_free_UTCDateTime(DbUTCDateTime* dt);
 // }

@@ -1,7 +1,7 @@
 use polodb_bson::Document;
 use crate::DbResult;
 use crate::page::{RawPage, PageHandler};
-use super::btree::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
+use super::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;
 use crate::error::DbErr;
 use crate::data_ticket::DataTicket;
@@ -87,7 +87,6 @@ impl<'a> BTreePageInsertWrapper<'a> {
         BTreePageInsertWrapper(base)
     }
 
-    #[inline]
     pub(crate) fn insert_item(&mut self, doc: &Document, replace: bool) -> DbResult<InsertResult> {
         doc_validation::validate(doc)?;
         // insert to root node
@@ -157,10 +156,10 @@ impl<'a> BTreePageInsertWrapper<'a> {
                 } else {  // left has page
                     // insert to left page
                     let tmp = self.insert_item_to_page(left_pid, pid, doc, false, replace)?;
-                    tmp.backward_item.map(|backward_item| {
+                    if let Some(backward_item) = tmp.backward_item {
                         btree_node.content.insert(index, backward_item.content);
                         btree_node.indexes.insert(index + 1, backward_item.right_pid);
-                    });
+                    }
                     tmp.data_ticket
                 }
             }

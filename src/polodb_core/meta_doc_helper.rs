@@ -70,7 +70,7 @@ impl MetaDocEntry {
 
     pub(crate) fn merge_pkey_ty_to_meta(&mut self, meta_doc: &mut Document, value_doc: &Document) {
         let pkey_ty = value_doc.pkey_id().unwrap().ty_int();
-        self.flags |= ((pkey_ty as u32) & KEY_TY_FLAG);
+        self.flags |= (pkey_ty as u32) & KEY_TY_FLAG;
         meta_doc.insert(meta_doc_key::FLAGS.into(), Value::Int(self.flags as i64));
     }
 

@@ -1,6 +1,6 @@
 [package]
 name = "polodb_core"
-version = "0.4.2"
+version = "0.4.3"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 license = "MIT"
 edition = "2018"
@@ -16,7 +16,7 @@ path="lib.rs"
 [dependencies]
 libc = "0.2"
 #lazy_static = "1.4.0"
-polodb_bson = "0.2.0"
+polodb_bson = "0.4.3"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["fileapi"] }

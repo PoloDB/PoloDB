@@ -129,12 +129,72 @@ static napi_value Collection_constructor(napi_env env, napi_callback_info info) 
   return this_arg;
 }
 
-static DbValue* JsValueToDbValue(napi_env env, napi_value value);
 static DbDocument* JsValueToDbDocument(napi_env env, napi_value value);
-static DbValue* JsStringValueToDbValue(napi_env env, napi_value value);
-static DbValue* JsArrayValueToDbValue(napi_env env, napi_value value);
+static DbArray* JsArrayValueToDbArray(napi_env env, napi_value value);
 
-static DbValue* JsValueToDbValue(napi_env env, napi_value value) {
+static napi_status JsArrayValueToDbArray_SetStringElement(napi_env env, DbArray* arr, unsigned int index, napi_value value) {
+  napi_status status;
+
+  size_t str_len = 0;
+  status = napi_get_value_string_utf8(env, value, NULL, 0, &str_len);
+  if (status != napi_ok) {
+    return status;
+  }
+
+  char* buffer = malloc(str_len + 1);
+  memset(buffer, 0, str_len + 1);
+
+  status = napi_get_value_string_utf8(env, value, buffer, str_len + 1, &str_len);
+  if (status != napi_ok) {
+    return status;
+  }
+
+  int ec = PLDB_arr_set_string(arr, index, buffer);
+  if (ec < 0) {
+    free(buffer);
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return napi_generic_failure;
+  }
+
+  free(buffer);
+
+  return napi_ok;
+}
+
+static napi_status JsArrayValueToDbArray_SetArrayElement(napi_env env, DbArray* arr, unsigned int index, napi_value child_value) {
+  DbArray* child_arr = JsArrayValueToDbArray(env, child_value);
+  if (arr == napi_ok) {
+    return napi_generic_failure;
+  }
+
+  napi_status result = napi_ok;
+
+  if (PLDB_arr_set_arr(arr, index, child_arr) < 0) {
+    result = napi_throw_error(env, NULL, PLDB_error_msg());
+  }
+
+  PLDB_free_arr(child_arr);
+
+  return result;
+}
+
+static napi_status JsArrayValueToDbArray_SetUTCDateTime(napi_env env, DbArray* arr, unsigned int index, napi_value value) {
+  napi_status status;
+
+  int64_t utc_datetime = 0;
+  status = JsGetUTCDateTime(env, value, &utc_datetime);
+  CHECK_STAT(status);
+
+  int ec = PLDB_arr_set_UTCDateTime(arr, index, utc_datetime);
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return napi_generic_failure;
+  }
+
+  return napi_ok;
+}
+
+static napi_status JsArrayValueToDbArray_SetElement(napi_env env, DbArray* arr, unsigned int index, napi_value value) {
   napi_status status;
   napi_valuetype ty;
 
@@ -153,71 +213,91 @@ static DbValue* JsValueToDbValue(napi_env env, napi_value value) {
   switch (ty) {
     case napi_undefined:
     case napi_null:
-      return PLDB_mk_null();
+      PLDB_arr_set_null(arr, index);
+      break;
 
     case napi_string:
-      return JsStringValueToDbValue(env, value);
+      return JsArrayValueToDbArray_SetStringElement(env, arr, index, value);
 
     case napi_boolean:
       status = napi_get_value_bool(env, value, &bl_value);
       if (status != napi_ok) {
-        return NULL;
+        return status;
       }
-      return PLDB_mk_bool(bl_value ? 1 : 0);
+      PLDB_arr_set_bool(arr, index, bl_value ? 1 : 0);
+      break;
 
     case napi_number: {
       ec = JsIsInteger(env, value);
       if (ec < 0) {
-        return NULL;
+        napi_throw_error(env, NULL, PLDB_error_msg());
+        return napi_generic_failure;
       } else if (ec) {
         status = napi_get_value_int64(env, value, &int_value);
-        return PLDB_mk_int(int_value);
+        if (status != napi_ok) return status;
+        PLDB_arr_set_int(arr, index, int_value);
       } else {
         status = napi_get_value_double(env, value, &float_value);
-        return PLDB_mk_double(float_value);
+        if (status != napi_ok) return status;
+        PLDB_arr_set_double(arr, index, float_value);
       }
+      break;
     }
 
     case napi_object: {
-      ec = JsIsArray(env, value);
-      if (ec < 0) {
-        return NULL;
-      } else if (ec) {
-        return JsArrayValueToDbValue(env, value);
+      bool is_array = false;
+      bool is_date = false;
+      status = JsIsArray(env, value, &is_array);
+      CHECK_STAT(status);
+
+      if (is_array) {
+        return JsArrayValueToDbArray_SetArrayElement(env, arr, index, value);
       }
+
+      status = napi_is_date(env, value, &is_date);
 
       if (napi_instanceof(env, value, object_id_instance, &bl_value)) {
         DbObjectId* oid = NULL;  // borrowed
         status = napi_unwrap(env, value, (void**)&oid);
         CHECK_STAT(status);
 
-        return PLDB_object_id_to_value(oid);
+        if (PLDB_arr_set_object_id(arr, index, oid) < 0) {
+          napi_throw_error(env, NULL, PLDB_error_msg());
+          return napi_generic_failure;
+        }
+      } else {
+        DbDocument* child_doc = JsValueToDbDocument(env, value);
+        if (child_doc == NULL) {
+          return napi_generic_failure;
+        }
+
+        if (PLDB_arr_set_doc(arr, index, child_doc) < 0) {
+          napi_throw_error(env, NULL, PLDB_error_msg());
+          return napi_generic_failure;
+        }
+
+        PLDB_free_doc(child_doc);
       }
-
-      DbDocument* doc = JsValueToDbDocument(env, value);
-      if (doc == NULL) {
-        return NULL;
-      }
-
-      result = PLDB_doc_to_value(doc);
-
-      PLDB_free_doc(doc);
-      return result;
     }
     
     default:
       napi_throw_type_error(env, NULL, "unsupport object type");
-      return NULL;
+      return napi_generic_failure;
+
   }
+
+
+  return napi_ok;
 }
 
-static DbValue* JsArrayValueToDbValue(napi_env env, napi_value value) {
+static DbArray* JsArrayValueToDbArray(napi_env env, napi_value value) {
   napi_status status;
-  DbArray* arr = PLDB_mk_arr();
-
   uint32_t arr_len = 0;
+
   status = napi_get_array_length(env, value, &arr_len);
   CHECK_STAT2(status);
+
+  DbArray* arr = PLDB_mk_arr_with_size(arr_len);
 
   napi_value item_value;
   DbValue* item_db_value;
@@ -225,35 +305,26 @@ static DbValue* JsArrayValueToDbValue(napi_env env, napi_value value) {
     status = napi_get_element(env, value, i, &item_value);
     CHECK_STAT2(status);
 
-    item_db_value = JsValueToDbValue(env, item_value);
-    if (item_db_value == NULL) {
-      goto err;
-    }
-
-    PLDB_arr_push(arr, item_db_value);
-    PLDB_free_arr(arr);
+    status = JsArrayValueToDbArray_SetElement(env, arr, i, item_value);
+    CHECK_STAT2(status);
   }
 
-  DbValue* result = NULL;
   goto normal;
 err:
   PLDB_free_arr(arr);
   return NULL;
 
 normal:
-  result = PLDB_arr_to_value(arr);
-  PLDB_free_arr(arr);
-
-  return result;
+  return arr;
 }
 
-static DbValue* JsStringValueToDbValue(napi_env env, napi_value value) {
+static napi_status JsStringValueToDbValue_SetStringProperty(napi_env env, DbDocument* doc, const char* key, napi_value value) {
   napi_status status;
 
   size_t str_len = 0;
   status = napi_get_value_string_utf8(env, value, NULL, 0, &str_len);
   if (status != napi_ok) {
-    return NULL;
+    return status;
   }
 
   char* buffer = malloc(str_len + 1);
@@ -261,14 +332,151 @@ static DbValue* JsStringValueToDbValue(napi_env env, napi_value value) {
 
   status = napi_get_value_string_utf8(env, value, buffer, str_len + 1, &str_len);
   if (status != napi_ok) {
-    return NULL;
+    return status;
   }
 
-  DbValue* result = PLDB_mk_str(buffer);
+  int ec = PLDB_doc_set_string(doc, key, buffer);
+  if (ec < 0) {
+    free(buffer);
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return napi_generic_failure;
+  }
 
   free(buffer);
 
-  return result;
+  return napi_ok;
+}
+
+static napi_status JsStringValueToDbValue_SetArrayProperty(napi_env env, DbDocument* doc, const char* key, napi_value value) {
+  DbArray* arr = JsArrayValueToDbArray(env, value);
+  if (arr == NULL) {
+    return napi_generic_failure;
+  }
+
+  napi_status result = napi_ok;
+
+  if (PLDB_doc_set_arr(doc, key, arr) < 0) {
+    result = napi_throw_error(env, NULL, PLDB_error_msg());
+  }
+
+  PLDB_free_arr(arr);
+  return napi_ok;
+}
+
+static napi_status JsStringValueToDbValue_SetUTCDateTime(napi_env env, DbDocument* doc, const char* key, napi_value value) {
+  napi_status status;
+
+  int64_t utc_datetime = 0;
+  status = JsGetUTCDateTime(env, value, &utc_datetime);
+  CHECK_STAT(status);
+
+  int ec = PLDB_doc_set_UTCDateTime(doc, key, utc_datetime);
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return napi_generic_failure;
+  }
+
+  return napi_ok;
+}
+
+static napi_status JsValueToDbDocument_SetProperty(napi_env env, DbDocument* doc, const char* key, napi_value value) {
+  napi_status status;
+  napi_valuetype ty;
+
+  napi_value object_id_instance;
+  status = napi_get_reference_value(env, objectid_ref, &object_id_instance);
+  CHECK_STAT(status);
+
+  status = napi_typeof(env, value, &ty);
+
+  DbValue* result = NULL;
+
+  int64_t int_value = 0;
+  double float_value = 0;
+  bool bl_value = false;
+  int ec = 0;
+  switch (ty) {
+    case napi_undefined:
+    case napi_null:
+      PLDB_doc_set_null(doc, key);
+      break;
+
+    case napi_string:
+      return JsStringValueToDbValue_SetStringProperty(env, doc, key, value);
+
+    case napi_boolean:
+      status = napi_get_value_bool(env, value, &bl_value);
+      if (status != napi_ok) {
+        return status;
+      }
+      PLDB_doc_set_bool(doc, key, bl_value ? 1 : 0);
+      break;
+
+    case napi_number: {
+      ec = JsIsInteger(env, value);
+      if (ec < 0) {
+        napi_throw_error(env, NULL, PLDB_error_msg());
+        return napi_generic_failure;
+      } else if (ec) {
+        status = napi_get_value_int64(env, value, &int_value);
+        if (status != napi_ok) return status;
+        PLDB_doc_set_int(doc, key, int_value);
+      } else {
+        status = napi_get_value_double(env, value, &float_value);
+        if (status != napi_ok) return status;
+        PLDB_doc_set_double(doc, key, float_value);
+      }
+      break;
+    }
+
+    case napi_object: {
+      bool is_array = false;
+      bool is_date = false;
+
+      status = JsIsArray(env, value, &is_array);
+      CHECK_STAT(status);
+
+      if (is_array) {
+        return JsStringValueToDbValue_SetArrayProperty(env, doc, key, value);
+      }
+
+      status = napi_is_date(env, value, &is_date);
+      CHECK_STAT(status);
+      if (is_date) {
+        return JsStringValueToDbValue_SetUTCDateTime(env, doc, key, value);
+      }
+
+      if (napi_instanceof(env, value, object_id_instance, &bl_value)) {
+        DbObjectId* oid = NULL;  // borrowed
+        status = napi_unwrap(env, value, (void**)&oid);
+        CHECK_STAT(status);
+
+        if (PLDB_doc_set_object_id(doc, key, oid) < 0) {
+           napi_throw_error(env, NULL, PLDB_error_msg());
+           return napi_generic_failure;
+        }
+      } else {
+        DbDocument* child_doc = JsValueToDbDocument(env, value);
+        if (child_doc == NULL) {
+          return napi_generic_failure;
+        }
+
+        if (PLDB_doc_set_doc(doc, key, child_doc) < 0) {
+          napi_throw_error(env, NULL, PLDB_error_msg());
+          return napi_generic_failure;
+        }
+
+        PLDB_free_doc(child_doc);
+      }
+    }
+    
+    default:
+      napi_throw_type_error(env, NULL, "unsupport object type");
+      return napi_generic_failure;
+
+  }
+
+  return napi_ok;
 }
 
 static DbDocument* JsValueToDbDocument(napi_env env, napi_value value) {
@@ -292,8 +500,6 @@ static DbDocument* JsValueToDbDocument(napi_env env, napi_value value) {
 
   napi_value element_name;
   napi_value element_value;
-  DbValue* db_value;
-  int ec = 0;
   for (uint32_t i = 0; i < arr_len; i++) {
     status = napi_get_element(env, names_array, i, &element_name);
     CHECK_STAT2(status);
@@ -307,19 +513,10 @@ static DbDocument* JsValueToDbDocument(napi_env env, napi_value value) {
     status = napi_get_value_string_utf8(env, element_name, name_buffer, 512, &size);
     CHECK_STAT2(status);
 
-    db_value = JsValueToDbValue(env, element_value);
-    if (db_value == NULL) {
+    status = JsValueToDbDocument_SetProperty(env, doc, name_buffer, element_value);
+    if (status != napi_ok) {
       goto err;
     }
-
-    ec = PLDB_doc_set(doc, name_buffer, db_value);
-    if (ec < 0) {
-      napi_throw_type_error(env, NULL, PLDB_error_msg());
-      PLDB_free_value(db_value);
-      goto err;
-    }
-
-    PLDB_free_value(db_value);
   }
 
   goto normal;
@@ -398,16 +595,17 @@ static napi_value DbArrayToJsValue(napi_env env, DbArray* arr) {
   for (uint32_t i = 0; i < len; i++) {
     ec = PLDB_arr_get(arr, i, &value_item);
     if (ec < 0) {
+      napi_throw_error(env, NULL, "get element error #1");
       return NULL;
     }
 
     napi_value js_item = DbValueToJsValue(env, value_item);
-
-    status = napi_set_element(env, result, i, js_item);
-    if (status != napi_ok) {
-      PLDB_free_value(value_item);
+    if (js_item == NULL) {
       return NULL;
     }
+
+    status = napi_set_element(env, result, i, js_item);
+    CHECK_STAT(status);
 
     PLDB_free_value(value_item);
     value_item = NULL;
@@ -451,6 +649,7 @@ static napi_value DbValueToJsValue(napi_env env, DbValue* value) {
 
     case PLDB_VAL_INT:
       ec = PLDB_value_get_i64(value, &long_value);
+      status = napi_create_int64(env, long_value, &result);
       CHECK_STAT(status);
       return result;
 
@@ -519,9 +718,23 @@ static napi_value DbValueToJsValue(napi_env env, DbValue* value) {
       
       return result;
     }
+
+    case PLDB_VAL_UTC_DATETIME : {
+      DbUTCDateTime* dt = NULL;
+      ec = PLDB_value_get_utc_datetime(value, &dt);
+      if (ec < 0) {
+        napi_throw_error(env, NULL, PLDB_error_msg());
+        return NULL;
+      }
+
+      int64_t utc_datetime = PLDB_UTCDateTime_get_timestamp(dt);
+      PLDB_free_UTCDateTime(dt);
+
+      return JsNewDate(env, utc_datetime);
+    }
     
     default:
-      napi_throw_error(env, NULL, "Uknown DbValue type");
+      napi_throw_error(env, NULL, "Unknown DbValue type");
       return NULL;
 
   }

@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::fmt;
 use super::value::{Value, ty_int};
 use super::linked_hash_map::{LinkedHashMap, Iter};
-use crate::vli;
+use crate::{vli, UTCDateTime};
 use crate::BsonResult;
 use crate::error::{BsonErr, parse_error_reason};
 use crate::array::Array;
@@ -56,7 +56,7 @@ impl Document {
     }
 
     pub fn pkey_id(&self) -> Option<Value> {
-        self.map.get("_id".into()).map(|id| { id.clone() })
+        self.map.get("_id").cloned()
     }
 
     pub fn from_bytes(bytes: &[u8]) -> BsonResult<Document> {
@@ -95,11 +95,7 @@ impl Document {
                     let bl_value = bytes[ptr];
                     ptr += 1;
 
-                    doc.map.insert(key, Value::Boolean(if bl_value != 0 {
-                        true
-                    } else {
-                        false
-                    }));
+                    doc.map.insert(key, Value::Boolean(bl_value != 0));
                 }
 
                 ty_int::INT => {
@@ -148,7 +144,7 @@ impl Document {
 
                     ptr += len as usize;
 
-                    let sub_arr = unsafe{ Array::from_bytes(&buffer)? };
+                    let sub_arr = Array::from_bytes(&buffer)?;
                     doc.map.insert(key, sub_arr.into());
                 }
 
@@ -182,6 +178,16 @@ impl Document {
                     ptr += len as usize;
 
                     doc.map.insert(key, buffer.into());
+                }
+
+                ty_int::UTC_DATETIME => {
+                    let (key, to_ptr) = Document::parse_key(bytes, ptr)?;
+                    ptr = to_ptr;
+
+                    let (integer, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    ptr += offset;
+
+                    doc.map.insert(key, Value::UTCDateTime(Rc::new(UTCDateTime::new(integer))));
                 }
 
                 _ => return Err(BsonErr::ParseError(parse_error_reason::UNEXPECTED_DOCUMENT_FLAG.into())),
@@ -282,7 +288,7 @@ impl Document {
                 buffer.push(ty_int::UTC_DATETIME);  // not standard, use vli
                 Document::key_to_bytes(&key, buffer);
                 let ts = datetime.timestamp();
-                vli::encode(buffer, ts as i64).expect("encode vli error");
+                vli::encode(buffer, ts as i64)?;
             }
 
         }

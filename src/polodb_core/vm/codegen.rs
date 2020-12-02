@@ -258,7 +258,7 @@ impl Codegen {
     fn recursively_get_field(&mut self, key: &str, get_field_failed_location: u32) -> usize {
         let slices: Vec<&str> = key.split('.').collect();
         for slice in &slices {
-            let str_ref: &str = slice.as_ref();
+            let str_ref: &str = slice;
             let current_stat_id = self.push_static(str_ref.into());
             self.emit_get_field(current_stat_id, get_field_failed_location);
         }
@@ -272,7 +272,7 @@ impl Codegen {
                 "$eq" => {
                     let field_size = self.recursively_get_field(key, get_field_failed_location);
 
-                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::Equal);
 
@@ -286,7 +286,7 @@ impl Codegen {
                 "$gt" => {
                     let field_size = self.recursively_get_field(key, get_field_failed_location);
 
-                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::Cmp);
 
@@ -302,7 +302,7 @@ impl Codegen {
                 "$gte" => {
                     let field_size = self.recursively_get_field(key, get_field_failed_location);
 
-                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::Cmp);
 
@@ -323,7 +323,7 @@ impl Codegen {
 
                     let field_size = self.recursively_get_field(key, get_field_failed_location);
 
-                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::In);
 
@@ -336,7 +336,7 @@ impl Codegen {
                 "$lt" => {
                     let field_size = self.recursively_get_field(key, get_field_failed_location);
 
-                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::Cmp);
 
@@ -352,7 +352,7 @@ impl Codegen {
                 "$lte" => {
                     let field_size = self.recursively_get_field(key, get_field_failed_location);
 
-                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::Cmp);
 
@@ -366,7 +366,7 @@ impl Codegen {
                 "$ne" => {
                     let field_size = self.recursively_get_field(key, get_field_failed_location);
 
-                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::Equal);
 
@@ -387,7 +387,7 @@ impl Codegen {
 
                     let field_size = self.recursively_get_field(key, get_field_failed_location);
 
-                    let stat_val_id = self.push_static(sub_value.clone().into());
+                    let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::In);
 
@@ -441,7 +441,7 @@ impl Codegen {
                         let new_name = match value {
                             Value::String(new_name) => new_name.as_str(),
                             t => {
-                                let err = mk_field_name_type_unexpected(key, "String".into(), t.ty_name());
+                                let err = mk_field_name_type_unexpected(key, "String", t.ty_name());
                                 return Err(err);
                             }
                         };

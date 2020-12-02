@@ -30,42 +30,74 @@ int JsIsInteger(napi_env env, napi_value value) {
   return bl_result ? 1 : 0;
 }
 
-int JsIsArray(napi_env env, napi_value value) {
+napi_status JsIsArray(napi_env env, napi_value value, bool* result) {
   napi_status status;
   napi_value global;
 
   status = napi_get_global(env, &global);
-  if (status != napi_ok) {
-    return -1;
-  }
+  CHECK_STAT(status);
 
-  napi_value array_str;
-  status = napi_create_string_utf8(env, "Array", NAPI_AUTO_LENGTH, &array_str);
-  if (status != napi_ok) {
-    return -1;
-  }
+  napi_value array_obj;
+  status = napi_get_named_property(env, global, "Array", &array_obj);
+  CHECK_STAT(status);
 
-  napi_value is_array_str;
-  status = napi_create_string_utf8(env, "isArray", NAPI_AUTO_LENGTH, &is_array_str);
-  if (status != napi_ok) {
-    return -1;
-  }
+  napi_value is_array_fun;
+  status = napi_get_named_property(env, array_obj, "isArray", &is_array_fun);
+  CHECK_STAT(status);
 
   size_t argc = 1;
   napi_value argv[] = { value };
 
+  napi_value js_result;
+
+  status = napi_call_function(env, array_obj, is_array_fun, argc, argv, &js_result);
+  if (status != napi_ok) {
+    return status;
+  }
+
+  status = napi_get_value_bool(env, js_result, result);
+  CHECK_STAT(status);
+
+  return napi_ok;
+}
+
+napi_status JsGetUTCDateTime(napi_env env, napi_value value, int64_t* utc_datetime) {
+  napi_status status;
+  napi_value get_time_fun;
+
+  status = napi_get_named_property(env, value, "getTime", &get_time_fun);
+  CHECK_STAT(status);
+
   napi_value result;
-  status = napi_call_function(env, array_str, is_array_str, argc, argv, &result);
-  if (status != napi_ok) {
-    return -1;
-  }
+  status = napi_call_function(env, value, get_time_fun, 0, NULL, &result);
+  CHECK_STAT(status);
 
-  bool bl_result = false;
+  status = napi_get_value_int64(env, result, utc_datetime);
 
-  status = napi_get_value_bool(env, result, &bl_result);
-  if (status != napi_ok) {
-    return -1;
-  }
+  return status;
+}
 
-  return bl_result ? 1 : 0;
+napi_value JsNewDate(napi_env env, int64_t timestamp) {
+  napi_status status;
+  napi_value global;
+
+  status = napi_get_global(env, &global);
+  CHECK_STAT(status);
+
+  napi_value js_date;
+  status = napi_get_named_property(env, global, "Date", &js_date);
+  CHECK_STAT(status);
+
+  napi_value js_int;
+  status = napi_create_int64(env, timestamp, &js_int);
+  CHECK_STAT(status);
+
+  size_t argc = 1;
+  napi_value argv[] = { js_int };
+
+  napi_value result;
+  status = napi_new_instance(env, js_date, argc, argv, &result);
+  CHECK_STAT(status);
+
+  return result;
 }
