@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.12)
 project (polodb-js)
 include_directories(${CMAKE_JS_INC})
 file(GLOB SOURCE_FILES "utils.h" "utils.c" "db.c")
