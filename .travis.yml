@@ -3,9 +3,20 @@ language: rust
 rust:
   - stable
 
+env:
+  - PLDB_LOCAL=true
+
 before_script:
   - rustup component add clippy
+  - curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.37.2/install.sh | bash
+  - nvm install 12
+  - nvm use 12
+  - npm install -g cmake-js
 
 script:
   - cargo clippy --verbose --workspace
   - cargo test --verbose --workspace
+  - cd polodb.js
+  - npm install
+  - npm run compile
+  - npm run test
