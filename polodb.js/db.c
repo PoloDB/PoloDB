@@ -163,7 +163,7 @@ static napi_status JsArrayValueToDbArray_SetStringElement(napi_env env, DbArray*
 
 static napi_status JsArrayValueToDbArray_SetArrayElement(napi_env env, DbArray* arr, unsigned int index, napi_value child_value) {
   DbArray* child_arr = JsArrayValueToDbArray(env, child_value);
-  if (arr == napi_ok) {
+  if (child_arr == NULL) {
     return napi_generic_failure;
   }
 
