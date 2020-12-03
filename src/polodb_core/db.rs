@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use std::path::Path;
-use polodb_bson::{Document, ObjectId, Value};
+use polodb_bson::{Document, ObjectId};
 use super::error::DbErr;
 use crate::Config;
 use crate::context::DbContext;
@@ -514,13 +514,6 @@ mod tests {
         doc.insert("_id".into(), Value::String(Rc::new(new_str.clone())));
 
         let _ = collection.insert(Rc::new(doc)).unwrap();
-
-        // let cursor = db.ctx.get_collection_cursor("test").unwrap();
-
-        // let get_one = cursor.next().unwrap().unwrap();
-        // let get_one_id = get_one.get("_id").unwrap().unwrap_string();
-
-        // assert_eq!(get_one_id, new_str);
     }
 
     #[test]
@@ -570,8 +563,11 @@ mod tests {
 
         let third = &doc_collection[3];
         let third_key = third.get("_id").unwrap();
-        assert!(collection.delete(third_key).unwrap().is_some());
-        assert!(collection.delete(third_key).unwrap().is_none());
+        let delete_doc = mk_document! {
+            "_id": third_key.clone(),
+        };
+        assert!(collection.delete(Some(&delete_doc)).unwrap() > 0);
+        assert_eq!(collection.delete(Some(&delete_doc)).unwrap(), 0);
     }
 
     #[test]
@@ -593,8 +589,10 @@ mod tests {
 
         for doc in &doc_collection {
             let key = doc.get("_id").unwrap();
-            let deleted = collection.delete(key).unwrap();
-            assert!(deleted.is_some(), "delete nothing with key: {}", key);
+            let deleted = collection.delete(Some(&mk_document!{
+                "_id": key.clone(),
+            })).unwrap();
+            assert!(deleted > 0, "delete nothing with key: {}", key);
             let find_doc = mk_document! {
                 "_id": key.clone(),
             };

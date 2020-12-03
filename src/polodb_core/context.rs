@@ -593,6 +593,7 @@ impl DbContext {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn delete_by_pkey(&mut self, col_id: u32, key: &Value) -> DbResult<Option<Rc<Document>>> {
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
