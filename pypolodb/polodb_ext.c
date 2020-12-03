@@ -321,10 +321,27 @@ static PyObject* CollectionObject_insert(CollectionObject* self, PyObject* args)
     return NULL;
   }
 
-  if (PLDB_insert(self->db_obj->db, self->id, self->meta_version, doc) < 0) {
+  int ec = PLDB_insert(self->db_obj->db, self->id, self->meta_version, doc);
+  if (ec < 0) {
     PLDB_free_doc(doc);
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     return NULL;
+  }
+
+  if (ec > 0) {
+    DbValue* new_id = NULL;
+    int ec2 = PLDB_doc_get(doc, "_id", &new_id);
+    if (ec2 < 0) {
+      PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+      PLDB_free_doc(doc);
+      return NULL;
+    }
+    PyObject* py_id = DbValueToPyObject(new_id);
+    if (PyDict_SetItemString(obj, "_id", py_id) < 0) {
+      PyErr_SetString(PyExc_RuntimeError, "can not set '_id' for dict");
+      PLDB_free_doc(doc);
+      return NULL;
+    }
   }
 
   PLDB_free_doc(doc);

@@ -82,6 +82,7 @@ def download_lib():
        return file_path
 
 lib_path = download_lib()
+# lib_path = '../target/release/libpolodb_clib.a'
 
 extra_objects = [lib_path]
 
