@@ -54,7 +54,7 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
 /// use polodb_bson::mk_document;
 ///
 /// let mut db = Database::open("/tmp/test-collection").unwrap();
-/// let mut collection = db.create_collection("test").unwrap();
+/// let mut collection = db.collection("test").unwrap();
 /// collection.insert(Rc::new(mk_document! {
 ///     "_id": 0,
 ///     "name": "Vincent Chan",
@@ -181,7 +181,7 @@ impl<'a>  Collection<'a> {
 /// use polodb_core::Database;
 ///
 /// let mut db = Database::open("/tmp/test-polo.db").unwrap();
-/// let test_collection = db.create_collection("test").unwrap();
+/// let test_collection = db.collection("test").unwrap();
 /// ```
 pub struct Database {
     ctx: Box<DbContext>,
@@ -228,10 +228,14 @@ impl Database {
     /// [error]: ../enum.DbErr.html
     ///
     /// Return an exist collection. If the collection is not exists,
-    /// and [error] will be returned.
+    /// a new collection will be created.
     ///
     pub fn collection(&mut self, col_name: &str) -> DbResult<Collection> {
-        let info = self.ctx.get_collection_meta_by_name(col_name)?;
+        let info = match self.ctx.get_collection_meta_by_name(col_name) {
+            Ok(meta) => meta,
+            Err(DbErr::CollectionNotFound(_)) => self.ctx.create_collection(col_name)?,
+            Err(err) => return Err(err),
+        };
         Ok(Collection::new(self, info.id, info.meta_version, col_name))
     }
 
