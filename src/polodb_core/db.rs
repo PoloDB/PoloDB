@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use std::path::Path;
-use polodb_bson::{Document, ObjectId, Value};
+use polodb_bson::{Document, ObjectId};
 use super::error::DbErr;
 use crate::Config;
 use crate::context::DbContext;
@@ -20,6 +20,47 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
     Ok(())
 }
 
+/// A wrapper of collection in struct.
+///
+/// All CURD methods can be done through this structure.
+///
+/// Find/Update/Delete operations need a query object.
+///
+/// ## Query operation:
+///
+/// | Name | Description |
+/// | ----------| ----------- |
+/// | $eq | Matches values that are equal to a specified value. |
+/// | $gt | Matches values that are greater than a specified value. |
+/// | $gte | Matches values that are greater than or equal to a specified value. |
+/// | $in | Matches any of the values specified in an array. |
+/// | $lt | Matches values that are less than a specified value. |
+/// | $lte | Matches values that are less than or equal to a specified value. |
+/// | $ne | Matches all values that are not equal to a specified value. |
+/// | $nin | Matches none of the values specified in an array. |
+///
+/// ## Logical operation:
+///
+/// | Name | Description |
+/// | ---- | ----------- |
+/// | $and | Joins query clauses with a logical AND returns all documents that match the conditions of both clauses. |
+/// | $or | Joins query clauses with a logical OR returns all documents that match the conditions of either clause. |
+///
+/// ## Example:
+///
+/// ```rust
+/// use std::rc::Rc;
+/// use polodb_core::Database;
+/// use polodb_bson::mk_document;
+///
+/// let mut db = Database::open("/tmp/test-collection").unwrap();
+/// let mut collection = db.collection("test").unwrap();
+/// collection.insert(Rc::new(mk_document! {
+///     "_id": 0,
+///     "name": "Vincent Chan",
+///     "score": 99.99,
+/// }));
+/// ```
 pub struct Collection<'a> {
     db: &'a mut Database,
     id: u32,
@@ -38,6 +79,10 @@ impl<'a>  Collection<'a> {
         }
     }
 
+    /// When query is `None`, all the data in the collection return.
+    ///
+    /// When query document is passed to the function. The result satisfies
+    /// the query document.
     pub fn find(&mut self, query: Option<&Document>) -> DbResult<Vec<Rc<Document>>> {
         let mut handle = self.db.ctx.find(self.id, self.meta_version, query)?;
 
@@ -52,11 +97,26 @@ impl<'a>  Collection<'a> {
         &self.name
     }
 
+    /// Return the size of all data in the collection.
     #[inline]
     pub fn count(&mut self) -> DbResult<u64> {
         self.db.ctx.count(self.id, self.meta_version)
     }
 
+    /// When query is `None`, all the data in the collection will be updated.
+    /// Basically the same as [MongoDB](https://docs.mongodb.com/manual/reference/operator/update-field/).
+    ///
+    /// ## Field Update Operators:
+    ///
+    /// | Name | Description |
+    /// | ---- | ----------- |
+    /// | $inc | Increments the value of the field by the specified amount. |
+    /// | $min | Only updates the field if the specified value is less than the existing field value. |
+    /// | $max | Only updates the field if the specified value is greater than the existing field value. |
+    /// | $mul | Multiplies the value of the field by the specified amount. |
+    /// | $rename | Renames a field. |
+    /// | $set | Sets the value of a field in a document. |
+    /// | $unset | Removes the specified field from a document. |
     #[inline]
     pub fn update(&mut self, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         self.db.ctx.update(self.id, self.meta_version, query, update)
@@ -67,9 +127,17 @@ impl<'a>  Collection<'a> {
         self.db.ctx.insert(self.id, self.meta_version, doc)
     }
 
+    /// When query is `None`, all the data in the collection will be deleted.
+    ///
+    /// The size of data deleted returns.
     #[inline]
-    pub fn delete(&mut self, key: &Value) -> DbResult<Option<Rc<Document>>> {
-        self.db.ctx.delete_by_pkey(self.id, key)
+    pub fn delete(&mut self, query: Option<&Document>) -> DbResult<usize> {
+        match query {
+            Some(query) =>
+                self.db.ctx.delete(self.id, self.meta_version, query),
+            None =>
+                self.db.ctx.delete_all(self.id, self.meta_version),
+        }
     }
 
     // // release in 0.2
@@ -80,9 +148,41 @@ impl<'a>  Collection<'a> {
 
 }
 
-/*
- * API wrapper for Rust-level
- */
+///
+/// API wrapper for Rust-level
+///
+/// [open]: #method.open
+/// [create_collection]: #method.create_collection
+/// [collection]: #method.collection
+///
+/// Use [open] API to open a database. A main database file will be
+/// generated in the path user provided.
+///
+/// When you own an instance of a Database, the instance holds a file
+/// descriptor of the database file. When the Database instance is dropped,
+/// the handle of the file will be released.
+///
+/// # Collection
+/// A [Collection](./struct.Collection.html) is a dataset of a kind of data.
+/// You can use [create_collection] to create a data collection.
+/// To obtain an exist collection, use [collection],
+///
+/// # Transaction
+///
+/// [start_transaction]: #method.start_transaction
+///
+/// You an manually start a transaction by [start_transaction] method.
+/// If you don't start it manually, a transaction will be automatically started
+/// in your every operation.
+///
+/// # Example
+///
+/// ```rust
+/// use polodb_core::Database;
+///
+/// let mut db = Database::open("/tmp/test-polo.db").unwrap();
+/// let test_collection = db.collection("test").unwrap();
+/// ```
 pub struct Database {
     ctx: Box<DbContext>,
 }
@@ -117,13 +217,25 @@ impl Database {
                            name))
     }
 
+    /// Return the version of package version in string.
+    /// Defined in `Cargo.toml`.
     #[inline]
     pub fn get_version() -> String {
         DbContext::get_version()
     }
 
+    ///
+    /// [error]: ../enum.DbErr.html
+    ///
+    /// Return an exist collection. If the collection is not exists,
+    /// a new collection will be created.
+    ///
     pub fn collection(&mut self, col_name: &str) -> DbResult<Collection> {
-        let info = self.ctx.get_collection_meta_by_name(col_name)?;
+        let info = match self.ctx.get_collection_meta_by_name(col_name) {
+            Ok(meta) => meta,
+            Err(DbErr::CollectionNotFound(_)) => self.ctx.create_collection(col_name)?,
+            Err(err) => return Err(err),
+        };
         Ok(Collection::new(self, info.id, info.meta_version, col_name))
     }
 
@@ -132,6 +244,16 @@ impl Database {
         self.ctx.dump()
     }
 
+    /// Manually start a transaction. There are three types of transaction.
+    ///
+    /// - `None`: Auto transaction
+    /// - `Some(Transaction::Write)`: Write transaction
+    /// - `Some(Transaction::Read)`: Read transaction
+    ///
+    /// When you pass `None` to type parameter. The PoloDB will go into
+    /// auto mode. The PoloDB will go into read mode firstly, once the users
+    /// execute write operations(insert/update/delete), the DB will turn into
+    /// write mode.
     #[inline]
     pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
         self.ctx.start_transaction(ty)
@@ -397,13 +519,6 @@ mod tests {
         doc.insert("_id".into(), Value::String(Rc::new(new_str.clone())));
 
         let _ = collection.insert(Rc::new(doc)).unwrap();
-
-        // let cursor = db.ctx.get_collection_cursor("test").unwrap();
-
-        // let get_one = cursor.next().unwrap().unwrap();
-        // let get_one_id = get_one.get("_id").unwrap().unwrap_string();
-
-        // assert_eq!(get_one_id, new_str);
     }
 
     #[test]
@@ -453,8 +568,11 @@ mod tests {
 
         let third = &doc_collection[3];
         let third_key = third.get("_id").unwrap();
-        assert!(collection.delete(third_key).unwrap().is_some());
-        assert!(collection.delete(third_key).unwrap().is_none());
+        let delete_doc = mk_document! {
+            "_id": third_key.clone(),
+        };
+        assert!(collection.delete(Some(&delete_doc)).unwrap() > 0);
+        assert_eq!(collection.delete(Some(&delete_doc)).unwrap(), 0);
     }
 
     #[test]
@@ -476,8 +594,10 @@ mod tests {
 
         for doc in &doc_collection {
             let key = doc.get("_id").unwrap();
-            let deleted = collection.delete(key).unwrap();
-            assert!(deleted.is_some(), "delete nothing with key: {}", key);
+            let deleted = collection.delete(Some(&mk_document!{
+                "_id": key.clone(),
+            })).unwrap();
+            assert!(deleted > 0, "delete nothing with key: {}", key);
             let find_doc = mk_document! {
                 "_id": key.clone(),
             };
