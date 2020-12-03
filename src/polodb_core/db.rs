@@ -123,7 +123,7 @@ impl<'a>  Collection<'a> {
     }
 
     #[inline]
-    pub fn insert(&mut self, doc: &mut Document) -> DbResult<()> {
+    pub fn insert(&mut self, doc: &mut Document) -> DbResult<bool> {
         self.db.ctx.insert(self.id, self.meta_version, doc)
     }
 

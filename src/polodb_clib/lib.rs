@@ -172,7 +172,14 @@ pub unsafe extern "C" fn PLDB_insert(db: *mut DbContext, col_id: c_uint, meta_ve
         set_global_error(err);
         return PLDB_error_code();
     }
-    0
+    match insert_result {
+        Ok(true) => 1,
+        Ok(false) => 0,
+        Err(err) => {
+            set_global_error(err);
+            PLDB_error_code()
+        }
+    }
 }
 
 /// query is nullable

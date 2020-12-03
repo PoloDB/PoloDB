@@ -346,28 +346,29 @@ impl DbContext {
     }
 
     #[inline]
-    fn fix_doc(&mut self, doc: &mut Document) {
+    fn fix_doc(&mut self, doc: &mut Document) -> bool {
         if doc.get(meta_doc_key::ID).is_some() {
-            return;
+            return false;
         }
 
         let new_oid = self.obj_id_maker.mk_object_id();
         doc.insert(meta_doc_key::ID.into(), new_oid.into());
+        true
     }
 
-    pub fn insert(&mut self, col_id: u32, meta_version: u32, doc: &mut Document) -> DbResult<()> {
+    pub fn insert(&mut self, col_id: u32, meta_version: u32, doc: &mut Document) -> DbResult<bool> {
         self.check_meta_version(meta_version)?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let () = try_db_op!(self, self.internal_insert(col_id, doc));
+        let changed = try_db_op!(self, self.internal_insert(col_id, doc));
 
-        Ok(())
+        Ok(changed)
     }
 
-    fn internal_insert(&mut self, col_id: u32, doc: &mut Document) -> DbResult<()> {
+    fn internal_insert(&mut self, col_id: u32, doc: &mut Document) -> DbResult<bool> {
         let meta_source = self.get_meta_source()?;
-        self.fix_doc(doc);
+        let changed  = self.fix_doc(doc);
 
         let (mut collection_meta, mut meta_doc) = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
@@ -423,7 +424,7 @@ impl DbContext {
         }
         // update meta end
 
-        Ok(())
+        Ok(changed)
     }
 
     /// query: None for findAll
