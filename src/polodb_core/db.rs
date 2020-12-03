@@ -20,6 +20,9 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
     Ok(())
 }
 
+/// A wrapper of collection in struct.
+///
+/// All CURD methods can be done through this structure.
 pub struct Collection<'a> {
     db: &'a mut Database,
     id: u32,
@@ -80,9 +83,24 @@ impl<'a>  Collection<'a> {
 
 }
 
-/*
- * API wrapper for Rust-level
- */
+///
+/// API wrapper for Rust-level
+///
+/// [open]: #method.open
+///
+/// Use [open] API to open a database. A main database file will be
+/// generated in the path user provided.
+///
+/// When the Database instance is dropped, the handle of the file will
+/// be released.
+///
+/// # Transaction
+///
+/// [start_transaction]: #method.start_transaction
+///
+/// You an manually start a transaction by [start_transaction] method.
+/// If you don't start it manually, a transaction will be automatically started
+/// in your every operation.
 pub struct Database {
     ctx: Box<DbContext>,
 }
@@ -117,11 +135,19 @@ impl Database {
                            name))
     }
 
+    /// Return the version of package version in string.
+    /// Defined in `Cargo.toml`.
     #[inline]
     pub fn get_version() -> String {
         DbContext::get_version()
     }
 
+    ///
+    /// [error]: ../enum.DbErr.html
+    ///
+    /// Return an exist collection. If the collection is not exists,
+    /// and [error] will be returned.
+    ///
     pub fn collection(&mut self, col_name: &str) -> DbResult<Collection> {
         let info = self.ctx.get_collection_meta_by_name(col_name)?;
         Ok(Collection::new(self, info.id, info.meta_version, col_name))
