@@ -55,11 +55,11 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
 ///
 /// let mut db = Database::open("/tmp/test-collection").unwrap();
 /// let mut collection = db.collection("test").unwrap();
-/// collection.insert(Rc::new(mk_document! {
+/// collection.insert(mk_document! {
 ///     "_id": 0,
 ///     "name": "Vincent Chan",
 ///     "score": 99.99,
-/// }));
+/// }.as_mut());
 /// ```
 pub struct Collection<'a> {
     db: &'a mut Database,
