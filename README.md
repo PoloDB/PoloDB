@@ -50,7 +50,7 @@ Limited by my time, I only compile and test on the following platform:
 
 # Manual
 
-- [Rust](./docs/en-US/Rust/READEME.md)
+- [Rust](https://docs.rs/polodb_core)
 - [Node.js](./docs/en-US/Node.js/READEME.md)
 - [Python](./docs/en-US/Python/READEME.md)
 

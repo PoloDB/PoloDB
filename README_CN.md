@@ -38,7 +38,7 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
 
 # 使用方法
 
-- [Rust](./docs/zh-CN/Rust/READEME.md)
+- [Rust](https://docs.rs/polodb_core)
 - [Node.js](./docs/zh-CN/Node.js/READEME.md)
 - [Python](./docs/zh-CN/Python/READEME.md)
 
