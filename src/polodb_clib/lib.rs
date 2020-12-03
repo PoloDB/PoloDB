@@ -163,10 +163,11 @@ pub unsafe extern "C" fn PLDB_get_collection_meta_by_name(db: *mut DbContext, na
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_insert(db: *mut DbContext, col_id: c_uint, meta_version: c_uint, doc: *const Rc<Document>) -> c_int {
+pub unsafe extern "C" fn PLDB_insert(db: *mut DbContext, col_id: c_uint, meta_version: c_uint, doc: *mut Rc<Document>) -> c_int {
     let local_db = db.as_mut().unwrap();
-    let local_doc = doc.as_ref().unwrap().clone();
-    let insert_result = local_db.insert(col_id, meta_version, local_doc);
+    let local_doc = doc.as_mut().unwrap();
+    let mut_doc = Rc::make_mut(local_doc);
+    let insert_result = local_db.insert(col_id, meta_version, mut_doc);
     if let Err(err) = insert_result {
         set_global_error(err);
         return PLDB_error_code();

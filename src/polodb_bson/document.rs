@@ -330,6 +330,16 @@ impl Document {
         data.push(0); // cstring end
     }
 
+    #[inline]
+    pub fn as_ref(&self) -> &Self {
+        self
+    }
+
+    #[inline]
+    pub fn as_mut(&mut self) -> &mut Self {
+        self
+    }
+
 }
 
 #[cfg(test)]
