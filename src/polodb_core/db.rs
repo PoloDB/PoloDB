@@ -50,7 +50,8 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
 ///
 /// ```rust
 /// use std::rc::Rc;
-/// use polodb_core::{Database, mk_document};
+/// use polodb_core::Database;
+/// use polodb_bson::mk_document;
 ///
 /// let mut db = Database::open("/tmp/test-collection").unwrap();
 /// let mut collection = db.create_collection("test").unwrap();
