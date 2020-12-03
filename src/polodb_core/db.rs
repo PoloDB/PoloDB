@@ -23,6 +23,43 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
 /// A wrapper of collection in struct.
 ///
 /// All CURD methods can be done through this structure.
+///
+/// Find/Update/Delete operations need a query object.
+///
+/// ## Query operation:
+///
+/// | Name | Description |
+/// | ----------| ----------- |
+/// | $eq | Matches values that are equal to a specified value. |
+/// | $gt | Matches values that are greater than a specified value. |
+/// | $gte | Matches values that are greater than or equal to a specified value. |
+/// | $in | Matches any of the values specified in an array. |
+/// | $lt | Matches values that are less than a specified value. |
+/// | $lte | Matches values that are less than or equal to a specified value. |
+/// | $ne | Matches all values that are not equal to a specified value. |
+/// | $nin | Matches none of the values specified in an array. |
+///
+/// ## Logical operation:
+///
+/// | Name | Description |
+/// | ---- | ----------- |
+/// | $and | Joins query clauses with a logical AND returns all documents that match the conditions of both clauses. |
+/// | $or | Joins query clauses with a logical OR returns all documents that match the conditions of either clause. |
+///
+/// ## Example:
+///
+/// ```rust
+/// use std::rc::Rc;
+/// use polodb_core::{Database, mk_document};
+///
+/// let mut db = Database::open("/tmp/test-collection").unwrap();
+/// let mut collection = db.create_collection("test").unwrap();
+/// collection.insert(Rc::new(mk_document! {
+///     "_id": 0,
+///     "name": "Vincent Chan",
+///     "score": 99.99,
+/// }));
+/// ```
 pub struct Collection<'a> {
     db: &'a mut Database,
     id: u32,
@@ -41,6 +78,10 @@ impl<'a>  Collection<'a> {
         }
     }
 
+    /// When query is `None`, all the data in the collection return.
+    ///
+    /// When query document is passed to the function. The result satisfies
+    /// the query document.
     pub fn find(&mut self, query: Option<&Document>) -> DbResult<Vec<Rc<Document>>> {
         let mut handle = self.db.ctx.find(self.id, self.meta_version, query)?;
 
@@ -55,11 +96,26 @@ impl<'a>  Collection<'a> {
         &self.name
     }
 
+    /// Return the size of all data in the collection.
     #[inline]
     pub fn count(&mut self) -> DbResult<u64> {
         self.db.ctx.count(self.id, self.meta_version)
     }
 
+    /// When query is `None`, all the data in the collection will be updated.
+    /// Basically the same as [MongoDB](https://docs.mongodb.com/manual/reference/operator/update-field/).
+    ///
+    /// ## Field Update Operators:
+    ///
+    /// | Name | Description |
+    /// | ---- | ----------- |
+    /// | $inc | Increments the value of the field by the specified amount. |
+    /// | $min | Only updates the field if the specified value is less than the existing field value. |
+    /// | $max | Only updates the field if the specified value is greater than the existing field value. |
+    /// | $mul | Multiplies the value of the field by the specified amount. |
+    /// | $rename | Renames a field. |
+    /// | $set | Sets the value of a field in a document. |
+    /// | $unset | Removes the specified field from a document. |
     #[inline]
     pub fn update(&mut self, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         self.db.ctx.update(self.id, self.meta_version, query, update)
@@ -70,9 +126,17 @@ impl<'a>  Collection<'a> {
         self.db.ctx.insert(self.id, self.meta_version, doc)
     }
 
+    /// When query is `None`, all the data in the collection will be deleted.
+    ///
+    /// The size of data deleted returns.
     #[inline]
-    pub fn delete(&mut self, key: &Value) -> DbResult<Option<Rc<Document>>> {
-        self.db.ctx.delete_by_pkey(self.id, key)
+    pub fn delete(&mut self, query: Option<&Document>) -> DbResult<usize> {
+        match query {
+            Some(query) =>
+                self.db.ctx.delete(self.id, self.meta_version, query),
+            None =>
+                self.db.ctx.delete_all(self.id, self.meta_version),
+        }
     }
 
     // // release in 0.2
@@ -87,12 +151,20 @@ impl<'a>  Collection<'a> {
 /// API wrapper for Rust-level
 ///
 /// [open]: #method.open
+/// [create_collection]: #method.create_collection
+/// [collection]: #method.collection
 ///
 /// Use [open] API to open a database. A main database file will be
 /// generated in the path user provided.
 ///
-/// When the Database instance is dropped, the handle of the file will
-/// be released.
+/// When you own an instance of a Database, the instance holds a file
+/// descriptor of the database file. When the Database instance is dropped,
+/// the handle of the file will be released.
+///
+/// # Collection
+/// A [Collection](./struct.Collection.html) is a dataset of a kind of data.
+/// You can use [create_collection] to create a data collection.
+/// To obtain an exist collection, use [collection],
 ///
 /// # Transaction
 ///
@@ -101,6 +173,15 @@ impl<'a>  Collection<'a> {
 /// You an manually start a transaction by [start_transaction] method.
 /// If you don't start it manually, a transaction will be automatically started
 /// in your every operation.
+///
+/// # Example
+///
+/// ```rust
+/// use polodb_core::Database;
+///
+/// let mut db = Database::open("/tmp/test-polo.db").unwrap();
+/// let test_collection = db.create_collection("test").unwrap();
+/// ```
 pub struct Database {
     ctx: Box<DbContext>,
 }
@@ -158,6 +239,16 @@ impl Database {
         self.ctx.dump()
     }
 
+    /// Manually start a transaction. There are three types of transaction.
+    ///
+    /// - `None`: Auto transaction
+    /// - `Some(Transaction::Write)`: Write transaction
+    /// - `Some(Transaction::Read)`: Read transaction
+    ///
+    /// When you pass `None` to type parameter. The PoloDB will go into
+    /// auto mode. The PoloDB will go into read mode firstly, once the users
+    /// execute write operations(insert/update/delete), the DB will turn into
+    /// write mode.
     #[inline]
     pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
         self.ctx.start_transaction(ty)
