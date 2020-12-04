@@ -346,41 +346,40 @@ impl DbContext {
     }
 
     #[inline]
-    fn fix_doc(&mut self, mut doc: Rc<Document>) -> Rc<Document> {
+    fn fix_doc(&mut self, doc: &mut Document) -> bool {
         if doc.get(meta_doc_key::ID).is_some() {
-            return doc;
+            return false;
         }
 
-        let new_doc = Rc::make_mut(&mut doc);
         let new_oid = self.obj_id_maker.mk_object_id();
-        new_doc.insert(meta_doc_key::ID.into(), new_oid.into());
-        doc
+        doc.insert(meta_doc_key::ID.into(), new_oid.into());
+        true
     }
 
-    pub fn insert(&mut self, col_id: u32, meta_version: u32, doc: Rc<Document>) -> DbResult<Rc<Document>> {
+    pub fn insert(&mut self, col_id: u32, meta_version: u32, doc: &mut Document) -> DbResult<bool> {
         self.check_meta_version(meta_version)?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(self, self.internal_insert(col_id, doc));
+        let changed = try_db_op!(self, self.internal_insert(col_id, doc));
 
-        Ok(result)
+        Ok(changed)
     }
 
-    fn internal_insert(&mut self, col_id: u32, doc: Rc<Document>) -> DbResult<Rc<Document>> {
+    fn internal_insert(&mut self, col_id: u32, doc: &mut Document) -> DbResult<bool> {
         let meta_source = self.get_meta_source()?;
-        let doc_value = self.fix_doc(doc);
+        let changed  = self.fix_doc(doc);
 
         let (mut collection_meta, mut meta_doc) = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
         let meta_doc_mut = Rc::get_mut(&mut meta_doc).unwrap();
 
         let mut is_pkey_check_skipped = false;
-        collection_meta.check_pkey_ty(&doc_value, &mut is_pkey_check_skipped)?;
+        collection_meta.check_pkey_ty(&doc, &mut is_pkey_check_skipped)?;
 
         let mut insert_wrapper = BTreePageInsertWrapper::new(
             &mut self.page_handler, collection_meta.root_pid as u32);
-        let insert_result = insert_wrapper.insert_item(doc_value.borrow(), false)?;
+        let insert_result = insert_wrapper.insert_item(doc, false)?;
 
         let mut is_meta_changed = false;
 
@@ -391,7 +390,7 @@ impl DbContext {
 
         // insert successfully
         if is_pkey_check_skipped {
-            collection_meta.merge_pkey_ty_to_meta(meta_doc_mut, doc_value.borrow());
+            collection_meta.merge_pkey_ty_to_meta(meta_doc_mut, doc);
             is_meta_changed = true;
         }
 
@@ -401,7 +400,7 @@ impl DbContext {
             let mut is_ctx_changed = false;
 
             index_ctx.insert_index_by_content(
-                doc_value.borrow(),
+                doc,
                 &insert_result.data_ticket,
                 &mut is_ctx_changed,
                 &mut self.page_handler
@@ -425,7 +424,7 @@ impl DbContext {
         }
         // update meta end
 
-        Ok(doc_value)
+        Ok(changed)
     }
 
     /// query: None for findAll

@@ -1,6 +1,6 @@
 [package]
 name = "polodb_clib"
-version = "0.4.3"
+version = "0.5.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 edition = "2018"
 
@@ -11,4 +11,4 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 polodb_core = { path = "../polodb_core" }
-polodb_bson = "0.4.3"
+polodb_bson = { path = "../polodb_bson" }

@@ -56,7 +56,7 @@ int PLDB_get_collection_meta_by_name(Database* db, const char* name, uint32_t* i
 
 int64_t PLDB_count(Database* db, uint32_t col_id, uint32_t meta_version);
 
-int PLDB_insert(Database* db, uint32_t col_id, uint32_t meta_version, const DbDocument* doc);
+int PLDB_insert(Database* db, uint32_t col_id, uint32_t meta_version, DbDocument* doc);
 
 // <query> is nullable
 int PLDB_find(Database* db, uint32_t col_id, uint32_t meta_version, const DbDocument* query, DbHandle** out_handle);

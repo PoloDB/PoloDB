@@ -55,11 +55,11 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
 ///
 /// let mut db = Database::open("/tmp/test-collection").unwrap();
 /// let mut collection = db.collection("test").unwrap();
-/// collection.insert(Rc::new(mk_document! {
+/// collection.insert(mk_document! {
 ///     "_id": 0,
 ///     "name": "Vincent Chan",
 ///     "score": 99.99,
-/// }));
+/// }.as_mut());
 /// ```
 pub struct Collection<'a> {
     db: &'a mut Database,
@@ -123,7 +123,7 @@ impl<'a>  Collection<'a> {
     }
 
     #[inline]
-    pub fn insert(&mut self, doc: Rc<Document>) -> DbResult<Rc<Document>> {
+    pub fn insert(&mut self, doc: &mut Document) -> DbResult<bool> {
         self.db.ctx.insert(self.id, self.meta_version, doc)
     }
 
@@ -314,10 +314,10 @@ mod tests {
 
         for i in 0..size {
             let content = i.to_string();
-            let new_doc = mk_document! {
+            let mut new_doc = mk_document! {
                 "content": content,
             };
-            collection.insert(Rc::new(new_doc)).unwrap();
+            collection.insert(&mut new_doc).unwrap();
         }
 
         db
@@ -345,11 +345,11 @@ mod tests {
 
         for i in 0..10{
             let content = i.to_string();
-            let new_doc = mk_document! {
+            let mut new_doc = mk_document! {
                     "_id": i,
                     "content": content,
                 };
-            collection.insert(Rc::new(new_doc)).unwrap();
+            collection.insert(&mut new_doc).unwrap();
         }
         db.commit().unwrap()
     }
@@ -364,11 +364,11 @@ mod tests {
 
         for i in 0..1000 {
             let content = i.to_string();
-            let new_doc = mk_document! {
-                    "_id": i,
-                    "content": content,
-                };
-            collection.insert(Rc::new(new_doc)).unwrap();
+            let mut new_doc = mk_document! {
+                "_id": i,
+                "content": content,
+            };
+            collection.insert(&mut new_doc).unwrap();
         }
         db.commit().unwrap();
 
@@ -376,11 +376,11 @@ mod tests {
         let mut collection2 = db.create_collection("test-2").unwrap();
         for i in 0..10{
             let content = i.to_string();
-            let new_doc = mk_document! {
-                    "_id": i,
-                    "content": content,
-                };
-            collection2.insert(Rc::new(new_doc)).expect(&*format!("insert failed: {}", i));
+            let mut new_doc = mk_document! {
+                "_id": i,
+                "content": content,
+            };
+            collection2.insert(&mut new_doc).expect(&*format!("insert failed: {}", i));
         }
         db.commit().unwrap();
     }
@@ -397,11 +397,11 @@ mod tests {
         let mut collection = db.collection("test").unwrap();
         for i in 0..10{
             let content = i.to_string();
-            let new_doc = mk_document! {
-                    "_id": i,
-                    "content": content,
-                };
-            collection.insert(Rc::new(new_doc)).unwrap();
+            let mut new_doc = mk_document! {
+                "_id": i,
+                "content": content,
+            };
+            collection.insert(new_doc.as_mut()).unwrap();
         }
         assert_eq!(collection.count().unwrap(), 10);
 
@@ -419,11 +419,11 @@ mod tests {
 
             for i in 0..TEST_SIZE {
                 let content = i.to_string();
-                let new_doc = mk_document! {
+                let mut new_doc = mk_document! {
                     "_id": i,
                     "content": content,
                 };
-                collection.insert(Rc::new(new_doc)).unwrap();
+                collection.insert(new_doc.as_mut()).unwrap();
             }
 
             db
@@ -495,13 +495,13 @@ mod tests {
     fn test_pkey_type_check() {
         let mut db = create_and_return_db_with_items("test-type-check", TEST_SIZE);
 
-        let doc = mk_document! {
+        let mut doc = mk_document! {
             "_id": 10,
             "value": "something",
         };
 
         let mut collection = db.collection("test").unwrap();
-        collection.insert(Rc::new(doc)).expect_err("should not success");
+        collection.insert(doc.as_mut()).expect_err("should not success");
     }
 
     #[test]
@@ -518,7 +518,7 @@ mod tests {
 
         doc.insert("_id".into(), Value::String(Rc::new(new_str.clone())));
 
-        let _ = collection.insert(Rc::new(doc)).unwrap();
+        let _ = collection.insert(doc.as_mut()).unwrap();
     }
 
     #[test]
@@ -534,18 +534,18 @@ mod tests {
 
         for i in 0..10 {
             let str = Rc::new(i.to_string());
-            let data = mk_document! {
+            let mut data = mk_document! {
                 "name": str.clone(),
                 "user_id": str.clone(),
             };
-            collection.insert(Rc::new(data)).unwrap();
+            collection.insert(data.as_mut()).unwrap();
         }
 
-        let data = mk_document! {
+        let mut data = mk_document! {
             "name": "what",
             "user_id": 3,
         };
-        collection.insert(Rc::new(data)).expect_err("not comparable");
+        collection.insert(data.as_mut()).expect_err("not comparable");
     }
 
     #[test]
@@ -558,12 +558,12 @@ mod tests {
         for i in 0..100 {
             let content = i.to_string();
 
-            let new_doc = mk_document! {
+            let mut new_doc = mk_document! {
                 "content": content,
             };
 
-            let ret_doc = collection.insert( Rc::new(new_doc)).unwrap();
-            doc_collection.push(ret_doc);
+            collection.insert(new_doc.as_mut()).unwrap();
+            doc_collection.push(new_doc);
         }
 
         let third = &doc_collection[3];
@@ -584,12 +584,12 @@ mod tests {
 
         for i in 0..1000 {
             let content = i.to_string();
-            let new_doc = mk_document! {
+            let mut new_doc = mk_document! {
                 "_id": i,
                 "content": content,
             };
-            let ret_doc = collection.insert(Rc::new(new_doc)).unwrap();
-            doc_collection.push(ret_doc);
+            collection.insert(new_doc.as_mut()).unwrap();
+            doc_collection.push(new_doc);
         }
 
         for doc in &doc_collection {

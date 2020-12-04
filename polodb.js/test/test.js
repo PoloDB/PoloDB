@@ -61,6 +61,17 @@ describe('Database', function() {
       db.createCollection('test-3');
     });
 
+    it('test auto id', function() {
+      const col1 = db.collection('test-1');
+      const insertObj = {
+        name: 'Vincent Chan',
+      };
+      col1.insert(insertObj);
+      expect('_id' in insertObj).to.be.true;
+      const objIdHex = insertObj['_id'].toString();
+      expect(objIdHex.length).to.equals(16);
+    });
+
     const TEST_COUNT = 1000;
     it('insert', function() {
       const col2 = db.collection('test-2');

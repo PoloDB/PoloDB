@@ -129,15 +129,10 @@ impl Value {
     }
 
     pub fn is_valid_key_type(&self) -> bool {
-        match self {
-            Value::String(_) |
-            Value::Int(_) |
-            Value::ObjectId(_) |
-            Value::Boolean(_) => true,
-
-            _ => false
-
-        }
+        matches!(self, Value::String(_) |
+                       Value::Int(_) |
+                       Value::ObjectId(_) |
+                       Value::Boolean(_))
     }
 
 }

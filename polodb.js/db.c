@@ -788,6 +788,28 @@ static napi_value Collection_insert(napi_env env, napi_callback_info info) {
     goto clean;
   }
 
+  if (ec > 0) {
+    DbValue* new_id;
+    int ec2 = PLDB_doc_get(doc, "_id", &new_id);
+    if (ec < 0) {
+      napi_throw_error(env, NULL, PLDB_error_msg());
+      goto clean;
+    }
+
+    napi_value js_id = DbValueToJsValue(env, new_id);
+    if (js_id == NULL) {
+      goto clean;
+    }
+
+    status = napi_set_named_property(env, args[0], "_id", js_id);
+    if (status != napi_ok) {
+      napi_throw_error(env, NULL, "set '_id' for object failed");
+      goto clean;
+    }
+
+    PLDB_free_value(new_id);
+  }
+
 clean:
   PLDB_free_doc(doc);
   return result;
