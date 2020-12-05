@@ -31,7 +31,7 @@ pub enum Value {
     Array(Rc<Array>),
     Document(Rc<Document>),
 
-    Binary(Rc<Vec<u8>>),
+    Binary(Rc<[u8]>),
 
     UTCDateTime(Rc<UTCDateTime>),
 
@@ -316,7 +316,7 @@ impl From<Array> for Value {
 impl From<Vec<u8>> for Value {
 
     fn from(buf: Vec<u8>) -> Self {
-        Value::Binary(Rc::new(buf))
+        Value::Binary(buf.into())
     }
 
 }
