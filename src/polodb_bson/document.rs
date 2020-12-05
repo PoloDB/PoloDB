@@ -115,7 +115,7 @@ impl Document {
                     let (value, to_ptr) = Document::parse_key(bytes, ptr)?;
                     ptr = to_ptr;
 
-                    doc.map.insert(key, Value::String(Rc::new(value)));
+                    doc.map.insert(key, Value::String(value.into()));
                 }
 
                 ty_int::OBJECT_ID => {
@@ -330,13 +330,19 @@ impl Document {
         data.push(0); // cstring end
     }
 
-    #[inline]
-    pub fn as_ref(&self) -> &Self {
+}
+
+impl std::convert::AsRef<Document> for Document {
+
+    fn as_ref(&self) -> &Document {
         self
     }
 
-    #[inline]
-    pub fn as_mut(&mut self) -> &mut Self {
+}
+
+impl std::convert::AsMut<Document> for Document {
+
+    fn as_mut(&mut self) -> &mut Document {
         self
     }
 
@@ -377,14 +383,12 @@ impl fmt::Display for Document {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{{ ")?;
 
-        let mut index = 0;
-        for (key, value) in &self.map {
+        for (index, (key, value)) in (&self.map).iter().enumerate() {
             write!(f, "{}: {}", key, value)?;
 
             if index < self.map.len() - 1 {
                 write!(f, ", ")?;
             }
-            index += 1;
         }
 
         write!(f, " }}")

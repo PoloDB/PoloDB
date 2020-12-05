@@ -34,7 +34,7 @@ pub trait ToHex {
 
 impl<T: AsRef<[u8]>> ToHex for T {
     fn write_hex<W: fmt::Write>(&self, w: &mut W) -> fmt::Result {
-        static CHARS: &'static [u8] = b"0123456789abcdef";
+        static CHARS: &[u8] = b"0123456789abcdef";
 
         for &byte in self.as_ref().iter() {
             w.write_char(CHARS[(byte >>  4) as usize].into())?;
@@ -45,7 +45,7 @@ impl<T: AsRef<[u8]>> ToHex for T {
     }
 
     fn write_hex_upper<W: fmt::Write>(&self, w: &mut W) -> fmt::Result {
-        static CHARS: &'static [u8] = b"0123456789ABCDEF";
+        static CHARS: &[u8] = b"0123456789ABCDEF";
 
         for &byte in self.as_ref().iter() {
             w.write_char(CHARS[(byte >>  4) as usize].into())?;

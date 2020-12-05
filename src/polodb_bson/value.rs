@@ -26,7 +26,7 @@ pub enum Value {
     // compress int when store on disk
     Int(i64),
 
-    String(Rc<String>),
+    String(Rc<str>),
     ObjectId(Rc<ObjectId>),
     Array(Rc<Array>),
     Document(Rc<Document>),
@@ -252,7 +252,14 @@ impl From<usize> for Value {
 impl From<&str> for Value {
 
     fn from(string: &str) -> Self {
-        let str: Rc<String> = Rc::new(string.into());
+        Value::String(string.into())
+    }
+
+}
+
+impl From<Rc<str>> for Value {
+
+    fn from(str: Rc<str>) -> Self {
         Value::String(str)
     }
 
@@ -261,15 +268,7 @@ impl From<&str> for Value {
 impl From<String> for Value {
 
     fn from(string: String) -> Self {
-        Value::String(Rc::new(string))
-    }
-
-}
-
-impl From<Rc<String>> for Value {
-
-    fn from(str: Rc<String>) -> Self {
-        Value::String(str)
+        Value::String(string.into())
     }
 
 }

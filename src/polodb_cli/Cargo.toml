@@ -1,6 +1,6 @@
 [package]
 name = "polodb_cli"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 edition = "2018"
 

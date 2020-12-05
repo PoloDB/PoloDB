@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use polodb_bson::{Value, Document};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
@@ -29,7 +28,7 @@ mod update_op {
         let doc = try_unwrap_document!("$min", doc);
 
         for (key, value) in doc.iter() {
-            let rc_str: Rc<String> = Rc::new(key.into());
+            let rc_str: Rc<str> = key.as_str().into();
             let key_id_1 = codegen.push_static(Value::String(rc_str.clone()));
             let key_id_2 = codegen.push_static(Value::String(rc_str));
             let value_id = codegen.push_static(value.clone());
@@ -127,7 +126,7 @@ impl Codegen {
                 continue;
             }
 
-            let key_static_id = self.push_static(Value::String(Rc::new(key.clone())));
+            let key_static_id = self.push_static(Value::String(key.as_str().into()));
             let value_static_id = self.push_static(value.clone());
 
             self.emit_get_field(key_static_id, 0);  // push a value1
@@ -439,14 +438,14 @@ impl Codegen {
 
                     for (key, value) in doc.iter() {
                         let new_name = match value {
-                            Value::String(new_name) => new_name.as_str(),
+                            Value::String(new_name) => new_name,
                             t => {
                                 let err = mk_field_name_type_unexpected(key, "String", t.ty_name());
                                 return Err(err);
                             }
                         };
 
-                        self.emit_rename_field(key.as_str(), new_name);
+                        self.emit_rename_field(key.as_str(), new_name.as_ref());
                     }
                 }
 
@@ -475,7 +474,7 @@ impl Codegen {
             let value_id = self.push_static(value.clone());
             self.emit_push_value(value_id);
 
-            let key_id = self.push_static(Value::String(Rc::new(key.into())));
+            let key_id = self.push_static(Value::String(key.as_str().into()));
             self.emit(op);
             self.emit_u32(key_id);
 
@@ -560,8 +559,8 @@ impl Codegen {
     }
 
     pub(super) fn emit_rename_field(&mut self, old_name: &str, new_name: &str) {
-        let old_name_id = self.push_static(Value::String(Rc::new(old_name.into())));
-        let new_name_id = self.push_static(Value::String(Rc::new(new_name.into())));
+        let old_name_id = self.push_static(Value::String(old_name.into()));
+        let new_name_id = self.push_static(Value::String(new_name.into()));
         let field_location = self.current_location();
         self.emit_get_field(old_name_id, 0);
 
@@ -578,7 +577,7 @@ impl Codegen {
     }
 
     pub(super) fn emit_unset_field(&mut self, name: &str) {
-        let value_id = self.push_static(Value::String(Rc::new(name.into())));
+        let value_id = self.push_static(Value::String(name.into()));
         self.emit(DbOp::UnsetField);
         self.emit_u32(value_id);
     }
