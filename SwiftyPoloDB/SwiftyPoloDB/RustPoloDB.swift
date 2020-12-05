@@ -11,7 +11,6 @@ enum DbWrapperError: Error {
     case DbError(content: String)
     case UnknownAnyType
     case UnknownDbValueType
-    case NullPointer
 }
 
 class PoloDB {
@@ -253,6 +252,26 @@ private func dbValueToAny(dbValue: OpaquePointer) throws -> Any {
             throw error
         }
         
+    case PLDB_VAL_OBJECT_ID:
+        var outObjectId: OpaquePointer? = nil
+        let ec = PLDB_value_get_object_id(dbValue, &outObjectId)
+        if ec < 0 {
+            let errorMsg = String(cString: PLDB_error_msg())
+            throw DbWrapperError.DbError(content: errorMsg)
+        }
+        return ObjectIdWrapper.init(value: outObjectId!)
+        
+    case PLDB_VAL_UTC_DATETIME:
+        var dateTimePtr: OpaquePointer? = nil
+        let ec = PLDB_value_get_utc_datetime(dbValue, &dateTimePtr)
+        if ec < 0 {
+            let errorMsg = String(cString: PLDB_error_msg())
+            throw DbWrapperError.DbError(content: errorMsg)
+        }
+        let outTimestamp = PLDB_UTCDateTime_get_timestamp(dateTimePtr!)
+        PLDB_free_UTCDateTime(dateTimePtr!)
+        return Date(timeIntervalSince1970: TimeInterval(outTimestamp) / 1000)
+        
     default:
         throw DbWrapperError.UnknownDbValueType
     }
@@ -285,6 +304,13 @@ private func docSetKV(doc: OpaquePointer, key: String, value: Any) throws {
     case let someArr as [Any]:
         let wrapper = try DbArrayWrapper.init(arr: someArr)
         PLDB_doc_set_arr(doc, key, wrapper.raw())
+        
+    case let someOid as ObjectIdWrapper:
+        PLDB_doc_set_object_id(doc, key, someOid.raw())
+        
+    case let someDate as Date:
+        let ts = Int64((someDate.timeIntervalSince1970 * 1000.0).rounded())
+        PLDB_doc_set_UTCDateTime(doc, key, ts)
     
     default:
         throw DbWrapperError.UnknownAnyType
@@ -318,6 +344,13 @@ private func arrSetKV(arr: OpaquePointer, index: UInt32, value: Any) throws {
     case let someArr as [Any]:
         let wrapper = try DbArrayWrapper.init(arr: someArr)
         PLDB_arr_set_arr(arr, index, wrapper.raw())
+        
+    case let someOid as ObjectIdWrapper:
+        PLDB_arr_set_arr(arr, index, someOid.raw())
+        
+    case let someDate as Date:
+        let ts = Int64((someDate.timeIntervalSince1970 * 1000.0).rounded())
+        PLDB_arr_set_UTCDateTime(arr, index, ts)
     
     default:
         throw DbWrapperError.UnknownAnyType
@@ -356,6 +389,30 @@ class DbArrayWrapper {
     
     deinit {
         PLDB_free_arr(self.value)
+    }
+    
+}
+
+class ObjectIdWrapper {
+    private let value: OpaquePointer
+    
+    init(value: OpaquePointer) {
+        self.value = value
+    }
+    
+    func raw() -> OpaquePointer {
+        return self.value
+    }
+    
+    func hex() -> String {
+        let buffer = UnsafeMutablePointer<Int8>.allocate(capacity: 64)
+        buffer.assign(repeating: 0, count: 64)
+        PLDB_object_id_to_hex(self.value, buffer, 64)
+        return String(cString: buffer)
+    }
+    
+    deinit {
+        PLDB_free_object_id(self.value)
     }
     
 }
