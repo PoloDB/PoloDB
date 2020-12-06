@@ -64,14 +64,14 @@ The feature will be implemented one by on in order.
   - [ ] Indexes
   - [ ] Join operations
 - [x] Command line Tools
-- [ ] Mobile Platform Compilation
-  - [ ] iOS
+- [x] Mobile Platform Compilation
+  - [x] iOS
   - [ ] Android
   - [ ] Flutter
 - [ ] Language bindings
   - [x] C/C++
-  |- [ ] Go
-  - [ ] Swift
+  - [ ] Go
+  - [x] Swift
   - [x] Python ([Doc](./docs/en-US/Python/READEME.md))
   - [x] Node.js ([Doc](./docs/en-US/Node.js/READEME.md))
   - [ ] Java/Kotlin

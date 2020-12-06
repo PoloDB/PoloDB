@@ -4,4 +4,6 @@
 
 .vscode
 
+/polodb.h
+
 /polodb-js.node
