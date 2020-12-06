@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.12)
 project (polodb-js)
 include_directories(${CMAKE_JS_INC})
+
+file(COPY "../headers/polodb.h" DESTINATION ${CMAKE_SOURCE_DIR})
+
 file(GLOB SOURCE_FILES "utils.h" "utils.c" "db.c")
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${CMAKE_JS_SRC})
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
