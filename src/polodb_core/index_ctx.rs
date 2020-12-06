@@ -100,7 +100,7 @@ impl IndexEntry {
     fn to_doc(&self) -> Document {
         let mut result = Document::new_without_id();
         if let Some(name_val) = &self.name {
-            result.insert(meta_doc_key::index::NAME.into(), Value::String(Rc::new(name_val.clone())));
+            result.insert(meta_doc_key::index::NAME.into(), Value::String(name_val.as_str().into()));
         }
         result.insert(meta_doc_key::index::UNIQUE.into(), Value::Boolean(self.unique));
         result.insert(meta_doc_key::index::ROOT_PID.into(), Value::Int(self.root_pid as i64));
@@ -150,8 +150,8 @@ impl IndexEntry {
         let mut doc = Document::new_without_id();
         doc.insert("_id".into(), data_value.clone());
 
-        let data_ticket_bytes = data_ticket.to_bytes().to_vec();
-        doc.insert("value".into(), Value::Binary(Rc::new(data_ticket_bytes)));
+        let data_ticket_bytes: Rc<[u8]> = data_ticket.to_bytes().as_ref().into();
+        doc.insert("value".into(), Value::Binary(data_ticket_bytes));
 
         doc
     }

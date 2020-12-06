@@ -26,12 +26,12 @@ pub enum Value {
     // compress int when store on disk
     Int(i64),
 
-    String(Rc<String>),
+    String(Rc<str>),
     ObjectId(Rc<ObjectId>),
     Array(Rc<Array>),
     Document(Rc<Document>),
 
-    Binary(Rc<Vec<u8>>),
+    Binary(Rc<[u8]>),
 
     UTCDateTime(Rc<UTCDateTime>),
 
@@ -252,7 +252,14 @@ impl From<usize> for Value {
 impl From<&str> for Value {
 
     fn from(string: &str) -> Self {
-        let str: Rc<String> = Rc::new(string.into());
+        Value::String(string.into())
+    }
+
+}
+
+impl From<Rc<str>> for Value {
+
+    fn from(str: Rc<str>) -> Self {
         Value::String(str)
     }
 
@@ -261,15 +268,7 @@ impl From<&str> for Value {
 impl From<String> for Value {
 
     fn from(string: String) -> Self {
-        Value::String(Rc::new(string))
-    }
-
-}
-
-impl From<Rc<String>> for Value {
-
-    fn from(str: Rc<String>) -> Self {
-        Value::String(str)
+        Value::String(string.into())
     }
 
 }
@@ -317,7 +316,7 @@ impl From<Array> for Value {
 impl From<Vec<u8>> for Value {
 
     fn from(buf: Vec<u8>) -> Self {
-        Value::Binary(Rc::new(buf))
+        Value::Binary(buf.into())
     }
 
 }
