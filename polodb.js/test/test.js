@@ -143,6 +143,13 @@ describe('Database', function() {
         });
         expect(result.length, 0);
       }
+    });
+
+    it('auto generate collection', function() {
+      const test = db.collection('auto-gen');
+      test.insert({
+        content: 'name',
+      });
     })
 
     it('drop', function() {

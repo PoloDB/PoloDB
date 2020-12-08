@@ -911,7 +911,7 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::StartTransactionInAnotherTransaction => 28,
         DbErr::RollbackNotInTransaction => 29,
         DbErr::IllegalCollectionName(_) => 30,
-        DbErr::UnexpectedHeaderForBtreePage => 31,
+        DbErr::UnexpectedHeaderForBtreePage(_) => 31,
         DbErr::KeyTypeOfBtreeShouldNotBeZero => 32,
         DbErr::UnexpectedPageHeader => 33,
         DbErr::UnexpectedPageType => 34,

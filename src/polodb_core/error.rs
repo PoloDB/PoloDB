@@ -19,13 +19,43 @@ impl fmt::Display for FieldTypeUnexpectedStruct {
 
 }
 
-#[inline]
 pub(crate) fn mk_field_name_type_unexpected(option_name: &str, expected_ty: &str, actual_ty: &str) -> DbErr {
     DbErr::FieldTypeUnexpected(Box::new(FieldTypeUnexpectedStruct {
         field_name: option_name.into(),
         expected_ty: expected_ty.into(),
         actual_ty: actual_ty.into(),
     }))
+}
+
+#[derive(Debug)]
+pub struct UnexpectedHeader {
+    pub page_id: u32,
+    pub actual_header: [u8; 2],
+    pub expected_header: [u8; 2],
+}
+
+pub(crate) fn mk_unexpected_header_for_btree_page(page_id: u32, actual: &[u8], expected: &[u8]) -> DbErr {
+    let mut actual_header: [u8; 2] = [0; 2];
+    let mut expected_header: [u8; 2] = [0; 2];
+    actual_header.copy_from_slice(actual);
+    expected_header.copy_from_slice(expected);
+    DbErr::UnexpectedHeaderForBtreePage(Box::new(UnexpectedHeader {
+        page_id,
+        actual_header,
+        expected_header,
+    }))
+}
+
+impl fmt::Display for UnexpectedHeader {
+
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "page_id: {}, expected header: 0x{:02X} 0x{:02X}, actual: 0x{:02X} 0x{:02X}",
+               self.page_id,
+            self.expected_header[0], self.expected_header[1],
+            self.actual_header[0], self.actual_header[1]
+        )
+    }
+
 }
 
 #[derive(Debug)]
@@ -59,7 +89,7 @@ pub enum DbErr {
     StartTransactionInAnotherTransaction,
     RollbackNotInTransaction,
     IllegalCollectionName(String),
-    UnexpectedHeaderForBtreePage,
+    UnexpectedHeaderForBtreePage(Box<UnexpectedHeader>),
     KeyTypeOfBtreeShouldNotBeZero,
     UnexpectedPageHeader,
     UnexpectedPageType,
@@ -115,7 +145,7 @@ impl fmt::Display for DbErr {
             DbErr::StartTransactionInAnotherTransaction => write!(f, "start transaction in another transaction"),
             DbErr::RollbackNotInTransaction => write!(f, "can not rollback because not in transaction"),
             DbErr::IllegalCollectionName(name) => write!(f, "collection name \"{}\" is illegal", name),
-            DbErr::UnexpectedHeaderForBtreePage => write!(f, "unexpected header for btree page"),
+            DbErr::UnexpectedHeaderForBtreePage(err) => write!(f, "unexpected header for btree page: {}", err),
             DbErr::KeyTypeOfBtreeShouldNotBeZero => write!(f, "key type of btree should not be zero"),
             DbErr::UnexpectedPageHeader => write!(f, "unexpected page header"),
             DbErr::UnexpectedPageType => write!(f, "unexpected page type"),

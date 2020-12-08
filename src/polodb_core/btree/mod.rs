@@ -12,7 +12,7 @@ use std::cmp::Ordering;
 use polodb_bson::{vli, Value, ObjectId, ty_int};
 use crate::db::DbResult;
 use crate::page::{RawPage, PageType, PageHandler};
-use crate::error::DbErr;
+use crate::error::{DbErr, mk_unexpected_header_for_btree_page};
 use crate::data_ticket::DataTicket;
 
 pub const HEADER_SIZE: u32      = 64;
@@ -128,7 +128,7 @@ impl BTreeNode {
                     indexes: vec![ 0 ],
                 });
             }
-            return Err(DbErr::UnexpectedHeaderForBtreePage);
+            return Err(mk_unexpected_header_for_btree_page(page.page_id, &magic, &page.data[0..2]));
         }
 
         let first_left_pid = page.get_u32(4);
