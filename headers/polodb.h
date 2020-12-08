@@ -39,6 +39,10 @@ enum PLDB_VALUE_TYPE {
   PLDB_VAL_UTC_DATETIME = 0x09,
 };
 
+enum PLDB_ERR_TYPE {
+  PLDB_ERR_COLLECTION_NOT_FOUND = -24,
+};
+
 // Database {
 Database* PLDB_open(const char* path);
 
