@@ -226,11 +226,17 @@ impl PageHandler {
     // 1. write to journal, if success
     //    - 2. checkpoint journal, if full
     // 3. write to page_cache
-    pub fn pipeline_write_page(&mut self, page: &RawPage) -> Result<(), DbErr> {
+    pub fn pipeline_write_page(&mut self, page: &RawPage) -> DbResult<()> {
         self.journal_manager.as_mut().append_raw_page(page)?;
 
         self.page_cache.insert_to_cache(page);
         Ok(())
+    }
+
+    #[inline]
+    fn pipeline_write_null_page(&mut self, page_id: u32) -> DbResult<()> {
+        let page = RawPage::new(page_id, self.page_size);
+        self.pipeline_write_page(&page)
     }
 
     // 1. read from page_cache, if none
@@ -470,6 +476,7 @@ impl PageHandler {
     pub fn alloc_page_id(&mut self) -> DbResult<u32> {
         let page_id = match self.try_get_free_page_id()? {
             Some(page_id) =>  {
+                self.pipeline_write_null_page(page_id)?;
 
                 #[cfg(feature = "log")]
                 eprintln!("get new page_id from free list: {}", page_id);

@@ -107,29 +107,8 @@ impl BTreeNode {
         }
     }
 
-    // Offset 0: magic(2 bytes)
-    // Offset 2: items_len(2 bytes)
-    // Offset 4: left_pid (4 bytes)
-    // Offset 8: next_pid (4 bytes)
-    pub(crate) fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32, page_handler: &mut PageHandler) -> DbResult<BTreeNode> {
-        #[cfg(debug_assertions)]
-        if page.page_id == 0 {
-            panic!("page id is zero, parent pid: {}", parent_pid);
-        }
-
-        let page_type = PageType::BTreeNode;
-        let magic = page_type.to_magic();
-        if page.data[0..2] != magic {
-            if page.data[0..2] == [0, 0] {  // null page
-                return Ok(BTreeNode {
-                    pid: page.page_id,
-                    parent_pid,
-                    content: vec![],
-                    indexes: vec![ 0 ],
-                });
-            }
-            return Err(mk_unexpected_header_for_btree_page(page.page_id, &magic, &page.data[0..2]));
-        }
+    fn from_raw_lossy(page: &RawPage, parent_pid: u32, item_size: u32, page_handler: &mut PageHandler) -> DbResult<BTreeNode> {
+        debug_assert_ne!(page.page_id, 0, "page id is zero, parent pid: {}", parent_pid);
 
         let first_left_pid = page.get_u32(4);
         let mut content = vec![];
@@ -158,6 +137,35 @@ impl BTreeNode {
             content,
             indexes,
         })
+    }
+
+    pub(crate) fn check_page_header(page: &RawPage) -> bool {
+        let page_type = PageType::BTreeNode;
+        let magic = page_type.to_magic();
+        page.data[0..2] == magic
+    }
+
+    // Offset 0: magic(2 bytes)
+    // Offset 2: items_len(2 bytes)
+    // Offset 4: left_pid (4 bytes)
+    // Offset 8: next_pid (4 bytes)
+    pub(crate) fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32, page_handler: &mut PageHandler) -> DbResult<BTreeNode> {
+        let page_type = PageType::BTreeNode;
+        let magic = page_type.to_magic();
+        if page.data[0..2] != magic {
+            if page.data[0..2] == [0, 0] {  // null page
+                return Ok(BTreeNode {
+                    pid: page.page_id,
+                    parent_pid,
+                    content: vec![],
+                    indexes: vec![ 0 ],
+                });
+            }
+            let err = mk_unexpected_header_for_btree_page(page.page_id, &magic, &page.data[0..2]);
+            return Err(err)
+        }
+
+        BTreeNode::from_raw_lossy(page, parent_pid, item_size, page_handler)
     }
 
     fn parse_node_data_item(page: &RawPage, begin_offset: u32, page_handler: &mut PageHandler) -> DbResult<BTreeNodeDataItem> {
