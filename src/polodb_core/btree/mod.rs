@@ -139,12 +139,6 @@ impl BTreeNode {
         })
     }
 
-    pub(crate) fn check_page_header(page: &RawPage) -> bool {
-        let page_type = PageType::BTreeNode;
-        let magic = page_type.to_magic();
-        page.data[0..2] == magic
-    }
-
     // Offset 0: magic(2 bytes)
     // Offset 2: items_len(2 bytes)
     // Offset 4: left_pid (4 bytes)
