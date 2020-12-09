@@ -5,7 +5,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
-const version = '0.5.1';
+const version = '0.6.0';
 
 const platform = os.platform();
 const arch = os.arch();
