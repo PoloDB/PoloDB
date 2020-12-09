@@ -278,6 +278,7 @@ static napi_status JsArrayValueToDbArray_SetElement(napi_env env, DbArray* arr, 
 
         PLDB_free_doc(child_doc);
       }
+      break;
     }
     
     default:
@@ -468,6 +469,7 @@ static napi_status JsValueToDbDocument_SetProperty(napi_env env, DbDocument* doc
 
         PLDB_free_doc(child_doc);
       }
+      break;
     }
     
     default:
@@ -996,7 +998,7 @@ ret:
     PLDB_free_doc(query_doc);
     query_doc = NULL;
   }
-  if (update_doc == NULL) {
+  if (update_doc != NULL) {
     PLDB_free_doc(update_doc);
     update_doc = NULL;
   }

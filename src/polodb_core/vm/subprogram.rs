@@ -324,8 +324,9 @@ mod tests {
     fn print_update() {
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
         let query_doc = mk_document! {
-            "name": "Vincent Chan",
-            "age": 32,
+            "_id": mk_document! {
+                "$gt": 3
+            },
         };
         let update_doc = mk_document! {
             "$set": mk_document! {

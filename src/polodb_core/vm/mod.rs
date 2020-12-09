@@ -356,7 +356,7 @@ impl<'a> VM<'a> {
 
                     DbOp::IfLess => {
                         let location = self.pc.add(1).cast::<u32>().read();
-                        if self.r0 < 0 {  // greater
+                        if self.r0 < 0 {  // less
                             self.reset_location(location);
                         } else {
                             self.pc = self.pc.add(5);
