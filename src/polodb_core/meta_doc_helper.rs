@@ -38,7 +38,7 @@ impl MetaDocEntry {
     }
 
     pub(crate) fn from_doc(doc: Rc<Document>) -> MetaDocEntry {
-        let name = doc.get(meta_doc_key::NAME.into()).unwrap().unwrap_string();
+        let name = doc.get(meta_doc_key::NAME).unwrap().unwrap_string();
         MetaDocEntry {
             name: name.into(),
             doc,

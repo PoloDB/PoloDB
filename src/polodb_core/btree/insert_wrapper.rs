@@ -113,7 +113,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
         if btree_node.content.is_empty() {
             let data_item = self.doc_to_node_data_item(doc)?;
-            btree_node.content.push(data_item.clone());
+            btree_node.content.push(data_item);
             btree_node.indexes.push(0);
             btree_node.indexes.push(0);
 
@@ -133,7 +133,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
             SearchKeyResult::Node(index) => {
                 return if replace {
                     let data_item = self.doc_to_node_data_item(doc)?;
-                    btree_node.content[index] = data_item.clone();
+                    btree_node.content[index] = data_item;
                     self.0.write_btree_node(&btree_node)?;
 
                     Ok(InsertResult {
@@ -150,7 +150,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
                 if backward || left_pid == 0 {  // left is null, insert in current page
                     // insert between index - 1 and index
                     let data_item = self.doc_to_node_data_item(doc)?;
-                    btree_node.content.insert(index, data_item.clone());
+                    btree_node.content.insert(index, data_item);
                     btree_node.indexes.insert(index + 1, 0);  // null page because left_pid is null
                 } else {  // left has page
                     // insert to left page

@@ -148,7 +148,7 @@ impl IndexEntry {
         let mut doc = Document::new_without_id();
         doc.insert("_id".into(), data_value.clone());
 
-        doc.insert("pkey".into(), primary_key.clone());
+        doc.insert("pkey".into(), primary_key);
 
         doc
     }
