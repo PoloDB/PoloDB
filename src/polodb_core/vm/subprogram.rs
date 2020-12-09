@@ -10,14 +10,6 @@ pub(crate) struct SubProgram {
     pub(super) instructions:     Vec<u8>,
 }
 
-// fn doc_to_tuples(doc: &Document) -> Vec<(String, Value)> {
-//     let mut result = Vec::with_capacity(doc.len());
-//     for (key, value) in doc.iter() {
-//         result.push((key.clone(), value.clone()))
-//     }
-//     result
-// }
-
 impl SubProgram {
 
     pub(super) fn new() -> SubProgram {

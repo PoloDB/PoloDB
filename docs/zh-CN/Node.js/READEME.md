@@ -71,7 +71,26 @@ const result = collection.find({
 console.log(result);
 ```
 
+### 高级查找数据操作
+
+PoloDB 也提供了像 MongoDB 一样复杂 query 的能力具体参见：
+[Query](../Query.md)
+
+示范：查找所有 age 大于 18 的值
+```javascript
+const collection = db.collection('students');
+
+const result = collection.find({
+    age: {
+        $gt: 18,
+    },
+});
+
+```
+
 ## 更新数据
+
+[更新操作](../Update.md)
 
 ```javascript
 const collection = db.collection('students');
@@ -79,7 +98,7 @@ const collection = db.collection('students');
 collection.update({
     name: 'Vincent Chan',
 }, {
-    '$inc': {
+    $inc: {
         age: 1,
     },
 });
