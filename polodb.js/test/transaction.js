@@ -1,4 +1,4 @@
-const { Database, version } = require("..");
+const { Database } = require("..");
 const path = require('path');
 const os = require('os');
 const { expect } = require("chai");

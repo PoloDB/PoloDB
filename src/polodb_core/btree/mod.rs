@@ -6,7 +6,7 @@ pub mod counter_helper;
 pub(crate) mod delete_all_helper;
 
 pub(crate) use delete_wrapper::BTreePageDeleteWrapper;
-pub(crate) use insert_wrapper::{BTreePageInsertWrapper, InsertBackwardItem};
+pub(crate) use insert_wrapper::{BTreePageInsertWrapper, InsertBackwardItem, InsertResult};
 
 use std::cmp::Ordering;
 use polodb_bson::{vli, Value, ObjectId, ty_int};

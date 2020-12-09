@@ -75,9 +75,26 @@ const result = collection.find({
 console.log(result);
 ```
 
+### Advanced Find
+
+PoloDB supports complex find operation like MongoDB:
+[Query Operation](../Query.md)
+
+Example: find all items with age is greater than 18
+```javascript
+const collection = db.collection('students');
+
+const result = collection.find({
+    age: {
+        $gt: 18,
+    },
+});
+
+```
+
 ## Update
 
-Update documents in the database.
+Update documents in the database: [Update Operation](../Update.md).
 
 ```javascript
 const collection = db.collection('students');
@@ -85,7 +102,7 @@ const collection = db.collection('students');
 collection.update({
     name: 'Vincent Chan',
 }, {
-    '$inc': {
+    $inc: {
         age: 1,
     },
 });

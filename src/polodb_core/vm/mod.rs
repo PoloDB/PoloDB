@@ -356,7 +356,7 @@ impl<'a> VM<'a> {
 
                     DbOp::IfLess => {
                         let location = self.pc.add(1).cast::<u32>().read();
-                        if self.r0 < 0 {  // greater
+                        if self.r0 < 0 {  // less
                             self.reset_location(location);
                         } else {
                             self.pc = self.pc.add(5);
@@ -646,9 +646,9 @@ impl<'a> Drop for VM<'a> {
 
     fn drop(&mut self) {
         if self.rollback_on_drop {
-            let result = self.page_handler.rollback();
+            let _result = self.page_handler.rollback();
             #[cfg(debug_assertions)]
-            if let Err(err) = result {
+            if let Err(err) = _result {
                 panic!("rollback fatal: {}", err);
             }
         }

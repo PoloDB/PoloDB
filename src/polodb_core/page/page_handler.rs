@@ -244,8 +244,7 @@ impl PageHandler {
     // 3. read from main db
     pub fn pipeline_read_page(&mut self, page_id: u32) -> Result<RawPage, DbErr> {
         if let Some(page) = self.page_cache.get_from_cache(page_id) {
-            #[cfg(feature = "log")]
-            eprintln!("read page from cache, page_id: {}", page_id);
+            crate::polo_log!("read page from cache, page_id: {}", page_id);
 
             return Ok(page);
         }
@@ -266,8 +265,7 @@ impl PageHandler {
 
         self.page_cache.insert_to_cache(&result);
 
-        #[cfg(feature = "log")]
-        eprintln!("read page from main file, id: {}", page_id);
+        crate::polo_log!("read page from main file, id: {}", page_id);
 
         Ok(result)
     }
@@ -301,8 +299,7 @@ impl PageHandler {
     }
 
     pub(crate) fn free_data_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> {
-        #[cfg(feature = "log")]
-        eprintln!("free data ticket: {}", data_ticket);
+        crate::polo_log!("free data ticket: {}", data_ticket);
 
         let page = self.pipeline_read_page(data_ticket.pid)?;
         let mut wrapper = DataPageWrapper::from_raw(page);
@@ -333,9 +330,8 @@ impl PageHandler {
     }
 
     pub fn free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
-        #[cfg(feature = "log")]
         for pid in pages {
-            eprintln!("free page, id: {}", *pid);
+            crate::polo_log!("free page, id: {}", *pid);
         }
 
         let first_page = self.pipeline_read_page(0)?;
@@ -478,8 +474,7 @@ impl PageHandler {
             Some(page_id) =>  {
                 self.pipeline_write_null_page(page_id)?;
 
-                #[cfg(feature = "log")]
-                eprintln!("get new page_id from free list: {}", page_id);
+                crate::polo_log!("get new page_id from free list: {}", page_id);
 
                 Ok(page_id)
             }
@@ -506,8 +501,7 @@ impl PageHandler {
 
         self.pipeline_write_page(&first_page_wrapper.0)?;
 
-        #[cfg(feature = "log")]
-        eprintln!("alloc new page_id : {}", null_page_bar);
+        crate::polo_log!("alloc new page_id : {}", null_page_bar);
 
         Ok(null_page_bar)
     }
@@ -546,8 +540,7 @@ impl PageHandler {
         self.journal_manager.commit()?;
         if self.is_journal_full() {
             self.checkpoint_journal()?;
-            #[cfg(feature = "log")]
-            eprintln!("checkpoint journal finished");
+            crate::polo_log!("checkpoint journal finished");
         }
         Ok(())
     }

@@ -1,4 +1,4 @@
-use polodb_bson::Document;
+use polodb_bson::{Document, Value};
 use crate::DbResult;
 use crate::page::{RawPage, PageHandler};
 use super::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
@@ -13,7 +13,7 @@ pub(crate) struct InsertBackwardItem {
 
 pub(crate) struct InsertResult {
     pub backward_item: Option<InsertBackwardItem>,
-    pub data_ticket: DataTicket,
+    pub primary_key: Value,
 }
 
 impl InsertBackwardItem {
@@ -113,7 +113,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
         if btree_node.content.is_empty() {
             let data_item = self.doc_to_node_data_item(doc)?;
-            btree_node.content.push(data_item.clone());
+            btree_node.content.push(data_item);
             btree_node.indexes.push(0);
             btree_node.indexes.push(0);
 
@@ -121,7 +121,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
             return Ok(InsertResult {
                 backward_item: None,
-                data_ticket: data_item.data_ticket,
+                primary_key: doc.pkey_id().unwrap(),
             });
         }
 
@@ -129,16 +129,16 @@ impl<'a> BTreePageInsertWrapper<'a> {
         let doc_pkey = &doc.pkey_id().expect("primary key not found in document");
 
         let search_result = btree_node.search(doc_pkey)?;
-        let data_ticket = match search_result {
+        match search_result {
             SearchKeyResult::Node(index) => {
                 return if replace {
                     let data_item = self.doc_to_node_data_item(doc)?;
-                    btree_node.content[index] = data_item.clone();
+                    btree_node.content[index] = data_item;
                     self.0.write_btree_node(&btree_node)?;
 
                     Ok(InsertResult {
                         backward_item: None,
-                        data_ticket: data_item.data_ticket,
+                        primary_key: doc_pkey.clone(),
                     })
                 } else {
                     Err(DbErr::DataExist(doc_pkey.clone()))
@@ -150,9 +150,8 @@ impl<'a> BTreePageInsertWrapper<'a> {
                 if backward || left_pid == 0 {  // left is null, insert in current page
                     // insert between index - 1 and index
                     let data_item = self.doc_to_node_data_item(doc)?;
-                    btree_node.content.insert(index, data_item.clone());
+                    btree_node.content.insert(index, data_item);
                     btree_node.indexes.insert(index + 1, 0);  // null page because left_pid is null
-                    data_item.data_ticket
                 } else {  // left has page
                     // insert to left page
                     let tmp = self.insert_item_to_page(left_pid, pid, doc, false, replace)?;
@@ -160,14 +159,13 @@ impl<'a> BTreePageInsertWrapper<'a> {
                         btree_node.content.insert(index, backward_item.content);
                         btree_node.indexes.insert(index + 1, backward_item.right_pid);
                     }
-                    tmp.data_ticket
                 }
             }
 
         };
 
         if btree_node.content.len() > (self.0.item_size as usize) {  // need to divide
-            return self.divide_and_return_backward(btree_node, data_ticket);
+            return self.divide_and_return_backward(btree_node, doc_pkey.clone());
         }
 
         // write page back
@@ -175,11 +173,11 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
         Ok(InsertResult {
             backward_item: None,
-            data_ticket,
+            primary_key: doc_pkey.clone(),
         })
     }
 
-    fn divide_and_return_backward(&mut self, btree_node: BTreeNode, data_ticket: DataTicket) -> DbResult<InsertResult> {
+    fn divide_and_return_backward(&mut self, btree_node: BTreeNode, primary_key: Value) -> DbResult<InsertResult> {
         let middle_index = btree_node.content.len() / 2;
 
         // use current page block to store left
@@ -218,7 +216,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
         Ok(InsertResult {
             backward_item: Some(backward_item),
-            data_ticket,
+            primary_key,
         })
     }
 

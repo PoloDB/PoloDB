@@ -153,7 +153,9 @@ impl Codegen {
         F: FnOnce(&mut Codegen) -> DbResult<()> {
 
         if let Some(id_value) = query.pkey_id() {
-            return self.emit_query_layout_has_pkey(id_value, query, result_callback);
+            if id_value.is_valid_key_type() {
+                return self.emit_query_layout_has_pkey(id_value, query, result_callback);
+            }
         }
 
         let rewind_location = self.current_location();
@@ -291,8 +293,8 @@ impl Codegen {
 
                     // equal, r0 == 0
                     self.emit_false_jump(not_found_branch);
-                    // less
-                    self.emit_less_jump(not_found_branch);
+                    // greater
+                    self.emit_greater_jump(not_found_branch);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
@@ -305,7 +307,7 @@ impl Codegen {
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::Cmp);
 
-                    self.emit_less_jump(not_found_branch);
+                    self.emit_greater_jump(not_found_branch);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
@@ -342,7 +344,7 @@ impl Codegen {
                     // equal, r0 == 0
                     self.emit_false_jump(not_found_branch);
                     // less
-                    self.emit_greater_jump(not_found_branch);
+                    self.emit_less_jump(not_found_branch);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
@@ -356,7 +358,7 @@ impl Codegen {
                     self.emit(DbOp::Cmp);
 
                     // less
-                    self.emit_greater_jump(not_found_branch);
+                    self.emit_less_jump(not_found_branch);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);

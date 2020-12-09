@@ -10,14 +10,6 @@ pub(crate) struct SubProgram {
     pub(super) instructions:     Vec<u8>,
 }
 
-// fn doc_to_tuples(doc: &Document) -> Vec<(String, Value)> {
-//     let mut result = Vec::with_capacity(doc.len());
-//     for (key, value) in doc.iter() {
-//         result.push((key.clone(), value.clone()))
-//     }
-//     result
-// }
-
 impl SubProgram {
 
     pub(super) fn new() -> SubProgram {
@@ -33,7 +25,7 @@ impl SubProgram {
 
         let mut codegen = Codegen::new();
 
-        codegen.emit_open_read(entry.root_pid);
+        codegen.emit_open_read(entry.root_pid());
 
         codegen.emit_query_layout(query, |codegen| -> DbResult<()> {
             codegen.emit(DbOp::ResultRow);
@@ -47,7 +39,7 @@ impl SubProgram {
     pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, update: &Document) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new();
 
-        codegen.emit_open_write(entry.root_pid);
+        codegen.emit_open_write(entry.root_pid());
 
         codegen.emit_query_layout(query.unwrap(), |codegen| -> DbResult<()> {
             codegen.emit_update_operation(update)?;
@@ -61,7 +53,7 @@ impl SubProgram {
     pub(crate) fn compile_query_all(entry: &MetaDocEntry) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new();
 
-        codegen.emit_open_read(entry.root_pid);
+        codegen.emit_open_read(entry.root_pid());
 
         let rewind_loc = codegen.current_location();
         codegen.emit(DbOp::Rewind);
@@ -332,8 +324,9 @@ mod tests {
     fn print_update() {
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
         let query_doc = mk_document! {
-            "name": "Vincent Chan",
-            "age": 32,
+            "_id": mk_document! {
+                "$gt": 3
+            },
         };
         let update_doc = mk_document! {
             "$set": mk_document! {

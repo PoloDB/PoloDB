@@ -380,8 +380,7 @@ impl JournalManager {
             state.db_file_size = expected_db_size;
         }
 
-        #[cfg(feature = "log")]
-        eprintln!("append page to journal, page_id: {}, start_pos:\t\t0x{:0>8X}", raw_page.page_id, start_pos);
+        crate::polo_log!("append page to journal, page_id: {}, start_pos:\t\t0x{:0>8X}", raw_page.page_id, start_pos);
 
         Ok(())
     }
@@ -422,8 +421,7 @@ impl JournalManager {
         let mut result = RawPage::new(page_id, self.page_size);
         result.read_from_file(&mut self.journal_file, data_offset)?;
 
-        #[cfg(feature = "log")]
-        eprintln!("read page from journal, page_id: {}, data_offset:\t\t0x{:0>8X}", page_id, offset);
+        crate::polo_log!("read page from journal, page_id: {}, data_offset:\t\t0x{:0>8X}", page_id, offset);
 
         Ok(Some(result))
     }
@@ -486,9 +484,9 @@ impl JournalManager {
 
         }
 
-        let new_state = {
-            Box::new(TransactionState::new(ty, self.count, self.db_file_size))
-        };
+        let new_state = Box::new(
+            TransactionState::new(ty, self.count, self.db_file_size)
+        );
         self.transaction_state = Some(new_state);
 
         Ok(())
@@ -524,9 +522,9 @@ impl JournalManager {
 
         self.exclusive_lock_file()?;
 
-        let new_state = {
-            Box::new(TransactionState::new(TransactionType::Write, self.count, self.db_file_size))
-        };
+        let new_state = Box::new(
+            TransactionState::new(TransactionType::Write, self.count, self.db_file_size)
+        );
         self.transaction_state = Some(new_state);
         Ok(())
     }
