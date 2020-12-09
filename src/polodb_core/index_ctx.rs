@@ -133,8 +133,7 @@ impl IndexEntry {
     fn handle_backward_item(&mut self, meta_doc: &mut Document, backward_item: &InsertBackwardItem, page_handler: &mut PageHandler) -> DbResult<()> {
         let new_root_id = page_handler.alloc_page_id()?;
 
-        #[cfg(feature = "log")]
-        eprintln!("index handle backward item, left_pid: {}, new_root_id: {}, right_pid: {}", self.root_pid, new_root_id, backward_item.right_pid);
+        crate::polo_log!("index handle backward item, left_pid: {}, new_root_id: {}, right_pid: {}", self.root_pid, new_root_id, backward_item.right_pid);
 
         let new_root_page = backward_item.write_to_page(page_handler, new_root_id, self.root_pid)?;
 

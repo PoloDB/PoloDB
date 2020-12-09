@@ -580,8 +580,7 @@ impl DbContext {
 
         let new_root_id = self.page_handler.alloc_page_id()?;
 
-        #[cfg(feature = "log")]
-        eprintln!("handle backward item, left_pid: {}, new_root_id: {}, right_pid: {}", left_pid, new_root_id, backward_item.right_pid);
+        crate::polo_log!("handle backward item, left_pid: {}, new_root_id: {}, right_pid: {}", left_pid, new_root_id, backward_item.right_pid);
 
         let new_root_page = backward_item.write_to_page(&mut self.page_handler, new_root_id, left_pid)?;
         self.page_handler.pipeline_write_page(&new_root_page)?;

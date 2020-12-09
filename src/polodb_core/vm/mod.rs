@@ -646,9 +646,9 @@ impl<'a> Drop for VM<'a> {
 
     fn drop(&mut self) {
         if self.rollback_on_drop {
-            let result = self.page_handler.rollback();
+            let _result = self.page_handler.rollback();
             #[cfg(debug_assertions)]
-            if let Err(err) = result {
+            if let Err(err) = _result {
                 panic!("rollback fatal: {}", err);
             }
         }

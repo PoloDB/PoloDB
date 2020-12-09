@@ -38,6 +38,7 @@ mod context;
 mod db_handle;
 pub mod dump;
 mod config;
+mod macros;
 
 pub use db::{Database, DbResult};
 pub use config::Config;
