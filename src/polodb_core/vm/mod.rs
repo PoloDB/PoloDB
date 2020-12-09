@@ -140,10 +140,7 @@ impl<'a> VM<'a> {
                 let doc = self.page_handler.get_doc_from_ticket(&ticket)?.unwrap();
                 self.stack.push(Value::Document(doc));
 
-                #[cfg(debug_assertions)]
-                if self.stack.len() > 64 {
-                    eprintln!("stack too large: {}", self.stack.len());
-                }
+                debug_assert!(self.stack.len() <= 64, "stack too large: {}", self.stack.len());
 
                 self.r0 = 1;
             }

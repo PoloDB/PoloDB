@@ -15,10 +15,7 @@ pub fn cal_item_size(page_size: u32) -> u32 {
 impl<'a> BTreePageWrapperBase<'a> {
 
     pub(super) fn new(page_handler: &mut PageHandler, root_page_id: u32) -> BTreePageWrapperBase {
-        #[cfg(debug_assertions)]
-        if root_page_id == 0 {
-            panic!("page id is zero");
-        }
+        debug_assert_ne!(root_page_id, 0, "page id is zero");
 
         let item_size = cal_item_size(page_handler.page_size);
 

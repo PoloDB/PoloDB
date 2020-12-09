@@ -113,8 +113,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                             if !borrow_ok {
                                 if current_btree_node.content.len() == 1 {
                                     let _opt = self.try_merge_head(*current_btree_node)?;
-                                    #[cfg(debug_assertions)]
-                                    assert!(_opt);
+                                    debug_assert!(_opt);
                                 } else {
                                     self.merge_leaves(idx, current_btree_node.borrow_mut())?;
                                     current_item_size = current_btree_node.content.len();
@@ -127,8 +126,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                             // let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
                             if current_btree_node.content.len() == 1 {
                                 let _opt = self.try_merge_head(*current_btree_node)?;
-                                #[cfg(debug_assertions)]
-                                assert!(_opt);
+                                debug_assert!(_opt);
                             }
                         }
                     }
@@ -172,8 +170,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
                                         if current_btree_node.content.len() == 1 {
                                             let _opt = self.try_merge_head(*current_btree_node)?;
-                                            #[cfg(debug_assertions)]
-                                            assert!(_opt);
+                                            debug_assert!(_opt);
                                         } else {
                                             self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
                                             current_item_size = current_btree_node.content.len();
@@ -186,8 +183,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
                                     let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
                                     if current_btree_node.content.len() == 1 {
                                         let _opt = self.try_merge_head(*current_btree_node)?;
-                                        #[cfg(debug_assertions)]
-                                        assert!(_opt);
+                                        debug_assert!(_opt);
                                     }
                                 }
                             }
@@ -310,8 +306,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
     // merge the nth elements of the current_btree_node
     fn merge_leaves(&mut self, node_idx: usize, current_btree_node: &mut BTreeNode) -> DbResult<()> {
-        #[cfg(debug_assertions)]
-        assert!(current_btree_node.content.len() > 1);
+        debug_assert!(current_btree_node.content.len() > 1);
 
         let current_pid = current_btree_node.pid;
         let subtree_pid = current_btree_node.indexes[node_idx];  // subtree need to shift
@@ -353,8 +348,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
             current_btree_node.content.remove(node_idx - 1);
             current_btree_node.indexes.remove(node_idx);
 
-            #[cfg(debug_assertions)]
-            assert_eq!(current_btree_node.indexes[node_idx], subtree_node.pid);
+            debug_assert_eq!(current_btree_node.indexes[node_idx], subtree_node.pid);
 
             self.base.page_handler.free_page(subtree_node.pid)?;
 
@@ -367,8 +361,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
             subtree_node.indexes.extend_from_slice(&right_node.indexes);
 
-            #[cfg(debug_assertions)]
-            assert_eq!(current_btree_node.indexes[node_idx + 1], right_node.pid);
+            debug_assert_eq!(current_btree_node.indexes[node_idx + 1], right_node.pid);
 
             current_btree_node.content.remove(node_idx);
             current_btree_node.indexes.remove(node_idx + 1);
@@ -383,10 +376,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
     fn erase_item(&mut self, item: &DataTicket) -> DbResult<Rc<Document>> {
         let bytes = self.base.page_handler.free_data_ticket(&item)?;
-        #[cfg(debug_assertions)]
-        if bytes.is_empty() {
-            panic!("bytes is empty");
-        }
+        debug_assert!(!bytes.is_empty(), "bytes is empty");
         let doc = Document::from_bytes(bytes.as_ref())?;
         Ok(Rc::new(doc))
     }
