@@ -11,8 +11,8 @@
 //! # Installation
 //! ```toml
 //! [dependencies]
-//! polodb_core = "0.5.2"
-//! polodb_bson = "0.5.2"
+//! polodb_core = "0.6.0"
+//! polodb_bson = "0.6.0"
 //! ```
 //!
 //! # Usage
