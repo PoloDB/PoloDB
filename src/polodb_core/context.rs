@@ -253,7 +253,7 @@ impl DbContext {
         DbHandle::new(vm)
     }
 
-    pub(crate) fn find_collection_root_pid_by_id(&mut self, parent_pid: u32, root_pid: u32, id: u32) -> DbResult<(MetaDocEntry, Rc<Document>)> {
+    pub(crate) fn find_collection_root_pid_by_id(&mut self, parent_pid: u32, root_pid: u32, id: u32) -> DbResult<MetaDocEntry> {
         let raw_page = self.page_handler.pipeline_read_page(root_pid)?;
         let item_size = self.item_size();
         let btree_node = BTreeNode::from_raw(&raw_page, parent_pid, item_size, &mut self.page_handler)?;
@@ -266,8 +266,8 @@ impl DbContext {
             SearchKeyResult::Node(node_index) => {
                 let item = &btree_node.content[node_index];
                 let doc = self.page_handler.get_doc_from_ticket(&item.data_ticket)?.unwrap();
-                let entry = MetaDocEntry::from_doc(doc.borrow());
-                Ok((entry, doc))
+                let entry = MetaDocEntry::from_doc(doc);
+                Ok(entry)
             }
 
             SearchKeyResult::Index(child_index) => {
@@ -292,9 +292,8 @@ impl DbContext {
 
     fn internal_create_index(&mut self, col_id: u32, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         let meta_source = self.get_meta_source()?;
-        let (_, mut meta_doc) = self.find_collection_root_pid_by_id(
+        let mut meta_doc = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
-        let mut_meta_doc = Rc::get_mut(&mut meta_doc).unwrap();
 
         for (key_name, value_of_key) in keys.iter() {
             if let Value::Int(1) = value_of_key {
@@ -303,7 +302,7 @@ impl DbContext {
                 return Err(DbErr::InvalidOrderOfIndex(key_name.into()));
             }
 
-            match mut_meta_doc.get(meta_doc_key::INDEXES) {
+            match meta_doc.doc_ref().get(meta_doc_key::INDEXES) {
                 Some(indexes_obj) => match indexes_obj {
                     Value::Document(index_doc) => {
                         if index_already_exists(index_doc.borrow(), key_name) {
@@ -327,7 +326,7 @@ impl DbContext {
                     let options_doc = merge_options_into_default(root_pid, options)?;
                     doc.insert(key_name.into(), Value::Document(Rc::new(options_doc)));
 
-                    mut_meta_doc.insert(meta_doc_key::INDEXES.into(), Value::Document(Rc::new(doc)));
+                    meta_doc.set_indexes(doc);
                 }
 
             }
@@ -337,7 +336,7 @@ impl DbContext {
 
         let meta_source = self.get_meta_source()?;
         let inserted = self.update_by_root_pid(
-            0, meta_source.meta_pid, &key_col, mut_meta_doc)?;
+            0, meta_source.meta_pid, &key_col, meta_doc.doc_ref())?;
         if !inserted {
             panic!("update failed");
         }
@@ -370,44 +369,44 @@ impl DbContext {
         let meta_source = self.get_meta_source()?;
         let changed  = self.fix_doc(doc);
 
-        let (mut collection_meta, mut meta_doc) = self.find_collection_root_pid_by_id(
+        let mut collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
-        let meta_doc_mut = Rc::get_mut(&mut meta_doc).unwrap();
 
         let mut is_pkey_check_skipped = false;
         collection_meta.check_pkey_ty(&doc, &mut is_pkey_check_skipped)?;
 
         let mut insert_wrapper = BTreePageInsertWrapper::new(
-            &mut self.page_handler, collection_meta.root_pid as u32);
-        let insert_result = insert_wrapper.insert_item(doc, false)?;
+            &mut self.page_handler, collection_meta.root_pid());
+        let insert_result: InsertResult = insert_wrapper.insert_item(doc, false)?;
 
         let mut is_meta_changed = false;
 
         if let Some(backward_item) = &insert_result.backward_item {
-            self.handle_insert_backward_item(meta_doc_mut, collection_meta.root_pid as u32, backward_item)?;
+            let root_pid = collection_meta.root_pid();
+            self.handle_insert_backward_item(&mut collection_meta, root_pid, backward_item)?;
             is_meta_changed = true;
         }
 
         // insert successfully
         if is_pkey_check_skipped {
-            collection_meta.merge_pkey_ty_to_meta(meta_doc_mut, doc);
+            collection_meta.merge_pkey_ty_to_meta(doc);
             is_meta_changed = true;
         }
 
         // insert index begin
-        let mut index_ctx_opt = IndexCtx::from_meta_doc(meta_doc_mut);
+        let mut index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
         if let Some(index_ctx) = &mut index_ctx_opt {
             let mut is_ctx_changed = false;
 
             index_ctx.insert_index_by_content(
                 doc,
-                &insert_result.data_ticket,
+                &insert_result.primary_key,
                 &mut is_ctx_changed,
                 &mut self.page_handler
             )?;
 
             if is_ctx_changed {
-                index_ctx.merge_to_meta_doc(meta_doc_mut);
+                index_ctx.merge_to_meta_doc(&mut collection_meta);
                 is_meta_changed = true;
             }
         }
@@ -417,7 +416,7 @@ impl DbContext {
         if is_meta_changed {
             let key = Value::from(col_id);
             let updated= self.update_by_root_pid(
-                0, meta_source.meta_pid, &key, meta_doc_mut)?;
+                0, meta_source.meta_pid, &key, collection_meta.doc_ref())?;
             if !updated {
                 panic!("unexpected: update meta page failed")
             }
@@ -432,11 +431,11 @@ impl DbContext {
         self.check_meta_version(meta_version)?;
 
         let meta_source = self.get_meta_source()?;
-        let (collection_meta, meta_doc) = self.find_collection_root_pid_by_id(
+        let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
         let subprogram = match query {
-            Some(query) => SubProgram::compile_query(&collection_meta, meta_doc.borrow(), query),
+            Some(query) => SubProgram::compile_query(&collection_meta, collection_meta.doc_ref(), query),
             None => SubProgram::compile_query_all(&collection_meta),
         }?;
 
@@ -457,7 +456,7 @@ impl DbContext {
 
     fn internal_update(&mut self, col_id: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         let meta_source = self.get_meta_source()?;
-        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_id(
+        let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
         let subprogram = SubProgram::compile_update(&collection_meta, query, update)?;
@@ -480,7 +479,7 @@ impl DbContext {
 
     fn internal_drop(&mut self, col_id: u32) -> DbResult<()> {
         let mut meta_source = self.get_meta_source()?;
-        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_id(
+        let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
         delete_all_helper::delete_all(&mut self.page_handler, collection_meta)?;
 
@@ -575,7 +574,7 @@ impl DbContext {
     }
 
     fn handle_insert_backward_item(&mut self,
-                                   meta_doc_mut: &mut Document,
+                                   collection_meta: &mut MetaDocEntry,
                                    left_pid: u32,
                                    backward_item: &InsertBackwardItem) -> DbResult<()> {
 
@@ -587,7 +586,7 @@ impl DbContext {
         let new_root_page = backward_item.write_to_page(&mut self.page_handler, new_root_id, left_pid)?;
         self.page_handler.pipeline_write_page(&new_root_page)?;
 
-        meta_doc_mut.insert(meta_doc_key::ROOT_PID.into(), Value::Int(new_root_id as i64));
+        collection_meta.set_root_pid(new_root_id);
 
         Ok(())
     }
@@ -603,18 +602,18 @@ impl DbContext {
 
     fn internal_delete_by_pkey(&mut self, col_id: u32, key: &Value) -> DbResult<Option<Rc<Document>>> {
         let meta_source = self.get_meta_source()?;
-        let (collection_meta, meta_doc) = self.find_collection_root_pid_by_id(
+        let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
         let mut delete_wrapper = BTreePageDeleteWrapper::new(
             &mut self.page_handler,
-            collection_meta.root_pid as u32
+            collection_meta.root_pid() as u32
         );
         let result = delete_wrapper.delete_item(key)?;
         delete_wrapper.flush_pages()?;
 
         if let Some(deleted_item) = &result {
-            let index_ctx_opt = IndexCtx::from_meta_doc(meta_doc.borrow());
+            let index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
             if let Some(index_ctx) = &index_ctx_opt {
                 index_ctx.delete_index_by_content(deleted_item.borrow(), &mut self.page_handler)?;
             }
@@ -628,7 +627,7 @@ impl DbContext {
     pub fn count(&mut self, col_id: u32, meta_version: u32) -> DbResult<u64> {
         self.check_meta_version(meta_version)?;
         let meta_source = self.get_meta_source()?;
-        let (collection_meta, _meta_doc) = self.find_collection_root_pid_by_id(
+        let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
         counter_helper::count(&mut self.page_handler, collection_meta)
     }

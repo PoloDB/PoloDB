@@ -2,10 +2,9 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::borrow::Borrow;
 use polodb_bson::{Document, Value};
-use crate::meta_doc_helper::meta_doc_key;
+use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::DbResult;
 use crate::error::{DbErr, mk_field_name_type_unexpected};
-use crate::data_ticket::DataTicket;
 use crate::page::PageHandler;
 use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
 
@@ -42,21 +41,21 @@ impl IndexCtx {
         Some(result)
     }
 
-    pub fn merge_to_meta_doc(&self, meta_doc: &mut Document) {
+    pub fn merge_to_meta_doc(&self, collection_meta: &mut MetaDocEntry) {
         let mut new_back_doc = Document::new_without_id();
         for (key, entry) in &self.key_to_entry {
             let index_meta_doc = Rc::new(entry.to_doc());
             new_back_doc.insert(key.clone(), Value::Document(index_meta_doc));
         }
 
-        meta_doc.insert(meta_doc_key::INDEXES.into(), Value::Document(Rc::new(new_back_doc)));
+        collection_meta.set_indexes(new_back_doc);
     }
 
-    pub fn insert_index_by_content(&mut self, doc: &Document, data_ticket: &DataTicket, is_ctx_changed: &mut bool, page_handler: &mut PageHandler) -> DbResult<()> {
+    pub fn insert_index_by_content(&mut self, doc: &Document, primary_key: &Value, is_ctx_changed: &mut bool, page_handler: &mut PageHandler) -> DbResult<()> {
         for (key, entry) in &mut self.key_to_entry {
             if let Some(value) = doc.get(key) {
                 // index exist, and value exist
-                entry.insert_index(value, data_ticket, is_ctx_changed, page_handler)?;
+                entry.insert_index(value, primary_key.clone(), is_ctx_changed, page_handler)?;
             }
         }
 
@@ -107,9 +106,9 @@ impl IndexEntry {
         result
     }
 
-    // store (data_value -> data_ticket)
+    // store (data_value -> primary_key)
     fn insert_index(
-        &mut self, data_value: &Value, data_ticket: &DataTicket,
+        &mut self, data_value: &Value, primary_key: Value,
         is_changed: &mut bool,
         page_handler: &mut PageHandler) -> DbResult<()> {
 
@@ -119,7 +118,7 @@ impl IndexEntry {
 
         let mut insert_wrapper = BTreePageInsertWrapper::new(page_handler, self.root_pid);
 
-        let mut index_entry_doc = IndexEntry::mk_index_entry_doc(data_value, data_ticket);
+        let mut index_entry_doc = IndexEntry::mk_index_entry_doc(data_value, primary_key);
 
         let insert_result = insert_wrapper.insert_item(&index_entry_doc, false)?;
 
@@ -146,12 +145,11 @@ impl IndexEntry {
         page_handler.pipeline_write_page(&new_root_page)
     }
 
-    fn mk_index_entry_doc(data_value: &Value, data_ticket: &DataTicket) -> Document {
+    fn mk_index_entry_doc(data_value: &Value, primary_key: Value) -> Document {
         let mut doc = Document::new_without_id();
         doc.insert("_id".into(), data_value.clone());
 
-        let data_ticket_bytes: Rc<[u8]> = data_ticket.to_bytes().as_ref().into();
-        doc.insert("value".into(), Value::Binary(data_ticket_bytes));
+        doc.insert("pkey".into(), primary_key.clone());
 
         doc
     }

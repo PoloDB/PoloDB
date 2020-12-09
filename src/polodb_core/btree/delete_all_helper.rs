@@ -6,7 +6,7 @@ use crate::btree::BTreeNode;
 
 pub(crate) fn delete_all(page_handler: &mut PageHandler, collection_meta: MetaDocEntry) -> DbResult<()> {
     let item_size = cal_item_size(page_handler.page_size);
-    delete_all_by_btree_pid(page_handler, item_size, 0, collection_meta.root_pid)
+    delete_all_by_btree_pid(page_handler, item_size, 0, collection_meta.root_pid())
 }
 
 fn delete_all_by_btree_pid(page_handler: &mut PageHandler, item_size: u32, parent_id: u32, pid: u32) -> DbResult<()> {

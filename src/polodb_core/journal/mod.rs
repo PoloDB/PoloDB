@@ -486,9 +486,9 @@ impl JournalManager {
 
         }
 
-        let new_state = {
-            Box::new(TransactionState::new(ty, self.count, self.db_file_size))
-        };
+        let new_state = Box::new(
+            TransactionState::new(ty, self.count, self.db_file_size)
+        );
         self.transaction_state = Some(new_state);
 
         Ok(())
@@ -524,9 +524,9 @@ impl JournalManager {
 
         self.exclusive_lock_file()?;
 
-        let new_state = {
-            Box::new(TransactionState::new(TransactionType::Write, self.count, self.db_file_size))
-        };
+        let new_state = Box::new(
+            TransactionState::new(TransactionType::Write, self.count, self.db_file_size)
+        );
         self.transaction_state = Some(new_state);
         Ok(())
     }

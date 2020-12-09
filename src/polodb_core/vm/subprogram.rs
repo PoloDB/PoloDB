@@ -33,7 +33,7 @@ impl SubProgram {
 
         let mut codegen = Codegen::new();
 
-        codegen.emit_open_read(entry.root_pid);
+        codegen.emit_open_read(entry.root_pid());
 
         codegen.emit_query_layout(query, |codegen| -> DbResult<()> {
             codegen.emit(DbOp::ResultRow);
@@ -47,7 +47,7 @@ impl SubProgram {
     pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, update: &Document) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new();
 
-        codegen.emit_open_write(entry.root_pid);
+        codegen.emit_open_write(entry.root_pid());
 
         codegen.emit_query_layout(query.unwrap(), |codegen| -> DbResult<()> {
             codegen.emit_update_operation(update)?;
@@ -61,7 +61,7 @@ impl SubProgram {
     pub(crate) fn compile_query_all(entry: &MetaDocEntry) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new();
 
-        codegen.emit_open_read(entry.root_pid);
+        codegen.emit_open_read(entry.root_pid());
 
         let rewind_loc = codegen.current_location();
         codegen.emit(DbOp::Rewind);
