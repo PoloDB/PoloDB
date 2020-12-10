@@ -62,7 +62,7 @@ The feature will be implemented one by on in order.
   - [x] CURD
   - [x] Transactions
   - [ ] Indexes
-  - [ ] Join operations
+  - [ ] Aggregation
 - [x] Command line Tools
 - [x] Mobile Platform Compilation
   - [x] iOS
@@ -88,7 +88,8 @@ The feature will be implemented one by on in order.
 | Module | Path | Description |
 | -------| ---- | ----------- |
 | Core | `src/polodb_core`  | The core implementation of the Database |
-| C Library | `src/polodb_clib` | The C FFI implementation of PoloDb |
+| C Library | `src/polodb_clib` | The C FFI implementation of PoloDB |
 | CLI tool | `src/polodb_cli` | The command line tool of PoloDB |
 | Node.js bindings | `polodb.js` | The Node.js binding using N-API |
 | Python bindings | `pypolodb` | The CPython binding using Extension API |
+| Swift bindings | `SwiftyPoloDB` | The Swift binding |

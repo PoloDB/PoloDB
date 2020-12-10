@@ -47,6 +47,10 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
 以下特性会按计划一个一个来：
 
 - [x] 基本数据库功能
+  - [x] CURD
+  - [x] 事务性提交
+  - [ ] 索引
+  - [ ] 聚合函数
 - [x] 命令行工具
 - [ ] 移动平台的编译
   - [ ] iOS
@@ -76,3 +80,4 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
 | CLI tool | `src/polodb_cli` | 命令行工具 |
 | Node.js bindings | `polodb.js` | Node.js 绑定，用 N-API 实现 |
 | Python bindings | `pypolodb` | CPython 绑定，Extension API 实现 |
+| Swift bindings | `SwiftyPoloDB` | Swift |

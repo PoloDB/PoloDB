@@ -158,10 +158,7 @@ impl Cursor {
 
         let top = self.btree_stack.back().unwrap();
 
-        #[cfg(debug_assertions)]
-        if top.node.content.is_empty() {
-            panic!("top node content is empty, page_id: {}", top.node.pid);
-        }
+        debug_assert!(!top.node.content.is_empty(), "top node content is empty, page_id: {}", top.node.pid);
 
         let ticket = top.node.content[top.index].data_ticket.clone();
         Some(ticket)
