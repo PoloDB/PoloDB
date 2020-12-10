@@ -50,7 +50,7 @@ describe('Update', function () {
     });
   });
 
-  it('update', function() {
+  it('update $gte $set', function() {
     const collection = db.collection('test');
     collection.update({
       _id: {
@@ -67,6 +67,19 @@ describe('Update', function () {
     });
     expect(result.length).to.equals(500);
     expect(result[0]._id).to.equals(500);
+  });
+
+  it('update $inc', function() {
+    const collection = db.collection('test');
+    expect(function () {
+      collection.update({
+        _id: 0
+      }, {
+        $inc: {
+          _id: 100
+        },
+      });
+    }).to.throw(Error);
   });
 
 });
