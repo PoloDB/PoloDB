@@ -270,7 +270,7 @@ impl fmt::Display for SubProgram {
 #[cfg(test)]
 mod tests {
     use polodb_bson::{mk_document, mk_array};
-    use pretty_assertions::{assert_eq};
+    use polodb_line_diff::assert_eq;
     use crate::vm::SubProgram;
     use crate::meta_doc_helper::MetaDocEntry;
 
