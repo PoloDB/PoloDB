@@ -19,7 +19,7 @@ libc = "0.2"
 polodb_bson = "0.6.0"
 
 [dev-dependencies]
-pretty_assertions = "0.6.1"
+polodb_line_diff = { path = "../polodb_line_diff" }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["fileapi"] }
