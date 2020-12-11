@@ -375,6 +375,46 @@ mod tests {
     }
 
     #[test]
+    fn query_by_logic_and() {
+        let meta_doc = mk_document! {};
+        let test_doc = mk_document! {
+            "$and": mk_array! [
+                mk_document! {
+                    "_id": 6,
+                },
+                mk_document! {
+                    "age": 32,
+                },
+            ],
+        };
+        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+
+        println!("{}", actual);
+//         let expect = r#"Program:
+//
+// 0: OpenRead(100)
+// 5: PushValue(6)
+// 10: FindByPrimaryKey(20)
+// 15: Goto(23)
+// 20: Pop
+// 21: Close
+// 22: Halt
+// 23: GetField("age", 0)
+// 32: PushValue(32)
+// 37: Equal
+// 38: FalseJump(20)
+// 43: Pop
+// 44: Pop
+// 45: ResultRow
+// 46: Pop
+// 47: Goto(20)
+// "#;
+//         assert_eq!(expect, actual)
+    }
+
+    #[test]
     fn print_complex_print() {
         let meta_doc = mk_document! {};
         let test_doc = mk_document! {

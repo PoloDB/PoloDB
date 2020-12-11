@@ -372,14 +372,35 @@ impl DbContext {
         let mut collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
+        let pkey = doc.pkey_id().unwrap();
+
         let mut is_pkey_check_skipped = false;
-        collection_meta.check_pkey_ty(&doc, &mut is_pkey_check_skipped)?;
+        collection_meta.check_pkey_ty(&pkey, &mut is_pkey_check_skipped)?;
+
+        let mut is_meta_changed = false;
+
+        // insert index begin
+        let mut index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
+        if let Some(index_ctx) = &mut index_ctx_opt {
+            let mut is_ctx_changed = false;
+
+            index_ctx.insert_index_by_content(
+                doc,
+                &pkey,
+                &mut is_ctx_changed,
+                &mut self.page_handler
+            )?;
+
+            if is_ctx_changed {
+                index_ctx.merge_to_meta_doc(&mut collection_meta);
+                is_meta_changed = true;
+            }
+        }
+        // insert index end
 
         let mut insert_wrapper = BTreePageInsertWrapper::new(
             &mut self.page_handler, collection_meta.root_pid());
         let insert_result: InsertResult = insert_wrapper.insert_item(doc, false)?;
-
-        let mut is_meta_changed = false;
 
         if let Some(backward_item) = &insert_result.backward_item {
             let root_pid = collection_meta.root_pid();
@@ -392,25 +413,6 @@ impl DbContext {
             collection_meta.merge_pkey_ty_to_meta(doc);
             is_meta_changed = true;
         }
-
-        // insert index begin
-        let mut index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
-        if let Some(index_ctx) = &mut index_ctx_opt {
-            let mut is_ctx_changed = false;
-
-            index_ctx.insert_index_by_content(
-                doc,
-                &insert_result.primary_key,
-                &mut is_ctx_changed,
-                &mut self.page_handler
-            )?;
-
-            if is_ctx_changed {
-                index_ctx.merge_to_meta_doc(&mut collection_meta);
-                is_meta_changed = true;
-            }
-        }
-        // insert index end
 
         // update meta begin
         if is_meta_changed {

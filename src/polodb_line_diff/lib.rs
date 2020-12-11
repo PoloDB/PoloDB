@@ -3,6 +3,7 @@ mod line;
 use ansi_term::Colour::{Red, Green};
 use line::Line;
 
+#[derive(Eq, PartialEq)]
 pub enum DiffOp {
     Preserve,
     Delete,
@@ -120,7 +121,8 @@ pub fn format_differences(diff: &Vec<Diff>) -> String {
 
 pub struct Diff {
     op: DiffOp,
-    lines: Vec<Line>,
+    in_lines: Vec<Line>,
+    de_lines: Vec<Line>,
 }
 
 impl std::fmt::Display for Diff {
@@ -132,27 +134,34 @@ impl std::fmt::Display for Diff {
             }
 
             DiffOp::Insert => {
-                let line = &self.lines[0];
-                writeln!(f, "@@ {}", line.index() + 1)?;
-                let color_add = format!("+ {}", line.content());
-                writeln!(f, "{}", Green.paint(color_add))
+                writeln!(f, "@@ {}", self.in_lines[0].index() + 1)?;
+                for line in &self.in_lines {
+                    let color_add = format!("+ {}", line.content());
+                    writeln!(f, "{}", Green.paint(color_add))?;
+                }
+                Ok(())
             }
 
             DiffOp::Delete => {
-                let line = &self.lines[0];
-                writeln!(f, "@@ {}", line.index() + 1)?;
-                let color_minus = format!("- {}", line.content());
-                writeln!(f, "{}", Red.paint(color_minus))
+                writeln!(f, "@@ {}", self.de_lines[0].index() + 1)?;
+                for line in &self.de_lines {
+                    let color_minus = format!("- {}", line.content());
+                    writeln!(f, "{}", Red.paint(color_minus))?;
+                }
+                Ok(())
             }
 
             DiffOp::Replace => {
-                let line0 = &self.lines[0];
-                let line1 = &self.lines[1];
-                writeln!(f, "@@ {}", line0.index() + 1)?;
-                let color_add = format!("+ {}", line1.content());
-                let color_minus = format!("- {}", line0.content());
-                writeln!(f, "{}", Green.paint(color_add))?;
-                writeln!(f, "{}", Red.paint(color_minus))
+                writeln!(f, "@@ {}", self.in_lines[0].index() + 1)?;
+                for line in &self.in_lines {
+                    let color_add = format!("+ {}", line.content());
+                    writeln!(f, "{}", Green.paint(color_add))?;
+                }
+                for line in &self.de_lines {
+                    let color_minus = format!("- {}", line.content());
+                    writeln!(f, "{}", Red.paint(color_minus))?;
+                }
+                Ok(())
             }
         }
     }
@@ -160,7 +169,7 @@ impl std::fmt::Display for Diff {
 }
 
 fn backtracking(matrix: &Vec<Vec<Item>>, a_lines: &Vec<&str>, b_lines: &Vec<&str>, mut i: usize, mut j: usize) -> Vec<Diff> {
-    let mut result = vec![];
+    let mut result: Vec<Diff> = vec![];
     while i > 0 && j > 0 {
         match matrix[i][j].op {
             DiffOp::Preserve => {
@@ -169,13 +178,22 @@ fn backtracking(matrix: &Vec<Vec<Item>>, a_lines: &Vec<&str>, b_lines: &Vec<&str
             }
 
             DiffOp::Replace => {
-                let mut lines: Vec<Line> = vec![];
-                lines.push(Line::new(i - 1,a_lines[i - 1].into()));
-                lines.push(Line::new(j - 1, b_lines[j - 1].into()));
+                let in_line = Line::new(i - 1,a_lines[i - 1].into());
+                let de_line = Line::new(j - 1, b_lines[j - 1].into());
+                if let Some(last) = result.last_mut() {
+                    if last.op == DiffOp::Replace {
+                        last.in_lines.push(in_line);
+                        last.de_lines.push(de_line);
 
+                        i -= 1;
+                        j -= 1;
+                        continue
+                    }
+                }
                 result.push(Diff {
                     op: DiffOp::Replace,
-                    lines,
+                    in_lines: vec![ in_line ],
+                    de_lines: vec![ de_line ],
                 });
 
                 i -= 1;
@@ -183,24 +201,40 @@ fn backtracking(matrix: &Vec<Vec<Item>>, a_lines: &Vec<&str>, b_lines: &Vec<&str
             }
 
             DiffOp::Insert => {
-                let mut lines: Vec<Line> = vec![];
-                lines.push(Line::new(j - 1, b_lines[j - 1].into()));
+                let in_line = Line::new(j - 1, b_lines[j - 1].into());
+
+                if let Some(last) = result.last_mut() {
+                    if last.op == DiffOp::Insert {
+                        last.in_lines.push(in_line);
+                        j -= 1;
+                        continue;
+                    }
+                }
 
                 result.push(Diff {
                     op: DiffOp::Insert,
-                    lines,
+                    in_lines: vec![ in_line ],
+                    de_lines: vec![],
                 });
 
                 j -= 1;
             }
 
             DiffOp::Delete => {
-                let mut lines: Vec<Line> = vec![];
-                lines.push(Line::new(i - 1, a_lines[i - 1].into()));
+                let de_line = Line::new(i - 1, a_lines[i - 1].into());
+
+                if let Some(last) = result.last_mut() {
+                    if last.op == DiffOp::Delete {
+                        last.de_lines.push(de_line);
+                        i -= 1;
+                        continue;
+                    }
+                }
 
                 result.push(Diff {
                     op: DiffOp::Delete,
-                    lines,
+                    in_lines: vec![],
+                    de_lines: vec![ de_line ],
                 });
 
                 i -= 1;

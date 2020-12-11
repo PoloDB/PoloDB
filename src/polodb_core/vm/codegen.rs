@@ -1,4 +1,5 @@
-use polodb_bson::{Value, Document};
+use polodb_bson::{Value, Document, Array};
+use super::optimization::inverse_doc;
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
 use crate::{DbResult, DbErr};
@@ -10,6 +11,18 @@ macro_rules! try_unwrap_document {
             Value::Document(doc) => doc,
             t => {
                 let err = mk_field_name_type_unexpected($op_name, "Document".into(), t.ty_name());
+                return Err(err);
+            },
+        }
+    };
+}
+
+macro_rules! try_unwrap_array {
+    ($op_name:tt, $arr:expr) => {
+        match $arr {
+            Value::Array(arr) => arr,
+            t => {
+                let err = mk_field_name_type_unexpected($op_name, "Array".into(), t.ty_name());
                 return Err(err);
             },
         }
@@ -209,15 +222,48 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_query_tuple(&mut self, key: &str, value: &Value, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
-        if key.chars().nth(0).unwrap() == '$' {
+    fn emit_logic_and(&mut self, arr: &Array, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
+        for item_doc_value in arr.iter() {
+            let item_doc = try_unwrap_document!("$and", item_doc_value);
+            for (key, value) in item_doc.iter() {
+                self.emit_query_tuple(key, value, get_field_failed_location, not_found_branch)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn emit_logic_or(&mut self, _arr: &Array, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
+        unimplemented!()
+    }
+
+    // case1: "$and" | "$or" -> [ Document ]
+    // case2: "$not" -> Document
+    // case3: "_id" -> Document
+    fn emit_query_tuple(&mut self,
+                        key: &str,
+                        value: &Value,
+                        get_field_failed_location: u32,
+                        not_found_branch: u32) -> DbResult<()> {
+        if key.chars().next().unwrap() == '$' {
             match key {
                 "$and" => {
-                    unimplemented!()
+                    let sub_arr = try_unwrap_array!("$and", value);
+                    self.emit_logic_and(sub_arr.as_ref(), get_field_failed_location, not_found_branch)?;
                 }
 
                 "$or" => {
-                    unimplemented!()
+                    let sub_arr = try_unwrap_array!("$and", value);
+                    self.emit_logic_or(sub_arr.as_ref(), get_field_failed_location, not_found_branch)?;
+                }
+
+                "$not" => {
+                    let sub_doc = try_unwrap_document!("$not", value);
+                    let inverse_doc = inverse_doc(sub_doc)?;
+                    return self.emit_query_tuple_document(
+                        key, &inverse_doc,
+                        get_field_failed_location, not_found_branch
+                    );
                 }
 
                 _ => {
