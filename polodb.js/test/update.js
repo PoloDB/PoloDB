@@ -6,8 +6,7 @@ const fs = require('fs');
 
 let temp;
 
-const DATA_SET = [
-];
+const DATA_SET = [];
 
 function generateData() {
   for (let i = 0; i < 1000; i++) {
@@ -131,6 +130,32 @@ describe('Update', function () {
     });
     expect(result[0]._id).to.equals(0);
     expect(result[0].num2).to.be.undefined;
+  });
+
+  it('update $max', function() {
+    const collection = db.collection('test');
+    collection.update({
+      _id: 1,
+    }, {
+      $max: {
+        num: 0 
+      },
+    });
+    let result = collection.find({
+      _id: 1,
+    });
+    expect(result[0].num).to.equals(1);
+    collection.update({
+      _id: 1,
+    }, {
+      $max: {
+        num: 2,
+      },
+    });
+    result = collection.find({
+      _id: 1,
+    });
+    expect(result[0].num).to.equals(2);
   });
 
 });
