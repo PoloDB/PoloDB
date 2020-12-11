@@ -412,13 +412,13 @@ impl Codegen {
                 "$inc" => {
                     let doc = try_unwrap_document!("$inc", value);
 
-                    self.iterate_add_op(DbOp::IncField, doc.as_ref());
+                    self.iterate_add_op(DbOp::IncField, doc.as_ref())?;
                 }
 
                 "$set" => {
                     let doc = try_unwrap_document!("$set", value);
 
-                    self.iterate_add_op(DbOp::SetField, doc.as_ref());
+                    self.iterate_add_op(DbOp::SetField, doc.as_ref())?;
                 }
 
                 "$max" => {
@@ -432,7 +432,7 @@ impl Codegen {
                 "$mul" => {
                     let doc = try_unwrap_document!("$mul", value);
 
-                    self.iterate_add_op(DbOp::MulField, doc.as_ref());
+                    self.iterate_add_op(DbOp::MulField, doc.as_ref())?;
                 }
 
                 "$rename" => {
@@ -471,8 +471,12 @@ impl Codegen {
         Ok(())
     }
 
-    fn iterate_add_op(&mut self, op: DbOp, doc: &Document) {
-        for (key, value) in doc.iter() {
+    fn iterate_add_op(&mut self, op: DbOp, doc: &Document) -> DbResult<()> {
+        for (index, (key, value)) in doc.iter().enumerate() {
+            if index == 0 && key == "_id" {
+                return Err(DbErr::UnableToUpdatePrimaryKey);
+            }
+
             let value_id = self.push_static(value.clone());
             self.emit_push_value(value_id);
 
@@ -482,6 +486,7 @@ impl Codegen {
 
             self.emit(DbOp::Pop);
         }
+        Ok(())
     }
 
     #[inline]
