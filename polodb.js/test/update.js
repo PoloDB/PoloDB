@@ -13,6 +13,7 @@ function generateData() {
   for (let i = 0; i < 1000; i++) {
     DATA_SET.push({
       _id: i,
+      num: i,
       content: i.toString(),
     });
   }
@@ -69,7 +70,7 @@ describe('Update', function () {
     expect(result[0]._id).to.equals(500);
   });
 
-  it('update $inc', function() {
+  it('throw error whiling updating primary key', function() {
     const collection = db.collection('test');
     expect(function () {
       collection.update({
@@ -80,6 +81,56 @@ describe('Update', function () {
         },
       });
     }).to.throw(Error);
+  });
+
+  it('update $inc', function () {
+    const collection = db.collection('test');
+    collection.update({
+      _id: 0
+    }, {
+      $inc: {
+        num: 100
+      },
+    });
+    const result = collection.find({
+      _id: 0,
+    });
+    expect(result.length).to.equals(1);
+    expect(result[0].num).to.equals(100);
+  });
+
+  it('update $rename', function () {
+    const collection = db.collection('test');
+    collection.update({
+      _id: 0
+    }, {
+      $rename: {
+        num: 'num2'
+      },
+    });
+    const result = collection.find({
+      _id: 0,
+    });
+    expect(result.length).to.equals(1);
+    expect(result[0]._id).to.equals(0);
+    expect(result[0].num).to.be.undefined;
+    expect(result[0].num2).to.equals(100);
+  });
+
+  it('update $unset', function() {
+    const collection = db.collection('test');
+    collection.update({
+      _id: 0
+    }, {
+      $unset: {
+        num2: ''
+      },
+    });
+    const result = collection.find({
+      _id: 0,
+    });
+    expect(result[0]._id).to.equals(0);
+    expect(result[0].num2).to.be.undefined;
   });
 
 });
