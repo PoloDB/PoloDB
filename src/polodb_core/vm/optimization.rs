@@ -2,18 +2,6 @@ use polodb_bson::{Document, Value, Array};
 use crate::error::mk_field_name_type_unexpected;
 use crate::{DbResult, DbErr};
 
-macro_rules! try_unwrap_document {
-    ($op_name:tt, $doc:expr) => {
-        match $doc {
-            Value::Document(doc) => doc,
-            t => {
-                let err = mk_field_name_type_unexpected($op_name, "Document".into(), t.ty_name());
-                return Err(err);
-            },
-        }
-    };
-}
-
 fn inverse_key(key: &str) -> &str {
     if let Some('$') = key.chars().next() {
         return match key {
@@ -112,7 +100,7 @@ pub(super) fn merge_logic_and_array(arr: Array) -> DbResult<Document> {
     let mut result = Document::new_without_id();
 
     for doc_value in arr.iter() {
-        let query_doc = try_unwrap_document!("$and", doc_value);
+        let query_doc = crate::try_unwrap_document!("$and", doc_value);
         for (key, value) in query_doc.iter() {
             match result.get(key) {
                 Some(exist_value) => {  // same field

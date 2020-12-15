@@ -5,30 +5,6 @@ use crate::vm::op::DbOp;
 use crate::{DbResult, DbErr};
 use crate::error::mk_field_name_type_unexpected;
 
-macro_rules! try_unwrap_document {
-    ($op_name:tt, $doc:expr) => {
-        match $doc {
-            Value::Document(doc) => doc,
-            t => {
-                let err = mk_field_name_type_unexpected($op_name, "Document".into(), t.ty_name());
-                return Err(err);
-            },
-        }
-    };
-}
-
-macro_rules! try_unwrap_array {
-    ($op_name:tt, $arr:expr) => {
-        match $arr {
-            Value::Array(arr) => arr,
-            t => {
-                let err = mk_field_name_type_unexpected($op_name, "Array".into(), t.ty_name());
-                return Err(err);
-            },
-        }
-    };
-}
-
 mod update_op {
     use polodb_bson::Value;
     use std::rc::Rc;
@@ -38,7 +14,7 @@ mod update_op {
     use crate::error::mk_field_name_type_unexpected;
 
     pub(super) fn update_op_min_max(codegen: &mut Codegen, doc: &Value, min: bool) -> DbResult<()> {
-        let doc = try_unwrap_document!("$min", doc);
+        let doc = crate::try_unwrap_document!("$min", doc);
 
         for (key, value) in doc.iter() {
             let rc_str: Rc<str> = key.as_str().into();
@@ -224,7 +200,7 @@ impl Codegen {
 
     fn emit_logic_and(&mut self, arr: &Array, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
         for item_doc_value in arr.iter() {
-            let item_doc = try_unwrap_document!("$and", item_doc_value);
+            let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
             for (key, value) in item_doc.iter() {
                 self.emit_query_tuple(key, value, get_field_failed_location, not_found_branch)?;
             }
@@ -248,17 +224,17 @@ impl Codegen {
         if key.chars().next().unwrap() == '$' {
             match key {
                 "$and" => {
-                    let sub_arr = try_unwrap_array!("$and", value);
+                    let sub_arr = crate::try_unwrap_array!("$and", value);
                     self.emit_logic_and(sub_arr.as_ref(), get_field_failed_location, not_found_branch)?;
                 }
 
                 "$or" => {
-                    let sub_arr = try_unwrap_array!("$and", value);
+                    let sub_arr = crate::try_unwrap_array!("$and", value);
                     self.emit_logic_or(sub_arr.as_ref(), get_field_failed_location, not_found_branch)?;
                 }
 
                 "$not" => {
-                    let sub_doc = try_unwrap_document!("$not", value);
+                    let sub_doc = crate::try_unwrap_document!("$not", value);
                     let inverse_doc = inverse_doc(sub_doc)?;
                     return self.emit_query_tuple_document(
                         key, &inverse_doc,
@@ -456,13 +432,13 @@ impl Codegen {
         for (key, value) in update.iter() {
             match key.as_str() {
                 "$inc" => {
-                    let doc = try_unwrap_document!("$inc", value);
+                    let doc = crate::try_unwrap_document!("$inc", value);
 
                     self.iterate_add_op(DbOp::IncField, doc.as_ref())?;
                 }
 
                 "$set" => {
-                    let doc = try_unwrap_document!("$set", value);
+                    let doc = crate::try_unwrap_document!("$set", value);
 
                     self.iterate_add_op(DbOp::SetField, doc.as_ref())?;
                 }
@@ -476,13 +452,13 @@ impl Codegen {
                 }
 
                 "$mul" => {
-                    let doc = try_unwrap_document!("$mul", value);
+                    let doc = crate::try_unwrap_document!("$mul", value);
 
                     self.iterate_add_op(DbOp::MulField, doc.as_ref())?;
                 }
 
                 "$rename" => {
-                    let doc = try_unwrap_document!("$set", value);
+                    let doc = crate::try_unwrap_document!("$set", value);
 
                     for (key, value) in doc.iter() {
                         let new_name = match value {
@@ -498,7 +474,7 @@ impl Codegen {
                 }
 
                 "$unset" => {
-                    let doc = try_unwrap_document!("$unset", value);
+                    let doc = crate::try_unwrap_document!("$unset", value);
 
                     for (key, _) in doc.iter() {
                         self.emit_unset_field(key.as_str());
