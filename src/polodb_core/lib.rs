@@ -26,7 +26,6 @@ mod btree;
 mod page;
 mod journal;
 mod vm;
-mod crc64;
 mod error;
 mod cursor;
 
