@@ -115,6 +115,12 @@ pub enum DbOp {
     // op1. field_name_index: 4bytes
     SetField,
 
+    // get the size of array
+    // push to the top of the stack
+    //
+    // 1 byte
+    ArraySize,
+
     // update current item on cursor
     //
     // 1 byte

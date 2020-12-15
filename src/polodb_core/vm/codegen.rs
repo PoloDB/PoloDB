@@ -403,9 +403,7 @@ impl Codegen {
                 "$nin" => {
                     match sub_value {
                         Value::Array(_) => (),
-                        _ => {
-                            return Err(DbErr::NotAValidField(key.into()));
-                        }
+                        _ => return Err(DbErr::NotAValidField(key.into())),
                     }
 
                     let field_size = self.recursively_get_field(key, get_field_failed_location);
@@ -415,6 +413,26 @@ impl Codegen {
                     self.emit(DbOp::In);
 
                     self.emit_true_jump(not_found_branch);
+
+                    self.emit(DbOp::Pop2);
+                    self.emit_u32((field_size + 1) as u32);
+                }
+
+                "$size" => {
+                    let expected_size = match sub_value {
+                        Value::Int(i) => *i,
+                        _ => return Err(DbErr::NotAValidField(key.into())),
+                    };
+
+                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    self.emit(DbOp::ArraySize);
+
+                    let expect_size_stat_id = self.push_static(Value::from(expected_size));
+                    self.emit_push_value(expect_size_stat_id);
+
+                    self.emit(DbOp::Equal);
+
+                    self.emit_false_jump(not_found_branch);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);

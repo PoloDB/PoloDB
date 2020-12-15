@@ -311,6 +311,12 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
+    fn array_size(&mut self) -> DbResult<u32> {
+        let top = self.stack.len() - 1;
+        let doc = crate::try_unwrap_array!("ArraySize", &self.stack[top]);
+        Ok(doc.len())
+    }
+
     pub(crate) fn execute(&mut self) -> DbResult<()> {
         if self.state == VmState::Halt {
             return Err(DbErr::VmIsHalt);
@@ -473,6 +479,14 @@ impl<'a> VM<'a> {
                         mut_doc.insert(key.into(), value);
 
                         self.pc = self.pc.add(5);
+                    }
+
+                    DbOp::ArraySize => {
+                        let size = try_vm!(self, self.array_size());
+
+                        self.stack.push(Value::from(size));
+
+                        self.pc = self.pc.add(1);
                     }
 
                     DbOp::UpdateCurrent => {
