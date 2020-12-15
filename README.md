@@ -13,8 +13,8 @@ PoloDB is an embedded JSON-based database.
 # Features
 
 - Simple/Lightweight/Easy to learn and use
-- Various languages binding
-- Embedded(No standalone processes, no cross-process calls)
+- Various language bindings
+- Embedded (No standalone processes, no cross-process calls)
 - No runtime dependency
 - NoSQL
 - MongoDB-like API
@@ -27,22 +27,22 @@ PoloDB is a library written in Rust
 that implements a lightweight [MongoDB](https://www.mongodb.com/).
 
 PoloDB has no dependency(except for libc),
-so it can be easily run on most platform(thanks 
+so it can be easily run on most platforms (thanks 
 for Rust Language).
 
 The data of PoloDB is stored in a file.
 The file format is stable, cross-platform, and
-backwards compaitible.
+backwards compatible.
 
 The API of PoloDB is very similar to MongoDB.
 It's very easy to learn and use.
 
 # Platform
 
-Theoretically, PoloDB supports all platforms that Rust compiler
+Theoretically, PoloDB supports all platforms that the Rust compiler
 supports.
 But PoloDB is a personal project currently.
-Limited by my time, I only compile and test on the following platform:
+Limited by my time, I have only compiled and tested on the following platforms:
 
 - macOS 10.15 x64
 - Linux x64 (Tested on Fedora 30)
@@ -56,7 +56,7 @@ Limited by my time, I only compile and test on the following platform:
 
 # Developing Plan
 
-The feature will be implemented one by on in order.
+The features will be implemented one by one in order.
 
 - [x] Basic database API
   - [x] CURD
