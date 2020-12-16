@@ -121,7 +121,11 @@ impl DbContext {
 
         let meta_doc = mk_document!{};
 
-        let subprogram = SubProgram::compile_query(&collection_meta, &meta_doc, &query_doc)?;
+        let subprogram = SubProgram::compile_query(
+            &collection_meta,
+            &meta_doc,
+            &query_doc,
+            false)?;
 
         let mut handle = self.make_handle(subprogram);
         handle.step()?;
@@ -170,7 +174,11 @@ impl DbContext {
 
         let meta_doc = mk_document!{};
 
-        let subprogram = SubProgram::compile_query(&collection_meta, &meta_doc, &query_doc)?;
+        let subprogram = SubProgram::compile_query(
+            &collection_meta,
+            &meta_doc,
+            &query_doc,
+            false)?;
 
         let mut handle = self.make_handle(subprogram);
         handle.set_rollback_on_drop(false);
@@ -437,8 +445,13 @@ impl DbContext {
             0, meta_source.meta_pid, col_id)?;
 
         let subprogram = match query {
-            Some(query) => SubProgram::compile_query(&collection_meta, collection_meta.doc_ref(), query),
-            None => SubProgram::compile_query_all(&collection_meta),
+            Some(query) => SubProgram::compile_query(
+                &collection_meta,
+                collection_meta.doc_ref(),
+                query,
+                false
+            ),
+            None => SubProgram::compile_query_all(&collection_meta, false),
         }?;
 
         let handle = self.make_handle(subprogram);
@@ -461,7 +474,7 @@ impl DbContext {
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
-        let subprogram = SubProgram::compile_update(&collection_meta, query, update)?;
+        let subprogram = SubProgram::compile_update(&collection_meta, query, update, false)?;
 
         let mut vm = VM::new(&mut self.page_handler, Box::new(subprogram));
         vm.execute()?;

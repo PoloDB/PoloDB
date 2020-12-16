@@ -79,9 +79,9 @@ pub(super) struct Codegen {
 
 impl Codegen {
 
-    pub(super) fn new() -> Codegen {
+    pub(super) fn new(annotation: bool) -> Codegen {
         Codegen {
-            program: Box::new(SubProgram::new())
+            program: Box::new(SubProgram::new(annotation)),
         }
     }
 
@@ -138,6 +138,12 @@ impl Codegen {
         Ok(())
     }
 
+    fn annotate<T: Into<String>>(&mut self, position: u32, content: T) {
+        if let Some(annotation) = &mut self.program.annotation {
+            annotation.annotate(position, content.into());
+        }
+    }
+
     pub(super) fn emit_query_layout<F>(&mut self, query: &Document, result_callback: F) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
 
@@ -159,6 +165,7 @@ impl Codegen {
 
         // <==== close cursor
         let close_location = self.current_location();
+        self.annotate(close_location, "Close");
         self.update_next_location(rewind_location as usize, close_location);
 
         self.emit(DbOp::Close);
@@ -166,12 +173,14 @@ impl Codegen {
 
         // <==== not this item, go to next item
         let not_found_branch_preserve_location = self.current_location();
+        self.annotate(not_found_branch_preserve_location, "Not this item");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);  // pop the current value;
         self.emit_goto(next_preserve_location);
 
         // <==== get field failed, got to next item
         let get_field_failed_location = self.current_location();
+        self.annotate(get_field_failed_location, "Get field failed");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);
         self.emit_goto(next_preserve_location);
@@ -179,6 +188,7 @@ impl Codegen {
         // <==== result position
         // give out the result, or update the item
         let result_location = self.current_location();
+        self.annotate(result_location, "Result");
         result_callback(self)?;
         self.emit_goto(next_preserve_location);
 

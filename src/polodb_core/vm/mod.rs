@@ -2,6 +2,7 @@ mod op;
 mod subprogram;
 mod codegen;
 mod optimization;
+mod annotation;
 
 pub(crate) use subprogram::SubProgram;
 

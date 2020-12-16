@@ -1,5 +1,6 @@
 use std::fmt;
 use polodb_bson::{Value, Document};
+use super::annotation::Annotation;
 use crate::DbResult;
 use crate::meta_doc_helper::{MetaDocEntry, meta_doc_key};
 use super::op::DbOp;
@@ -8,22 +9,28 @@ use crate::vm::codegen::Codegen;
 pub(crate) struct SubProgram {
     pub(super) static_values:    Vec<Value>,
     pub(super) instructions:     Vec<u8>,
+    pub(super) annotation:       Option<Annotation>,
 }
 
 impl SubProgram {
 
-    pub(super) fn new() -> SubProgram {
+    pub(super) fn new(annotation: bool) -> SubProgram {
         SubProgram {
             static_values: Vec::with_capacity(16),
             instructions: Vec::with_capacity(64),
+            annotation: if annotation {
+                Some(Annotation::new())
+            } else {
+                None
+            }
         }
     }
 
-    pub(crate) fn compile_query(entry: &MetaDocEntry, meta_doc: &Document, query: &Document) -> DbResult<SubProgram> {
+    pub(crate) fn compile_query(entry: &MetaDocEntry, meta_doc: &Document, query: &Document, annotation: bool) -> DbResult<SubProgram> {
         let _indexes = meta_doc.get(meta_doc_key::INDEXES);
         // let _tuples = doc_to_tuples(doc);
 
-        let mut codegen = Codegen::new();
+        let mut codegen = Codegen::new(annotation);
 
         codegen.emit_open_read(entry.root_pid());
 
@@ -36,8 +43,8 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, update: &Document) -> DbResult<SubProgram> {
-        let mut codegen = Codegen::new();
+    pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, update: &Document, annotation: bool) -> DbResult<SubProgram> {
+        let mut codegen = Codegen::new(annotation);
 
         codegen.emit_open_write(entry.root_pid());
 
@@ -50,8 +57,8 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_query_all(entry: &MetaDocEntry) -> DbResult<SubProgram> {
-        let mut codegen = Codegen::new();
+    pub(crate) fn compile_query_all(entry: &MetaDocEntry, annotation: bool) -> DbResult<SubProgram> {
+        let mut codegen = Codegen::new(annotation);
 
         codegen.emit_open_read(entry.root_pid());
 
@@ -85,6 +92,13 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
+    fn print_annotation(&self, f: &mut fmt::Formatter, pc: u32) -> fmt::Result {
+        if let Some(annotation) = &self.annotation {
+            return annotation.write_fmt(f, pc);
+        }
+        Ok(())
+    }
+
 }
 
 impl fmt::Display for SubProgram {
@@ -95,6 +109,7 @@ impl fmt::Display for SubProgram {
             let mut pc: usize = 0;
             while pc < self.instructions.len() {
                 let op = begin.add(pc).cast::<DbOp>().read();
+                self.print_annotation(f, pc as u32)?;
                 match op {
                     DbOp::Goto => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
@@ -292,7 +307,7 @@ mod tests {
     #[test]
     fn print_program() {
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query_all(&meta_entry).unwrap();
+        let program = SubProgram::compile_query_all(&meta_entry, true).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = "Program:
@@ -319,7 +334,7 @@ mod tests {
             "age": 32,
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -328,14 +343,22 @@ mod tests {
 5: Rewind(20)
 10: Goto(43)
 15: Next(43)
+
+Close:
 20: Close
 21: Halt
+
+Not this item:
 22: RecoverStackPos
 23: Pop
 24: Goto(15)
+
+Get field failed:
 29: RecoverStackPos
 30: Pop
 31: Goto(15)
+
+Result:
 36: ResultRow
 37: Pop
 38: Goto(15)
@@ -365,7 +388,7 @@ mod tests {
             "age": 32,
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -404,7 +427,7 @@ mod tests {
             ],
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         println!("{}", actual);
@@ -442,7 +465,7 @@ mod tests {
             },
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc).unwrap();
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -451,14 +474,22 @@ mod tests {
 5: Rewind(20)
 10: Goto(43)
 15: Next(43)
+
+Close:
 20: Close
 21: Halt
+
+Not this item:
 22: RecoverStackPos
 23: Pop
 24: Goto(15)
+
+Get field failed:
 29: RecoverStackPos
 30: Pop
 31: Goto(15)
+
+Result:
 36: ResultRow
 37: Pop
 38: Goto(15)
@@ -508,7 +539,7 @@ mod tests {
                 "hello1": "hello2",
             },
         };
-        let program = SubProgram::compile_update(&meta_entry, Some(&query_doc), &update_doc).unwrap();
+        let program = SubProgram::compile_update(&meta_entry, Some(&query_doc), &update_doc, true).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -517,14 +548,22 @@ mod tests {
 5: Rewind(20)
 10: Goto(146)
 15: Next(146)
+
+Close:
 20: Close
 21: Halt
+
+Not this item:
 22: RecoverStackPos
 23: Pop
 24: Goto(15)
+
+Get field failed:
 29: RecoverStackPos
 30: Pop
 31: Goto(15)
+
+Result:
 36: PushValue("Alan Chan")
 41: SetField("name")
 46: Pop
