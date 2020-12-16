@@ -1,5 +1,6 @@
 mod line;
 
+use std::collections::LinkedList;
 use ansi_term::Colour::{Red, Green};
 use line::Line;
 
@@ -121,8 +122,8 @@ pub fn format_differences(diff: &Vec<Diff>) -> String {
 
 pub struct Diff {
     op: DiffOp,
-    in_lines: Vec<Line>,
-    de_lines: Vec<Line>,
+    in_lines: LinkedList<Line>,
+    de_lines: LinkedList<Line>,
 }
 
 impl std::fmt::Display for Diff {
@@ -134,7 +135,7 @@ impl std::fmt::Display for Diff {
             }
 
             DiffOp::Insert => {
-                writeln!(f, "@@ {}", self.in_lines[0].index() + 1)?;
+                writeln!(f, "@@ {}", self.in_lines.front().unwrap().index() + 1)?;
                 for line in &self.in_lines {
                     let color_add = format!("+ {}", line.content());
                     writeln!(f, "{}", Green.paint(color_add))?;
@@ -143,7 +144,7 @@ impl std::fmt::Display for Diff {
             }
 
             DiffOp::Delete => {
-                writeln!(f, "@@ {}", self.de_lines[0].index() + 1)?;
+                writeln!(f, "@@ {}", self.de_lines.front().unwrap().index() + 1)?;
                 for line in &self.de_lines {
                     let color_minus = format!("- {}", line.content());
                     writeln!(f, "{}", Red.paint(color_minus))?;
@@ -152,7 +153,7 @@ impl std::fmt::Display for Diff {
             }
 
             DiffOp::Replace => {
-                writeln!(f, "@@ {}", self.in_lines[0].index() + 1)?;
+                writeln!(f, "@@ {}", self.in_lines.front().unwrap().index() + 1)?;
                 for line in &self.in_lines {
                     let color_add = format!("+ {}", line.content());
                     writeln!(f, "{}", Green.paint(color_add))?;
@@ -182,8 +183,8 @@ fn backtracking(matrix: &Vec<Vec<Item>>, a_lines: &Vec<&str>, b_lines: &Vec<&str
                 let de_line = Line::new(j - 1, b_lines[j - 1].into());
                 if let Some(last) = result.last_mut() {
                     if last.op == DiffOp::Replace {
-                        last.in_lines.push(in_line);
-                        last.de_lines.push(de_line);
+                        last.in_lines.push_front(in_line);
+                        last.de_lines.push_front(de_line);
 
                         i -= 1;
                         j -= 1;
@@ -192,8 +193,16 @@ fn backtracking(matrix: &Vec<Vec<Item>>, a_lines: &Vec<&str>, b_lines: &Vec<&str
                 }
                 result.push(Diff {
                     op: DiffOp::Replace,
-                    in_lines: vec![ in_line ],
-                    de_lines: vec![ de_line ],
+                    in_lines: {
+                        let mut list = LinkedList::new();
+                        list.push_back(in_line);
+                        list
+                    },
+                    de_lines: {
+                        let mut list = LinkedList::new();
+                        list.push_back(de_line);
+                        list
+                    },
                 });
 
                 i -= 1;
@@ -205,7 +214,7 @@ fn backtracking(matrix: &Vec<Vec<Item>>, a_lines: &Vec<&str>, b_lines: &Vec<&str
 
                 if let Some(last) = result.last_mut() {
                     if last.op == DiffOp::Insert {
-                        last.in_lines.push(in_line);
+                        last.in_lines.push_front(in_line);
                         j -= 1;
                         continue;
                     }
@@ -213,8 +222,12 @@ fn backtracking(matrix: &Vec<Vec<Item>>, a_lines: &Vec<&str>, b_lines: &Vec<&str
 
                 result.push(Diff {
                     op: DiffOp::Insert,
-                    in_lines: vec![ in_line ],
-                    de_lines: vec![],
+                    in_lines: {
+                        let mut list = LinkedList::new();
+                        list.push_back(in_line);
+                        list
+                    },
+                    de_lines: LinkedList::new(),
                 });
 
                 j -= 1;
@@ -225,7 +238,7 @@ fn backtracking(matrix: &Vec<Vec<Item>>, a_lines: &Vec<&str>, b_lines: &Vec<&str
 
                 if let Some(last) = result.last_mut() {
                     if last.op == DiffOp::Delete {
-                        last.de_lines.push(de_line);
+                        last.de_lines.push_front(de_line);
                         i -= 1;
                         continue;
                     }
@@ -233,8 +246,12 @@ fn backtracking(matrix: &Vec<Vec<Item>>, a_lines: &Vec<&str>, b_lines: &Vec<&str
 
                 result.push(Diff {
                     op: DiffOp::Delete,
-                    in_lines: vec![],
-                    de_lines: vec![ de_line ],
+                    in_lines: LinkedList::new(),
+                    de_lines: {
+                        let mut list = LinkedList::new();
+                        list.push_back(de_line);
+                        list
+                    },
                 });
 
                 i -= 1;

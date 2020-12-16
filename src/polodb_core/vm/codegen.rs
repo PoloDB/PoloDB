@@ -157,22 +157,33 @@ impl Codegen {
         let next_preserve_location = self.current_location();
         self.emit_next(0);
 
+        // <==== close cursor
         let close_location = self.current_location();
         self.update_next_location(rewind_location as usize, close_location);
 
         self.emit(DbOp::Close);
         self.emit(DbOp::Halt);
 
+        // <==== not this item, go to next item
         let not_found_branch_preserve_location = self.current_location();
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);  // pop the current value;
         self.emit_goto(next_preserve_location);
 
+        // <==== get field failed, got to next item
         let get_field_failed_location = self.current_location();
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);
         self.emit_goto(next_preserve_location);
 
+        // <==== result position
+        // give out the result, or update the item
+        let result_location = self.current_location();
+        result_callback(self)?;
+        self.emit_goto(next_preserve_location);
+
+        // <==== begin to compare the top of the stack
+        //
         // the top of the stack is the target document
         //
         // begin to execute compare logic
@@ -191,9 +202,7 @@ impl Codegen {
         self.update_next_location(next_preserve_location as usize, compare_location);
         self.update_next_location(goto_compare_loc as usize, compare_location);
 
-        result_callback(self)?;
-
-        self.emit_goto(next_preserve_location);
+        self.emit_goto(result_location);
 
         Ok(())
     }
@@ -209,7 +218,7 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_logic_or(&mut self, _arr: &Array, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
+    fn emit_logic_or(&mut self, _arr: &Array, _get_field_failed_location: u32, _not_found_branch: u32) -> DbResult<()> {
         unimplemented!()
     }
 

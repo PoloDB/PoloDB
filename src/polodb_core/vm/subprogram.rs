@@ -326,8 +326,8 @@ mod tests {
 
 0: OpenRead(100)
 5: Rewind(20)
-10: Goto(36)
-15: Next(36)
+10: Goto(43)
+15: Next(43)
 20: Close
 21: Halt
 22: RecoverStackPos
@@ -336,22 +336,23 @@ mod tests {
 29: RecoverStackPos
 30: Pop
 31: Goto(15)
-36: SaveStackPos
-37: GetField("name", 29)
-46: PushValue("Vincent Chan")
-51: Equal
-52: FalseJump(22)
-57: Pop
-58: Pop
-59: GetField("age", 29)
-68: PushValue(32)
-73: Equal
-74: FalseJump(22)
-79: Pop
-80: Pop
-81: ResultRow
-82: Pop
-83: Goto(15)
+36: ResultRow
+37: Pop
+38: Goto(15)
+43: SaveStackPos
+44: GetField("name", 29)
+53: PushValue("Vincent Chan")
+58: Equal
+59: FalseJump(22)
+64: Pop
+65: Pop
+66: GetField("age", 29)
+75: PushValue(32)
+80: Equal
+81: FalseJump(22)
+86: Pop
+87: Pop
+88: Goto(36)
 "#;
         assert_eq!(expect, actual)
     }
@@ -448,8 +449,8 @@ mod tests {
 
 0: OpenRead(100)
 5: Rewind(20)
-10: Goto(36)
-15: Next(36)
+10: Goto(43)
+15: Next(43)
 20: Close
 21: Halt
 22: RecoverStackPos
@@ -458,22 +459,23 @@ mod tests {
 29: RecoverStackPos
 30: Pop
 31: Goto(15)
-36: SaveStackPos
-37: GetField("age", 29)
-46: PushValue(3)
-51: Cmp
-52: FalseJump(22)
-57: IfGreater(22)
-62: Pop2(2)
-67: GetField("child", 29)
-76: GetField("age", 29)
-85: PushValue(Array(len=2))
-90: In
-91: FalseJump(22)
-96: Pop2(3)
-101: ResultRow
-102: Pop
-103: Goto(15)
+36: ResultRow
+37: Pop
+38: Goto(15)
+43: SaveStackPos
+44: GetField("age", 29)
+53: PushValue(3)
+58: Cmp
+59: FalseJump(22)
+64: IfGreater(22)
+69: Pop2(2)
+74: GetField("child", 29)
+83: GetField("age", 29)
+92: PushValue(Array(len=2))
+97: In
+98: FalseJump(22)
+103: Pop2(3)
+108: Goto(36)
 "#;
         assert_eq!(expect, actual);
     }
@@ -513,8 +515,8 @@ mod tests {
 
 0: OpenWrite(100)
 5: Rewind(20)
-10: Goto(36)
-15: Next(36)
+10: Goto(146)
+15: Next(146)
 20: Close
 21: Halt
 22: RecoverStackPos
@@ -523,43 +525,44 @@ mod tests {
 29: RecoverStackPos
 30: Pop
 31: Goto(15)
-36: SaveStackPos
-37: GetField("_id", 29)
-46: PushValue(3)
-51: Cmp
-52: FalseJump(22)
-57: IfGreater(22)
-62: Pop2(2)
-67: PushValue("Alan Chan")
-72: SetField("name")
-77: Pop
-78: PushValue(1)
-83: IncField("age")
-88: Pop
-89: PushValue(3)
-94: MulField("age")
-99: Pop
-100: GetField("age", 145)
-109: PushValue(100)
-114: Cmp
-115: IfLess(125)
-120: Goto(143)
-125: Pop
-126: Pop
-127: PushValue(100)
-132: SetField("age")
-137: Pop
-138: Goto(145)
-143: Pop
-144: Pop
-145: UnsetField("age")
-150: GetField("hello1", 170)
-159: SetField("hello2")
-164: Pop
-165: UnsetField("hello1")
-170: UpdateCurrent
-171: Pop
-172: Goto(15)
+36: PushValue("Alan Chan")
+41: SetField("name")
+46: Pop
+47: PushValue(1)
+52: IncField("age")
+57: Pop
+58: PushValue(3)
+63: MulField("age")
+68: Pop
+69: GetField("age", 114)
+78: PushValue(100)
+83: Cmp
+84: IfLess(94)
+89: Goto(112)
+94: Pop
+95: Pop
+96: PushValue(100)
+101: SetField("age")
+106: Pop
+107: Goto(114)
+112: Pop
+113: Pop
+114: UnsetField("age")
+119: GetField("hello1", 139)
+128: SetField("hello2")
+133: Pop
+134: UnsetField("hello1")
+139: UpdateCurrent
+140: Pop
+141: Goto(15)
+146: SaveStackPos
+147: GetField("_id", 29)
+156: PushValue(3)
+161: Cmp
+162: FalseJump(22)
+167: IfGreater(22)
+172: Pop2(2)
+177: Goto(36)
 "#;
         assert_eq!(expect, actual);
     }
