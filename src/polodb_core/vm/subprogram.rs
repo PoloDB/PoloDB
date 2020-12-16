@@ -151,6 +151,16 @@ impl fmt::Display for SubProgram {
                         pc += 5;
                     }
 
+                    DbOp::PushR0 => {
+                        writeln!(f, "{}: PushR0", pc)?;
+                        pc += 1;
+                    }
+
+                    DbOp::StoreR0 => {
+                        writeln!(f, "{}: StoreR0", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::UpdateCurrent => {
                         writeln!(f, "{}: UpdateCurrent", pc)?;
                         pc += 1;

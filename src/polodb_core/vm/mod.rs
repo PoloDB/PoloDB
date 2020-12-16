@@ -409,6 +409,17 @@ impl<'a> VM<'a> {
                         self.pc = self.pc.add(5);
                     }
 
+                    DbOp::PushR0 => {
+                        self.stack.push(Value::from(self.r0));
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::StoreR0 => {
+                        let top = self.stack_top().unwrap_int();
+                        self.r0 = top as i32;
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::GetField => {
                         let key_stat_id = self.pc.add(1).cast::<u32>().read();
                         let location = self.pc.add(5).cast::<u32>().read();

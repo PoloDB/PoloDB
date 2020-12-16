@@ -66,6 +66,16 @@ pub enum DbOp {
     // op1. value_index: 4bytes
     PushValue,
 
+    // push r0 to the top of the stack
+    //
+    // 1 byte
+    PushR0,
+
+    // store the top of the stack to r0
+    //
+    // 1 byte
+    StoreR0,
+
     // get the field of top of the stack
     // push the value to the stack
     //
