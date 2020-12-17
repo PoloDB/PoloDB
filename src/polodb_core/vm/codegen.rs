@@ -144,6 +144,10 @@ impl Codegen {
         }
     }
 
+    fn annotate_here<T: Into<String>>(&mut self, content: T) {
+        self.annotate(self.current_location(), content)
+    }
+
     pub(super) fn emit_query_layout<F>(&mut self, query: &Document, result_callback: F) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
 
@@ -165,7 +169,7 @@ impl Codegen {
 
         // <==== close cursor
         let close_location = self.current_location();
-        self.annotate(close_location, "Close");
+        self.annotate_here("Close");
         self.update_next_location(rewind_location as usize, close_location);
 
         self.emit(DbOp::Close);
@@ -173,14 +177,14 @@ impl Codegen {
 
         // <==== not this item, go to next item
         let not_found_branch_preserve_location = self.current_location();
-        self.annotate(not_found_branch_preserve_location, "Not this item");
+        self.annotate_here("Not this item");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);  // pop the current value;
         self.emit_goto(next_preserve_location);
 
         // <==== get field failed, got to next item
         let get_field_failed_location = self.current_location();
-        self.annotate(get_field_failed_location, "Get field failed");
+        self.annotate_here("Get field failed");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);
         self.emit_goto(next_preserve_location);
@@ -188,7 +192,7 @@ impl Codegen {
         // <==== result position
         // give out the result, or update the item
         let result_location = self.current_location();
-        self.annotate(result_location, "Result");
+        self.annotate_here("Result");
         result_callback(self)?;
         self.emit_goto(next_preserve_location);
 
@@ -204,6 +208,7 @@ impl Codegen {
         for (key, value) in query.iter() {
             self.emit_query_tuple(
                 key, value,
+                result_location,
                 get_field_failed_location,
                 not_found_branch_preserve_location
             )?;
@@ -217,19 +222,27 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_logic_and(&mut self, arr: &Array, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
+    fn emit_logic_and(&mut self, arr: &Array, give_result_loc: u32, get_field_failed_loc: u32, not_found_branch: u32) -> DbResult<()> {
         for item_doc_value in arr.iter() {
             let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
             for (key, value) in item_doc.iter() {
-                self.emit_query_tuple(key, value, get_field_failed_location, not_found_branch)?;
+                self.emit_query_tuple(key, value, give_result_loc, get_field_failed_loc, not_found_branch)?;
             }
         }
 
         Ok(())
     }
 
-    fn emit_logic_or(&mut self, _arr: &Array, _get_field_failed_location: u32, _not_found_branch: u32) -> DbResult<()> {
-        unimplemented!()
+    fn emit_logic_or(&mut self, arr: &Array, give_result_loc: u32, get_field_failed_loc: u32, not_found_branch: u32) -> DbResult<()> {
+        for item_doc_value in arr.iter() {
+            let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
+            for (key, value) in item_doc.iter() {
+                self.emit_query_tuple(key, value, give_result_loc, get_field_failed_loc, not_found_branch)?;
+            }
+            self.emit_goto(give_result_loc);
+        }
+
+        Ok(())
     }
 
     // case1: "$and" | "$or" -> [ Document ]
@@ -238,18 +251,29 @@ impl Codegen {
     fn emit_query_tuple(&mut self,
                         key: &str,
                         value: &Value,
-                        get_field_failed_location: u32,
+                        give_result_loc: u32,
+                        get_field_failed_loc: u32,
                         not_found_branch: u32) -> DbResult<()> {
         if key.chars().next().unwrap() == '$' {
             match key {
                 "$and" => {
                     let sub_arr = crate::try_unwrap_array!("$and", value);
-                    self.emit_logic_and(sub_arr.as_ref(), get_field_failed_location, not_found_branch)?;
+                    self.emit_logic_and(
+                        sub_arr.as_ref(),
+                        give_result_loc,
+                        get_field_failed_loc,
+                        not_found_branch
+                    )?;
                 }
 
                 "$or" => {
                     let sub_arr = crate::try_unwrap_array!("$and", value);
-                    self.emit_logic_or(sub_arr.as_ref(), get_field_failed_location, not_found_branch)?;
+                    self.emit_logic_or(
+                        sub_arr.as_ref(),
+                        give_result_loc,
+                        get_field_failed_loc,
+                        not_found_branch
+                    )?;
                 }
 
                 "$not" => {
@@ -257,7 +281,7 @@ impl Codegen {
                     let inverse_doc = inverse_doc(sub_doc)?;
                     return self.emit_query_tuple_document(
                         key, &inverse_doc,
-                        get_field_failed_location, not_found_branch
+                        get_field_failed_loc, not_found_branch
                     );
                 }
 
@@ -270,7 +294,7 @@ impl Codegen {
                 Value::Document(doc) => {
                     return self.emit_query_tuple_document(
                         key, doc.as_ref(),
-                        get_field_failed_location, not_found_branch
+                        get_field_failed_loc, not_found_branch
                     );
                 }
 
@@ -280,7 +304,7 @@ impl Codegen {
 
                 _ => {
                     let key_static_id = self.push_static(key.into());
-                    self.emit_get_field(key_static_id, get_field_failed_location);  // push a value1
+                    self.emit_get_field(key_static_id, get_field_failed_loc);  // push a value1
 
                     let value_static_id = self.push_static(value.clone());
                     self.emit_push_value(value_static_id);  // push a value2
@@ -297,22 +321,22 @@ impl Codegen {
         Ok(())
     }
 
-    fn recursively_get_field(&mut self, key: &str, get_field_failed_location: u32) -> usize {
+    fn recursively_get_field(&mut self, key: &str, get_field_failed_loc: u32) -> usize {
         let slices: Vec<&str> = key.split('.').collect();
         for slice in &slices {
             let str_ref: &str = slice;
             let current_stat_id = self.push_static(str_ref.into());
-            self.emit_get_field(current_stat_id, get_field_failed_location);
+            self.emit_get_field(current_stat_id, get_field_failed_loc);
         }
         slices.len()
     }
 
     // very complex query document
-    fn emit_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
+    fn emit_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_loc: u32, not_found_branch: u32) -> DbResult<()> {
         for (sub_key, sub_value) in value.iter() {
             match sub_key.as_str() {
                 "$eq" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_loc);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
@@ -326,7 +350,7 @@ impl Codegen {
                 }
 
                 "$gt" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_loc);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
@@ -342,7 +366,7 @@ impl Codegen {
                 }
 
                 "$gte" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_loc);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
@@ -363,7 +387,7 @@ impl Codegen {
                         }
                     }
 
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_loc);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
@@ -376,7 +400,7 @@ impl Codegen {
                 }
 
                 "$lt" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_loc);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
@@ -392,7 +416,7 @@ impl Codegen {
                 }
 
                 "$lte" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_loc);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
@@ -406,7 +430,7 @@ impl Codegen {
                 }
 
                 "$ne" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_loc);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
@@ -425,7 +449,7 @@ impl Codegen {
                         _ => return Err(DbErr::NotAValidField(key.into())),
                     }
 
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_loc);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
@@ -443,7 +467,7 @@ impl Codegen {
                         _ => return Err(DbErr::NotAValidField(key.into())),
                     };
 
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_loc);
                     self.emit(DbOp::ArraySize);
 
                     let expect_size_stat_id = self.push_static(Value::from(expected_size));

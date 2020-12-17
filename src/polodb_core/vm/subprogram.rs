@@ -430,27 +430,49 @@ Result:
         let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
-        println!("{}", actual);
-//         let expect = r#"Program:
-//
-// 0: OpenRead(100)
-// 5: PushValue(6)
-// 10: FindByPrimaryKey(20)
-// 15: Goto(23)
-// 20: Pop
-// 21: Close
-// 22: Halt
-// 23: GetField("age", 0)
-// 32: PushValue(32)
-// 37: Equal
-// 38: FalseJump(20)
-// 43: Pop
-// 44: Pop
-// 45: ResultRow
-// 46: Pop
-// 47: Goto(20)
-// "#;
-//         assert_eq!(expect, actual)
+        let expect = r#"Program:
+
+Program:
+
+0: OpenRead(100)
+5: Rewind(20)
+10: Goto(43)
+15: Next(43)
+
+Close:
+20: Close
+21: Halt
+
+Not this item:
+22: RecoverStackPos
+23: Pop
+24: Goto(15)
+
+Get field failed:
+29: RecoverStackPos
+30: Pop
+31: Goto(15)
+
+Result:
+36: ResultRow
+37: Pop
+38: Goto(15)
+43: SaveStackPos
+44: GetField("_id", 29)
+53: PushValue(6)
+58: Equal
+59: FalseJump(22)
+64: Pop
+65: Pop
+66: GetField("age", 29)
+75: PushValue(32)
+80: Equal
+81: FalseJump(22)
+86: Pop
+87: Pop
+88: Goto(36)
+"#;
+        assert_eq!(expect, actual)
     }
 
     #[test]
