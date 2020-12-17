@@ -203,6 +203,7 @@ impl Codegen {
         // begin to execute compare logic
         // save the stack first
         let compare_location: u32 = self.current_location();
+        self.annotate_here("Compare");
         self.emit(DbOp::SaveStackPos);
 
         for (key, value) in query.iter() {

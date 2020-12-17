@@ -362,6 +362,8 @@ Result:
 36: ResultRow
 37: Pop
 38: Goto(15)
+
+Compare:
 43: SaveStackPos
 44: GetField("name", 29)
 53: PushValue("Vincent Chan")
@@ -457,6 +459,8 @@ Result:
 36: ResultRow
 37: Pop
 38: Goto(15)
+
+Compare:
 43: SaveStackPos
 44: GetField("_id", 29)
 53: PushValue(6)
@@ -473,6 +477,25 @@ Result:
 88: Goto(36)
 "#;
         assert_eq!(expect, actual)
+    }
+
+    #[test]
+    fn print_logic_or() {
+        let meta_doc = mk_document! {};
+        let test_doc = mk_document! {
+            "$or": mk_array! [
+                mk_document! {
+                    "_id": 6,
+                },
+                mk_document! {
+                    "age": 32,
+                },
+            ],
+        };
+        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+        println!("{}", actual);
     }
 
     #[test]
@@ -515,6 +538,8 @@ Result:
 36: ResultRow
 37: Pop
 38: Goto(15)
+
+Compare:
 43: SaveStackPos
 44: GetField("age", 29)
 53: PushValue(3)
@@ -616,6 +641,8 @@ Result:
 139: UpdateCurrent
 140: Pop
 141: Goto(15)
+
+Compare:
 146: SaveStackPos
 147: GetField("_id", 29)
 156: PushValue(3)
