@@ -16,8 +16,8 @@ impl SubProgram {
 
     pub(super) fn new(annotation: bool) -> SubProgram {
         SubProgram {
-            static_values: Vec::with_capacity(16),
-            instructions: Vec::with_capacity(64),
+            static_values: Vec::with_capacity(32),
+            instructions: Vec::with_capacity(256),
             annotation: if annotation {
                 Some(Annotation::new())
             } else {
