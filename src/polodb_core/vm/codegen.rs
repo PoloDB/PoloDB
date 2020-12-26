@@ -246,7 +246,21 @@ impl Codegen {
         self.annotate_here("Compare");
         self.emit(DbOp::SaveStackPos);
 
-        for (key, value) in query.iter() {
+        self.emit_standard_query_doc(
+            query, result_label,get_field_failed_label, not_found_label)?;
+
+        self.emit_goto(DbOp::Goto, result_label);
+
+        Ok(())
+    }
+
+    fn emit_standard_query_doc(&mut self,
+                               query_doc: &Document,
+                               result_label: Label,
+                               get_field_failed_label: Label,
+                               not_found_label: Label
+    ) -> DbResult<()> {
+        for (key, value) in query_doc.iter() {
             self.emit_query_tuple(
                 key, value,
                 result_label,
@@ -254,8 +268,6 @@ impl Codegen {
                 not_found_label,
             )?;
         }
-
-        self.emit_goto(DbOp::Goto, result_label);
 
         Ok(())
     }
@@ -266,9 +278,10 @@ impl Codegen {
     ) -> DbResult<()> {
         for item_doc_value in arr.iter() {
             let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
-            for (key, value) in item_doc.iter() {
-                self.emit_query_tuple(key, value, result_label, get_field_failed_label, not_found_label)?;
-            }
+            self.emit_standard_query_doc(
+                item_doc,
+                result_label, get_field_failed_label, not_found_label
+            )?;
         }
 
         Ok(())
@@ -295,9 +308,12 @@ impl Codegen {
                 self.emit_goto(DbOp::Goto, go_next_label);
 
                 self.emit_label(query_label);
-                for (key, value) in item_doc.iter() {
-                    self.emit_query_tuple(key, value, result_label, local_get_field_failed_label, local_get_field_failed_label)?;
-                }
+                self.emit_standard_query_doc(
+                    item_doc,
+                    result_label,
+                    local_get_field_failed_label,
+                    local_get_field_failed_label
+                )?;
                 // pass, goto result
                 self.emit_goto(DbOp::Goto, result_label);
                 self.emit_label(go_next_label);
