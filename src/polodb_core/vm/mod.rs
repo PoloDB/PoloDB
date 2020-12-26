@@ -363,24 +363,6 @@ impl<'a> VM<'a> {
                         }
                     }
 
-                    DbOp::IfGreater => {
-                        let location = self.pc.add(1).cast::<u32>().read();
-                        if self.r0 > 0 {  // greater
-                            self.reset_location(location);
-                        } else {
-                            self.pc = self.pc.add(5);
-                        }
-                    }
-
-                    DbOp::IfLess => {
-                        let location = self.pc.add(1).cast::<u32>().read();
-                        if self.r0 < 0 {  // less
-                            self.reset_location(location);
-                        } else {
-                            self.pc = self.pc.add(5);
-                        }
-                    }
-
                     DbOp::Rewind => {
                         let location = self.pc.add(1).cast::<u32>().read();
 

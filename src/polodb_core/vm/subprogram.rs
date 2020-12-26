@@ -129,18 +129,6 @@ impl fmt::Display for SubProgram {
                         pc += 5;
                     }
 
-                    DbOp::IfGreater => {
-                        let location = begin.add(pc + 1).cast::<u32>().read();
-                        writeln!(f, "{}: IfGreater({})", pc, location)?;
-                        pc += 5;
-                    }
-
-                    DbOp::IfLess => {
-                        let location = begin.add(pc + 1).cast::<u32>().read();
-                        writeln!(f, "{}: IfLess({})", pc, location)?;
-                        pc += 5;
-                    }
-
                     DbOp::Rewind => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
                         writeln!(f, "{}: Rewind({})", pc, location)?;

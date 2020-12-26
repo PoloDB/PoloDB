@@ -23,18 +23,6 @@ pub enum DbOp {
     // op1. location: 4 bytes
     IfFalse,
 
-    // if r0 is greater
-    //
-    // 5 bytes
-    // op1. location: 4 bytes
-    IfGreater,
-
-    // if r0 is less
-    //
-    // 5 bytes
-    // op1. location: 4 bytes
-    IfLess,
-
     // reset the cursor to the first element
     // if empty, jump to location
     //
@@ -150,13 +138,9 @@ pub enum DbOp {
     // 0 false not equal
     // 1 for equal
     Equal,
-
     Greater,
-
     GreaterEqual,
-
     Less,
-
     LessEqual,
 
     // check if top0 is in top2
