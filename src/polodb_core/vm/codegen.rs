@@ -26,7 +26,7 @@ mod update_op {
             let key_id_2 = codegen.push_static(Value::String(rc_str));
             let value_id = codegen.push_static(value.clone());
 
-            codegen.emit_goto2(DbOp::GetField, key_id_1, &next_element_label);  // stack +1
+            codegen.emit_goto2(DbOp::GetField, key_id_1, next_element_label);  // stack +1
 
             codegen.emit_push_value(value_id);  // stack +2
 
@@ -35,9 +35,9 @@ mod update_op {
             } else {
                 codegen.emit(DbOp::Greater);
             }
-            codegen.emit_goto(DbOp::IfFalse, &set_field_label);
+            codegen.emit_goto(DbOp::IfFalse, set_field_label);
 
-            codegen.emit_goto(DbOp::Goto, &clean_label);
+            codegen.emit_goto(DbOp::Goto, clean_label);
 
             codegen.emit_label(&set_field_label);
 
@@ -51,7 +51,7 @@ mod update_op {
 
             codegen.emit(DbOp::Pop);
 
-            codegen.emit_goto(DbOp::Goto, &next_element_label);
+            codegen.emit_goto(DbOp::Goto, next_element_label);
 
             codegen.emit_label(&clean_label);
 
@@ -66,6 +66,7 @@ mod update_op {
 
 }
 
+#[derive(Copy, Clone)]
 pub(super) struct Label(u32);
 
 struct JumpToLabelRecord {
@@ -138,9 +139,9 @@ impl Codegen {
         let pkey_id = self.push_static(pkey);
         self.emit_push_value(pkey_id);
 
-        self.emit_goto(DbOp::FindByPrimaryKey, &close_label);
+        self.emit_goto(DbOp::FindByPrimaryKey, close_label);
 
-        self.emit_goto(DbOp::Goto, &result_label);
+        self.emit_goto(DbOp::Goto, result_label);
 
         self.emit_label(&close_label);
         self.emit(DbOp::Pop);
@@ -156,12 +157,12 @@ impl Codegen {
             let key_static_id = self.push_static(Value::String(key.as_str().into()));
             let value_static_id = self.push_static(value.clone());
 
-            self.emit_goto2(DbOp::GetField, key_static_id, &close_label); // push a value1
+            self.emit_goto2(DbOp::GetField, key_static_id, close_label); // push a value1
             self.emit_push_value(value_static_id);  // push a value2
 
             self.emit(DbOp::Equal);
             // if not equal，go to next
-            self.emit_goto(DbOp::IfFalse, &close_label);
+            self.emit_goto(DbOp::IfFalse, close_label);
 
             self.emit(DbOp::Pop); // pop a value2
             self.emit(DbOp::Pop); // pop a value1
@@ -169,7 +170,7 @@ impl Codegen {
 
         result_callback(self)?;
 
-        self.emit_goto(DbOp::Goto, &close_label);
+        self.emit_goto(DbOp::Goto, close_label);
 
         Ok(())
     }
@@ -200,12 +201,12 @@ impl Codegen {
         let not_found_label = self.new_label();
         let close_label = self.new_label();
 
-        self.emit_goto(DbOp::Rewind, &close_label);
+        self.emit_goto(DbOp::Rewind, close_label);
 
-        self.emit_goto(DbOp::Goto, &compare_label);
+        self.emit_goto(DbOp::Goto, compare_label);
 
         self.emit_label(&next_label);
-        self.emit_goto(DbOp::Next, &compare_label);
+        self.emit_goto(DbOp::Next, compare_label);
 
         // <==== close cursor
         self.emit_label(&close_label);
@@ -219,21 +220,21 @@ impl Codegen {
         self.annotate_here("Not this item");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);  // pop the current value;
-        self.emit_goto(DbOp::Goto, &next_label);
+        self.emit_goto(DbOp::Goto, next_label);
 
         // <==== get field failed, got to next item
         self.emit_label(&get_field_failed_label);
         self.annotate_here("Get field failed");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);
-        self.emit_goto(DbOp::Goto, &next_label);
+        self.emit_goto(DbOp::Goto, next_label);
 
         // <==== result position
         // give out the result, or update the item
         self.emit_label(&result_label);
         self.annotate_here("Result");
         result_callback(self)?;
-        self.emit_goto(DbOp::Goto, &next_label);
+        self.emit_goto(DbOp::Goto, next_label);
 
         // <==== begin to compare the top of the stack
         //
@@ -248,18 +249,18 @@ impl Codegen {
         for (key, value) in query.iter() {
             self.emit_query_tuple(
                 key, value,
-                &result_label,
-                &get_field_failed_label,
-                &not_found_label,
+                result_label,
+                get_field_failed_label,
+                not_found_label,
             )?;
         }
 
-        self.emit_goto(DbOp::Goto, &result_label);
+        self.emit_goto(DbOp::Goto, result_label);
 
         Ok(())
     }
 
-    fn emit_logic_and(&mut self, arr: &Array, result_label: &Label, get_field_failed_label: &Label, not_found_label: &Label) -> DbResult<()> {
+    fn emit_logic_and(&mut self, arr: &Array, result_label: Label, get_field_failed_label: Label, not_found_label: Label) -> DbResult<()> {
         for item_doc_value in arr.iter() {
             let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
             for (key, value) in item_doc.iter() {
@@ -270,7 +271,7 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_logic_or(&mut self, arr: &Array, result_label: &Label, get_field_failed_label: &Label, not_found_label: &Label) -> DbResult<()> {
+    fn emit_logic_or(&mut self, arr: &Array, result_label: Label, get_field_failed_label: Label, not_found_label: Label) -> DbResult<()> {
         for item_doc_value in arr.iter() {
             let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
             for (key, value) in item_doc.iter() {
@@ -288,9 +289,9 @@ impl Codegen {
     fn emit_query_tuple(&mut self,
                         key: &str,
                         value: &Value,
-                        result_label: &Label,
-                        get_field_failed_label: &Label,
-                        not_found_label: &Label) -> DbResult<()> {
+                        result_label: Label,
+                        get_field_failed_label: Label,
+                        not_found_label: Label) -> DbResult<()> {
         if key.chars().next().unwrap() == '$' {
             match key {
                 "$and" => {
@@ -358,7 +359,7 @@ impl Codegen {
         Ok(())
     }
 
-    fn recursively_get_field(&mut self, key: &str, get_field_failed_label: &Label) -> usize {
+    fn recursively_get_field(&mut self, key: &str, get_field_failed_label: Label) -> usize {
         let slices: Vec<&str> = key.split('.').collect();
         for slice in &slices {
             let str_ref: &str = slice;
@@ -369,7 +370,7 @@ impl Codegen {
     }
 
     // very complex query document
-    fn emit_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_label: &Label, not_found_label: &Label) -> DbResult<()> {
+    fn emit_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_label: Label, not_found_label: Label) -> DbResult<()> {
         for (sub_key, sub_value) in value.iter() {
             match sub_key.as_str() {
                 "$eq" => {
@@ -647,7 +648,7 @@ impl Codegen {
         let get_field_failed_label = self.new_label();
         let old_name_id = self.push_static(Value::String(old_name.into()));
         let new_name_id = self.push_static(Value::String(new_name.into()));
-        self.emit_goto2(DbOp::GetField, old_name_id, &get_field_failed_label);
+        self.emit_goto2(DbOp::GetField, old_name_id, get_field_failed_label);
 
         self.emit(DbOp::SetField);
         self.emit_u32(new_name_id);
@@ -666,7 +667,7 @@ impl Codegen {
         self.emit_u32(value_id);
     }
 
-    pub(super) fn emit_goto(&mut self, op: DbOp, label: &Label) {
+    pub(super) fn emit_goto(&mut self, op: DbOp, label: Label) {
         let record_loc = self.current_location();
         self.emit(op);
         if self.labels[label.0 as usize] >= 0 {
@@ -682,7 +683,7 @@ impl Codegen {
         );
     }
 
-    pub(super) fn emit_goto2(&mut self, op: DbOp, op1: u32, label: &Label) {
+    pub(super) fn emit_goto2(&mut self, op: DbOp, op1: u32, label: Label) {
         let record_loc = self.current_location();
         self.emit(op);
         let bytes: [u8; 4] = op1.to_le_bytes();

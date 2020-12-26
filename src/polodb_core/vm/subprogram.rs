@@ -65,12 +65,12 @@ impl SubProgram {
 
         codegen.emit_open_read(entry.root_pid());
 
-        codegen.emit_goto(DbOp::Rewind, &close_label);
+        codegen.emit_goto(DbOp::Rewind, close_label);
 
-        codegen.emit_goto(DbOp::Goto, &result_label);
+        codegen.emit_goto(DbOp::Goto, result_label);
 
         codegen.emit_label(&next_label);
-        codegen.emit_goto(DbOp::Next, &result_label);
+        codegen.emit_goto(DbOp::Next, result_label);
 
         codegen.emit_label(&close_label);
         codegen.emit(DbOp::Close);
@@ -80,7 +80,7 @@ impl SubProgram {
         codegen.emit(DbOp::ResultRow);
         codegen.emit(DbOp::Pop);
 
-        codegen.emit_goto(DbOp::Goto, &next_label);
+        codegen.emit_goto(DbOp::Goto, next_label);
 
         Ok(codegen.take())
     }
