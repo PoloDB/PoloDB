@@ -59,35 +59,28 @@ impl SubProgram {
 
     pub(crate) fn compile_query_all(entry: &MetaDocEntry, annotation: bool) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new(annotation);
+        let result_label = codegen.new_label();
+        let next_label = codegen.new_label();
+        let close_label = codegen.new_label();
 
         codegen.emit_open_read(entry.root_pid());
 
-        let rewind_loc = codegen.current_location();
-        codegen.emit(DbOp::Rewind);
-        codegen.emit_u32(0);
+        codegen.emit_goto(DbOp::Rewind, &close_label);
 
-        let goto_loc = codegen.current_location();
-        codegen.emit_goto(0);
+        codegen.emit_goto(DbOp::Goto, &result_label);
 
-        let location = codegen.current_location();
-        codegen.emit_next(0);
+        codegen.emit_label(&next_label);
+        codegen.emit_goto(DbOp::Next, &result_label);
 
-        let close_loc = codegen.current_location();
+        codegen.emit_label(&close_label);
         codegen.emit(DbOp::Close);
         codegen.emit(DbOp::Halt);
 
-        let result_location = codegen.current_location();
-        codegen.update_next_location(location as usize, result_location);
-
-        let result_loc = codegen.current_location();
+        codegen.emit_label(&result_label);
         codegen.emit(DbOp::ResultRow);
         codegen.emit(DbOp::Pop);
 
-        codegen.update_next_location(goto_loc as usize, result_loc);
-
-        codegen.emit_goto(location);
-
-        codegen.update_next_location(rewind_loc as usize, close_loc);
+        codegen.emit_goto(DbOp::Goto, &next_label);
 
         Ok(codegen.take())
     }
