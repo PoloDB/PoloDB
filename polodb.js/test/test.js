@@ -208,7 +208,7 @@ describe('create collection with same name', function() {
 
 });
 
-describe.skip('logic $or', function() {
+describe('logic $or', function() {
 
   let db;
   this.beforeAll(function() {
@@ -265,7 +265,6 @@ describe.skip('logic $or', function() {
       ]
     });
 
-    console.log(twoItems);
     expect(twoItems.length).to.equals(2);
   })
 

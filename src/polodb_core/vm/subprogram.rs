@@ -520,24 +520,23 @@ Result:
 
 Compare:
 43: SaveStackPos
-44: Goto(56)
+44: Goto(55)
 49: RecoverStackPos
-50: Pop
-51: Goto(83)
-56: GetField("age", 49)
-65: PushValue(11)
-70: Equal
-71: FalseJump(83)
+50: Goto(82)
+55: GetField("age", 49)
+64: PushValue(11)
+69: Equal
+70: FalseJump(49)
+75: Pop
 76: Pop
-77: Pop
-78: Goto(36)
-83: GetField("age", 29)
-92: PushValue(12)
-97: Equal
-98: FalseJump(22)
+77: Goto(36)
+82: GetField("age", 29)
+91: PushValue(12)
+96: Equal
+97: FalseJump(22)
+102: Pop
 103: Pop
-104: Pop
-105: Goto(36)
+104: Goto(36)
 "#;
         assert_eq!(expect, actual);
     }

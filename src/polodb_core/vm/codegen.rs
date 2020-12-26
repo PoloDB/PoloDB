@@ -292,12 +292,11 @@ impl Codegen {
 
                 self.emit_label(local_get_field_failed_label);
                 self.emit(DbOp::RecoverStackPos);
-                self.emit(DbOp::Pop);
                 self.emit_goto(DbOp::Goto, go_next_label);
 
                 self.emit_label(query_label);
                 for (key, value) in item_doc.iter() {
-                    self.emit_query_tuple(key, value, result_label, local_get_field_failed_label, go_next_label)?;
+                    self.emit_query_tuple(key, value, result_label, local_get_field_failed_label, local_get_field_failed_label)?;
                 }
                 // pass, goto result
                 self.emit_goto(DbOp::Goto, result_label);
