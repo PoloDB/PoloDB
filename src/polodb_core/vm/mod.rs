@@ -10,7 +10,6 @@ use std::rc::Rc;
 use std::vec::Vec;
 use std::cmp::Ordering;
 use polodb_bson::Value;
-use polodb_bson::error::BsonErr;
 use op::DbOp;
 use crate::cursor::Cursor;
 use crate::page::PageHandler;
@@ -53,6 +52,20 @@ pub struct VM<'a> {
     stack:               Vec<Value>,
     pub(crate) program:  Box<SubProgram>,
     rollback_on_drop:    bool,
+}
+
+fn generic_cmp(op: DbOp, val1: &Value, val2: &Value) -> DbResult<bool> {
+    let ord = val1.value_cmp(val2)?;
+    let result = matches!((op, ord),
+        (DbOp::Equal, Ordering::Equal) |
+        (DbOp::Greater, Ordering::Greater) |
+        (DbOp::GreaterEqual, Ordering::Equal) |
+        (DbOp::GreaterEqual, Ordering::Greater) |
+        (DbOp::Less, Ordering::Less) |
+        (DbOp::LessEqual, Ordering::Equal) |
+        (DbOp::LessEqual, Ordering::Less)
+    );
+    Ok(result)
 }
 
 impl<'a> VM<'a> {
@@ -525,55 +538,18 @@ impl<'a> VM<'a> {
                         self.pc = self.pc.add(5);
                     }
 
-                    DbOp::Equal => {
-                        let top1 = &self.stack[self.stack.len() - 1];
-                        let top2 = &self.stack[self.stack.len() - 2];
+                    DbOp::Equal | DbOp::Greater | DbOp::GreaterEqual |
+                    DbOp::Less | DbOp::LessEqual => {
+                        let val1 = &self.stack[self.stack.len() - 2];
+                        let val2 = &self.stack[self.stack.len() - 1];
 
-                        match top1.value_cmp(top2) {
-                            Ok(Ordering::Equal) => {
-                                self.r0 = 1;
-                            }
+                        let cmp = try_vm!(self, generic_cmp(op, val1, val2));
 
-                            Ok(_) => {
-                                self.r0 = 0;
-                            }
-
-                            Err(BsonErr::TypeNotComparable(_, _)) => {
-                                self.r0 = -1;
-                            }
-
-                            Err(err) => {
-                                self.state = VmState::Halt;
-                                return Err(err.into());
-                            }
-
-                        }
-
-                        self.pc = self.pc.add(1);
-                    }
-
-                    DbOp::Cmp => {
-                        let top1 = &self.stack[self.stack.len() - 1];
-                        let top2 = &self.stack[self.stack.len() - 2];
-
-                        match top1.value_cmp(top2) {
-                            Ok(Ordering::Greater) => {
-                                self.r0 = 1;
-                            }
-
-                            Ok(Ordering::Less) => {
-                                self.r0 = -1;
-                            }
-
-                            Ok(Ordering::Equal) => {
-                                self.r0 = 0;
-                            }
-
-                            Err(err) => {
-                                self.state = VmState::Halt;
-                                return Err(err.into());
-                            }
-                        }
+                        self.r0 = if cmp {
+                            1
+                        } else {
+                            0
+                        };
 
                         self.pc = self.pc.add(1);
                     }

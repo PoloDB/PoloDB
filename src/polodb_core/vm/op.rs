@@ -1,6 +1,6 @@
 
 #[repr(u8)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 #[allow(dead_code)]
 pub enum DbOp {
     _EOF = 0,
@@ -151,13 +151,13 @@ pub enum DbOp {
     // 1 for equal
     Equal,
 
-    // compare top 2 values on the stack
-    //
-    // REJECT when not comparable
-    // -1 for less
-    // 0 for equal
-    // 1 for great
-    Cmp,
+    Greater,
+
+    GreaterEqual,
+
+    Less,
+
+    LessEqual,
 
     // check if top0 is in top2
     // the result is stored in r0

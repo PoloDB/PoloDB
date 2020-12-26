@@ -207,3 +207,66 @@ describe('create collection with same name', function() {
     });
 
 });
+
+describe.skip('logic $or', function() {
+
+  let db;
+  this.beforeAll(function() {
+    const dbPath = path.join(temp, 'test-same-name.db');
+    if (fs.existsSync(dbPath)) {
+      fs.unlinkSync(dbPath);
+    }
+    const journalPath = dbPath + '.journal';
+    if (fs.existsSync(journalPath)) {
+      fs.unlinkSync(journalPath);
+    }
+    db = new Database(dbPath);
+  });
+
+  this.afterAll(function() {
+    if (db) {
+      db.close();
+    }
+  });
+
+  const suite = [
+    {
+      name: 'test1',
+      age: 10,
+    },
+    {
+      name: 'test2',
+      age: 11,
+    },
+    {
+      name: 'test3',
+      age: 12,
+    },
+    {
+      name: 'test3',
+      age: 14,
+    }
+  ]
+
+  it('test', function() {
+    const collection = db.createCollection('test');
+    for (const item of suite) {
+      collection.insert(item);
+    }
+
+    const twoItems = collection.find({
+      $or: [
+        {
+          age: 11,
+        },
+        {
+          age: 12,
+        },
+      ]
+    });
+
+    console.log(twoItems);
+    expect(twoItems.length).to.equals(2);
+  })
+
+});

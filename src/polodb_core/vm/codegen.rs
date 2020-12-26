@@ -27,16 +27,13 @@ mod update_op {
 
             codegen.emit_push_value(value_id);  // stack +2
 
-            codegen.emit(DbOp::Cmp);
-
-            let jmp_loc = codegen.current_location();
             if min {
-                codegen.emit(DbOp::IfLess);
-                codegen.emit_u32(0);
+                codegen.emit(DbOp::Less);
             } else {
-                codegen.emit(DbOp::IfGreater);
-                codegen.emit_u32(0);
+                codegen.emit(DbOp::Greater);
             }
+            let jmp_loc = codegen.current_location();
+            codegen.emit_false_jump(0);
 
             let goto_loc = codegen.current_location();
             codegen.emit_goto(0);
@@ -355,12 +352,9 @@ impl Codegen {
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Cmp);
+                    self.emit(DbOp::Greater);
 
-                    // equal, r0 == 0
                     self.emit_false_jump(not_found_branch);
-                    // greater
-                    self.emit_greater_jump(not_found_branch);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
@@ -371,9 +365,9 @@ impl Codegen {
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Cmp);
+                    self.emit(DbOp::GreaterEqual);
 
-                    self.emit_greater_jump(not_found_branch);
+                    self.emit_false_jump(not_found_branch);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
@@ -405,12 +399,9 @@ impl Codegen {
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Cmp);
+                    self.emit(DbOp::Less);
 
-                    // equal, r0 == 0
                     self.emit_false_jump(not_found_branch);
-                    // less
-                    self.emit_less_jump(not_found_branch);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
@@ -421,10 +412,10 @@ impl Codegen {
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Cmp);
+                    self.emit(DbOp::LessEqual);
 
                     // less
-                    self.emit_less_jump(not_found_branch);
+                    self.emit_false_jump(not_found_branch);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
@@ -631,20 +622,6 @@ impl Codegen {
     #[inline]
     pub(super) fn emit_true_jump(&mut self, location: u32) {
         self.emit(DbOp::IfTrue);
-        let bytes = location.to_le_bytes();
-        self.program.instructions.extend_from_slice(&bytes);
-    }
-
-    #[inline]
-    pub(super) fn emit_less_jump(&mut self, location: u32) {
-        self.emit(DbOp::IfLess);
-        let bytes = location.to_le_bytes();
-        self.program.instructions.extend_from_slice(&bytes);
-    }
-
-    #[inline]
-    pub(super) fn emit_greater_jump(&mut self, location: u32) {
-        self.emit(DbOp::IfGreater);
         let bytes = location.to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);
     }

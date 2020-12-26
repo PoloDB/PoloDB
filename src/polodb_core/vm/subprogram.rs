@@ -197,8 +197,23 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
-                    DbOp::Cmp => {
-                        writeln!(f, "{}: Cmp", pc)?;
+                    DbOp::Greater => {
+                        writeln!(f, "{}: Greater", pc)?;
+                        pc += 1;
+                    }
+
+                    DbOp::GreaterEqual => {
+                        writeln!(f, "{}: GreaterEqual", pc)?;
+                        pc += 1;
+                    }
+
+                    DbOp::Less => {
+                        writeln!(f, "{}: Less", pc)?;
+                        pc += 1;
+                    }
+
+                    DbOp::LessEqual => {
+                        writeln!(f, "{}: LessEqual", pc)?;
                         pc += 1;
                     }
 
@@ -485,10 +500,10 @@ Compare:
         let test_doc = mk_document! {
             "$or": mk_array! [
                 mk_document! {
-                    "_id": 6,
+                    "age": 11,
                 },
                 mk_document! {
-                    "age": 32,
+                    "age": 12,
                 },
             ],
         };
@@ -543,17 +558,16 @@ Compare:
 43: SaveStackPos
 44: GetField("age", 29)
 53: PushValue(3)
-58: Cmp
+58: Greater
 59: FalseJump(22)
-64: IfGreater(22)
-69: Pop2(2)
-74: GetField("child", 29)
-83: GetField("age", 29)
-92: PushValue(Array(len=2))
-97: In
-98: FalseJump(22)
-103: Pop2(3)
-108: Goto(36)
+64: Pop2(2)
+69: GetField("child", 29)
+78: GetField("age", 29)
+87: PushValue(Array(len=2))
+92: In
+93: FalseJump(22)
+98: Pop2(3)
+103: Goto(36)
 "#;
         assert_eq!(expect, actual);
     }
@@ -622,8 +636,8 @@ Result:
 68: Pop
 69: GetField("age", 114)
 78: PushValue(100)
-83: Cmp
-84: IfLess(94)
+83: Less
+84: FalseJump(94)
 89: Goto(112)
 94: Pop
 95: Pop
@@ -646,11 +660,10 @@ Compare:
 146: SaveStackPos
 147: GetField("_id", 29)
 156: PushValue(3)
-161: Cmp
+161: Greater
 162: FalseJump(22)
-167: IfGreater(22)
-172: Pop2(2)
-177: Goto(36)
+167: Pop2(2)
+172: Goto(36)
 "#;
         assert_eq!(expect, actual);
     }
