@@ -39,7 +39,7 @@ mod update_op {
 
             codegen.emit_goto(DbOp::Goto, clean_label);
 
-            codegen.emit_label(&set_field_label);
+            codegen.emit_label(set_field_label);
 
             codegen.emit(DbOp::Pop);
             codegen.emit(DbOp::Pop);  // stack
@@ -53,12 +53,12 @@ mod update_op {
 
             codegen.emit_goto(DbOp::Goto, next_element_label);
 
-            codegen.emit_label(&clean_label);
+            codegen.emit_label(clean_label);
 
             codegen.emit(DbOp::Pop);
             codegen.emit(DbOp::Pop);
 
-            codegen.emit_label(&next_element_label);
+            codegen.emit_label(next_element_label);
         }
 
         Ok(())
@@ -123,7 +123,7 @@ impl Codegen {
         Label(id)
     }
 
-    pub(super) fn emit_label(&mut self, label: &Label) {
+    pub(super) fn emit_label(&mut self, label: Label) {
         if self.labels[label.0 as usize] >= 0 {
             unreachable!("this label has been emit");
         }
@@ -143,12 +143,12 @@ impl Codegen {
 
         self.emit_goto(DbOp::Goto, result_label);
 
-        self.emit_label(&close_label);
+        self.emit_label(close_label);
         self.emit(DbOp::Pop);
         self.emit(DbOp::Close);
         self.emit(DbOp::Halt);
 
-        self.emit_label(&result_label);
+        self.emit_label(result_label);
         for (key, value) in query.iter() {
             if key == "_id" {
                 continue;
@@ -205,25 +205,25 @@ impl Codegen {
 
         self.emit_goto(DbOp::Goto, compare_label);
 
-        self.emit_label(&next_label);
+        self.emit_label(next_label);
         self.emit_goto(DbOp::Next, compare_label);
 
         // <==== close cursor
-        self.emit_label(&close_label);
+        self.emit_label(close_label);
         self.annotate_here("Close");
 
         self.emit(DbOp::Close);
         self.emit(DbOp::Halt);
 
         // <==== not this item, go to next item
-        self.emit_label(&not_found_label);
+        self.emit_label(not_found_label);
         self.annotate_here("Not this item");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);  // pop the current value;
         self.emit_goto(DbOp::Goto, next_label);
 
         // <==== get field failed, got to next item
-        self.emit_label(&get_field_failed_label);
+        self.emit_label(get_field_failed_label);
         self.annotate_here("Get field failed");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);
@@ -231,7 +231,7 @@ impl Codegen {
 
         // <==== result position
         // give out the result, or update the item
-        self.emit_label(&result_label);
+        self.emit_label(result_label);
         self.annotate_here("Result");
         result_callback(self)?;
         self.emit_goto(DbOp::Goto, next_label);
@@ -242,7 +242,7 @@ impl Codegen {
         //
         // begin to execute compare logic
         // save the stack first
-        self.emit_label(&compare_label);
+        self.emit_label(compare_label);
         self.annotate_here("Compare");
         self.emit(DbOp::SaveStackPos);
 
@@ -260,7 +260,10 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_logic_and(&mut self, arr: &Array, result_label: Label, get_field_failed_label: Label, not_found_label: Label) -> DbResult<()> {
+    fn emit_logic_and(&mut self,
+                      arr: &Array,
+                      result_label: Label, get_field_failed_label: Label, not_found_label: Label
+    ) -> DbResult<()> {
         for item_doc_value in arr.iter() {
             let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
             for (key, value) in item_doc.iter() {
@@ -271,13 +274,35 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_logic_or(&mut self, arr: &Array, result_label: Label, get_field_failed_label: Label, not_found_label: Label) -> DbResult<()> {
-        for item_doc_value in arr.iter() {
+    fn emit_logic_or(&mut self,
+                     arr: &Array,
+                     result_label: Label, global_get_field_failed_label: Label, not_found_label: Label
+    ) -> DbResult<()> {
+        for (index, item_doc_value) in arr.iter().enumerate() {
             let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
-            for (key, value) in item_doc.iter() {
-                self.emit_query_tuple(key, value, result_label, get_field_failed_label, not_found_label)?;
+            if index == (arr.len() as usize) - 1 { // last item
+                for (key, value) in item_doc.iter() {
+                    self.emit_query_tuple(key, value, result_label, global_get_field_failed_label, not_found_label)?;
+                }
+            } else {
+                let go_next_label = self.new_label();
+                let local_get_field_failed_label = self.new_label();
+                let query_label = self.new_label();
+                self.emit_goto(DbOp::Goto, query_label);
+
+                self.emit_label(local_get_field_failed_label);
+                self.emit(DbOp::RecoverStackPos);
+                self.emit(DbOp::Pop);
+                self.emit_goto(DbOp::Goto, go_next_label);
+
+                self.emit_label(query_label);
+                for (key, value) in item_doc.iter() {
+                    self.emit_query_tuple(key, value, result_label, local_get_field_failed_label, go_next_label)?;
+                }
+                // pass, goto result
+                self.emit_goto(DbOp::Goto, result_label);
+                self.emit_label(go_next_label);
             }
-            self.emit_goto(DbOp::Goto, result_label);
         }
 
         Ok(())
@@ -658,7 +683,7 @@ impl Codegen {
         self.emit(DbOp::UnsetField);
         self.emit_u32(old_name_id);
 
-        self.emit_label(&get_field_failed_label);
+        self.emit_label(get_field_failed_label);
     }
 
     pub(super) fn emit_unset_field(&mut self, name: &str) {

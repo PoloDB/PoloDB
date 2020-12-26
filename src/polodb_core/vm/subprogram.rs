@@ -69,14 +69,14 @@ impl SubProgram {
 
         codegen.emit_goto(DbOp::Goto, result_label);
 
-        codegen.emit_label(&next_label);
+        codegen.emit_label(next_label);
         codegen.emit_goto(DbOp::Next, result_label);
 
-        codegen.emit_label(&close_label);
+        codegen.emit_label(close_label);
         codegen.emit(DbOp::Close);
         codegen.emit(DbOp::Halt);
 
-        codegen.emit_label(&result_label);
+        codegen.emit_label(result_label);
         codegen.emit(DbOp::ResultRow);
         codegen.emit(DbOp::Pop);
 
@@ -491,7 +491,55 @@ Compare:
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
         let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
         let actual = format!("Program:\n\n{}", program);
-        println!("{}", actual);
+
+        let expect = r#"Program:
+
+0: OpenRead(100)
+5: Rewind(20)
+10: Goto(43)
+15: Next(43)
+
+Close:
+20: Close
+21: Halt
+
+Not this item:
+22: RecoverStackPos
+23: Pop
+24: Goto(15)
+
+Get field failed:
+29: RecoverStackPos
+30: Pop
+31: Goto(15)
+
+Result:
+36: ResultRow
+37: Pop
+38: Goto(15)
+
+Compare:
+43: SaveStackPos
+44: Goto(56)
+49: RecoverStackPos
+50: Pop
+51: Goto(83)
+56: GetField("age", 49)
+65: PushValue(11)
+70: Equal
+71: FalseJump(83)
+76: Pop
+77: Pop
+78: Goto(36)
+83: GetField("age", 29)
+92: PushValue(12)
+97: Equal
+98: FalseJump(22)
+103: Pop
+104: Pop
+105: Goto(36)
+"#;
+        assert_eq!(expect, actual);
     }
 
     #[test]
