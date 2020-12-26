@@ -305,7 +305,7 @@ impl Codegen {
                 }
 
                 "$or" => {
-                    let sub_arr = crate::try_unwrap_array!("$and", value);
+                    let sub_arr = crate::try_unwrap_array!("$or", value);
                     self.emit_logic_or(
                         sub_arr.as_ref(),
                         result_label,

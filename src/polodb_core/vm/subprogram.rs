@@ -398,7 +398,7 @@ Compare:
 20: Pop
 21: Close
 22: Halt
-23: GetField("age", 0)
+23: GetField("age", 20)
 32: PushValue(32)
 37: Equal
 38: FalseJump(20)
