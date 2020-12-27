@@ -125,7 +125,7 @@ impl DbContext {
             &collection_meta,
             &meta_doc,
             &query_doc,
-            false)?;
+            true)?;
 
         let mut handle = self.make_handle(subprogram);
         handle.step()?;
@@ -178,7 +178,7 @@ impl DbContext {
             &collection_meta,
             &meta_doc,
             &query_doc,
-            false)?;
+            true)?;
 
         let mut handle = self.make_handle(subprogram);
         handle.set_rollback_on_drop(false);
@@ -449,9 +449,9 @@ impl DbContext {
                 &collection_meta,
                 collection_meta.doc_ref(),
                 query,
-                false
+                true
             ),
-            None => SubProgram::compile_query_all(&collection_meta, false),
+            None => SubProgram::compile_query_all(&collection_meta, true),
         }?;
 
         let handle = self.make_handle(subprogram);
@@ -474,7 +474,7 @@ impl DbContext {
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
-        let subprogram = SubProgram::compile_update(&collection_meta, query, update, false)?;
+        let subprogram = SubProgram::compile_update(&collection_meta, query, update, true)?;
 
         let mut vm = VM::new(&mut self.page_handler, Box::new(subprogram));
         vm.execute()?;

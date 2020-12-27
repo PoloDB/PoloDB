@@ -1,5 +1,6 @@
 use polodb_bson::{Value, Document, Array};
 use super::optimization::inverse_doc;
+use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
 use crate::{DbResult, DbErr};
@@ -66,48 +67,28 @@ mod update_op {
 
 }
 
-#[derive(Copy, Clone)]
-pub(super) struct Label(u32);
-
-struct JumpToLabelRecord {
-    begin_loc: u32,
-    offset: u32,
-    label_id: u32,
-}
-
-impl JumpToLabelRecord {
-
-    fn new(begin_loc: u32, offset: u32, label_id: u32) -> JumpToLabelRecord {
-        JumpToLabelRecord {
-            begin_loc,
-            offset,
-            label_id,
-        }
-    }
-
-}
-
 pub(super) struct Codegen {
     program:               Box<SubProgram>,
-    jump_to_label_records: Vec<JumpToLabelRecord>,
-    labels:                Vec<i64>,
+    jump_table:            Vec<JumpTableRecord>,
+    skip_annotation:       bool,
 }
 
 impl Codegen {
 
-    pub(super) fn new(annotation: bool) -> Codegen {
+    pub(super) fn new(skip_annotation: bool) -> Codegen {
         Codegen {
-            program: Box::new(SubProgram::new(annotation)),
-            jump_to_label_records: vec![],
-            labels: Vec::with_capacity(16),
+            program: Box::new(SubProgram::new()),
+            jump_table: vec![],
+            skip_annotation,
         }
     }
 
     fn unify_labels(&mut self) {
-        for record in &self.jump_to_label_records {
+        for record in &self.jump_table {
             let pos = (record.begin_loc + record.offset) as usize;
-            let target = self.labels[record.label_id as usize] as u32;
-            let bytes = target.to_le_bytes();
+            let slot = &self.program.label_slots[record.label_id as usize];
+            let target = slot.position();
+            let bytes: [u8; 4] = target.to_le_bytes();
             self.program.instructions[pos..pos + 4].copy_from_slice(&bytes);
         }
     }
@@ -118,17 +99,33 @@ impl Codegen {
     }
 
     pub(super) fn new_label(&mut self) -> Label {
-        let id = self.labels.len() as u32;
-        self.labels.push(-1);
-        Label(id)
+        let id = self.program.label_slots.len() as u32;
+        self.program.label_slots.push(LabelSlot::Empty);
+        Label::new(id)
     }
 
     pub(super) fn emit_label(&mut self, label: Label) {
-        if self.labels[label.0 as usize] >= 0 {
+        if !self.program.label_slots[label.u_pos()].is_empty() {
             unreachable!("this label has been emit");
         }
+        self.emit(DbOp::Label);
+        self.emit_u32(label.pos());
         let current_loc = self.current_location();
-        self.labels[label.0 as usize] = current_loc as i64;
+        self.program.label_slots[label.u_pos()] = LabelSlot::UnnamedLabel(current_loc);
+    }
+
+    pub(super) fn emit_label_with_name<T: Into<Box<str>>>(&mut self, label: Label, name: T) {
+        if !self.program.label_slots[label.u_pos()].is_empty() {
+            unreachable!("this label has been emit");
+        }
+        self.emit(DbOp::Label);
+        self.emit_u32(label.pos());
+        let current_loc = self.current_location();
+        if self.skip_annotation {
+            self.program.label_slots[label.u_pos()] = LabelSlot::UnnamedLabel(current_loc);
+        } else {
+            self.program.label_slots[label.u_pos()] = LabelSlot::LabelWithString(current_loc, name.into());
+        }
     }
 
     fn emit_query_layout_has_pkey<F>(&mut self, pkey: Value, query: &Document, result_callback: F) -> DbResult<()> where
@@ -175,16 +172,6 @@ impl Codegen {
         Ok(())
     }
 
-    fn annotate<T: Into<String>>(&mut self, position: u32, content: T) {
-        if let Some(annotation) = &mut self.program.annotation {
-            annotation.annotate(position, content.into());
-        }
-    }
-
-    fn annotate_here<T: Into<String>>(&mut self, content: T) {
-        self.annotate(self.current_location(), content)
-    }
-
     pub(super) fn emit_query_layout<F>(&mut self, query: &Document, result_callback: F) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
 
@@ -209,30 +196,26 @@ impl Codegen {
         self.emit_goto(DbOp::Next, compare_label);
 
         // <==== close cursor
-        self.emit_label(close_label);
-        self.annotate_here("Close");
+        self.emit_label_with_name(close_label, "Close");
 
         self.emit(DbOp::Close);
         self.emit(DbOp::Halt);
 
         // <==== not this item, go to next item
-        self.emit_label(not_found_label);
-        self.annotate_here("Not this item");
+        self.emit_label_with_name(not_found_label, "Not this item");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);  // pop the current value;
         self.emit_goto(DbOp::Goto, next_label);
 
         // <==== get field failed, got to next item
-        self.emit_label(get_field_failed_label);
-        self.annotate_here("Get field failed");
+        self.emit_label_with_name(get_field_failed_label, "Get field failed");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);
         self.emit_goto(DbOp::Goto, next_label);
 
         // <==== result position
         // give out the result, or update the item
-        self.emit_label(result_label);
-        self.annotate_here("Result");
+        self.emit_label_with_name(result_label, "Result");
         result_callback(self)?;
         self.emit_goto(DbOp::Goto, next_label);
 
@@ -242,8 +225,7 @@ impl Codegen {
         //
         // begin to execute compare logic
         // save the stack first
-        self.emit_label(compare_label);
-        self.annotate_here("Compare");
+        self.emit_label_with_name(compare_label, "Compare");
         self.emit(DbOp::SaveStackPos);
 
         self.emit_standard_query_doc(
@@ -710,16 +692,17 @@ impl Codegen {
     pub(super) fn emit_goto(&mut self, op: DbOp, label: Label) {
         let record_loc = self.current_location();
         self.emit(op);
-        if self.labels[label.0 as usize] >= 0 {
-            let loc = self.labels[label.0 as usize] as u32;
+        let slot = &self.program.label_slots[label.u_pos()];
+        if !slot.is_empty() {
+            let loc = slot.position();
             let bytes = loc.to_le_bytes();
             self.program.instructions.extend_from_slice(&bytes);
             return;
         }
-        let bytes = [1; 4];
+        let bytes: [u8; 4] = (-1 as i32).to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);
-        self.jump_to_label_records.push(
-            JumpToLabelRecord::new(record_loc, 1, label.0)
+        self.jump_table.push(
+            JumpTableRecord::new(record_loc, 1, label.pos())
         );
     }
 
@@ -728,16 +711,17 @@ impl Codegen {
         self.emit(op);
         let bytes: [u8; 4] = op1.to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);
-        if self.labels[label.0 as usize] >= 0 {
-            let loc = self.labels[label.0 as usize] as u32;
+        let slot = &self.program.label_slots[label.u_pos()];
+        if !slot.is_empty() {
+            let loc = slot.position();
             let bytes: [u8; 4] = loc.to_le_bytes();
             self.program.instructions.extend_from_slice(&bytes);
             return;
         }
-        let bytes2 = [1; 4];
+        let bytes2: [u8; 4] = (-1 as i32).to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes2);
-        self.jump_to_label_records.push(
-            JumpToLabelRecord::new(record_loc, 5, label.0)
+        self.jump_table.push(
+            JumpTableRecord::new(record_loc, 5, label.pos())
         );
     }
 

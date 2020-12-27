@@ -1,36 +1,32 @@
 use std::fmt;
 use polodb_bson::{Value, Document};
-use super::annotation::Annotation;
 use crate::DbResult;
 use crate::meta_doc_helper::{MetaDocEntry, meta_doc_key};
 use super::op::DbOp;
+use super::label::LabelSlot;
 use crate::vm::codegen::Codegen;
 
 pub(crate) struct SubProgram {
     pub(super) static_values:    Vec<Value>,
     pub(super) instructions:     Vec<u8>,
-    pub(super) annotation:       Option<Annotation>,
+    pub(super) label_slots:      Vec<LabelSlot>,
 }
 
 impl SubProgram {
 
-    pub(super) fn new(annotation: bool) -> SubProgram {
+    pub(super) fn new() -> SubProgram {
         SubProgram {
             static_values: Vec::with_capacity(32),
             instructions: Vec::with_capacity(256),
-            annotation: if annotation {
-                Some(Annotation::new())
-            } else {
-                None
-            }
+            label_slots: Vec::with_capacity(32),
         }
     }
 
-    pub(crate) fn compile_query(entry: &MetaDocEntry, meta_doc: &Document, query: &Document, annotation: bool) -> DbResult<SubProgram> {
+    pub(crate) fn compile_query(entry: &MetaDocEntry, meta_doc: &Document, query: &Document, skip_annotation: bool) -> DbResult<SubProgram> {
         let _indexes = meta_doc.get(meta_doc_key::INDEXES);
         // let _tuples = doc_to_tuples(doc);
 
-        let mut codegen = Codegen::new(annotation);
+        let mut codegen = Codegen::new(skip_annotation);
 
         codegen.emit_open_read(entry.root_pid());
 
@@ -43,8 +39,8 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, update: &Document, annotation: bool) -> DbResult<SubProgram> {
-        let mut codegen = Codegen::new(annotation);
+    pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, update: &Document, skip_annotation: bool) -> DbResult<SubProgram> {
+        let mut codegen = Codegen::new(skip_annotation);
 
         codegen.emit_open_write(entry.root_pid());
 
@@ -57,8 +53,8 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_query_all(entry: &MetaDocEntry, annotation: bool) -> DbResult<SubProgram> {
-        let mut codegen = Codegen::new(annotation);
+    pub(crate) fn compile_query_all(entry: &MetaDocEntry, skip_annotation: bool) -> DbResult<SubProgram> {
+        let mut codegen = Codegen::new(skip_annotation);
         let result_label = codegen.new_label();
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
@@ -85,13 +81,6 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
-    fn print_annotation(&self, f: &mut fmt::Formatter, pc: u32) -> fmt::Result {
-        if let Some(annotation) = &self.annotation {
-            return annotation.write_fmt(f, pc);
-        }
-        Ok(())
-    }
-
 }
 
 impl fmt::Display for SubProgram {
@@ -102,11 +91,23 @@ impl fmt::Display for SubProgram {
             let mut pc: usize = 0;
             while pc < self.instructions.len() {
                 let op = begin.add(pc).cast::<DbOp>().read();
-                self.print_annotation(f, pc as u32)?;
                 match op {
                     DbOp::Goto => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
                         writeln!(f, "{}: Goto({})", pc, location)?;
+                        pc += 5;
+                    }
+
+                    DbOp::Label => {
+                        writeln!(f)?;
+                        let label_id = begin.add(pc + 1).cast::<u32>().read();
+                        match &self.label_slots[label_id as usize] {
+                            LabelSlot::Empty => unreachable!(),
+                            LabelSlot::UnnamedLabel(_) =>
+                                writeln!(f, "{}: Label({})", pc, label_id)?,
+                            LabelSlot::LabelWithString(_, name) =>
+                                writeln!(f, "{}: Label({}, \"{}\")", pc, label_id, name)?,
+                        }
                         pc += 5;
                     }
 
@@ -303,20 +304,26 @@ mod tests {
     #[test]
     fn print_program() {
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query_all(&meta_entry, true).unwrap();
+        let program = SubProgram::compile_query_all(&meta_entry, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = "Program:
 
 0: OpenRead(100)
-5: Rewind(20)
-10: Goto(22)
-15: Next(22)
-20: Close
-21: Halt
-22: ResultRow
-23: Pop
-24: Goto(15)
+5: Rewind(30)
+10: Goto(37)
+
+15: Label(1)
+20: Next(37)
+
+25: Label(2)
+30: Close
+31: Halt
+
+32: Label(0)
+37: ResultRow
+38: Pop
+39: Goto(20)
 ";
 
         assert_eq!(expect, actual);
@@ -330,50 +337,52 @@ mod tests {
             "age": 32,
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
 
 0: OpenRead(100)
-5: Rewind(20)
-10: Goto(43)
-15: Next(43)
+5: Rewind(30)
+10: Goto(73)
 
-Close:
-20: Close
-21: Halt
+15: Label(1)
+20: Next(73)
 
-Not this item:
-22: RecoverStackPos
-23: Pop
-24: Goto(15)
+25: Label(5, "Close")
+30: Close
+31: Halt
 
-Get field failed:
-29: RecoverStackPos
-30: Pop
-31: Goto(15)
+32: Label(4, "Not this item")
+37: RecoverStackPos
+38: Pop
+39: Goto(20)
 
-Result:
-36: ResultRow
-37: Pop
-38: Goto(15)
+44: Label(3, "Get field failed")
+49: RecoverStackPos
+50: Pop
+51: Goto(20)
 
-Compare:
-43: SaveStackPos
-44: GetField("name", 29)
-53: PushValue("Vincent Chan")
-58: Equal
-59: FalseJump(22)
-64: Pop
-65: Pop
-66: GetField("age", 29)
-75: PushValue(32)
-80: Equal
-81: FalseJump(22)
-86: Pop
-87: Pop
-88: Goto(36)
+56: Label(2, "Result")
+61: ResultRow
+62: Pop
+63: Goto(20)
+
+68: Label(0, "Compare")
+73: SaveStackPos
+74: GetField("name", 49)
+83: PushValue("Vincent Chan")
+88: Equal
+89: FalseJump(37)
+94: Pop
+95: Pop
+96: GetField("age", 49)
+105: PushValue(32)
+110: Equal
+111: FalseJump(37)
+116: Pop
+117: Pop
+118: Goto(61)
 "#;
         assert_eq!(expect, actual)
     }
@@ -386,27 +395,31 @@ Compare:
             "age": 32,
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
 
 0: OpenRead(100)
 5: PushValue(6)
-10: FindByPrimaryKey(20)
-15: Goto(23)
-20: Pop
-21: Close
-22: Halt
-23: GetField("age", 20)
-32: PushValue(32)
-37: Equal
-38: FalseJump(20)
-43: Pop
-44: Pop
-45: ResultRow
-46: Pop
-47: Goto(20)
+10: FindByPrimaryKey(25)
+15: Goto(33)
+
+20: Label(0)
+25: Pop
+26: Close
+27: Halt
+
+28: Label(1)
+33: GetField("age", 25)
+42: PushValue(32)
+47: Equal
+48: FalseJump(25)
+53: Pop
+54: Pop
+55: ResultRow
+56: Pop
+57: Goto(25)
 "#;
         assert_eq!(expect, actual)
     }
@@ -425,52 +438,52 @@ Compare:
             ],
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
 
-Program:
-
 0: OpenRead(100)
-5: Rewind(20)
-10: Goto(43)
-15: Next(43)
+5: Rewind(30)
+10: Goto(73)
 
-Close:
-20: Close
-21: Halt
+15: Label(1)
+20: Next(73)
 
-Not this item:
-22: RecoverStackPos
-23: Pop
-24: Goto(15)
+25: Label(5, "Close")
+30: Close
+31: Halt
 
-Get field failed:
-29: RecoverStackPos
-30: Pop
-31: Goto(15)
+32: Label(4, "Not this item")
+37: RecoverStackPos
+38: Pop
+39: Goto(20)
 
-Result:
-36: ResultRow
-37: Pop
-38: Goto(15)
+44: Label(3, "Get field failed")
+49: RecoverStackPos
+50: Pop
+51: Goto(20)
 
-Compare:
-43: SaveStackPos
-44: GetField("_id", 29)
-53: PushValue(6)
-58: Equal
-59: FalseJump(22)
-64: Pop
-65: Pop
-66: GetField("age", 29)
-75: PushValue(32)
-80: Equal
-81: FalseJump(22)
-86: Pop
-87: Pop
-88: Goto(36)
+56: Label(2, "Result")
+61: ResultRow
+62: Pop
+63: Goto(20)
+
+68: Label(0, "Compare")
+73: SaveStackPos
+74: GetField("_id", 49)
+83: PushValue(6)
+88: Equal
+89: FalseJump(37)
+94: Pop
+95: Pop
+96: GetField("age", 49)
+105: PushValue(32)
+110: Equal
+111: FalseJump(37)
+116: Pop
+117: Pop
+118: Goto(61)
 "#;
         assert_eq!(expect, actual)
     }
@@ -489,54 +502,62 @@ Compare:
             ],
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
 
 0: OpenRead(100)
-5: Rewind(20)
-10: Goto(43)
-15: Next(43)
+5: Rewind(30)
+10: Goto(73)
 
-Close:
-20: Close
-21: Halt
+15: Label(1)
+20: Next(73)
 
-Not this item:
-22: RecoverStackPos
-23: Pop
-24: Goto(15)
+25: Label(5, "Close")
+30: Close
+31: Halt
 
-Get field failed:
-29: RecoverStackPos
-30: Pop
-31: Goto(15)
+32: Label(4, "Not this item")
+37: RecoverStackPos
+38: Pop
+39: Goto(20)
 
-Result:
-36: ResultRow
-37: Pop
-38: Goto(15)
-
-Compare:
-43: SaveStackPos
-44: Goto(55)
+44: Label(3, "Get field failed")
 49: RecoverStackPos
-50: Goto(82)
-55: GetField("age", 49)
-64: PushValue(11)
-69: Equal
-70: FalseJump(49)
-75: Pop
-76: Pop
-77: Goto(36)
-82: GetField("age", 29)
-91: PushValue(12)
-96: Equal
-97: FalseJump(22)
-102: Pop
-103: Pop
-104: Goto(36)
+50: Pop
+51: Goto(20)
+
+56: Label(2, "Result")
+61: ResultRow
+62: Pop
+63: Goto(20)
+
+68: Label(0, "Compare")
+73: SaveStackPos
+74: Goto(95)
+
+79: Label(7)
+84: RecoverStackPos
+85: Goto(127)
+
+90: Label(8)
+95: GetField("age", 84)
+104: PushValue(11)
+109: Equal
+110: FalseJump(84)
+115: Pop
+116: Pop
+117: Goto(61)
+
+122: Label(6)
+127: GetField("age", 49)
+136: PushValue(12)
+141: Equal
+142: FalseJump(37)
+147: Pop
+148: Pop
+149: Goto(61)
 "#;
         assert_eq!(expect, actual);
     }
@@ -553,49 +574,51 @@ Compare:
             },
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, true).unwrap();
+        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
 
 0: OpenRead(100)
-5: Rewind(20)
-10: Goto(43)
-15: Next(43)
+5: Rewind(30)
+10: Goto(73)
 
-Close:
-20: Close
-21: Halt
+15: Label(1)
+20: Next(73)
 
-Not this item:
-22: RecoverStackPos
-23: Pop
-24: Goto(15)
+25: Label(5, "Close")
+30: Close
+31: Halt
 
-Get field failed:
-29: RecoverStackPos
-30: Pop
-31: Goto(15)
+32: Label(4, "Not this item")
+37: RecoverStackPos
+38: Pop
+39: Goto(20)
 
-Result:
-36: ResultRow
-37: Pop
-38: Goto(15)
+44: Label(3, "Get field failed")
+49: RecoverStackPos
+50: Pop
+51: Goto(20)
 
-Compare:
-43: SaveStackPos
-44: GetField("age", 29)
-53: PushValue(3)
-58: Greater
-59: FalseJump(22)
-64: Pop2(2)
-69: GetField("child", 29)
-78: GetField("age", 29)
-87: PushValue(Array(len=2))
-92: In
-93: FalseJump(22)
-98: Pop2(3)
-103: Goto(36)
+56: Label(2, "Result")
+61: ResultRow
+62: Pop
+63: Goto(20)
+
+68: Label(0, "Compare")
+73: SaveStackPos
+74: GetField("age", 49)
+83: PushValue(3)
+88: Greater
+89: FalseJump(37)
+94: Pop2(2)
+99: GetField("child", 49)
+108: GetField("age", 49)
+117: PushValue(Array(len=2))
+122: In
+123: FalseJump(37)
+128: Pop2(3)
+133: Goto(61)
 "#;
         assert_eq!(expect, actual);
     }
@@ -628,70 +651,80 @@ Compare:
                 "hello1": "hello2",
             },
         };
-        let program = SubProgram::compile_update(&meta_entry, Some(&query_doc), &update_doc, true).unwrap();
+        let program = SubProgram::compile_update(&meta_entry, Some(&query_doc), &update_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
 
 0: OpenWrite(100)
-5: Rewind(20)
-10: Goto(146)
-15: Next(146)
+5: Rewind(30)
+10: Goto(196)
 
-Close:
-20: Close
-21: Halt
+15: Label(1)
+20: Next(196)
 
-Not this item:
-22: RecoverStackPos
-23: Pop
-24: Goto(15)
+25: Label(5, "Close")
+30: Close
+31: Halt
 
-Get field failed:
-29: RecoverStackPos
-30: Pop
-31: Goto(15)
+32: Label(4, "Not this item")
+37: RecoverStackPos
+38: Pop
+39: Goto(20)
 
-Result:
-36: PushValue("Alan Chan")
-41: SetField("name")
-46: Pop
-47: PushValue(1)
-52: IncField("age")
-57: Pop
-58: PushValue(3)
-63: MulField("age")
-68: Pop
-69: GetField("age", 114)
-78: PushValue(100)
-83: Less
-84: FalseJump(94)
-89: Goto(112)
-94: Pop
-95: Pop
-96: PushValue(100)
-101: SetField("age")
-106: Pop
-107: Goto(114)
-112: Pop
-113: Pop
-114: UnsetField("age")
-119: GetField("hello1", 139)
-128: SetField("hello2")
-133: Pop
-134: UnsetField("hello1")
-139: UpdateCurrent
-140: Pop
-141: Goto(15)
+44: Label(3, "Get field failed")
+49: RecoverStackPos
+50: Pop
+51: Goto(20)
 
-Compare:
-146: SaveStackPos
-147: GetField("_id", 29)
-156: PushValue(3)
-161: Greater
-162: FalseJump(22)
-167: Pop2(2)
-172: Goto(36)
+56: Label(2, "Result")
+61: PushValue("Alan Chan")
+66: SetField("name")
+71: Pop
+72: PushValue(1)
+77: IncField("age")
+82: Pop
+83: PushValue(3)
+88: MulField("age")
+93: Pop
+94: GetField("age", 154)
+103: PushValue(100)
+108: Less
+109: FalseJump(124)
+114: Goto(147)
+
+119: Label(8)
+124: Pop
+125: Pop
+126: PushValue(100)
+131: SetField("age")
+136: Pop
+137: Goto(154)
+
+142: Label(6)
+147: Pop
+148: Pop
+
+149: Label(7)
+154: UnsetField("age")
+159: GetField("hello1", 184)
+168: SetField("hello2")
+173: Pop
+174: UnsetField("hello1")
+
+179: Label(9)
+184: UpdateCurrent
+185: Pop
+186: Goto(20)
+
+191: Label(0, "Compare")
+196: SaveStackPos
+197: GetField("_id", 49)
+206: PushValue(3)
+211: Greater
+212: FalseJump(37)
+217: Pop2(2)
+222: Goto(61)
 "#;
         assert_eq!(expect, actual);
     }

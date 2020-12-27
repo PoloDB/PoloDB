@@ -2,7 +2,7 @@ mod op;
 mod subprogram;
 mod codegen;
 mod optimization;
-mod annotation;
+mod label;
 
 pub(crate) use subprogram::SubProgram;
 
@@ -343,6 +343,10 @@ impl<'a> VM<'a> {
                     DbOp::Goto => {
                         let location = self.pc.add(1).cast::<u32>().read();
                         self.reset_location(location);
+                    }
+
+                    DbOp::Label => {
+                        self.pc = self.pc.add(5);
                     }
 
                     DbOp::IfTrue => {

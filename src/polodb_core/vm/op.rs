@@ -5,11 +5,17 @@
 pub enum DbOp {
     _EOF = 0,
 
+    // label
+    //
+    // 5 bytes
+    // op1. label id
+    Label = 1,
+
     // reset the pc to the position of op0
     //
     // 5 bytes
     // op1. location: 4 bytes
-    Goto = 1,
+    Goto,
 
     // if r0 is true, jump to location
     //
