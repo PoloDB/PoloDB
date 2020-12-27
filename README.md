@@ -1,7 +1,7 @@
 
 # PoloDB
 
-[![Build Status](https://travis-ci.org/vincentdchan/PoloDB.svg?branch=master)](https://travis-ci.org/vincentdchan/PoloDB)
+[![Build Status](https://travis-ci.com/vincentdchan/PoloDB.svg?branch=master)](https://travis-ci.com/vincentdchan/PoloDB)
 [![Crates.io](https://img.shields.io/crates/v/polodb_core.svg)](https://crates.io/crates/polodb_core)
 [![npm version](https://img.shields.io/npm/v/polodb.svg)](https://www.npmjs.com/package/polodb)
 [![PYPI version](https://img.shields.io/pypi/v/polodb.svg)](https://pypi.org/project/polodb/)
@@ -44,8 +44,8 @@ supports.
 But PoloDB is a personal project currently.
 Limited by my time, I have only compiled and tested on the following platforms:
 
-- macOS 10.15 x64
-- Linux x64 (Tested on Fedora 30)
+- macOS 10.16 Big Sur x64
+- Linux x64 (Tested on Fedora 32)
 - Windows 10 x64
 
 # Manual
