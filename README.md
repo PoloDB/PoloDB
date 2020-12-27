@@ -44,7 +44,7 @@ supports.
 But PoloDB is a personal project currently.
 Limited by my time, I have only compiled and tested on the following platforms:
 
-- macOS 10.16 Big Sur x64
+- macOS Big Sur x64
 - Linux x64 (Tested on Fedora 32)
 - Windows 10 x64
 
