@@ -330,10 +330,6 @@ mod tests {
         let mut test_collection = db.collection("test").unwrap();
         let all = test_collection.find( None).unwrap();
 
-        for doc in &all {
-            println!("object: {}", doc);
-        }
-
         assert_eq!(TEST_SIZE, all.len())
     }
 
@@ -435,10 +431,6 @@ mod tests {
         assert_eq!(TEST_SIZE, count as usize);
 
         let all = collection.find( None).unwrap();
-
-        for doc in &all {
-            println!("object: {}", doc);
-        }
 
         assert_eq!(TEST_SIZE, all.len())
     }

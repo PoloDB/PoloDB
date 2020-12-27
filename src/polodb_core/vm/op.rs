@@ -1,15 +1,21 @@
 
 #[repr(u8)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 #[allow(dead_code)]
 pub enum DbOp {
     _EOF = 0,
+
+    // label
+    //
+    // 5 bytes
+    // op1. label id
+    Label = 1,
 
     // reset the pc to the position of op0
     //
     // 5 bytes
     // op1. location: 4 bytes
-    Goto = 1,
+    Goto,
 
     // if r0 is true, jump to location
     //
@@ -22,18 +28,6 @@ pub enum DbOp {
     // 5 bytes
     // op1. location: 4 bytes
     IfFalse,
-
-    // if r0 is greater
-    //
-    // 5 bytes
-    // op1. location: 4 bytes
-    IfGreater,
-
-    // if r0 is less
-    //
-    // 5 bytes
-    // op1. location: 4 bytes
-    IfLess,
 
     // reset the cursor to the first element
     // if empty, jump to location
@@ -65,6 +59,16 @@ pub enum DbOp {
     // 5 bytes
     // op1. value_index: 4bytes
     PushValue,
+
+    // push r0 to the top of the stack
+    //
+    // 1 byte
+    PushR0,
+
+    // store the top of the stack to r0
+    //
+    // 1 byte
+    StoreR0,
 
     // get the field of top of the stack
     // push the value to the stack
@@ -115,6 +119,12 @@ pub enum DbOp {
     // op1. field_name_index: 4bytes
     SetField,
 
+    // get the size of array
+    // push to the top of the stack
+    //
+    // 1 byte
+    ArraySize,
+
     // update current item on cursor
     //
     // 1 byte
@@ -134,14 +144,10 @@ pub enum DbOp {
     // 0 false not equal
     // 1 for equal
     Equal,
-
-    // compare top 2 values on the stack
-    //
-    // REJECT when not comparable
-    // -1 for less
-    // 0 for equal
-    // 1 for great
-    Cmp,
+    Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
 
     // check if top0 is in top2
     // the result is stored in r0

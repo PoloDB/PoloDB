@@ -73,15 +73,14 @@ impl MetaDocEntry {
         (self.flags() & KEY_TY_FLAG) as u8
     }
 
-    pub(crate) fn check_pkey_ty(&self, doc: &Document, skipped: &mut bool) -> DbResult<()> {
+    pub(crate) fn check_pkey_ty(&self, primary_key: &Value, skipped: &mut bool) -> DbResult<()> {
         let expected = self.key_ty();
         if expected == 0 {
             *skipped = true;
             return Ok(())
         }
 
-        let pkey = &doc.pkey_id().unwrap();
-        let actual_ty = pkey.ty_int();
+        let actual_ty = primary_key.ty_int();
 
         if expected != actual_ty {
             return Err(DbErr::UnexpectedIdType(expected, actual_ty))

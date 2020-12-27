@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::collections::HashMap;
 use std::borrow::Borrow;
-use polodb_bson::{Document, Value};
+use polodb_bson::{Document, Value, mk_document, mk_array};
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::DbResult;
 use crate::error::{DbErr, mk_field_name_type_unexpected};
@@ -145,12 +145,10 @@ impl IndexEntry {
     }
 
     fn mk_index_entry_doc(data_value: &Value, primary_key: Value) -> Document {
-        let mut doc = Document::new_without_id();
-        doc.insert("_id".into(), data_value.clone());
-
-        doc.insert("pkey".into(), primary_key);
-
-        doc
+        mk_document! {
+            "_id": data_value.clone(),
+            "keys": mk_array! [ primary_key ],
+        }
     }
 
     fn remove_index(&self, data_value: &Value, page_handler: &mut PageHandler) -> DbResult<()> {

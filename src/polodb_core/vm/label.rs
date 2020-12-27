@@ -1,0 +1,62 @@
+
+#[derive(Copy, Clone)]
+pub(super) struct Label(u32);
+
+impl Label {
+
+    pub(super) fn new(pos: u32) -> Label {
+        Label(pos)
+    }
+
+    #[inline]
+    pub(super) fn pos(&self) -> u32 {
+        self.0
+    }
+
+    #[inline]
+    pub(super) fn u_pos(&self) -> usize {
+        self.0 as usize
+    }
+
+}
+
+pub(super) struct JumpTableRecord {
+    pub(super) begin_loc: u32,
+    pub(super) offset: u32,
+    pub(super) label_id: u32,
+}
+
+impl JumpTableRecord {
+
+    pub(super) fn new(begin_loc: u32, offset: u32, label_id: u32) -> JumpTableRecord {
+        JumpTableRecord {
+            begin_loc,
+            offset,
+            label_id,
+        }
+    }
+
+}
+
+pub(super) enum LabelSlot {
+    Empty,
+    UnnamedLabel(u32),
+    LabelWithString(u32, Box<str>),
+}
+
+impl LabelSlot {
+
+    pub(super) fn position(&self) -> u32 {
+        match self {
+            LabelSlot::Empty => unreachable!(),
+            LabelSlot::UnnamedLabel(pos) => *pos,
+            LabelSlot::LabelWithString(pos, _) => *pos,
+        }
+    }
+
+    #[inline]
+    pub(super) fn is_empty(&self) -> bool {
+        matches!(self, LabelSlot::Empty)
+    }
+
+}

@@ -1,20 +1,10 @@
-use polodb_bson::{Value, Document};
+use polodb_bson::{Value, Document, Array};
+use super::optimization::inverse_doc;
+use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
 use crate::{DbResult, DbErr};
 use crate::error::mk_field_name_type_unexpected;
-
-macro_rules! try_unwrap_document {
-    ($op_name:tt, $doc:expr) => {
-        match $doc {
-            Value::Document(doc) => doc,
-            t => {
-                let err = mk_field_name_type_unexpected($op_name, "Document".into(), t.ty_name());
-                return Err(err);
-            },
-        }
-    };
-}
 
 mod update_op {
     use polodb_bson::Value;
@@ -25,35 +15,32 @@ mod update_op {
     use crate::error::mk_field_name_type_unexpected;
 
     pub(super) fn update_op_min_max(codegen: &mut Codegen, doc: &Value, min: bool) -> DbResult<()> {
-        let doc = try_unwrap_document!("$min", doc);
+        let doc = crate::try_unwrap_document!("$min", doc);
 
         for (key, value) in doc.iter() {
+            let clean_label = codegen.new_label();
+            let next_element_label = codegen.new_label();
+            let set_field_label = codegen.new_label();
+
             let rc_str: Rc<str> = key.as_str().into();
             let key_id_1 = codegen.push_static(Value::String(rc_str.clone()));
             let key_id_2 = codegen.push_static(Value::String(rc_str));
             let value_id = codegen.push_static(value.clone());
 
-            let begin_loc = codegen.current_location();
-            codegen.emit_get_field(key_id_1, 0);  // stack +1
+            codegen.emit_goto2(DbOp::GetField, key_id_1, next_element_label);  // stack +1
 
             codegen.emit_push_value(value_id);  // stack +2
 
-            codegen.emit(DbOp::Cmp);
-
-            let jmp_loc = codegen.current_location();
             if min {
-                codegen.emit(DbOp::IfLess);
-                codegen.emit_u32(0);
+                codegen.emit(DbOp::Less);
             } else {
-                codegen.emit(DbOp::IfGreater);
-                codegen.emit_u32(0);
+                codegen.emit(DbOp::Greater);
             }
+            codegen.emit_goto(DbOp::IfFalse, set_field_label);
 
-            let goto_loc = codegen.current_location();
-            codegen.emit_goto(0);
+            codegen.emit_goto(DbOp::Goto, clean_label);
 
-            let loc = codegen.current_location();
-            codegen.update_next_location(jmp_loc as usize, loc);
+            codegen.emit_label(set_field_label);
 
             codegen.emit(DbOp::Pop);
             codegen.emit(DbOp::Pop);  // stack
@@ -65,18 +52,14 @@ mod update_op {
 
             codegen.emit(DbOp::Pop);
 
-            let goto_next_loc = codegen.current_location();
-            codegen.emit_goto(0);
+            codegen.emit_goto(DbOp::Goto, next_element_label);
 
-            let loc = codegen.current_location();
-            codegen.update_next_location(goto_loc as usize, loc);
+            codegen.emit_label(clean_label);
 
             codegen.emit(DbOp::Pop);
             codegen.emit(DbOp::Pop);
 
-            let loc = codegen.current_location();
-            codegen.update_next_location(goto_next_loc as usize, loc);
-            codegen.update_failed_location(begin_loc as usize, loc);
+            codegen.emit_label(next_element_label);
         }
 
         Ok(())
@@ -85,42 +68,84 @@ mod update_op {
 }
 
 pub(super) struct Codegen {
-    program: Box<SubProgram>,
+    program:               Box<SubProgram>,
+    jump_table:            Vec<JumpTableRecord>,
+    skip_annotation:       bool,
 }
 
 impl Codegen {
 
-    pub(super) fn new() -> Codegen {
+    pub(super) fn new(skip_annotation: bool) -> Codegen {
         Codegen {
-            program: Box::new(SubProgram::new())
+            program: Box::new(SubProgram::new()),
+            jump_table: vec![],
+            skip_annotation,
         }
     }
 
-    pub(super) fn take(self) -> SubProgram {
+    fn unify_labels(&mut self) {
+        for record in &self.jump_table {
+            let pos = (record.begin_loc + record.offset) as usize;
+            let slot = &self.program.label_slots[record.label_id as usize];
+            let target = slot.position();
+            let bytes: [u8; 4] = target.to_le_bytes();
+            self.program.instructions[pos..pos + 4].copy_from_slice(&bytes);
+        }
+    }
+
+    pub(super) fn take(mut self) -> SubProgram {
+        self.unify_labels();
         *self.program
+    }
+
+    pub(super) fn new_label(&mut self) -> Label {
+        let id = self.program.label_slots.len() as u32;
+        self.program.label_slots.push(LabelSlot::Empty);
+        Label::new(id)
+    }
+
+    pub(super) fn emit_label(&mut self, label: Label) {
+        if !self.program.label_slots[label.u_pos()].is_empty() {
+            unreachable!("this label has been emit");
+        }
+        self.emit(DbOp::Label);
+        self.emit_u32(label.pos());
+        let current_loc = self.current_location();
+        self.program.label_slots[label.u_pos()] = LabelSlot::UnnamedLabel(current_loc);
+    }
+
+    pub(super) fn emit_label_with_name<T: Into<Box<str>>>(&mut self, label: Label, name: T) {
+        if !self.program.label_slots[label.u_pos()].is_empty() {
+            unreachable!("this label has been emit");
+        }
+        self.emit(DbOp::Label);
+        self.emit_u32(label.pos());
+        let current_loc = self.current_location();
+        if self.skip_annotation {
+            self.program.label_slots[label.u_pos()] = LabelSlot::UnnamedLabel(current_loc);
+        } else {
+            self.program.label_slots[label.u_pos()] = LabelSlot::LabelWithString(current_loc, name.into());
+        }
     }
 
     fn emit_query_layout_has_pkey<F>(&mut self, pkey: Value, query: &Document, result_callback: F) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
+        let close_label = self.new_label();
+        let result_label = self.new_label();
 
         let pkey_id = self.push_static(pkey);
         self.emit_push_value(pkey_id);
 
-        let reset_location = self.current_location();
-        self.emit(DbOp::FindByPrimaryKey);
-        self.emit_u32(0);
+        self.emit_goto(DbOp::FindByPrimaryKey, close_label);
 
-        let goto_loc = self.current_location();
-        self.emit_goto(0);
+        self.emit_goto(DbOp::Goto, result_label);
 
-        let close_location = self.current_location();
+        self.emit_label(close_label);
         self.emit(DbOp::Pop);
         self.emit(DbOp::Close);
         self.emit(DbOp::Halt);
 
-        self.update_next_location(reset_location as usize, close_location);
-
-        let result_location = self.current_location();
+        self.emit_label(result_label);
         for (key, value) in query.iter() {
             if key == "_id" {
                 continue;
@@ -129,12 +154,12 @@ impl Codegen {
             let key_static_id = self.push_static(Value::String(key.as_str().into()));
             let value_static_id = self.push_static(value.clone());
 
-            self.emit_get_field(key_static_id, 0);  // push a value1
+            self.emit_goto2(DbOp::GetField, key_static_id, close_label); // push a value1
             self.emit_push_value(value_static_id);  // push a value2
 
             self.emit(DbOp::Equal);
             // if not equal，go to next
-            self.emit_false_jump(close_location);
+            self.emit_goto(DbOp::IfFalse, close_label);
 
             self.emit(DbOp::Pop); // pop a value2
             self.emit(DbOp::Pop); // pop a value1
@@ -142,9 +167,7 @@ impl Codegen {
 
         result_callback(self)?;
 
-        self.emit_goto(close_location);
-
-        self.update_next_location(goto_loc as usize, result_location);
+        self.emit_goto(DbOp::Goto, close_label);
 
         Ok(())
     }
@@ -158,66 +181,168 @@ impl Codegen {
             }
         }
 
-        let rewind_location = self.current_location();
-        self.emit(DbOp::Rewind);
-        self.emit_u32(0);
+        let compare_label = self.new_label();
+        let next_label = self.new_label();
+        let result_label = self.new_label();
+        let get_field_failed_label = self.new_label();
+        let not_found_label = self.new_label();
+        let close_label = self.new_label();
 
-        let goto_compare_loc = self.current_location();
-        self.emit_goto(0);
+        self.emit_goto(DbOp::Rewind, close_label);
 
-        let next_preserve_location = self.current_location();
-        self.emit_next(0);
+        self.emit_goto(DbOp::Goto, compare_label);
 
-        let close_location = self.current_location();
-        self.update_next_location(rewind_location as usize, close_location);
+        self.emit_label(next_label);
+        self.emit_goto(DbOp::Next, compare_label);
+
+        // <==== close cursor
+        self.emit_label_with_name(close_label, "Close");
 
         self.emit(DbOp::Close);
         self.emit(DbOp::Halt);
 
-        let not_found_branch_preserve_location = self.current_location();
+        // <==== not this item, go to next item
+        self.emit_label_with_name(not_found_label, "Not this item");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);  // pop the current value;
-        self.emit_goto(next_preserve_location);
+        self.emit_goto(DbOp::Goto, next_label);
 
-        let get_field_failed_location = self.current_location();
+        // <==== get field failed, got to next item
+        self.emit_label_with_name(get_field_failed_label, "Get field failed");
         self.emit(DbOp::RecoverStackPos);
         self.emit(DbOp::Pop);
-        self.emit_goto(next_preserve_location);
+        self.emit_goto(DbOp::Goto, next_label);
 
+        // <==== result position
+        // give out the result, or update the item
+        self.emit_label_with_name(result_label, "Result");
+        result_callback(self)?;
+        self.emit_goto(DbOp::Goto, next_label);
+
+        // <==== begin to compare the top of the stack
+        //
         // the top of the stack is the target document
         //
         // begin to execute compare logic
         // save the stack first
-        let compare_location: u32 = self.current_location();
+        self.emit_label_with_name(compare_label, "Compare");
         self.emit(DbOp::SaveStackPos);
 
-        for (key, value) in query.iter() {
-            self.emit_query_tuple(
-                key, value,
-                get_field_failed_location,
-                not_found_branch_preserve_location
-            )?;
-        }
+        self.emit_standard_query_doc(
+            query, result_label,get_field_failed_label, not_found_label)?;
 
-        self.update_next_location(next_preserve_location as usize, compare_location);
-        self.update_next_location(goto_compare_loc as usize, compare_location);
-
-        result_callback(self)?;
-
-        self.emit_goto(next_preserve_location);
+        self.emit_goto(DbOp::Goto, result_label);
 
         Ok(())
     }
 
-    fn emit_query_tuple(&mut self, key: &str, value: &Value, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
-        if key.chars().nth(0).unwrap() == '$' {
+    fn emit_standard_query_doc(&mut self,
+                               query_doc: &Document,
+                               result_label: Label,
+                               get_field_failed_label: Label,
+                               not_found_label: Label
+    ) -> DbResult<()> {
+        for (key, value) in query_doc.iter() {
+            self.emit_query_tuple(
+                key, value,
+                result_label,
+                get_field_failed_label,
+                not_found_label,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn emit_logic_and(&mut self,
+                      arr: &Array,
+                      result_label: Label, get_field_failed_label: Label, not_found_label: Label
+    ) -> DbResult<()> {
+        for item_doc_value in arr.iter() {
+            let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
+            self.emit_standard_query_doc(
+                item_doc,
+                result_label, get_field_failed_label, not_found_label
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn emit_logic_or(&mut self,
+                     arr: &Array,
+                     result_label: Label, global_get_field_failed_label: Label, not_found_label: Label
+    ) -> DbResult<()> {
+        for (index, item_doc_value) in arr.iter().enumerate() {
+            let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
+            if index == (arr.len() as usize) - 1 { // last item
+                for (key, value) in item_doc.iter() {
+                    self.emit_query_tuple(key, value, result_label, global_get_field_failed_label, not_found_label)?;
+                }
+            } else {
+                let go_next_label = self.new_label();
+                let local_get_field_failed_label = self.new_label();
+                let query_label = self.new_label();
+                self.emit_goto(DbOp::Goto, query_label);
+
+                self.emit_label(local_get_field_failed_label);
+                self.emit(DbOp::RecoverStackPos);
+                self.emit_goto(DbOp::Goto, go_next_label);
+
+                self.emit_label(query_label);
+                self.emit_standard_query_doc(
+                    item_doc,
+                    result_label,
+                    local_get_field_failed_label,
+                    local_get_field_failed_label
+                )?;
+                // pass, goto result
+                self.emit_goto(DbOp::Goto, result_label);
+                self.emit_label(go_next_label);
+            }
+        }
+
+        Ok(())
+    }
+
+    // case1: "$and" | "$or" -> [ Document ]
+    // case2: "$not" -> Document
+    // case3: "_id" -> Document
+    fn emit_query_tuple(&mut self,
+                        key: &str,
+                        value: &Value,
+                        result_label: Label,
+                        get_field_failed_label: Label,
+                        not_found_label: Label) -> DbResult<()> {
+        if key.chars().next().unwrap() == '$' {
             match key {
                 "$and" => {
-                    unimplemented!()
+                    let sub_arr = crate::try_unwrap_array!("$and", value);
+                    self.emit_logic_and(
+                        sub_arr.as_ref(),
+                        result_label,
+                        get_field_failed_label,
+                        not_found_label
+                    )?;
                 }
 
                 "$or" => {
-                    unimplemented!()
+                    let sub_arr = crate::try_unwrap_array!("$or", value);
+                    self.emit_logic_or(
+                        sub_arr.as_ref(),
+                        result_label,
+                        get_field_failed_label,
+                        not_found_label
+                    )?;
+                }
+
+                "$not" => {
+                    let sub_doc = crate::try_unwrap_document!("$not", value);
+                    let inverse_doc = inverse_doc(sub_doc)?;
+                    return self.emit_query_tuple_document(
+                        key, &inverse_doc,
+                        get_field_failed_label, not_found_label
+                    );
                 }
 
                 _ => {
@@ -229,7 +354,7 @@ impl Codegen {
                 Value::Document(doc) => {
                     return self.emit_query_tuple_document(
                         key, doc.as_ref(),
-                        get_field_failed_location, not_found_branch
+                        get_field_failed_label, not_found_label
                     );
                 }
 
@@ -239,14 +364,14 @@ impl Codegen {
 
                 _ => {
                     let key_static_id = self.push_static(key.into());
-                    self.emit_get_field(key_static_id, get_field_failed_location);  // push a value1
+                    self.emit_goto2(DbOp::GetField, key_static_id, get_field_failed_label);
 
                     let value_static_id = self.push_static(value.clone());
                     self.emit_push_value(value_static_id);  // push a value2
 
                     self.emit(DbOp::Equal);
                     // if not equal，go to next
-                    self.emit_false_jump(not_found_branch);
+                    self.emit_goto(DbOp::IfFalse, not_found_label);
 
                     self.emit(DbOp::Pop); // pop a value2
                     self.emit(DbOp::Pop); // pop a value1
@@ -256,58 +381,55 @@ impl Codegen {
         Ok(())
     }
 
-    fn recursively_get_field(&mut self, key: &str, get_field_failed_location: u32) -> usize {
+    fn recursively_get_field(&mut self, key: &str, get_field_failed_label: Label) -> usize {
         let slices: Vec<&str> = key.split('.').collect();
         for slice in &slices {
             let str_ref: &str = slice;
             let current_stat_id = self.push_static(str_ref.into());
-            self.emit_get_field(current_stat_id, get_field_failed_location);
+            self.emit_goto2(DbOp::GetField, current_stat_id, get_field_failed_label);
         }
         slices.len()
     }
 
     // very complex query document
-    fn emit_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_location: u32, not_found_branch: u32) -> DbResult<()> {
+    fn emit_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_label: Label, not_found_label: Label) -> DbResult<()> {
         for (sub_key, sub_value) in value.iter() {
             match sub_key.as_str() {
                 "$eq" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_label);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::Equal);
 
                     // if not equal，go to next
-                    self.emit_false_jump(not_found_branch);
+                    self.emit_goto(DbOp::IfFalse, not_found_label);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
                 }
 
                 "$gt" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_label);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Cmp);
+                    self.emit(DbOp::Greater);
 
-                    // equal, r0 == 0
-                    self.emit_false_jump(not_found_branch);
-                    // greater
-                    self.emit_greater_jump(not_found_branch);
+                    self.emit_goto(DbOp::IfFalse, not_found_label);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
                 }
 
                 "$gte" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_label);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Cmp);
+                    self.emit(DbOp::GreaterEqual);
 
-                    self.emit_greater_jump(not_found_branch);
+                    self.emit_goto(DbOp::IfFalse, not_found_label);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
@@ -322,57 +444,54 @@ impl Codegen {
                         }
                     }
 
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_label);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::In);
 
-                    self.emit_false_jump(not_found_branch);
+                    self.emit_goto(DbOp::IfFalse, not_found_label);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
                 }
 
                 "$lt" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_label);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Cmp);
+                    self.emit(DbOp::Less);
 
-                    // equal, r0 == 0
-                    self.emit_false_jump(not_found_branch);
-                    // less
-                    self.emit_less_jump(not_found_branch);
+                    self.emit_goto(DbOp::IfFalse, not_found_label);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
                 }
 
                 "$lte" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_label);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Cmp);
+                    self.emit(DbOp::LessEqual);
 
                     // less
-                    self.emit_less_jump(not_found_branch);
+                    self.emit_goto(DbOp::IfFalse, not_found_label);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
                 }
 
                 "$ne" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_label);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::Equal);
 
                     // if equal，go to next
-                    self.emit_true_jump(not_found_branch);
+                    self.emit_goto(DbOp::IfFalse, not_found_label);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
@@ -381,18 +500,36 @@ impl Codegen {
                 "$nin" => {
                     match sub_value {
                         Value::Array(_) => (),
-                        _ => {
-                            return Err(DbErr::NotAValidField(key.into()));
-                        }
+                        _ => return Err(DbErr::NotAValidField(key.into())),
                     }
 
-                    let field_size = self.recursively_get_field(key, get_field_failed_location);
+                    let field_size = self.recursively_get_field(key, get_field_failed_label);
 
                     let stat_val_id = self.push_static(sub_value.clone());
                     self.emit_push_value(stat_val_id);
                     self.emit(DbOp::In);
 
-                    self.emit_true_jump(not_found_branch);
+                    self.emit_goto(DbOp::IfTrue, not_found_label);
+
+                    self.emit(DbOp::Pop2);
+                    self.emit_u32((field_size + 1) as u32);
+                }
+
+                "$size" => {
+                    let expected_size = match sub_value {
+                        Value::Int(i) => *i,
+                        _ => return Err(DbErr::NotAValidField(key.into())),
+                    };
+
+                    let field_size = self.recursively_get_field(key, get_field_failed_label);
+                    self.emit(DbOp::ArraySize);
+
+                    let expect_size_stat_id = self.push_static(Value::from(expected_size));
+                    self.emit_push_value(expect_size_stat_id);
+
+                    self.emit(DbOp::Equal);
+
+                    self.emit_goto(DbOp::IfFalse, not_found_label);
 
                     self.emit(DbOp::Pop2);
                     self.emit_u32((field_size + 1) as u32);
@@ -410,13 +547,13 @@ impl Codegen {
         for (key, value) in update.iter() {
             match key.as_str() {
                 "$inc" => {
-                    let doc = try_unwrap_document!("$inc", value);
+                    let doc = crate::try_unwrap_document!("$inc", value);
 
                     self.iterate_add_op(DbOp::IncField, doc.as_ref())?;
                 }
 
                 "$set" => {
-                    let doc = try_unwrap_document!("$set", value);
+                    let doc = crate::try_unwrap_document!("$set", value);
 
                     self.iterate_add_op(DbOp::SetField, doc.as_ref())?;
                 }
@@ -430,13 +567,13 @@ impl Codegen {
                 }
 
                 "$mul" => {
-                    let doc = try_unwrap_document!("$mul", value);
+                    let doc = crate::try_unwrap_document!("$mul", value);
 
                     self.iterate_add_op(DbOp::MulField, doc.as_ref())?;
                 }
 
                 "$rename" => {
-                    let doc = try_unwrap_document!("$set", value);
+                    let doc = crate::try_unwrap_document!("$set", value);
 
                     for (key, value) in doc.iter() {
                         let new_name = match value {
@@ -452,7 +589,7 @@ impl Codegen {
                 }
 
                 "$unset" => {
-                    let doc = try_unwrap_document!("$unset", value);
+                    let doc = crate::try_unwrap_document!("$unset", value);
 
                     for (key, _) in doc.iter() {
                         self.emit_unset_field(key.as_str());
@@ -523,53 +660,17 @@ impl Codegen {
         pos
     }
 
-    pub(super) fn emit_get_field(&mut self, static_id: u32, failed_location: u32) {
-        self.emit(DbOp::GetField);
-        let bytes = static_id.to_le_bytes();
-        self.program.instructions.extend_from_slice(&bytes);
-        let bytes = failed_location.to_le_bytes();
-        self.program.instructions.extend_from_slice(&bytes);
-    }
-
     pub(super) fn emit_push_value(&mut self, static_id: u32) {
         self.emit(DbOp::PushValue);
         let bytes = static_id.to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);
     }
 
-    #[inline]
-    pub(super) fn emit_false_jump(&mut self, location: u32) {
-        self.emit(DbOp::IfFalse);
-        let bytes = location.to_le_bytes();
-        self.program.instructions.extend_from_slice(&bytes);
-    }
-
-    #[inline]
-    pub(super) fn emit_true_jump(&mut self, location: u32) {
-        self.emit(DbOp::IfTrue);
-        let bytes = location.to_le_bytes();
-        self.program.instructions.extend_from_slice(&bytes);
-    }
-
-    #[inline]
-    pub(super) fn emit_less_jump(&mut self, location: u32) {
-        self.emit(DbOp::IfLess);
-        let bytes = location.to_le_bytes();
-        self.program.instructions.extend_from_slice(&bytes);
-    }
-
-    #[inline]
-    pub(super) fn emit_greater_jump(&mut self, location: u32) {
-        self.emit(DbOp::IfGreater);
-        let bytes = location.to_le_bytes();
-        self.program.instructions.extend_from_slice(&bytes);
-    }
-
     pub(super) fn emit_rename_field(&mut self, old_name: &str, new_name: &str) {
+        let get_field_failed_label = self.new_label();
         let old_name_id = self.push_static(Value::String(old_name.into()));
         let new_name_id = self.push_static(Value::String(new_name.into()));
-        let field_location = self.current_location();
-        self.emit_get_field(old_name_id, 0);
+        self.emit_goto2(DbOp::GetField, old_name_id, get_field_failed_label);
 
         self.emit(DbOp::SetField);
         self.emit_u32(new_name_id);
@@ -579,8 +680,7 @@ impl Codegen {
         self.emit(DbOp::UnsetField);
         self.emit_u32(old_name_id);
 
-        let current_loc = self.current_location();
-        self.update_failed_location(field_location as usize, current_loc);
+        self.emit_label(get_field_failed_label);
     }
 
     pub(super) fn emit_unset_field(&mut self, name: &str) {
@@ -589,28 +689,40 @@ impl Codegen {
         self.emit_u32(value_id);
     }
 
-    #[inline]
-    pub(super) fn update_next_location(&mut self, pos: usize, location: u32) {
-        let loc_be = location.to_le_bytes();
-        self.program.instructions[pos + 1..pos + 5].copy_from_slice(&loc_be);
-    }
-
-    #[inline]
-    pub(super) fn update_failed_location(&mut self, pos: usize, location: u32) {
-        let loc_be = location.to_le_bytes();
-        self.program.instructions[pos + 5..pos + 9].copy_from_slice(&loc_be);
-    }
-
-    pub(super) fn emit_goto(&mut self, location: u32) {
-        self.emit(DbOp::Goto);
-        let bytes = location.to_le_bytes();
+    pub(super) fn emit_goto(&mut self, op: DbOp, label: Label) {
+        let record_loc = self.current_location();
+        self.emit(op);
+        let slot = &self.program.label_slots[label.u_pos()];
+        if !slot.is_empty() {
+            let loc = slot.position();
+            let bytes = loc.to_le_bytes();
+            self.program.instructions.extend_from_slice(&bytes);
+            return;
+        }
+        let bytes: [u8; 4] = (-1 as i32).to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);
+        self.jump_table.push(
+            JumpTableRecord::new(record_loc, 1, label.pos())
+        );
     }
 
-    pub(super) fn emit_next(&mut self, location: u32) {
-        self.emit(DbOp::Next);
-        let bytes = location.to_le_bytes();
+    pub(super) fn emit_goto2(&mut self, op: DbOp, op1: u32, label: Label) {
+        let record_loc = self.current_location();
+        self.emit(op);
+        let bytes: [u8; 4] = op1.to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);
+        let slot = &self.program.label_slots[label.u_pos()];
+        if !slot.is_empty() {
+            let loc = slot.position();
+            let bytes: [u8; 4] = loc.to_le_bytes();
+            self.program.instructions.extend_from_slice(&bytes);
+            return;
+        }
+        let bytes2: [u8; 4] = (-1 as i32).to_le_bytes();
+        self.program.instructions.extend_from_slice(&bytes2);
+        self.jump_table.push(
+            JumpTableRecord::new(record_loc, 5, label.pos())
+        );
     }
 
 }

@@ -11,8 +11,8 @@ use std::cell::Cell;
 use libc::rand;
 use frame_header::FrameHeader;
 use transaction::TransactionState;
+use crc64fast::Digest;
 use crate::page::RawPage;
-use crate::crc64::crc64;
 use crate::DbResult;
 use crate::error::DbErr;
 use crate::dump::{JournalDump, JournalFrameDump};
@@ -54,6 +54,12 @@ fn generate_a_salt() -> u32 {
     unsafe {
         rand() as u32
     }
+}
+
+fn crc64(bytes: &[u8]) -> u64 {
+    let mut c = Digest::new();
+    c.write(bytes);
+    c.sum64()
 }
 
 impl JournalManager {
@@ -123,7 +129,7 @@ impl JournalManager {
         self.journal_file.seek(SeekFrom::Start(0))?;
         self.journal_file.write_all(&header48)?;
 
-        let checksum = crc64(0, &header48);
+        let checksum = crc64(&header48);
         let checksum_be = checksum.to_be_bytes();
 
         self.journal_file.seek(SeekFrom::Start(48))?;
@@ -136,7 +142,7 @@ impl JournalManager {
         let mut header48: Vec<u8> = vec![0; 48];
         self.journal_file.read_exact(&mut header48)?;
 
-        let checksum = crc64(0, &header48);
+        let checksum = crc64(&header48);
         let checksum_from_file = self.read_checksum_from_file()?;
         if checksum != checksum_from_file {
             return Err(DbErr::ChecksumMismatch);
@@ -252,13 +258,13 @@ impl JournalManager {
             u64::from_be_bytes(buffer)
         };
 
-        let actual_header_checksum = crc64(0, &bytes[0..24]);
+        let actual_header_checksum = crc64(&bytes[0..24]);
 
         if actual_header_checksum != checksum1 {
             return Err(DbErr::ChecksumMismatch);
         }
 
-        let actual_page_checksum = crc64(0, &bytes[(FRAME_HEADER_SIZE as usize)..]);
+        let actual_page_checksum = crc64(&bytes[(FRAME_HEADER_SIZE as usize)..]);
 
         if actual_page_checksum != checksum2 {
             return Err(DbErr::ChecksumMismatch);
@@ -321,7 +327,7 @@ impl JournalManager {
         self.journal_file.write_all(&header24)?;
 
         // update header checksum
-        let checksum1 = crc64(0, &header24);
+        let checksum1 = crc64(&header24);
         let checksum1_be = checksum1.to_be_bytes();
         self.journal_file.write_all(&checksum1_be)?;
 
@@ -339,7 +345,7 @@ impl JournalManager {
 
         self.journal_file.write_all(&header24)?;
 
-        let checksum1 = crc64(0, &header24);
+        let checksum1 = crc64(&header24);
         let checksum1_be = checksum1.to_be_bytes();
         self.journal_file.write_all(&checksum1_be)?;
 
@@ -365,7 +371,7 @@ impl JournalManager {
         };
 
         // calculate checksum of page data
-        let checksum2 = crc64(0, &raw_page.data);
+        let checksum2 = crc64(&raw_page.data);
 
         self.append_frame_header(&frame_header, checksum2)?;
 
