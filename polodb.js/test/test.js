@@ -208,7 +208,7 @@ describe('create collection with same name', function() {
 
 });
 
-describe('logic $or', function() {
+describe('logic $or and $and', function() {
 
   let db;
   this.beforeAll(function() {
@@ -248,7 +248,7 @@ describe('logic $or', function() {
     }
   ]
 
-  it('test', function() {
+  it('test $or', function() {
     const collection = db.createCollection('test');
     for (const item of suite) {
       collection.insert(item);
@@ -266,6 +266,24 @@ describe('logic $or', function() {
     });
 
     expect(twoItems.length).to.equals(2);
+  })
+
+  it('test $and', function () {
+    const collection = db.collection('test');
+    const items = collection.find({
+      $and: [
+        {
+          name: 'test2',
+        },
+        {
+          age: 11,
+        },
+      ]
+    });
+
+    expect(items.length).to.equals(1);
+    expect(items[0].name).to.equals('test2');
+    expect(items[0].age).to.equals(11);
   })
 
 });
