@@ -79,12 +79,23 @@ impl<'a>  Collection<'a> {
         }
     }
 
-    /// When query is `None`, all the data in the collection return.
-    ///
+    /// all the data in the collection return.
+    pub fn find_all(&mut self) -> DbResult<Vec<Rc<Document>>> {
+        let mut handle = self.db.ctx.find(self.id, self.meta_version, None)?;
+
+        let mut result = Vec::new();
+
+        consume_handle_to_vec(&mut handle, &mut result)?;
+
+        Ok(result)
+    }
+
     /// When query document is passed to the function. The result satisfies
     /// the query document.
-    pub fn find(&mut self, query: Option<&Document>) -> DbResult<Vec<Rc<Document>>> {
-        let mut handle = self.db.ctx.find(self.id, self.meta_version, query)?;
+    pub fn find(&mut self, query: &Document) -> DbResult<Vec<Rc<Document>>> {
+        let mut handle = self.db.ctx.find(
+            self.id, self.meta_version, Some(query)
+        )?;
 
         let mut result = Vec::new();
 
@@ -282,7 +293,6 @@ mod tests {
     use std::env;
     use polodb_bson::{Document, Value, mk_document};
     use crate::{Database, Config};
-    use std::borrow::Borrow;
 
     static TEST_SIZE: usize = 1000;
 
@@ -328,7 +338,7 @@ mod tests {
         let mut db = create_and_return_db_with_items("test-collection", TEST_SIZE);
 
         let mut test_collection = db.collection("test").unwrap();
-        let all = test_collection.find( None).unwrap();
+        let all = test_collection.find_all( ).unwrap();
 
         assert_eq!(TEST_SIZE, all.len())
     }
@@ -430,7 +440,7 @@ mod tests {
         let count = collection.count().unwrap();
         assert_eq!(TEST_SIZE, count as usize);
 
-        let all = collection.find( None).unwrap();
+        let all = collection.find_all( ).unwrap();
 
         assert_eq!(TEST_SIZE, all.len())
     }
@@ -441,9 +451,9 @@ mod tests {
         let mut collection = db.collection("test").unwrap();
 
         let result = collection.find(
-            Some(mk_document! {
+            &mk_document! {
                 "content": "3",
-            }.borrow())
+            }
         ).unwrap();
 
         assert_eq!(result.len(), 1);
@@ -457,15 +467,15 @@ mod tests {
         let mut db = create_and_return_db_with_items("test-find-pkey", 10);
         let mut collection = db.collection("test").unwrap();
 
-        let all = collection.find(None).unwrap();
+        let all = collection.find_all().unwrap();
 
         assert_eq!(all.len(), 10);
 
         let first_key = &all[0].pkey_id().unwrap();
 
-        let result = collection.find(Some(mk_document! {
+        let result = collection.find(&mk_document! {
             "_id": first_key.clone(),
-        }.borrow())).unwrap();
+        }).unwrap();
 
         assert_eq!(result.len(), 1);
     }
@@ -593,7 +603,7 @@ mod tests {
             let find_doc = mk_document! {
                 "_id": key.clone(),
             };
-            let result = collection.find(Some(&find_doc)).unwrap();
+            let result = collection.find(&find_doc).unwrap();
             assert_eq!(result.len(), 0, "item with key: {}", key);
         }
     }
