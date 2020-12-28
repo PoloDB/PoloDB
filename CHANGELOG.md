@@ -1,4 +1,9 @@
 
+#0.8.0
+
+- feat(core): add find_all() API
+- feat(core): add find_one() API
+
 #0.7.0
 
 - feat(core): logic `$or` and `$not`

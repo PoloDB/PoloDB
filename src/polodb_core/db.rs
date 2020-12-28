@@ -104,6 +104,21 @@ impl<'a>  Collection<'a> {
         Ok(result)
     }
 
+    /// Return the first element in the collection satisfies the query.
+    pub fn find_one(&mut self, query: &Document) -> DbResult<Option<Rc<Document>>> {
+        let mut handle = self.db.ctx.find(
+            self.id, self.meta_version, Some(query)
+        )?;
+        handle.step()?;
+
+        if !handle.has_row() {
+            return Ok(None);
+        }
+
+        let result = handle.get().unwrap_document();
+        Ok(Some(result.clone()))
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -339,6 +354,12 @@ mod tests {
 
         let mut test_collection = db.collection("test").unwrap();
         let all = test_collection.find_all( ).unwrap();
+
+        let second = test_collection.find_one(&mk_document! {
+            "content": "1",
+        }).unwrap().unwrap();
+        assert_eq!(second.get("content").unwrap().unwrap_string(), "1");
+        assert!(second.get("content").is_some());
 
         assert_eq!(TEST_SIZE, all.len())
     }
