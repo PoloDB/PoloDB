@@ -90,6 +90,8 @@ void PLDB_handle_get(DbHandle* handle, DbValue** out_val);
 
 int PLDB_handle_to_str(DbHandle* handle, char* buffer, unsigned int buffer_size);
 
+void PLDB_close_and_free_handle(DbHandle* handle);
+
 void PLDB_free_handle(DbHandle* handle);
 // }
 

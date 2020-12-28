@@ -320,6 +320,14 @@ pub unsafe extern "C" fn PLDB_handle_get(handle: *mut DbHandle, out_val: *mut *m
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn PLDB_close_and_free_handle(handle: *mut DbHandle) {
+    let handle = Box::from_raw(handle);
+    if let Err(err) = handle.commit_and_close_vm() {
+        set_global_error(err);
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn PLDB_free_handle(handle: *mut DbHandle) {
     let _ptr = Box::from_raw(handle);
 }

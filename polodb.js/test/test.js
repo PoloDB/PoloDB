@@ -132,6 +132,17 @@ describe('Database', function() {
       }
     });
 
+    it('findOne()', function() {
+      const col2 = db.collection('test-2');
+      const one = col2.findOne({
+        _id: 1,
+      });
+
+      // expect(typeof one).to.equals('object');
+      // expect(one._id).to.equals(1);
+      console.log('finished');
+    });
+
     it('delete', function() {
       const col2 = db.collection('test-2');
       for (let i = 0; i < TEST_COUNT; i++) {

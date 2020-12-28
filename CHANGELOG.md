@@ -3,6 +3,7 @@
 
 - feat(core): add find_all() API
 - feat(core): add find_one() API
+- feat(js): add findOne() API
 
 #0.7.0
 
