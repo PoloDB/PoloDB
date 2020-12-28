@@ -293,7 +293,7 @@ pub unsafe extern "C" fn PLDB_handle_to_str(handle: *mut DbHandle, buffer: *mut 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_handle_step(handle: *mut DbHandle) -> c_int {
+pub unsafe extern "C" fn PLDB_step(handle: *mut DbHandle) -> c_int {
     let rust_handle = handle.as_mut().unwrap();
     let result = rust_handle.step();
 

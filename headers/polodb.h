@@ -82,7 +82,7 @@ void PLDB_close(Database* db);
 // }
 
 // DbHandle {
-int PLDB_handle_step(DbHandle* handle);
+int PLDB_step(DbHandle* handle);
 
 int PLDB_handle_state(DbHandle* handle);
 

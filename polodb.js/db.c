@@ -871,7 +871,7 @@ static napi_value Collection_find(napi_env env, napi_callback_info info) {
   napi_value result;
   status = napi_create_array(env, &result);
 
-  ec = PLDB_handle_step(handle);
+  ec = PLDB_step(handle);
   if (ec < 0) {
     napi_throw_error(env, NULL, PLDB_error_msg());
     return NULL;
@@ -898,7 +898,7 @@ static napi_value Collection_find(napi_env env, napi_callback_info info) {
     PLDB_free_value(item);
     counter++;
 
-    ec = PLDB_handle_step(handle);
+    ec = PLDB_step(handle);
     if (ec < 0) {
       napi_throw_error(env, NULL, PLDB_error_msg());
       goto err;
@@ -966,7 +966,7 @@ static napi_value Collection_find_one(napi_env env, napi_callback_info info) {
 
   napi_value result;
 
-  ec = PLDB_handle_step(handle);
+  ec = PLDB_step(handle);
   if (ec < 0) {
     napi_throw_error(env, NULL, PLDB_error_msg());
     return NULL;
