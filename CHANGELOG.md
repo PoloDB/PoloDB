@@ -8,6 +8,7 @@
 
 - feat(core): logic `$or` and `$not`
 - feat(core): array operation `$size`
+- core: use crc64fast
 
 #0.6.0
 
