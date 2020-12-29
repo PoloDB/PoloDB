@@ -39,6 +39,10 @@ enum PLDB_VALUE_TYPE {
   PLDB_VAL_UTC_DATETIME = 0x09,
 };
 
+enum PLDB_ERR_TYPE {
+  PLDB_ERR_COLLECTION_NOT_FOUND = -24,
+};
+
 // Database {
 Database* PLDB_open(const char* path);
 
@@ -78,13 +82,15 @@ void PLDB_close(Database* db);
 // }
 
 // DbHandle {
-int PLDB_handle_step(DbHandle* handle);
+int PLDB_step(DbHandle* handle);
 
 int PLDB_handle_state(DbHandle* handle);
 
 void PLDB_handle_get(DbHandle* handle, DbValue** out_val);
 
 int PLDB_handle_to_str(DbHandle* handle, char* buffer, unsigned int buffer_size);
+
+void PLDB_close_and_free_handle(DbHandle* handle);
 
 void PLDB_free_handle(DbHandle* handle);
 // }
