@@ -1,7 +1,6 @@
 mod op;
 mod subprogram;
 mod codegen;
-mod optimization;
 mod label;
 
 pub(crate) use subprogram::SubProgram;

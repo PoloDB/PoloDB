@@ -930,7 +930,7 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::VmIsHalt => 39,
         DbErr::MetaVersionMismatched(_, _) => 40,
         DbErr::Busy => 41,
-        DbErr::NotAValidField(_) => 42,
+        DbErr::InvalidField(_) => 42,
         DbErr::CollectionAlreadyExits(_) => 43,
         DbErr::UnableToUpdatePrimaryKey => 44,
 
