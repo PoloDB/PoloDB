@@ -293,7 +293,7 @@ pub unsafe extern "C" fn PLDB_handle_to_str(handle: *mut DbHandle, buffer: *mut 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_handle_step(handle: *mut DbHandle) -> c_int {
+pub unsafe extern "C" fn PLDB_step(handle: *mut DbHandle) -> c_int {
     let rust_handle = handle.as_mut().unwrap();
     let result = rust_handle.step();
 
@@ -317,6 +317,14 @@ pub unsafe extern "C" fn PLDB_handle_get(handle: *mut DbHandle, out_val: *mut *m
     let boxed_handle = Box::new(rust_handle.get().clone());
     let handle_ptr = Box::into_raw(boxed_handle);
     out_val.write(handle_ptr);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_close_and_free_handle(handle: *mut DbHandle) {
+    let handle = Box::from_raw(handle);
+    if let Err(err) = handle.commit_and_close_vm() {
+        set_global_error(err);
+    }
 }
 
 #[no_mangle]
@@ -922,7 +930,7 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::VmIsHalt => 39,
         DbErr::MetaVersionMismatched(_, _) => 40,
         DbErr::Busy => 41,
-        DbErr::NotAValidField(_) => 42,
+        DbErr::InvalidField(_) => 42,
         DbErr::CollectionAlreadyExits(_) => 43,
         DbErr::UnableToUpdatePrimaryKey => 44,
 

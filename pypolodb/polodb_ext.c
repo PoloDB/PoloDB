@@ -14,6 +14,8 @@
 
 #define DB_HANDLE_STATE_HAS_ROW 2
 
+#define countof(x) (sizeof(x) / sizeof((x)[0]))
+
 #define POLO_CALL(EXPR) \
   ec = (EXPR); \
   if (ec < 0) { \
@@ -348,7 +350,6 @@ static PyObject* CollectionObject_insert(CollectionObject* self, PyObject* args)
   Py_RETURN_NONE;
 }
 
-
 static PyObject* CollectionObject_find(CollectionObject* self, PyObject* args) {
   CHECK_DB_OPEND(self->db_obj);
 
@@ -381,7 +382,7 @@ static PyObject* CollectionObject_find(CollectionObject* self, PyObject* args) {
 
   result = PyList_New(0);
 
-  ec = PLDB_handle_step(handle);
+  ec = PLDB_step(handle);
   if (ec < 0) {
     PyErr_SetString(PyExc_Exception, PLDB_error_msg());
     goto handle_err;
@@ -405,11 +406,72 @@ static PyObject* CollectionObject_find(CollectionObject* self, PyObject* args) {
     PLDB_free_value(val);
     Py_DECREF(tmp_obj);
 
-    ec = PLDB_handle_step(handle);
+    ec = PLDB_step(handle);
     if (ec < 0) {
       PyErr_SetString(PyExc_Exception, PLDB_error_msg());
       goto handle_err;
     }
+  }
+
+  goto handle_success;
+handle_err:
+  PLDB_free_handle(handle);
+  Py_DECREF(result);
+  PLDB_free_doc(doc);
+  return NULL;
+
+handle_success:
+  PLDB_free_doc(doc);
+  return result;
+}
+
+static PyObject* CollectionObject_find_one(CollectionObject* self, PyObject* args) {
+  CHECK_DB_OPEND(self->db_obj);
+
+  PyObject* dict_obj;
+  if (!PyArg_ParseTuple(args, "O", &dict_obj)) {
+    return NULL;
+  }
+
+  DbDocument* doc;
+
+  if (dict_obj == Py_None) {
+    doc = NULL;
+  } else if (Py_TYPE(dict_obj) == &PyDict_Type) {
+    doc = PyDictToDbDocument(dict_obj);
+  } else {
+    PyErr_SetString(PyExc_ValueError, "the second argument should be a dict");
+    return NULL;
+  }
+
+  DbHandle* handle = NULL;
+  int ec = 0;
+
+  PyObject* result = NULL;
+
+  ec = PLDB_find(self->db_obj->db, self->id, self->meta_version, doc, &handle);
+  if (ec < 0) {
+    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+    goto handle_err;
+  }
+
+  ec = PLDB_step(handle);
+  if (ec < 0) {
+    PyErr_SetString(PyExc_Exception, PLDB_error_msg());
+    goto handle_err;
+  }
+
+  if (PLDB_handle_state(handle) == DB_HANDLE_STATE_HAS_ROW) {
+    DbValue* val = NULL;
+
+    PLDB_handle_get(handle, &val);
+
+    result = DbValueToPyObject(val);
+    assert(result != NULL);
+
+    PLDB_free_value(val);
+  } else {
+    result = Py_None;
   }
 
   goto handle_success;
@@ -550,6 +612,10 @@ static PyMethodDef CollectionObject_methods[] = {
   {
     "find", (PyCFunction)CollectionObject_find, METH_VARARGS,
     "find documents"
+  },
+  {
+    "findOne", (PyCFunction)CollectionObject_find_one, METH_VARARGS,
+    "find a document"
   },
   {
     "count", (PyCFunction)CollectionObject_count, METH_NOARGS,

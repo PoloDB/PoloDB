@@ -1,10 +1,12 @@
 use polodb_bson::{Value, Document, Array};
-use super::optimization::inverse_doc;
 use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
 use crate::{DbResult, DbErr};
-use crate::error::mk_field_name_type_unexpected;
+use crate::error::{mk_field_name_type_unexpected, mk_invalid_query_field};
+
+const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
+const PATH_DEFAULT_SIZE: usize = 8;
 
 mod update_op {
     use polodb_bson::Value;
@@ -71,6 +73,15 @@ pub(super) struct Codegen {
     program:               Box<SubProgram>,
     jump_table:            Vec<JumpTableRecord>,
     skip_annotation:       bool,
+    paths:                 Vec<String>,
+}
+
+macro_rules! path_hint {
+    ($self:tt, $key: expr, $content:block) => {
+        $self.paths.push($key.into());
+        $content;
+        $self.paths.pop();
+    }
 }
 
 impl Codegen {
@@ -78,8 +89,9 @@ impl Codegen {
     pub(super) fn new(skip_annotation: bool) -> Codegen {
         Codegen {
             program: Box::new(SubProgram::new()),
-            jump_table: vec![],
+            jump_table: Vec::with_capacity(JUMP_TABLE_DEFAULT_SIZE),
             skip_annotation,
+            paths: Vec::with_capacity(PATH_DEFAULT_SIZE),
         }
     }
 
@@ -243,27 +255,48 @@ impl Codegen {
                                not_found_label: Label
     ) -> DbResult<()> {
         for (key, value) in query_doc.iter() {
-            self.emit_query_tuple(
-                key, value,
-                result_label,
-                get_field_failed_label,
-                not_found_label,
-            )?;
+            path_hint!(self, key.as_str(), {
+                self.emit_query_tuple(
+                    key, value,
+                    result_label,
+                    get_field_failed_label,
+                    not_found_label,
+                )?;
+            });
         }
 
         Ok(())
+    }
+
+    fn gen_path(&self) -> String {
+        let mut result = String::with_capacity(32);
+
+        for item in &self.paths {
+            result.push('/');
+            result.push_str(item.as_ref());
+        }
+
+        result
+    }
+
+    #[inline]
+    fn last_key(&self) -> &str {
+        self.paths.last().unwrap().as_str()
     }
 
     fn emit_logic_and(&mut self,
                       arr: &Array,
                       result_label: Label, get_field_failed_label: Label, not_found_label: Label
     ) -> DbResult<()> {
-        for item_doc_value in arr.iter() {
-            let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
-            self.emit_standard_query_doc(
-                item_doc,
-                result_label, get_field_failed_label, not_found_label
-            )?;
+        for (index, item_doc_value) in arr.iter().enumerate() {
+            let path_msg = format!("[{}]", index);
+            path_hint!(self, path_msg.as_str(), {
+                let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
+                self.emit_standard_query_doc(
+                    item_doc,
+                    result_label, get_field_failed_label, not_found_label
+                )?;
+            });
         }
 
         Ok(())
@@ -274,32 +307,35 @@ impl Codegen {
                      result_label: Label, global_get_field_failed_label: Label, not_found_label: Label
     ) -> DbResult<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
-            let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
-            if index == (arr.len() as usize) - 1 { // last item
-                for (key, value) in item_doc.iter() {
-                    self.emit_query_tuple(key, value, result_label, global_get_field_failed_label, not_found_label)?;
+            let path_msg = format!("[{}]", index);
+            path_hint!(self, path_msg.as_str(), {
+                let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
+                if index == (arr.len() as usize) - 1 { // last item
+                    for (key, value) in item_doc.iter() {
+                        self.emit_query_tuple(key, value, result_label, global_get_field_failed_label, not_found_label)?;
+                    }
+                } else {
+                    let go_next_label = self.new_label();
+                    let local_get_field_failed_label = self.new_label();
+                    let query_label = self.new_label();
+                    self.emit_goto(DbOp::Goto, query_label);
+
+                    self.emit_label(local_get_field_failed_label);
+                    self.emit(DbOp::RecoverStackPos);
+                    self.emit_goto(DbOp::Goto, go_next_label);
+
+                    self.emit_label(query_label);
+                    self.emit_standard_query_doc(
+                        item_doc,
+                        result_label,
+                        local_get_field_failed_label,
+                        local_get_field_failed_label
+                    )?;
+                    // pass, goto result
+                    self.emit_goto(DbOp::Goto, result_label);
+                    self.emit_label(go_next_label);
                 }
-            } else {
-                let go_next_label = self.new_label();
-                let local_get_field_failed_label = self.new_label();
-                let query_label = self.new_label();
-                self.emit_goto(DbOp::Goto, query_label);
-
-                self.emit_label(local_get_field_failed_label);
-                self.emit(DbOp::RecoverStackPos);
-                self.emit_goto(DbOp::Goto, go_next_label);
-
-                self.emit_label(query_label);
-                self.emit_standard_query_doc(
-                    item_doc,
-                    result_label,
-                    local_get_field_failed_label,
-                    local_get_field_failed_label
-                )?;
-                // pass, goto result
-                self.emit_goto(DbOp::Goto, result_label);
-                self.emit_label(go_next_label);
-            }
+            });
         }
 
         Ok(())
@@ -338,16 +374,15 @@ impl Codegen {
 
                 "$not" => {
                     let sub_doc = crate::try_unwrap_document!("$not", value);
-                    let inverse_doc = inverse_doc(sub_doc)?;
+                    // swap label
+                    let (get_field_failed_label, not_found_label) = (not_found_label, get_field_failed_label);
                     return self.emit_query_tuple_document(
-                        key, &inverse_doc,
+                        key, &sub_doc,
                         get_field_failed_label, not_found_label
                     );
                 }
 
-                _ => {
-                    return Err(DbErr::NotAValidField(key.into()));
-                }
+                _ => return Err(DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))),
             }
         } else {
             match value {
@@ -358,9 +393,8 @@ impl Codegen {
                     );
                 }
 
-                Value::Array(_) => {
-                    return Err(DbErr::NotAValidField(key.into()));
-                }
+                Value::Array(_) => return
+                    Err(DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))),
 
                 _ => {
                     let key_static_id = self.push_static(key.into());
@@ -391,154 +425,166 @@ impl Codegen {
         slices.len()
     }
 
+    fn emit_query_tuple_document_kv(&mut self, key: &str, get_field_failed_label: Label, not_found_label: Label, sub_key: &str, sub_value: &Value) -> DbResult<()> {
+        match sub_key {
+            "$eq" => {
+                let field_size = self.recursively_get_field(key, get_field_failed_label);
+
+                let stat_val_id = self.push_static(sub_value.clone());
+                self.emit_push_value(stat_val_id);
+                self.emit(DbOp::Equal);
+
+                // if not equal，go to next
+                self.emit_goto(DbOp::IfFalse, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
+
+            "$gt" => {
+                let field_size = self.recursively_get_field(key, get_field_failed_label);
+
+                let stat_val_id = self.push_static(sub_value.clone());
+                self.emit_push_value(stat_val_id);
+                self.emit(DbOp::Greater);
+
+                self.emit_goto(DbOp::IfFalse, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
+
+            "$gte" => {
+                let field_size = self.recursively_get_field(key, get_field_failed_label);
+
+                let stat_val_id = self.push_static(sub_value.clone());
+                self.emit_push_value(stat_val_id);
+                self.emit(DbOp::GreaterEqual);
+
+                self.emit_goto(DbOp::IfFalse, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
+
+            // check the value is array
+            "$in" => {
+                match sub_value {
+                    Value::Array(_) => (),
+                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))),
+                }
+
+                let field_size = self.recursively_get_field(key, get_field_failed_label);
+
+                let stat_val_id = self.push_static(sub_value.clone());
+                self.emit_push_value(stat_val_id);
+                self.emit(DbOp::In);
+
+                self.emit_goto(DbOp::IfFalse, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
+
+            "$lt" => {
+                let field_size = self.recursively_get_field(key, get_field_failed_label);
+
+                let stat_val_id = self.push_static(sub_value.clone());
+                self.emit_push_value(stat_val_id);
+                self.emit(DbOp::Less);
+
+                self.emit_goto(DbOp::IfFalse, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
+
+            "$lte" => {
+                let field_size = self.recursively_get_field(key, get_field_failed_label);
+
+                let stat_val_id = self.push_static(sub_value.clone());
+                self.emit_push_value(stat_val_id);
+                self.emit(DbOp::LessEqual);
+
+                // less
+                self.emit_goto(DbOp::IfFalse, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
+
+            "$ne" => {
+                let field_size = self.recursively_get_field(key, get_field_failed_label);
+
+                let stat_val_id = self.push_static(sub_value.clone());
+                self.emit_push_value(stat_val_id);
+                self.emit(DbOp::Equal);
+
+                // if equal，go to next
+                self.emit_goto(DbOp::IfFalse, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
+
+            "$nin" => {
+                match sub_value {
+                    Value::Array(_) => (),
+                    _ => return Err(
+                        DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
+                    ),
+                }
+
+                let field_size = self.recursively_get_field(key, get_field_failed_label);
+
+                let stat_val_id = self.push_static(sub_value.clone());
+                self.emit_push_value(stat_val_id);
+                self.emit(DbOp::In);
+
+                self.emit_goto(DbOp::IfTrue, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
+
+            "$size" => {
+                let expected_size = match sub_value {
+                    Value::Int(i) => *i,
+                    _ => return Err(
+                        DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
+                    ),
+                };
+
+                let field_size = self.recursively_get_field(key, get_field_failed_label);
+                self.emit(DbOp::ArraySize);
+
+                let expect_size_stat_id = self.push_static(Value::from(expected_size));
+                self.emit_push_value(expect_size_stat_id);
+
+                self.emit(DbOp::Equal);
+
+                self.emit_goto(DbOp::IfFalse, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
+
+            _ => return Err(
+                DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
+            ),
+        }
+        Ok(())
+    }
+
     // very complex query document
     fn emit_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_label: Label, not_found_label: Label) -> DbResult<()> {
         for (sub_key, sub_value) in value.iter() {
-            match sub_key.as_str() {
-                "$eq" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_label);
-
-                    let stat_val_id = self.push_static(sub_value.clone());
-                    self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Equal);
-
-                    // if not equal，go to next
-                    self.emit_goto(DbOp::IfFalse, not_found_label);
-
-                    self.emit(DbOp::Pop2);
-                    self.emit_u32((field_size + 1) as u32);
-                }
-
-                "$gt" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_label);
-
-                    let stat_val_id = self.push_static(sub_value.clone());
-                    self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Greater);
-
-                    self.emit_goto(DbOp::IfFalse, not_found_label);
-
-                    self.emit(DbOp::Pop2);
-                    self.emit_u32((field_size + 1) as u32);
-                }
-
-                "$gte" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_label);
-
-                    let stat_val_id = self.push_static(sub_value.clone());
-                    self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::GreaterEqual);
-
-                    self.emit_goto(DbOp::IfFalse, not_found_label);
-
-                    self.emit(DbOp::Pop2);
-                    self.emit_u32((field_size + 1) as u32);
-                }
-
-                // check the value is array
-                "$in" => {
-                    match sub_value {
-                        Value::Array(_) => (),
-                        _ => {
-                            return Err(DbErr::NotAValidField(key.into()));
-                        }
-                    }
-
-                    let field_size = self.recursively_get_field(key, get_field_failed_label);
-
-                    let stat_val_id = self.push_static(sub_value.clone());
-                    self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::In);
-
-                    self.emit_goto(DbOp::IfFalse, not_found_label);
-
-                    self.emit(DbOp::Pop2);
-                    self.emit_u32((field_size + 1) as u32);
-                }
-
-                "$lt" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_label);
-
-                    let stat_val_id = self.push_static(sub_value.clone());
-                    self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Less);
-
-                    self.emit_goto(DbOp::IfFalse, not_found_label);
-
-                    self.emit(DbOp::Pop2);
-                    self.emit_u32((field_size + 1) as u32);
-                }
-
-                "$lte" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_label);
-
-                    let stat_val_id = self.push_static(sub_value.clone());
-                    self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::LessEqual);
-
-                    // less
-                    self.emit_goto(DbOp::IfFalse, not_found_label);
-
-                    self.emit(DbOp::Pop2);
-                    self.emit_u32((field_size + 1) as u32);
-                }
-
-                "$ne" => {
-                    let field_size = self.recursively_get_field(key, get_field_failed_label);
-
-                    let stat_val_id = self.push_static(sub_value.clone());
-                    self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::Equal);
-
-                    // if equal，go to next
-                    self.emit_goto(DbOp::IfFalse, not_found_label);
-
-                    self.emit(DbOp::Pop2);
-                    self.emit_u32((field_size + 1) as u32);
-                }
-
-                "$nin" => {
-                    match sub_value {
-                        Value::Array(_) => (),
-                        _ => return Err(DbErr::NotAValidField(key.into())),
-                    }
-
-                    let field_size = self.recursively_get_field(key, get_field_failed_label);
-
-                    let stat_val_id = self.push_static(sub_value.clone());
-                    self.emit_push_value(stat_val_id);
-                    self.emit(DbOp::In);
-
-                    self.emit_goto(DbOp::IfTrue, not_found_label);
-
-                    self.emit(DbOp::Pop2);
-                    self.emit_u32((field_size + 1) as u32);
-                }
-
-                "$size" => {
-                    let expected_size = match sub_value {
-                        Value::Int(i) => *i,
-                        _ => return Err(DbErr::NotAValidField(key.into())),
-                    };
-
-                    let field_size = self.recursively_get_field(key, get_field_failed_label);
-                    self.emit(DbOp::ArraySize);
-
-                    let expect_size_stat_id = self.push_static(Value::from(expected_size));
-                    self.emit_push_value(expect_size_stat_id);
-
-                    self.emit(DbOp::Equal);
-
-                    self.emit_goto(DbOp::IfFalse, not_found_label);
-
-                    self.emit(DbOp::Pop2);
-                    self.emit_u32((field_size + 1) as u32);
-                }
-
-                _ => {
-                    return Err(DbErr::NotAValidField(sub_key.into()));
-                }
-            }
+            path_hint!(self, sub_key.as_str(), {
+                self.emit_query_tuple_document_kv(
+                    key, get_field_failed_label, not_found_label,
+                    sub_key.as_str(), sub_value
+                )?;
+            });
         }
         Ok(())
     }

@@ -17,6 +17,8 @@
     return NULL; \
   }
 
+#define countof(x) sizeof((x)) / sizeof((x)[0])
+
 static napi_ref collection_object_ref;
 static napi_ref objectid_ref;
 
@@ -869,7 +871,7 @@ static napi_value Collection_find(napi_env env, napi_callback_info info) {
   napi_value result;
   status = napi_create_array(env, &result);
 
-  ec = PLDB_handle_step(handle);
+  ec = PLDB_step(handle);
   if (ec < 0) {
     napi_throw_error(env, NULL, PLDB_error_msg());
     return NULL;
@@ -896,7 +898,7 @@ static napi_value Collection_find(napi_env env, napi_callback_info info) {
     PLDB_free_value(item);
     counter++;
 
-    ec = PLDB_handle_step(handle);
+    ec = PLDB_step(handle);
     if (ec < 0) {
       napi_throw_error(env, NULL, PLDB_error_msg());
       goto err;
@@ -910,6 +912,89 @@ err:
   return NULL;
 normal:
   PLDB_free_handle(handle);
+  return result;
+}
+
+static napi_value Collection_find_one(napi_env env, napi_callback_info info) {
+  napi_status status;
+
+  napi_value this_arg;
+
+  size_t argc = 1;
+  napi_value args[1];
+  status = napi_get_cb_info(env, info, &argc, args, &this_arg, NULL);
+  CHECK_STAT(status);
+
+  Database* db;
+  status = get_db_from_js_collection(env, this_arg, &db);
+  CHECK_DB_ALIVE(status);
+
+  InternalCollection* internal_collection;
+  status = napi_unwrap(env, this_arg, (void**)&internal_collection);
+  CHECK_STAT(status);
+
+  DbDocument* query_doc;
+
+  napi_valuetype arg1_ty;
+
+  status = napi_typeof(env, args[0], &arg1_ty);
+  assert(status == napi_ok);
+
+  if (arg1_ty == napi_undefined) {
+    query_doc = NULL;
+  } else if (arg1_ty == napi_object) {
+    query_doc = JsValueToDbDocument(env, args[0]);
+    if (query_doc == NULL) {
+      return NULL;
+    }
+  }
+
+  int ec = 0;
+
+  DbHandle* handle = NULL;
+  ec = PLDB_find(db,
+    internal_collection->id,
+    internal_collection->meta_version,
+    query_doc,
+    &handle
+  );
+
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
+
+  napi_value result;
+
+  ec = PLDB_step(handle);
+  if (ec < 0) {
+    napi_throw_error(env, NULL, PLDB_error_msg());
+    return NULL;
+  }
+
+  uint32_t counter = 0;
+
+  int state = PLDB_handle_state(handle);
+  DbValue* item;
+  if (state == 2) {
+    PLDB_handle_get(handle, &item);
+    result = DbValueToJsValue(env, item);
+    if (result == NULL) {
+      PLDB_free_value(item);
+      goto err;
+    }
+
+    PLDB_free_value(item);
+  } else {
+    result = NULL;
+  }
+
+  goto normal;
+err:
+  PLDB_close_and_free_handle(handle);
+  return NULL;
+normal:
+  PLDB_close_and_free_handle(handle);
   return result;
 }
 
@@ -1437,7 +1522,6 @@ static napi_value Database_Init(napi_env env, napi_value exports) {
   napi_value temp;
   napi_create_int64(env, 100, &temp);
 
-  size_t db_prop_size = 6; 
   napi_property_descriptor db_props[] = {
     DECLARE_NAPI_METHOD("createCollection", Database_create_collection),
     DECLARE_NAPI_METHOD("collection", Database_collection),
@@ -1445,8 +1529,8 @@ static napi_value Database_Init(napi_env env, napi_value exports) {
     DECLARE_NAPI_METHOD("startTransaction", Database_start_transaction),
     DECLARE_NAPI_METHOD("commit", Database_commit),
     DECLARE_NAPI_METHOD("rollback", Database_rollback),
-    {NULL}
   };
+  size_t db_prop_size = countof(db_props); 
 
   napi_value db_result;
   status = napi_define_class(
@@ -1470,17 +1554,17 @@ static napi_value Database_Init(napi_env env, napi_value exports) {
 static napi_value Collection_Init(napi_env env, napi_value exports) {
   napi_status status;
 
-  size_t collection_prop_size = 7;
   napi_property_descriptor collection_props[] = {
     DECLARE_NAPI_METHOD("insert", Collection_insert),
     DECLARE_NAPI_METHOD("find", Collection_find),
+    DECLARE_NAPI_METHOD("findOne", Collection_find_one),
     DECLARE_NAPI_METHOD("count", Collection_count),
     DECLARE_NAPI_METHOD("update", Collection_update),
     DECLARE_NAPI_METHOD("delete", Collection_delete),
     DECLARE_NAPI_METHOD("deleteAll", Collection_delete_all),
     DECLARE_NAPI_METHOD("drop", Collection_drop),
-    {NULL}
   };
+  size_t collection_prop_size = countof(collection_props);
 
   napi_value collection_result;
   status = napi_define_class(
@@ -1509,11 +1593,10 @@ static napi_value Collection_Init(napi_env env, napi_value exports) {
 static napi_value ObjectId_Init(napi_env env, napi_value exports) {
   napi_status status;
 
-  size_t objectid_prop_size = 1;
   napi_property_descriptor objectid_props[] = {
     DECLARE_NAPI_METHOD("toString", ObjectId_toString),
-    {NULL}
   };
+  size_t objectid_prop_size = countof(objectid_props);
 
   napi_value objectid_result;
   status = napi_define_class(

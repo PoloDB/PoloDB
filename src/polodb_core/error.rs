@@ -59,10 +59,25 @@ impl fmt::Display for UnexpectedHeader {
 }
 
 #[derive(Debug)]
+pub struct InvalidFieldStruct {
+    pub field_type: &'static str,
+    pub field_name: String,
+    pub path: Option<String>,
+}
+
+pub fn mk_invalid_query_field(name: String, path: String) -> Box<InvalidFieldStruct> {
+    Box::new(InvalidFieldStruct {
+        field_type: "query",
+        field_name: name,
+        path: Some(path),
+    })
+}
+
+#[derive(Debug)]
 pub enum DbErr {
     UnexpectedIdType(u8, u8),
     NotAValidKeyType(String),
-    NotAValidField(String),
+    InvalidField(Box<InvalidFieldStruct>),
     ValidationError(String),
     InvalidOrderOfIndex(String),
     IndexAlreadyExists(String),
@@ -116,7 +131,9 @@ impl fmt::Display for DbErr {
             }
 
             DbErr::NotAValidKeyType(ty_name) => write!(f, "type {} is not a valid key type", ty_name),
-            DbErr::NotAValidField(field) => write!(f, "the value of field: \"{}\" is invalid", field),
+            DbErr::InvalidField(st) =>
+                write!(f, "the {} field name: \"{}\" is invalid, path: {}",
+                       st.field_type, st.field_name, st.path.as_ref().unwrap_or(&String::from("<None>"))),
             DbErr::ValidationError(reason) => write!(f, "ValidationError: {}", reason),
             DbErr::InvalidOrderOfIndex(index_key_name) => write!(f, "invalid order of index: {}", index_key_name),
             DbErr::IndexAlreadyExists(index_key_name) => write!(f, "index for {} already exists", index_key_name),
