@@ -1,6 +1,6 @@
 {
   "name": "polodb",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "description": "PoloDB is an embedded JSON-based database.",
   "main": "index.js",
   "engines": {
