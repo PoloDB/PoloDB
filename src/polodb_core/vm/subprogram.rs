@@ -265,6 +265,11 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::ArrayPush => {
+                        writeln!(f, "{}: ArrayPush", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::UnsetField => {
                         let static_id = begin.add(pc + 1).cast::<u32>().read();
                         let val = &self.static_values[static_id as usize];

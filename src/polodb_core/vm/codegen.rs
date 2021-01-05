@@ -642,6 +642,14 @@ impl Codegen {
                     }
                 }
 
+                "$push" => {
+                    let doc = crate::try_unwrap_document!("$push", value);
+
+                    for (key, value) in doc.iter() {
+                        self.emit_push_field(key.as_str(), value);
+                    }
+                }
+
                 _ => {
                     return Err(DbErr::UnknownUpdateOperation(key.clone()))
                 }
@@ -733,6 +741,23 @@ impl Codegen {
         let value_id = self.push_static(Value::String(name.into()));
         self.emit(DbOp::UnsetField);
         self.emit_u32(value_id);
+    }
+
+    pub(super) fn emit_push_field(&mut self, field_name: &str, value: &Value) {
+        let get_field_failed_label = self.new_label();
+        let name_id = self.push_static(field_name.into());
+        self.emit_goto2(DbOp::GetField, name_id, get_field_failed_label);
+
+        let value_id = self.push_static(value.clone());
+        self.emit(DbOp::PushValue);
+        self.emit_u32(value_id);
+
+        self.emit(DbOp::ArrayPush);
+
+        self.emit(DbOp::Pop);
+        self.emit(DbOp::Pop);
+
+        self.emit_label(get_field_failed_label);
     }
 
     pub(super) fn emit_goto(&mut self, op: DbOp, label: Label) {
