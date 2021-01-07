@@ -59,7 +59,7 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
 - [ ] 语言绑定
   - [x] C/C++
   - [ ] Go
-  - [ ] Swift
+  - [x] Swift([Repo](https://github.com/vincentdchan/SwiftyPoloDB))
   - [x] Python
   - [x] Node.js
   - [ ] Java/Kotlin
