@@ -130,6 +130,9 @@ pub enum DbOp {
     // 1 byte
     ArrayPush,
 
+    ArrayPopFirst,
+    ArrayPopLast,
+
     // update current item on cursor
     //
     // 1 byte

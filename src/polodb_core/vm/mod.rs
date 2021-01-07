@@ -512,6 +512,30 @@ impl<'a> VM<'a> {
                         self.pc = self.pc.add(1);
                     }
 
+                    DbOp::ArrayPopFirst => {
+                        let st = self.stack.len();
+                        let array_value = match &mut self.stack[st - 1] {
+                            Value::Array(arr) => arr,
+                            _ => unimplemented!(),
+                        };
+                        let arr = Rc::get_mut(array_value).unwrap();
+                        arr.drain(0..1);
+
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::ArrayPopLast => {
+                        let st = self.stack.len();
+                        let array_value = match &mut self.stack[st - 1] {
+                            Value::Array(arr) => arr,
+                            _ => unimplemented!(),
+                        };
+                        let arr = Rc::get_mut(array_value).unwrap();
+                        arr.pop();
+
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::UpdateCurrent => {
                         let top_index = self.stack.len() - 1;
                         let top_value = &self.stack[top_index];
