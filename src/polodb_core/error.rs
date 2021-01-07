@@ -1,5 +1,6 @@
 use std::io;
 use std::fmt;
+use std::rc::Rc;
 use polodb_bson::{Value, ty_int};
 use polodb_bson::error::BsonErr;
 
@@ -79,8 +80,8 @@ pub enum DbErr {
     NotAValidKeyType(String),
     InvalidField(Box<InvalidFieldStruct>),
     ValidationError(String),
-    InvalidOrderOfIndex(String),
-    IndexAlreadyExists(String),
+    InvalidOrderOfIndex(Rc<str>),
+    IndexAlreadyExists(Rc<str>),
     FieldTypeUnexpected(Box<FieldTypeUnexpectedStruct>),
     ParseError(String),
     IOErr(Box<io::Error>),
@@ -110,7 +111,7 @@ pub enum DbErr {
     UnexpectedPageType,
     UnknownTransactionType,
     BufferNotEnough(usize),
-    UnknownUpdateOperation(String),
+    UnknownUpdateOperation(Rc<str>),
     IncrementNullField,
     VmIsHalt,
     MetaVersionMismatched(u32, u32),

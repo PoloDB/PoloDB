@@ -654,7 +654,7 @@ pub unsafe extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char
     let local_value = value.as_ref().unwrap();
     let key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
     let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    let result = local_doc_mut.insert(key.to_string(), local_value.clone());
+    let result = local_doc_mut.insert(key.into(), local_value.clone());
     if result.is_some() {
         1
     } else {
@@ -791,14 +791,14 @@ pub unsafe extern "C" fn PLDB_doc_len(doc: *mut Rc<Document>) -> c_int {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_iter(doc: *mut Rc<Document>) -> *mut Iter<'static, String, Value> {
+pub unsafe extern "C" fn PLDB_doc_iter(doc: *mut Rc<Document>) -> *mut Iter<'static, Rc<str>, Value> {
     let local_doc = doc.as_mut().unwrap();
     let iter = local_doc.iter();
     Box::into_raw(Box::new(iter))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, String, Value>,
+pub unsafe extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, Rc<str>, Value>,
                                      key_buffer: *mut c_char, key_buffer_size: c_uint, out_val: *mut *mut Value) -> c_int {
 
     let local_iter = iter.as_mut().unwrap();
@@ -812,7 +812,7 @@ pub unsafe extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, String, Val
             }
             let real_size = std::cmp::min(key_len, key_buffer_size as usize);
 
-            let cstr = CString::new(key.clone()).unwrap();
+            let cstr = CString::new(key.as_ref()).unwrap();
             cstr.as_ptr().copy_to_nonoverlapping(key_buffer, real_size);
 
             let boxed_value = Box::new(value.clone());

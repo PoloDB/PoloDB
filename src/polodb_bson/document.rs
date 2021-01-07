@@ -1,5 +1,6 @@
 use std::rc::Rc;
 use std::fmt;
+use std::str;
 use super::value::{Value, ty_int};
 use super::linked_hash_map::{LinkedHashMap, Iter};
 use crate::{vli, UTCDateTime};
@@ -10,7 +11,7 @@ use crate::object_id::{ ObjectIdMaker, ObjectId };
 
 #[derive(Debug, Clone)]
 pub struct Document {
-    map: LinkedHashMap<String, Value>,
+    map: LinkedHashMap<Rc<str>, Value>,
 }
 
 impl Document {
@@ -20,7 +21,7 @@ impl Document {
         let mut result = Document {
             map: LinkedHashMap::new(),
         };
-        result.map.insert("_id".to_string(), id.into());
+        result.map.insert("_id".into(), id.into());
         result
     }
 
@@ -31,7 +32,7 @@ impl Document {
     }
 
     #[inline]
-    pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
+    pub fn insert(&mut self, key: Rc<str>, value: Value) -> Option<Value> {
         self.map.insert(key, value)
     }
 
@@ -197,15 +198,15 @@ impl Document {
         Ok(doc)
     }
 
-    pub fn parse_key(bytes: &[u8], mut ptr: usize) -> BsonResult<(String, usize)> {
+    pub fn parse_key(bytes: &[u8], mut ptr: usize) -> BsonResult<(Rc<str>, usize)> {
         let mut buffer = Vec::with_capacity(128);
         while bytes[ptr] != 0 {
             buffer.push(bytes[ptr]);
             ptr += 1;
         }
 
-        let str = unsafe { String::from_utf8_unchecked(buffer) };
-        Ok((str, ptr + 1))
+        let str = str::from_utf8(&buffer)?;
+        Ok((str.into(), ptr + 1))
     }
 
     fn value_to_bytes(key: &str, value: &Value, buffer: &mut Vec<u8>) -> BsonResult<()> {
@@ -308,7 +309,7 @@ impl Document {
         }
 
         for (key, value) in &self.map {
-            if is_id_inserted && key == "_id" {
+            if is_id_inserted && key.as_ref() == "_id" {
                 continue;
             }
 
@@ -321,7 +322,7 @@ impl Document {
     }
 
     #[inline]
-    pub fn iter(&self) -> Iter<String, Value> {
+    pub fn iter(&self) -> Iter<Rc<str>, Value> {
         self.map.iter()
     }
 

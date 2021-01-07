@@ -307,14 +307,14 @@ impl DbContext {
             if let Value::Int(1) = value_of_key {
                 // nothing
             } else {
-                return Err(DbErr::InvalidOrderOfIndex(key_name.into()));
+                return Err(DbErr::InvalidOrderOfIndex(key_name.clone()));
             }
 
             match meta_doc.doc_ref().get(meta_doc_key::INDEXES) {
                 Some(indexes_obj) => match indexes_obj {
                     Value::Document(index_doc) => {
                         if index_already_exists(index_doc.borrow(), key_name) {
-                            return Err(DbErr::IndexAlreadyExists(key_name.into()));
+                            return Err(DbErr::IndexAlreadyExists(key_name.clone()));
                         }
 
                         unimplemented!()
@@ -332,7 +332,7 @@ impl DbContext {
 
                     let root_pid = self.page_handler.alloc_page_id()?;
                     let options_doc = merge_options_into_default(root_pid, options)?;
-                    doc.insert(key_name.into(), Value::Document(Rc::new(options_doc)));
+                    doc.insert(key_name.clone(), Value::Document(Rc::new(options_doc)));
 
                     meta_doc.set_indexes(doc);
                 }

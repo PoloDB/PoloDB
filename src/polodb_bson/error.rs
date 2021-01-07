@@ -1,6 +1,7 @@
 use std::fmt;
 use std::num;
 use std::io;
+use std::str::Utf8Error;
 
 #[derive(Debug)]
 pub enum BsonErr {
@@ -8,6 +9,7 @@ pub enum BsonErr {
     ParseIntError(Box<num::ParseIntError>),
     DecodeIntUnknownByte,
     IOErr(Box<io::Error>),
+    UTF8Error(Box<Utf8Error>),
     TypeNotComparable(String, String),
 }
 
@@ -31,6 +33,7 @@ impl fmt::Display for BsonErr {
             BsonErr::ParseIntError(parse_int_err) => parse_int_err.fmt(f),
             BsonErr::DecodeIntUnknownByte => write!(f, "DecodeIntUnknownByte"),
             BsonErr::IOErr(io_err) => std::fmt::Display::fmt(&io_err, f),
+            BsonErr::UTF8Error(utf8_err) => std::fmt::Display::fmt(&utf8_err, f),
             BsonErr::TypeNotComparable(expected, actual) =>
                 write!(f, "TypeNotComparable(expected: {}, actual: {})", expected, actual),
         }
@@ -42,6 +45,14 @@ impl From<io::Error> for BsonErr {
 
     fn from(error: io::Error) -> Self {
         BsonErr::IOErr(Box::new(error))
+    }
+
+}
+
+impl From<Utf8Error> for BsonErr {
+
+    fn from(error: Utf8Error) -> Self {
+        BsonErr::UTF8Error(Box::new(error))
     }
 
 }

@@ -10,7 +10,6 @@ const PATH_DEFAULT_SIZE: usize = 8;
 
 mod update_op {
     use polodb_bson::Value;
-    use std::rc::Rc;
     use crate::vm::codegen::Codegen;
     use crate::DbResult;
     use crate::vm::op::DbOp;
@@ -24,9 +23,8 @@ mod update_op {
             let next_element_label = codegen.new_label();
             let set_field_label = codegen.new_label();
 
-            let rc_str: Rc<str> = key.as_str().into();
-            let key_id_1 = codegen.push_static(Value::String(rc_str.clone()));
-            let key_id_2 = codegen.push_static(Value::String(rc_str));
+            let key_id_1 = codegen.push_static(Value::from(key.clone()));
+            let key_id_2 = codegen.push_static(Value::from(key.clone()));
             let value_id = codegen.push_static(value.clone());
 
             codegen.emit_goto2(DbOp::GetField, key_id_1, next_element_label);  // stack +1
@@ -159,11 +157,11 @@ impl Codegen {
 
         self.emit_label(result_label);
         for (key, value) in query.iter() {
-            if key == "_id" {
+            if key.as_ref() == "_id" {
                 continue;
             }
 
-            let key_static_id = self.push_static(Value::String(key.as_str().into()));
+            let key_static_id = self.push_static(Value::String(key.clone()));
             let value_static_id = self.push_static(value.clone());
 
             self.emit_goto2(DbOp::GetField, key_static_id, close_label); // push a value1
@@ -255,7 +253,7 @@ impl Codegen {
                                not_found_label: Label
     ) -> DbResult<()> {
         for (key, value) in query_doc.iter() {
-            path_hint!(self, key.as_str(), {
+            path_hint!(self, key.as_ref(), {
                 self.emit_query_tuple(
                     key, value,
                     result_label,
@@ -579,10 +577,10 @@ impl Codegen {
     // very complex query document
     fn emit_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_label: Label, not_found_label: Label) -> DbResult<()> {
         for (sub_key, sub_value) in value.iter() {
-            path_hint!(self, sub_key.as_str(), {
+            path_hint!(self, sub_key.as_ref(), {
                 self.emit_query_tuple_document_kv(
                     key, get_field_failed_label, not_found_label,
-                    sub_key.as_str(), sub_value
+                    sub_key.as_ref(), sub_value
                 )?;
             });
         }
@@ -591,7 +589,7 @@ impl Codegen {
 
     pub(super) fn emit_update_operation(&mut self, update: &Document) -> DbResult<()> {
         for (key, value) in update.iter() {
-            match key.as_str() {
+            match key.as_ref() {
                 "$inc" => {
                     let doc = crate::try_unwrap_document!("$inc", value);
 
@@ -630,7 +628,7 @@ impl Codegen {
                             }
                         };
 
-                        self.emit_rename_field(key.as_str(), new_name.as_ref());
+                        self.emit_rename_field(key.as_ref(), new_name.as_ref());
                     }
                 }
 
@@ -638,7 +636,7 @@ impl Codegen {
                     let doc = crate::try_unwrap_document!("$unset", value);
 
                     for (key, _) in doc.iter() {
-                        self.emit_unset_field(key.as_str());
+                        self.emit_unset_field(key.as_ref());
                     }
                 }
 
@@ -646,7 +644,7 @@ impl Codegen {
                     let doc = crate::try_unwrap_document!("$push", value);
 
                     for (key, value) in doc.iter() {
-                        self.emit_push_field(key.as_str(), value);
+                        self.emit_push_field(key.as_ref(), value);
                     }
                 }
 
@@ -664,14 +662,14 @@ impl Codegen {
 
     fn iterate_add_op(&mut self, op: DbOp, doc: &Document) -> DbResult<()> {
         for (index, (key, value)) in doc.iter().enumerate() {
-            if index == 0 && key == "_id" {
+            if index == 0 && key.as_ref() == "_id" {
                 return Err(DbErr::UnableToUpdatePrimaryKey);
             }
 
             let value_id = self.push_static(value.clone());
             self.emit_push_value(value_id);
 
-            let key_id = self.push_static(Value::String(key.as_str().into()));
+            let key_id = self.push_static(Value::String(key.clone()));
             self.emit(op);
             self.emit_u32(key_id);
 
