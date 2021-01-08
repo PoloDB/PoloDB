@@ -1,4 +1,5 @@
 use polodb_bson::{Value, Document, Array};
+use std::rc::Rc;
 use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
@@ -648,6 +649,26 @@ impl Codegen {
                     }
                 }
 
+                "$pop" => {
+                    let doc = crate::try_unwrap_document!("$pop", value);
+
+                    for (key, value) in doc.iter() {
+                        let num = match value {
+                            Value::Int(i) => *i,
+                            _ => return Err(
+                                DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
+                            )
+                        };
+                        self.emit_pop_field(key.clone(), match num {
+                            1 => false,
+                            -1 => true,
+                            _ => return Err(
+                                DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
+                            )
+                        });
+                    }
+                }
+
                 _ => {
                     return Err(DbErr::UnknownUpdateOperation(key.clone()))
                 }
@@ -753,6 +774,28 @@ impl Codegen {
         self.emit(DbOp::ArrayPush);
 
         self.emit(DbOp::Pop);
+        self.emit(DbOp::Pop);
+
+        self.emit_label(get_field_failed_label);
+    }
+
+    pub(super) fn emit_pop_field(&mut self, field_name: Rc<str>, is_first: bool) {
+        let get_field_failed_label = self.new_label();
+        let name_id = self.push_static(field_name.into());
+
+        // <<---- push an array on stack
+        self.emit_goto2(DbOp::GetField, name_id, get_field_failed_label);
+
+        self.emit(if is_first {
+            DbOp::ArrayPopFirst
+        } else {
+            DbOp::ArrayPopLast
+        });
+
+        self.emit(DbOp::SetField);
+        self.emit_u32(name_id);
+
+        // <<---- pop an array on stack
         self.emit(DbOp::Pop);
 
         self.emit_label(get_field_failed_label);
