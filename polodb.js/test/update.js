@@ -29,8 +29,12 @@ describe('Update', function () {
       console.log('temp dir: ', temp);
     }
     dbPath = path.join(temp, 'test-update.db');
+    const journalPath = dbPath + '.journal';
     if (fs.existsSync(dbPath)) {
       fs.unlinkSync(dbPath);
+    }
+    if (fs.existsSync(journalPath)) {
+      fs.unlinkSync(journalPath);
     }
     db = new Database(dbPath);
   });
@@ -156,6 +160,23 @@ describe('Update', function () {
       _id: 1,
     });
     expect(result[0].num).to.equals(2);
+  });
+
+  it('update $push', function () {
+    const collection = db.collection('test-push');
+    collection.insert({
+      _id: 0,
+      content: [ 1, 2, 3 ],
+    });
+    collection.update({
+      _id: 0,
+    }, {
+      $push: {
+        content: 4,
+      },
+    });
+    const item = collection.findOne({ _id: 0 });
+    expect(item.content.length).to.equals(4);
   });
 
 });

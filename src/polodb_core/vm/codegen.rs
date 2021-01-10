@@ -774,6 +774,10 @@ impl Codegen {
         self.emit(DbOp::ArrayPush);
 
         self.emit(DbOp::Pop);
+
+        self.emit(DbOp::SetField);
+        self.emit_u32(name_id);
+
         self.emit(DbOp::Pop);
 
         self.emit_label(get_field_failed_label);

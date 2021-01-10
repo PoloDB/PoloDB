@@ -506,7 +506,7 @@ impl<'a> VM<'a> {
                             Value::Array(arr) => arr,
                             _ => unimplemented!(),
                         };
-                        let arr = Rc::get_mut(array_value).unwrap();
+                        let arr = Rc::make_mut(array_value);
                         arr.push(val);
 
                         self.pc = self.pc.add(1);
@@ -518,7 +518,7 @@ impl<'a> VM<'a> {
                             Value::Array(arr) => arr,
                             _ => unimplemented!(),
                         };
-                        let arr = Rc::get_mut(array_value).unwrap();
+                        let arr = Rc::make_mut(array_value);
                         arr.drain(0..1);
 
                         self.pc = self.pc.add(1);
@@ -530,7 +530,7 @@ impl<'a> VM<'a> {
                             Value::Array(arr) => arr,
                             _ => unimplemented!(),
                         };
-                        let arr = Rc::get_mut(array_value).unwrap();
+                        let arr = Rc::make_mut(array_value);
                         arr.pop();
 
                         self.pc = self.pc.add(1);
@@ -577,7 +577,7 @@ impl<'a> VM<'a> {
                     }
 
                     // stack
-                    // -1: Aarry
+                    // -1: Array
                     // -2: value
                     //
                     // check value in Array
