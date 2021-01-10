@@ -6,9 +6,9 @@ use polodb_bson::error::BsonErr;
 
 #[derive(Debug)]
 pub struct FieldTypeUnexpectedStruct {
-    pub field_name: String,
-    pub expected_ty: String,
-    pub actual_ty: String,
+    pub field_name: Box<str>,
+    pub expected_ty: &'static str,
+    pub actual_ty: &'static str,
 }
 
 impl fmt::Display for FieldTypeUnexpectedStruct {
@@ -20,11 +20,13 @@ impl fmt::Display for FieldTypeUnexpectedStruct {
 
 }
 
-pub(crate) fn mk_field_name_type_unexpected(option_name: &str, expected_ty: &str, actual_ty: &str) -> DbErr {
+pub(crate) fn mk_field_name_type_unexpected(
+    option_name: &str, expected_ty: &'static str, actual_ty: &'static str
+) -> DbErr {
     DbErr::FieldTypeUnexpected(Box::new(FieldTypeUnexpectedStruct {
         field_name: option_name.into(),
-        expected_ty: expected_ty.into(),
-        actual_ty: actual_ty.into(),
+        expected_ty,
+        actual_ty,
     }))
 }
 
@@ -75,6 +77,21 @@ pub fn mk_invalid_query_field(name: String, path: String) -> Box<InvalidFieldStr
 }
 
 #[derive(Debug)]
+pub struct UnexpectedTypeForOpStruct {
+    pub operation: &'static str,
+    pub expected_ty: &'static str,
+    pub actual_ty: &'static str,
+}
+
+pub fn mk_unexpected_type_for_op(op: &'static str, expected_ty: &'static str, actual_ty: &'static str) -> Box<UnexpectedTypeForOpStruct> {
+    Box::new(UnexpectedTypeForOpStruct {
+        operation: op,
+        expected_ty,
+        actual_ty
+    })
+}
+
+#[derive(Debug)]
 pub enum DbErr {
     UnexpectedIdType(u8, u8),
     NotAValidKeyType(String),
@@ -83,6 +100,7 @@ pub enum DbErr {
     InvalidOrderOfIndex(Rc<str>),
     IndexAlreadyExists(Rc<str>),
     FieldTypeUnexpected(Box<FieldTypeUnexpectedStruct>),
+    UnexpectedTypeForOp(Box<UnexpectedTypeForOpStruct>),
     ParseError(String),
     IOErr(Box<io::Error>),
     UTF8Err(Box<std::str::Utf8Error>),
@@ -139,6 +157,8 @@ impl fmt::Display for DbErr {
             DbErr::InvalidOrderOfIndex(index_key_name) => write!(f, "invalid order of index: {}", index_key_name),
             DbErr::IndexAlreadyExists(index_key_name) => write!(f, "index for {} already exists", index_key_name),
             DbErr::FieldTypeUnexpected(st) => write!(f, "{}", st),
+            DbErr::UnexpectedTypeForOp(st) =>
+                write!(f, "unexpected type: {} for op: {}, expected: {}", st.actual_ty, st.operation, st.expected_ty),
             DbErr::ParseError(reason) => write!(f, "ParseError: {}", reason),
             DbErr::IOErr(io_err) => write!(f, "IOErr: {}", io_err),
             DbErr::UTF8Err(utf8_err) => utf8_err.fmt(f),

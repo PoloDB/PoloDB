@@ -361,7 +361,8 @@ impl Codegen {
                         value: &Value,
                         result_label: Label,
                         get_field_failed_label: Label,
-                        not_found_label: Label) -> DbResult<()> {
+                        not_found_label: Label
+    ) -> DbResult<()> {
         if key.chars().next().unwrap() == '$' {
             match key {
                 "$and" => {

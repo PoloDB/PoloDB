@@ -14,7 +14,7 @@ use crate::cursor::Cursor;
 use crate::page::PageHandler;
 use crate::btree::{HEADER_SIZE, ITEM_SIZE};
 use crate::{TransactionType, DbResult, DbErr};
-use crate::error::mk_field_name_type_unexpected;
+use crate::error::{mk_field_name_type_unexpected, mk_unexpected_type_for_op};
 use std::cell::Cell;
 
 const STACK_SIZE: usize = 256;
@@ -330,6 +330,48 @@ impl<'a> VM<'a> {
         Ok(doc.len())
     }
 
+    fn array_push(&mut self) -> DbResult<()> {
+        let st = self.stack.len();
+        let val = self.stack[st - 1].clone();
+        let array_value = match &mut self.stack[st - 2] {
+            Value::Array(arr) => arr,
+            _ => return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
+                "$push", "Array", self.stack[st - 2].ty_name()
+            )))
+        };
+        let arr = Rc::make_mut(array_value);
+        arr.push(val);
+        Ok(())
+    }
+
+    fn array_pop_first(&mut self) -> DbResult<()> {
+        let st = self.stack.len();
+        let array_value = match &mut self.stack[st - 1] {
+            Value::Array(arr) => arr,
+            _ => return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
+                "$pop", "Array", self.stack[st - 1].ty_name()
+            )))
+        };
+        let arr = Rc::make_mut(array_value);
+        arr.drain(0..1);
+
+        Ok(())
+    }
+
+    fn array_pop_last(&mut self) -> DbResult<()> {
+        let st = self.stack.len();
+        let array_value = match &mut self.stack[st - 1] {
+            Value::Array(arr) => arr,
+            _ => return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
+                "$pop", "Array", self.stack[st - 1].ty_name()
+            )))
+        };
+        let arr = Rc::make_mut(array_value);
+        arr.pop();
+
+        Ok(())
+    }
+
     pub(crate) fn execute(&mut self) -> DbResult<()> {
         if self.state == VmState::Halt {
             return Err(DbErr::VmIsHalt);
@@ -500,38 +542,19 @@ impl<'a> VM<'a> {
                     }
 
                     DbOp::ArrayPush => {
-                        let st = self.stack.len();
-                        let val = self.stack[st - 1].clone();
-                        let array_value = match &mut self.stack[st - 2] {
-                            Value::Array(arr) => arr,
-                            _ => unimplemented!(),
-                        };
-                        let arr = Rc::make_mut(array_value);
-                        arr.push(val);
+                        try_vm!(self, self.array_push());
 
                         self.pc = self.pc.add(1);
                     }
 
                     DbOp::ArrayPopFirst => {
-                        let st = self.stack.len();
-                        let array_value = match &mut self.stack[st - 1] {
-                            Value::Array(arr) => arr,
-                            _ => unimplemented!(),
-                        };
-                        let arr = Rc::make_mut(array_value);
-                        arr.drain(0..1);
+                        try_vm!(self, self.array_pop_first());
 
                         self.pc = self.pc.add(1);
                     }
 
                     DbOp::ArrayPopLast => {
-                        let st = self.stack.len();
-                        let array_value = match &mut self.stack[st - 1] {
-                            Value::Array(arr) => arr,
-                            _ => unimplemented!(),
-                        };
-                        let arr = Rc::make_mut(array_value);
-                        arr.pop();
+                        try_vm!(self, self.array_pop_last());
 
                         self.pc = self.pc.add(1);
                     }

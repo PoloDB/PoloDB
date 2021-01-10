@@ -933,6 +933,7 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::InvalidField(_) => 42,
         DbErr::CollectionAlreadyExits(_) => 43,
         DbErr::UnableToUpdatePrimaryKey => 44,
+        DbErr::UnexpectedTypeForOp(_) => 45,
 
     }
 }
