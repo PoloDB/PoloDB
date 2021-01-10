@@ -590,93 +590,99 @@ impl Codegen {
 
     pub(super) fn emit_update_operation(&mut self, update: &Document) -> DbResult<()> {
         for (key, value) in update.iter() {
-            match key.as_ref() {
-                "$inc" => {
-                    let doc = crate::try_unwrap_document!("$inc", value);
-
-                    self.iterate_add_op(DbOp::IncField, doc.as_ref())?;
-                }
-
-                "$set" => {
-                    let doc = crate::try_unwrap_document!("$set", value);
-
-                    self.iterate_add_op(DbOp::SetField, doc.as_ref())?;
-                }
-
-                "$max" => {
-                    update_op::update_op_min_max(self, value, false)?;
-                }
-
-                "$min" => {
-                    update_op::update_op_min_max(self, value, true)?;
-                }
-
-                "$mul" => {
-                    let doc = crate::try_unwrap_document!("$mul", value);
-
-                    self.iterate_add_op(DbOp::MulField, doc.as_ref())?;
-                }
-
-                "$rename" => {
-                    let doc = crate::try_unwrap_document!("$set", value);
-
-                    for (key, value) in doc.iter() {
-                        let new_name = match value {
-                            Value::String(new_name) => new_name,
-                            t => {
-                                let err = mk_field_name_type_unexpected(key, "String", t.ty_name());
-                                return Err(err);
-                            }
-                        };
-
-                        self.emit_rename_field(key.as_ref(), new_name.as_ref());
-                    }
-                }
-
-                "$unset" => {
-                    let doc = crate::try_unwrap_document!("$unset", value);
-
-                    for (key, _) in doc.iter() {
-                        self.emit_unset_field(key.as_ref());
-                    }
-                }
-
-                "$push" => {
-                    let doc = crate::try_unwrap_document!("$push", value);
-
-                    for (key, value) in doc.iter() {
-                        self.emit_push_field(key.as_ref(), value);
-                    }
-                }
-
-                "$pop" => {
-                    let doc = crate::try_unwrap_document!("$pop", value);
-
-                    for (key, value) in doc.iter() {
-                        let num = match value {
-                            Value::Int(i) => *i,
-                            _ => return Err(
-                                DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
-                            )
-                        };
-                        self.emit_pop_field(key.clone(), match num {
-                            1 => false,
-                            -1 => true,
-                            _ => return Err(
-                                DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
-                            )
-                        });
-                    }
-                }
-
-                _ => {
-                    return Err(DbErr::UnknownUpdateOperation(key.clone()))
-                }
-
-            }
+            path_hint!(self, key.as_ref(), {
+                self.emit_update_operation_kv(key, value)?;
+            });
         }
 
         self.emit(DbOp::UpdateCurrent);
+
+        Ok(())
+    }
+
+    fn emit_update_operation_kv(&mut self, key: &Rc<str>, value: &Value) -> DbResult<()> {
+        match key.as_ref() {
+            "$inc" => {
+                let doc = crate::try_unwrap_document!("$inc", value);
+
+                self.iterate_add_op(DbOp::IncField, doc.as_ref())?;
+            }
+
+            "$set" => {
+                let doc = crate::try_unwrap_document!("$set", value);
+
+                self.iterate_add_op(DbOp::SetField, doc.as_ref())?;
+            }
+
+            "$max" => {
+                update_op::update_op_min_max(self, value, false)?;
+            }
+
+            "$min" => {
+                update_op::update_op_min_max(self, value, true)?;
+            }
+
+            "$mul" => {
+                let doc = crate::try_unwrap_document!("$mul", value);
+
+                self.iterate_add_op(DbOp::MulField, doc.as_ref())?;
+            }
+
+            "$rename" => {
+                let doc = crate::try_unwrap_document!("$set", value);
+
+                for (key, value) in doc.iter() {
+                    let new_name = match value {
+                        Value::String(new_name) => new_name,
+                        t => {
+                            let err = mk_field_name_type_unexpected(key, "String", t.ty_name());
+                            return Err(err);
+                        }
+                    };
+
+                    self.emit_rename_field(key.as_ref(), new_name.as_ref());
+                }
+            }
+
+            "$unset" => {
+                let doc = crate::try_unwrap_document!("$unset", value);
+
+                for (key, _) in doc.iter() {
+                    self.emit_unset_field(key.as_ref());
+                }
+            }
+
+            "$push" => {
+                let doc = crate::try_unwrap_document!("$push", value);
+
+                for (key, value) in doc.iter() {
+                    self.emit_push_field(key.as_ref(), value);
+                }
+            }
+
+            "$pop" => {
+                let doc = crate::try_unwrap_document!("$pop", value);
+
+                for (key, value) in doc.iter() {
+                    let num = match value {
+                        Value::Int(i) => *i,
+                        _ => return Err(
+                            DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
+                        )
+                    };
+                    self.emit_pop_field(key.clone(), match num {
+                        1 => false,
+                        -1 => true,
+                        _ => return Err(
+                            DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
+                        )
+                    });
+                }
+            }
+
+            _ => return Err(DbErr::UnknownUpdateOperation(key.clone())),
+
+        }
 
         Ok(())
     }

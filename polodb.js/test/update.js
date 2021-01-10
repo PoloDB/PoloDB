@@ -162,7 +162,7 @@ describe('Update', function () {
     expect(result[0].num).to.equals(2);
   });
 
-  it('update $push', function () {
+  it('update $push', function() {
     const collection = db.collection('test-push');
     collection.insert({
       _id: 0,
@@ -177,6 +177,41 @@ describe('Update', function () {
     });
     const item = collection.findOne({ _id: 0 });
     expect(item.content.length).to.equals(4);
+  });
+
+  it('update $pop', function() {
+    const collection = db.collection('test-pop');
+    collection.insert({
+      _id: 0,
+      content: [ 1, 2, 3 ],
+    });
+    collection.update({
+      _id: 0,
+    }, {
+      $pop: {
+        content: 1,
+      },
+    });
+    let item = collection.findOne({ _id: 0 });
+    expect(item.content).to.deep.equal([ 1, 2 ]);
+    collection.update({
+      _id: 0,
+    }, {
+      $pop: {
+        content: -1,
+      }
+    });
+    item = collection.findOne({ _id: 0 });
+    expect(item.content).to.deep.equal([ 2 ]);
+    expect(function() {
+      collection.update({
+        _id: 0,
+      }, {
+        $pop: {
+          content: 'content', 
+        }
+      });
+    }).to.throw(Error);
   });
 
 });
