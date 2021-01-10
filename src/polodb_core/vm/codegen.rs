@@ -135,11 +135,15 @@ impl Codegen {
         if self.skip_annotation {
             self.program.label_slots[label.u_pos()] = LabelSlot::UnnamedLabel(current_loc);
         } else {
-            self.program.label_slots[label.u_pos()] = LabelSlot::LabelWithString(current_loc, name.into());
+            self.program.label_slots[label.u_pos()] = LabelSlot::LabelWithString(
+                current_loc, name.into()
+            );
         }
     }
 
-    fn emit_query_layout_has_pkey<F>(&mut self, pkey: Value, query: &Document, result_callback: F) -> DbResult<()> where
+    fn emit_query_layout_has_pkey<F>(
+        &mut self, pkey: Value, query: &Document, result_callback: F
+    ) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
         let close_label = self.new_label();
         let result_label = self.new_label();
@@ -183,7 +187,9 @@ impl Codegen {
         Ok(())
     }
 
-    pub(super) fn emit_query_layout<F>(&mut self, query: &Document, result_callback: F) -> DbResult<()> where
+    pub(super) fn emit_query_layout<F>(
+        &mut self, query: &Document, result_callback: F
+    ) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
 
         if let Some(id_value) = query.pkey_id() {
@@ -285,7 +291,9 @@ impl Codegen {
 
     fn emit_logic_and(&mut self,
                       arr: &Array,
-                      result_label: Label, get_field_failed_label: Label, not_found_label: Label
+                      result_label: Label,
+                      get_field_failed_label: Label,
+                      not_found_label: Label
     ) -> DbResult<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
@@ -303,7 +311,9 @@ impl Codegen {
 
     fn emit_logic_or(&mut self,
                      arr: &Array,
-                     result_label: Label, global_get_field_failed_label: Label, not_found_label: Label
+                     result_label: Label,
+                     global_get_field_failed_label: Label,
+                     not_found_label: Label
     ) -> DbResult<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
@@ -311,7 +321,10 @@ impl Codegen {
                 let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
                 if index == (arr.len() as usize) - 1 { // last item
                     for (key, value) in item_doc.iter() {
-                        self.emit_query_tuple(key, value, result_label, global_get_field_failed_label, not_found_label)?;
+                        self.emit_query_tuple(
+                            key, value, result_label,
+                            global_get_field_failed_label, not_found_label
+                        )?;
                     }
                 } else {
                     let go_next_label = self.new_label();
@@ -381,7 +394,10 @@ impl Codegen {
                     );
                 }
 
-                _ => return Err(DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))),
+                _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                    self.last_key().into(), self.gen_path())
+                )),
+
             }
         } else {
             match value {
@@ -392,8 +408,10 @@ impl Codegen {
                     );
                 }
 
-                Value::Array(_) => return
-                    Err(DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))),
+                Value::Array(_) =>
+                    return Err(DbErr::InvalidField(mk_invalid_query_field(
+                        self.last_key().into(), self.gen_path())
+                    )),
 
                 _ => {
                     let key_static_id = self.push_static(key.into());
@@ -424,7 +442,12 @@ impl Codegen {
         slices.len()
     }
 
-    fn emit_query_tuple_document_kv(&mut self, key: &str, get_field_failed_label: Label, not_found_label: Label, sub_key: &str, sub_value: &Value) -> DbResult<()> {
+    fn emit_query_tuple_document_kv(&mut self,
+                                    key: &str,
+                                    get_field_failed_label: Label,
+                                    not_found_label: Label, sub_key: &str,
+                                    sub_value: &Value
+    ) -> DbResult<()> {
         match sub_key {
             "$eq" => {
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -470,7 +493,9 @@ impl Codegen {
             "$in" => {
                 match sub_value {
                     Value::Array(_) => (),
-                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))),
+                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                        self.last_key().into(), self.gen_path())
+                    )),
                 }
 
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -529,9 +554,9 @@ impl Codegen {
             "$nin" => {
                 match sub_value {
                     Value::Array(_) => (),
-                    _ => return Err(
-                        DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
-                    ),
+                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                        self.last_key().into(), self.gen_path())
+                    )),
                 }
 
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -549,9 +574,9 @@ impl Codegen {
             "$size" => {
                 let expected_size = match sub_value {
                     Value::Int(i) => *i,
-                    _ => return Err(
-                        DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
-                    ),
+                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                        self.last_key().into(), self.gen_path()
+                    ))),
                 };
 
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -568,15 +593,20 @@ impl Codegen {
                 self.emit_u32((field_size + 1) as u32);
             }
 
-            _ => return Err(
-                DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
-            ),
+            _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                self.last_key().into(), self.gen_path())
+            )),
         }
         Ok(())
     }
 
     // very complex query document
-    fn emit_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_label: Label, not_found_label: Label) -> DbResult<()> {
+    fn emit_query_tuple_document(&mut self,
+                                 key: &str,
+                                 value: &Document,
+                                 get_field_failed_label: Label,
+                                 not_found_label: Label
+    ) -> DbResult<()> {
         for (sub_key, sub_value) in value.iter() {
             path_hint!(self, sub_key.as_ref(), {
                 self.emit_query_tuple_document_kv(
@@ -635,7 +665,11 @@ impl Codegen {
                     let new_name = match value {
                         Value::String(new_name) => new_name,
                         t => {
-                            let err = mk_field_name_type_unexpected(key, "String", t.ty_name());
+                            let err = mk_field_name_type_unexpected(
+                                key,
+                                "String",
+                                t.ty_name()
+                            );
                             return Err(err);
                         }
                     };
@@ -666,16 +700,18 @@ impl Codegen {
                 for (key, value) in doc.iter() {
                     let num = match value {
                         Value::Int(i) => *i,
-                        _ => return Err(
-                            DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
-                        )
+                        _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                            self.last_key().into(),
+                            self.gen_path()
+                        )))
                     };
                     self.emit_pop_field(key.clone(), match num {
                         1 => false,
                         -1 => true,
-                        _ => return Err(
-                            DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
-                        )
+                        _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                            self.last_key().into(),
+                            self.gen_path()
+                        )))
                     });
                 }
             }
