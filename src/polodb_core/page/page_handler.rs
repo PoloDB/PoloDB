@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
 use std::path::{Path, PathBuf};
+use std::num::{NonZeroU32, NonZeroU64};
 use polodb_bson::Document;
 use super::RawPage;
 use super::pagecache::PageCache;
@@ -30,7 +31,7 @@ pub(crate) enum TransactionState {
 pub(crate) struct PageHandler {
     file:                     File,
 
-    pub page_size:            u32,
+    pub page_size:            NonZeroU32,
     page_cache:               Box<PageCache>,
     journal_manager:          Box<JournalManager>,
 
@@ -49,28 +50,28 @@ pub(crate) struct AutoStartResult {
 
 impl PageHandler {
 
-    fn read_first_block(file: &mut File, page_size: u32) -> std::io::Result<RawPage> {
+    fn read_first_block(file: &mut File, page_size: NonZeroU32) -> std::io::Result<RawPage> {
         let mut raw_page = RawPage::new(0, page_size);
         raw_page.read_from_file(file, 0)?;
         Ok(raw_page)
     }
 
-    fn force_write_first_block(file: &mut File, page_size: u32) -> std::io::Result<RawPage> {
+    fn force_write_first_block(file: &mut File, page_size: NonZeroU32) -> std::io::Result<RawPage> {
         let wrapper = HeaderPageWrapper::init(0, page_size);
         wrapper.0.sync_to_file(file, 0)?;
         Ok(wrapper.0)
     }
 
-    fn init_db(file: &mut File, page_size: u32, init_block_count: u64) -> std::io::Result<(RawPage, u32, u64)> {
+    fn init_db(file: &mut File, page_size: NonZeroU32, init_block_count: NonZeroU64) -> std::io::Result<(RawPage, u32, u64)> {
         let meta = file.metadata()?;
         let file_len = meta.len();
-        if file_len < page_size as u64 {
-            let expected_file_size: u64 = (page_size as u64) * init_block_count;
+        if file_len < page_size.get() as u64 {
+            let expected_file_size: u64 = (page_size.get() as u64) * init_block_count.get();
             file.set_len(expected_file_size)?;
             let first_page = PageHandler::force_write_first_block(file, page_size)?;
-            Ok((first_page, init_block_count as u32, expected_file_size))
+            Ok((first_page, init_block_count.get() as u32, expected_file_size))
         } else {
-            let block_count = file_len / (page_size as u64);
+            let block_count = file_len / (page_size.get() as u64);
             let first_page = PageHandler::read_first_block(file, page_size)?;
             Ok((first_page, block_count as u32, file_len))
         }
@@ -85,12 +86,12 @@ impl PageHandler {
     }
 
     #[allow(dead_code)]
-    pub fn new(path: &Path, page_size: u32) -> DbResult<PageHandler> {
+    pub fn new(path: &Path, page_size: NonZeroU32) -> DbResult<PageHandler> {
         let config = Rc::new(Config::default());
         PageHandler::with_config(path, page_size, config)
     }
 
-    pub fn with_config(path: &Path, page_size: u32, config: Rc<Config>) -> DbResult<PageHandler> {
+    pub fn with_config(path: &Path, page_size: NonZeroU32, config: Rc<Config>) -> DbResult<PageHandler> {
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -256,10 +257,10 @@ impl PageHandler {
             return Ok(page);
         }
 
-        let offset = (page_id as u64) * (self.page_size as u64);
+        let offset = (page_id as u64) * (self.page_size.get() as u64);
         let mut result = RawPage::new(page_id, self.page_size);
 
-        if self.journal_manager.record_db_size() >= offset + (self.page_size as u64) {
+        if self.journal_manager.record_db_size() >= offset + (self.page_size.get() as u64) {
             result.read_from_file(&mut self.file, offset)?;
         }
 
@@ -495,7 +496,7 @@ impl PageHandler {
         first_page_wrapper.set_null_page_bar(null_page_bar + 1);
 
         if (null_page_bar as u64) >= self.journal_manager.record_db_size() {  // truncate file
-            let exceed_size = self.config.init_block_count * (self.page_size as u64);
+            let exceed_size = self.config.init_block_count.get() * (self.page_size.get() as u64);
             self.journal_manager.expand_db_size(exceed_size)?;
         }
 
@@ -573,9 +574,10 @@ impl PageHandler {
 #[cfg(test)]
 mod test {
     use std::env;
+    use std::collections::HashSet;
+    use std::num::NonZeroU32;
     use crate::page::PageHandler;
     use crate::TransactionType;
-    use std::collections::HashSet;
 
     const TEST_FREE_LIST_SIZE: usize = 10000;
     const DB_NAME: &str = "test-page-handler";
@@ -594,7 +596,8 @@ mod test {
         let _ = std::fs::remove_file(db_path.as_path());
         let _ = std::fs::remove_file(journal_path);
 
-        let mut page_handler = PageHandler::new(db_path.as_ref(), 4096).unwrap();
+        let mut page_handler = PageHandler::new(
+            db_path.as_ref(), NonZeroU32::new(4096).unwrap()).unwrap();
         page_handler.start_transaction(TransactionType::Write).unwrap();
 
         let (free_pid, free_size) = page_handler.first_page_free_list_pid_and_size().unwrap();

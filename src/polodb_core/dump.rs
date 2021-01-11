@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::fs::Metadata;
+use std::num::NonZeroU32;
 use crate::page::{RawPage, FreeListDataWrapper};
 use crate::DbResult;
 
@@ -20,7 +21,7 @@ pub struct FullDump {
     pub meta_pid:       u32,
     pub free_list_pid:  u32,
     pub free_list_size: u32,
-    pub page_size:      u32,
+    pub page_size:      NonZeroU32,
     pub pages:          Vec<PageDump>,
 }
 
@@ -28,7 +29,7 @@ pub struct JournalFrameDump {
     pub frame_id:      u32,
     pub db_size:       u64,
     pub salt1:         u32,
-    pub salt2:         u32,
+    pub salt2:         NonZeroU32,
 }
 
 pub struct JournalDump {

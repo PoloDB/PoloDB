@@ -1,4 +1,5 @@
 use libc::{ malloc, free };
+use std::num::NonZeroU32;
 use std::collections::HashMap;
 use std::ptr::null_mut;
 use crate::page::RawPage;
@@ -210,19 +211,19 @@ impl LruMap {
 
 pub(crate) struct PageCache {
     page_count: usize,
-    page_size:  u32,
+    page_size:  NonZeroU32,
     data:       *mut u8,
     lru_map:    LruMap,
 }
 
 impl PageCache {
 
-    pub fn new_default(page_size: u32) -> PageCache {
+    pub fn new_default(page_size: NonZeroU32) -> PageCache {
         Self::new(1024, page_size)
     }
 
-    pub fn new(page_count: usize, page_size: u32) -> PageCache {
-        let cache_size = page_count * (page_size as usize);
+    pub fn new(page_count: usize, page_size: NonZeroU32) -> PageCache {
+        let cache_size = page_count * (page_size.get() as usize);
 
         let data: *mut u8 = unsafe {
             malloc(cache_size).cast()
@@ -241,7 +242,7 @@ impl PageCache {
             Some(index) => index,
             None => return None,
         };
-        let offset: usize = (index as usize) * (self.page_size as usize);
+        let offset: usize = (index as usize) * (self.page_size.get() as usize);
         let mut result = RawPage::new(page_id, self.page_size);
         unsafe {
             result.copy_from_ptr(self.data.add(offset as usize));
@@ -262,7 +263,7 @@ impl PageCache {
     pub(crate) fn insert_to_cache(&mut self, page: &RawPage) {
         match self.lru_map.find(page.page_id) {
             Some(index) => {  // override
-                let offset = (index as usize) * (self.page_size as usize);
+                let offset = (index as usize) * (self.page_size.get() as usize);
                 unsafe {
                     page.copy_to_ptr(self.data.add(offset));
                 }
@@ -270,7 +271,7 @@ impl PageCache {
 
             None => {
                 let index = self.distribute_new_index();
-                let offset = (index as usize) * (self.page_size as usize);
+                let offset = (index as usize) * (self.page_size.get() as usize);
                 unsafe {
                     page.copy_to_ptr(self.data.add(offset));
                 }
@@ -294,11 +295,12 @@ impl Drop for PageCache {
 #[cfg(test)]
 mod tests {
 
+    use std::num::NonZeroU32;
     use crate::page::pagecache::{LruMap, PageCache};
     use crate::page::RawPage;
 
     fn make_raw_page(page_id: u32) -> RawPage {
-        let mut page = RawPage::new(page_id, 4096);
+        let mut page = RawPage::new(page_id, NonZeroU32::new(4096).unwrap());
 
         for i in 0..4096 {
             page.data[i] = unsafe {
@@ -332,7 +334,7 @@ mod tests {
 
     #[test]
     fn page_cache() {
-        let mut page_cache = PageCache::new(3, 4096);
+        let mut page_cache = PageCache::new(3, NonZeroU32::new(4096).unwrap());
 
         let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);
 

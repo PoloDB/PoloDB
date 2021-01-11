@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::collections::BTreeMap;
 use std::io::{Seek, Write, SeekFrom, Read};
 use std::cell::Cell;
+use std::num::NonZeroU32;
 use libc::rand;
 use frame_header::FrameHeader;
 use transaction::TransactionState;
@@ -35,9 +36,9 @@ pub struct JournalManager {
     file_path:        PathBuf,
     journal_file:     File,
     version:          [u8; 4],
-    page_size:        u32,
+    page_size:        NonZeroU32,
     salt1:            u32,
-    salt2:            u32,
+    salt2:            NonZeroU32,
     transaction_state:   Option<Box<TransactionState>>,
 
     // origin_state
@@ -56,6 +57,14 @@ fn generate_a_salt() -> u32 {
     }
 }
 
+fn generate_a_nonzero_salt() -> NonZeroU32 {
+    let mut salt = generate_a_salt();
+    while salt == 0 {
+        salt = generate_a_salt();
+    }
+    NonZeroU32::new(salt).unwrap()
+}
+
 fn crc64(bytes: &[u8]) -> u64 {
     let mut c = Digest::new();
     c.write(bytes);
@@ -64,7 +73,7 @@ fn crc64(bytes: &[u8]) -> u64 {
 
 impl JournalManager {
 
-    pub fn open(path: &Path, page_size: u32, db_file_size: u64) -> DbResult<JournalManager> {
+    pub fn open(path: &Path, page_size: NonZeroU32, db_file_size: u64) -> DbResult<JournalManager> {
         let journal_file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -79,8 +88,8 @@ impl JournalManager {
             version: [0, 0, 1, 0],
             page_size,
             db_file_size,
-            salt1: 0,
-            salt2: 0,
+            salt1: generate_a_salt(),
+            salt2: generate_a_nonzero_salt(),
             transaction_state: None,
 
             offset_map: BTreeMap::new(),
@@ -100,8 +109,6 @@ impl JournalManager {
     }
 
     fn init_header_to_file(&mut self) -> DbResult<()> {
-        self.salt1 = generate_a_salt();
-        self.salt2 = generate_a_salt();
         self.write_header_to_file()
     }
 
@@ -117,13 +124,13 @@ impl JournalManager {
         header48[32..36].copy_from_slice(&self.version);
 
         // write page_size
-        let page_size_be = self.page_size.to_be_bytes();
+        let page_size_be = self.page_size.get().to_be_bytes();
         header48[36..40].copy_from_slice(&page_size_be);
 
         let salt_1_be = self.salt1.to_be_bytes();
         header48[40..44].copy_from_slice(&salt_1_be);
 
-        let salt_2_be = self.salt2.to_be_bytes();
+        let salt_2_be = self.salt2.get().to_be_bytes();
         header48[44..48].copy_from_slice(&salt_2_be);
 
         self.journal_file.seek(SeekFrom::Start(0))?;
@@ -151,17 +158,17 @@ impl JournalManager {
         // copy version
         self.version.copy_from_slice(&header48[32..36]);
 
-        self.page_size = {
+        self.page_size = NonZeroU32::new({
             let mut buffer: [u8; 4] = [0; 4];
             buffer.copy_from_slice(&header48[36..40]);
             let actual_page_size = u32::from_be_bytes(buffer);
 
-            if actual_page_size != self.page_size {
-                return Err(DbErr::JournalPageSizeMismatch(actual_page_size, self.page_size));
+            if actual_page_size != self.page_size.get() {
+                return Err(DbErr::JournalPageSizeMismatch(actual_page_size, self.page_size.get()));
             }
 
             actual_page_size
-        };
+        }).unwrap();
 
         let mut buffer: [u8; 4] = [0; 4];
         buffer.copy_from_slice(&header48[40..44]);
@@ -169,7 +176,7 @@ impl JournalManager {
 
         let mut buffer: [u8; 4] = [0; 4];
         buffer.copy_from_slice(&header48[44..48]);
-        self.salt2 = u32::from_be_bytes(buffer);
+        self.salt2 = NonZeroU32::new(u32::from_be_bytes(buffer)).unwrap();
 
         Ok(())
     }
@@ -189,7 +196,7 @@ impl JournalManager {
 
     #[inline]
     fn full_frame_size(&self) -> u64 {
-        (self.page_size as u64) + FRAME_HEADER_SIZE
+        (self.page_size.get() as u64) + FRAME_HEADER_SIZE
     }
 
     fn load_all_pages(&mut self, file_size: u64) -> DbResult<()> {
@@ -237,7 +244,7 @@ impl JournalManager {
 
     fn recover_file_and_state(&mut self) -> DbResult<()> {
         self.transaction_state = None;
-        let frame_size = FRAME_HEADER_SIZE + (self.page_size as u64);
+        let frame_size = FRAME_HEADER_SIZE + (self.page_size.get() as u64);
         let expected_journal_file_size = JOURNAL_DATA_BEGIN + frame_size * (self.count as u64);
         self.journal_file.set_len(expected_journal_file_size)?;
         self.journal_file.seek(SeekFrom::End(0))?;
@@ -381,7 +388,7 @@ impl JournalManager {
         state.offset_map.insert(raw_page.page_id, start_pos);
         state.frame_count += 1;
 
-        let expected_db_size = (raw_page.page_id as u64) * (self.page_size as u64);
+        let expected_db_size = (raw_page.page_id as u64) * (self.page_size.get() as u64);
         if expected_db_size > state.db_file_size {
             state.db_file_size = expected_db_size;
         }
@@ -445,7 +452,7 @@ impl JournalManager {
             let mut result = RawPage::new(*page_id, self.page_size);
             result.read_from_file(&mut self.journal_file, data_offset)?;
 
-            result.sync_to_file(db_file, (*page_id as u64) * (self.page_size as u64))?;
+            result.sync_to_file(db_file, (*page_id as u64) * (self.page_size.get() as u64))?;
         }
 
         db_file.flush()?;  // only checkpoint flush the file
@@ -470,7 +477,7 @@ impl JournalManager {
         self.offset_map.clear();
 
         self.plus_salt1();
-        self.salt2 = generate_a_salt();
+        self.salt2 = generate_a_nonzero_salt();
         self.write_header_to_file()
     }
 
@@ -693,7 +700,7 @@ impl JournalManager {
 
         for index in 0..self.count {
             let frame_header_offset: u64 =
-                JOURNAL_DATA_BEGIN + (self.page_size as u64 + FRAME_HEADER_SIZE) * (index as u64);
+                JOURNAL_DATA_BEGIN + (self.page_size.get() as u64 + FRAME_HEADER_SIZE) * (index as u64);
 
             let mut header_buffer: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
             self.journal_file.seek(SeekFrom::Start(frame_header_offset))?;
@@ -716,6 +723,7 @@ impl JournalManager {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
     use crate::journal::JournalManager;
     use crate::page::RawPage;
     use crate::TransactionType;
@@ -723,7 +731,8 @@ mod tests {
     static TEST_PAGE_LEN: u32 = 100;
 
     fn make_raw_page(page_id: u32) -> RawPage {
-        let mut page = RawPage::new(page_id, 4096);
+        let mut page = RawPage::new(
+            page_id, NonZeroU32::new(4096).unwrap());
 
         for i in 0..4096 {
             page.data[i] = unsafe {
@@ -737,7 +746,9 @@ mod tests {
     #[test]
     fn test_journal() {
         let _ = std::fs::remove_file("/tmp/test-journal");
-        let mut journal_manager = JournalManager::open("/tmp/test-journal".as_ref(), 4096, 4096).unwrap();
+        let mut journal_manager = JournalManager::open(
+            "/tmp/test-journal".as_ref(), NonZeroU32::new(4096).unwrap(), 4096
+        ).unwrap();
 
         journal_manager.start_transaction(TransactionType::Write).unwrap();
 
@@ -770,7 +781,9 @@ mod tests {
         let _ = std::fs::remove_file(TEST_FILE);
         let mem_count;
         {
-            let mut journal_manager = JournalManager::open(TEST_FILE.as_ref(), 4096, 4096).unwrap();
+            let mut journal_manager = JournalManager::open(
+                TEST_FILE.as_ref(), NonZeroU32::new(4096).unwrap(), 4096
+            ).unwrap();
 
             journal_manager.start_transaction(TransactionType::Write).unwrap();
 
@@ -788,7 +801,9 @@ mod tests {
             mem_count = journal_manager.count;
         }
 
-        let journal_manager = JournalManager::open(TEST_FILE.as_ref(), 4096, 4096).unwrap();
+        let journal_manager = JournalManager::open(
+            TEST_FILE.as_ref(), NonZeroU32::new(4096).unwrap(), 4096
+        ).unwrap();
         assert_eq!(mem_count, journal_manager.count);
     }
 

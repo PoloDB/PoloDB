@@ -88,7 +88,7 @@ impl<'a> VM<'a> {
 
     #[inline]
     fn item_size(&self) -> u32 {
-        (self.page_handler.page_size - HEADER_SIZE) / ITEM_SIZE
+        (self.page_handler.page_size.get() - HEADER_SIZE) / ITEM_SIZE
     }
 
     fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {

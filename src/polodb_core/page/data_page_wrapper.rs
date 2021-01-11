@@ -1,4 +1,5 @@
 use std::ptr;
+use std::num::NonZeroU32;
 use super::{RawPage, PageType};
 
 const DATA_PAGE_HEADER_SIZE: u32 = 16;
@@ -18,12 +19,12 @@ pub(crate) struct DataPageWrapper {
 
 impl DataPageWrapper {
 
-    pub(crate) fn init(page_id: u32, page_size: u32) -> DataPageWrapper {
+    pub(crate) fn init(page_id: u32, page_size: NonZeroU32) -> DataPageWrapper {
         let mut raw_page = RawPage::new(page_id, page_size);
         let page_type = PageType::Data;
         raw_page.put(&page_type.to_magic());
 
-        let remain_size = page_size - DATA_PAGE_HEADER_SIZE - 2;
+        let remain_size = page_size.get() - DATA_PAGE_HEADER_SIZE - 2;
 
         DataPageWrapper {
             page: raw_page,
@@ -221,11 +222,13 @@ impl DataPageWrapper {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
     use crate::page::data_page_wrapper::DataPageWrapper;
 
     #[test]
     fn test_put_one_item() {
-        let mut wrapper = DataPageWrapper::init(1, 4096);
+        let mut wrapper = DataPageWrapper::init(
+            1, NonZeroU32::new(4096).unwrap());
 
         assert_eq!(wrapper.bar_len(), 0);
 
@@ -244,7 +247,8 @@ mod tests {
 
     #[test]
     fn test_multiple_items() {
-        let mut wrapper = DataPageWrapper::init(1, 4096);
+        let mut wrapper = DataPageWrapper::init(
+            1, NonZeroU32::new(4096).unwrap());
 
         assert_eq!(wrapper.bar_len(), 0);
 
@@ -265,7 +269,8 @@ mod tests {
 
     #[test]
     fn test_remove_item() {
-        let mut wrapper = DataPageWrapper::init(1, 4096);
+        let mut wrapper = DataPageWrapper::init(
+            1, NonZeroU32::new(4096).unwrap());
 
         for i in 0..4 {
             let mut first_item: [u8; 4] = [0; 4];

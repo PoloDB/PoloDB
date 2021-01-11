@@ -9,6 +9,7 @@ pub(crate) use page_handler::{PageHandler, TransactionState};
 pub(crate) use free_list_data_wrapper::FreeListDataWrapper;
 
 use std::fs::File;
+use std::num::NonZeroU32;
 use std::io::{Seek, SeekFrom, Write, Read};
 use crate::DbResult;
 use crate::error::{DbErr};
@@ -63,9 +64,9 @@ pub(crate) struct RawPage {
 
 impl RawPage {
 
-    pub fn new(page_id: u32, size: u32) -> RawPage {
+    pub fn new(page_id: u32, size: NonZeroU32) -> RawPage {
         let mut v: Vec<u8> = Vec::new();
-        v.resize(size as usize, 0);
+        v.resize(size.get() as usize, 0);
         RawPage {
             page_id,
             data: v,
