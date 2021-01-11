@@ -48,13 +48,11 @@ pub(crate) struct AutoStartResult {
     pub auto_start: bool,
 }
 
-impl PageHandler {
+struct InitDbResult {
+    db_file_size: u64,
+}
 
-    fn read_first_block(file: &mut File, page_size: NonZeroU32) -> std::io::Result<RawPage> {
-        let mut raw_page = RawPage::new(0, page_size);
-        raw_page.read_from_file(file, 0)?;
-        Ok(raw_page)
-    }
+impl PageHandler {
 
     fn force_write_first_block(file: &mut File, page_size: NonZeroU32) -> std::io::Result<RawPage> {
         let wrapper = HeaderPageWrapper::init(0, page_size);
@@ -62,18 +60,16 @@ impl PageHandler {
         Ok(wrapper.0)
     }
 
-    fn init_db(file: &mut File, page_size: NonZeroU32, init_block_count: NonZeroU64) -> std::io::Result<(RawPage, u32, u64)> {
+    fn init_db(file: &mut File, page_size: NonZeroU32, init_block_count: NonZeroU64) -> std::io::Result<InitDbResult> {
         let meta = file.metadata()?;
         let file_len = meta.len();
         if file_len < page_size.get() as u64 {
             let expected_file_size: u64 = (page_size.get() as u64) * init_block_count.get();
             file.set_len(expected_file_size)?;
-            let first_page = PageHandler::force_write_first_block(file, page_size)?;
-            Ok((first_page, init_block_count.get() as u32, expected_file_size))
+            PageHandler::force_write_first_block(file, page_size)?;
+            Ok(InitDbResult { db_file_size: expected_file_size })
         } else {
-            let block_count = file_len / (page_size.get() as u64);
-            let first_page = PageHandler::read_first_block(file, page_size)?;
-            Ok((first_page, block_count as u32, file_len))
+            Ok(InitDbResult { db_file_size: file_len })
         }
     }
 
@@ -98,10 +94,12 @@ impl PageHandler {
             .read(true)
             .open(path)?;
 
-        let (_, _, db_file_size) = PageHandler::init_db(&mut file, page_size, config.init_block_count)?;
+        let init_result = PageHandler::init_db(&mut file, page_size, config.init_block_count)?;
 
         let journal_file_path: PathBuf = PageHandler::mk_journal_path(path);
-        let journal_manager = JournalManager::open(&journal_file_path, page_size, db_file_size)?;
+        let journal_manager = JournalManager::open(
+            &journal_file_path, page_size, init_result.db_file_size
+        )?;
 
         let page_cache = PageCache::new_default(page_size);
 
