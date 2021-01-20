@@ -8,10 +8,17 @@ package polodb
 import "C"
 import (
 	"errors"
-	"fmt"
 	"time"
 )
 
+const (
+	PLDB_VAL_INT          = 0x16
+	PLDB_VAL_STRING       = 0x02
+	PLDB_VAL_UTC_DATETIME = 0x09
+	PLDB_VAL_OBJECT_ID    = 0x07
+)
+
+//export
 func CreateDb() (*C.Database, error) {
 	database := C.PLDB_open(C.CString("/tmp/polodb.db"))
 	if database == nil {
@@ -130,10 +137,21 @@ func documentToObj(val *C.DbValue, keyStr map[string]interface{}) (map[string]in
 	var keyBuf = C.CString("")
 	var tempVal *C.DbValue
 	iterObj := C.PLDB_doc_iter(doc)
-	fmt.Println(iterObj)
 	for C.PLDB_doc_iter_next(iterObj, keyBuf, 512, &tempVal) > C.int(0) {
-		valString, _ := stringToObj(tempVal)
-		keyStr[C.GoString(keyBuf)] = valString
+		var value interface{}
+		switch C.PLDB_value_type(tempVal) {
+		case PLDB_VAL_OBJECT_ID:
+			value, _ = objIdToObj(tempVal)
+		case PLDB_VAL_STRING:
+			value, _ = stringToObj(tempVal)
+		case PLDB_VAL_INT:
+			value, _ = intToObj(tempVal)
+		case PLDB_VAL_UTC_DATETIME:
+			value, _ = timeToObj(tempVal)
+		default:
+			return nil, errors.New("Type not supported\n")
+		}
+		keyStr[C.GoString(keyBuf)] = value
 		C.PLDB_free_value(tempVal)
 	}
 	C.PLDB_free_doc_iter(iterObj)
@@ -151,10 +169,30 @@ func stringToObj(val *C.DbValue) (string, error) {
 }
 
 func intToObj(val *C.DbValue) (int, error) {
-	var res int
-	resCode := C.PLDB_value_get_int(val, &res)
+	var res C.longlong
+	resCode := C.PLDB_value_get_i64(val, &res)
 	if resCode < 0 {
 		return -1, errors.New("DbValue get string error")
+	}
+	return int(res), nil
+}
+
+func timeToObj(val *C.DbValue) (time.Time, error) {
+	var date *C.DbUTCDateTime
+	resCode := C.PLDB_value_get_utc_datetime(val, &date)
+	if resCode < 0 {
+		return time.Time{}, errors.New("DbValue get time error")
+	}
+	timeStamp := C.PLDB_UTCDateTime_get_timestamp(date)
+	C.PLDB_free_UTCDateTime(date)
+	return time.Unix(int64(timeStamp), 0), nil
+}
+
+func objIdToObj(val *C.DbValue) (*C.DbObjectId, error) {
+	var res *C.DbObjectId
+	resCode := C.PLDB_value_get_object_id(val, &res)
+	if resCode < 0 {
+		return nil, errors.New("DbValue get string error")
 	}
 	return res, nil
 }
