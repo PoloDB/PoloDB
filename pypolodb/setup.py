@@ -8,7 +8,7 @@ from setuptools import setup, Extension
 
 user_agent = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.7) Gecko/2009021910 Firefox/3.0.7'
 BUF_SIZE = 65536
-LIB_VERSION = '0.6.0'
+LIB_VERSION = '0.8.0'
 
 def get_platform_name():
        if os.name == 'nt':
@@ -50,14 +50,14 @@ def get_checksum_url(download_url):
 
 def download_file(url, path):
        print('download file path: ' + url)
-       headers = {'User-Agent':user_agent,} 
+       headers = {'User-Agent':user_agent,}
        request = urllib.request.Request(url, None, headers) #The assembled request
        g = urllib.request.urlopen(request)
        with open(path, 'b+w') as f:
               f.write(g.read())
 
 def get_text_from_url(url):
-       headers = {'User-Agent':user_agent,} 
+       headers = {'User-Agent':user_agent,}
        request = urllib.request.Request(url, None, headers) #The assembled request
        g = urllib.request.urlopen(request)
        with urllib.request.urlopen(request) as g:
@@ -100,7 +100,7 @@ module1 = Extension('polodb',
 long_description = ''
 
 setup (name = 'polodb',
-       version = '0.6.0',
+       version = '0.8.0',
        description = 'PoloDB for Python',
        long_description=long_description,
        long_description_content_type="text/markdown",
