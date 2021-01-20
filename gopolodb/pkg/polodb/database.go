@@ -30,8 +30,39 @@ func (db *C.Database) CreateCollection(colName string) error {
 	return nil
 }
 
-func (db *C.Database) Find() {
+func (db *C.Database) Find(arguments map[string]interface{}) (map[string]interface{}, error) {
+	doc, err := createDocument(arguments)
+	res := make(map[string]interface{})
+	if err != nil {
+		return nil, errors.New("Error while creating document\n")
+	}
+	var handle *C.DbHandle
+	errCode := C.PLDB_find(db, 0, 1, doc, &handle)
+	if errCode != C.int(0) {
+		return nil, errors.New("Error searching into database\n")
+	}
 
+	errCode = C.PLDB_step(handle)
+	if errCode != C.int(0) {
+		return nil, errors.New("Error searching into database\n")
+	}
+
+	for C.PLDB_handle_state(handle) == 2 {
+		var val *C.DbValue
+		C.PLDB_handle_get(handle, &val)
+		res, err = documentToObj(val, res)
+		if err != nil {
+			return nil, errors.New("Error searching into database\n")
+		}
+		C.PLDB_free_value(val)
+		errCode = C.PLDB_step(handle)
+		if errCode != C.int(0) {
+			return nil, errors.New("Error searching into database\n")
+		}
+	}
+	defer C.PLDB_free_handle(handle)
+	defer C.PLDB_free_doc(doc)
+	return res, nil
 }
 
 func (db *C.Database) Insert(values map[string]interface{}) error {
@@ -40,7 +71,7 @@ func (db *C.Database) Insert(values map[string]interface{}) error {
 		return errors.New("Error while creating document\n")
 	}
 	errCode := C.PLDB_insert(db, 0, 1, doc)
-	C.PLDB_free_doc(doc)
+	defer C.PLDB_free_doc(doc)
 	if errCode != C.int(0) {
 		return errors.New("Error inserting into database\n")
 	}
@@ -90,15 +121,14 @@ func (doc *C.DbDocument) setProperty(key string, value interface{}) error {
 	}
 }
 
-func documentToObj(val *C.DbValue) (map[string]string, error) {
+func documentToObj(val *C.DbValue, keyStr map[string]interface{}) (map[string]interface{}, error) {
 	var doc *C.DbDocument
 	resCode := C.PLDB_value_get_document(val, &doc)
 	if resCode < 0 {
-		return map[string]string{}, errors.New("DbValue get document error\n")
+		return map[string]interface{}{}, errors.New("DbValue get document error\n")
 	}
 	var keyBuf = C.CString("")
 	var tempVal *C.DbValue
-	var keyStr = make(map[string]string)
 	iterObj := C.PLDB_doc_iter(doc)
 	fmt.Println(iterObj)
 	for C.PLDB_doc_iter_next(iterObj, keyBuf, 512, &tempVal) > C.int(0) {
@@ -118,4 +148,13 @@ func stringToObj(val *C.DbValue) (string, error) {
 		return "", errors.New("DbValue get string error")
 	}
 	return C.GoString(resString), nil
+}
+
+func intToObj(val *C.DbValue) (int, error) {
+	var res int
+	resCode := C.PLDB_value_get_int(val, &res)
+	if resCode < 0 {
+		return -1, errors.New("DbValue get string error")
+	}
+	return res, nil
 }
