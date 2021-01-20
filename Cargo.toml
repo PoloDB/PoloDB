@@ -5,6 +5,7 @@ members = [
     "src/polodb_cli",
     "src/polodb_clib",
     "src/polodb_line_diff",
+    "gopolodb/lib/polodb"
 ]
 
 exclude = [
