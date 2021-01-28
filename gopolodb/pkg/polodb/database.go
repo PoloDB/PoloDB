@@ -8,14 +8,31 @@ package polodb
 import "C"
 import (
 	"errors"
+	"os"
 	"time"
 )
 
 const (
-	PLDB_VAL_INT          = 0x16
+	PLDB_VAL_DOUBL        = 0x01
 	PLDB_VAL_STRING       = 0x02
-	PLDB_VAL_UTC_DATETIME = 0x09
+	PLDB_VAL_BINARY       = 0x05
 	PLDB_VAL_OBJECT_ID    = 0x07
+	PLDB_VAL_BOOLEAN      = 0x08
+	PLDB_VAL_UTC_DATETIME = 0x09
+	PLDB_VAL_NULL         = 0x0A
+	PLDB_VAL_DOCUMENT     = 0x13
+	PLDB_VAL_ARRAY        = 0x17
+	PLDB_VAL_INT          = 0x16
+
+	DB_HANDLE_STATE_HAS_ROW = 2
+
+	KEY_VALUE = "Value"
+	KEY_DATABASE = "Database"
+	KEY_DOCUMENT = "DbDocument"
+	KEY_DOC_ITER = "DbDocumentIter"
+	KEY_DB_HANDLE = "DbHandle"
+	KEY_ARRAY = "Array"
+	KEY_OBJECT_ID = "ObjectId"
 )
 
 //export
@@ -35,6 +52,16 @@ func (db *C.Database) CreateCollection(colName string) error {
 		return errors.New("Error while creating collection\n")
 	}
 	return nil
+}
+
+func (db *C.Database) DeleteDb() error {
+	if db != nil {
+		C.PLDB_close(db)
+		os.Remove("/tmp/polodb.db")
+		return nil
+	} else {
+		return errors.New("Database is not opened\n")
+	}
 }
 
 func (db *C.Database) Find(arguments map[string]interface{}) (map[string]interface{}, error) {
@@ -140,6 +167,14 @@ func documentToObj(val *C.DbValue, keyStr map[string]interface{}) (map[string]in
 	for C.PLDB_doc_iter_next(iterObj, keyBuf, 512, &tempVal) > C.int(0) {
 		var value interface{}
 		switch C.PLDB_value_type(tempVal) {
+		case PLDB_VAL_DOUBL:
+			value, _ = doubleToObj(tempVal)
+		case PLDB_VAL_BOOLEAN:
+			value, _ = booleanToObj(tempVal)
+		case PLDB_VAL_ARRAY:
+			value, _ = arrayToObj(tempVal)
+		case PLDB_VAL_NULL:
+			value = nil
 		case PLDB_VAL_OBJECT_ID:
 			value, _ = objIdToObj(tempVal)
 		case PLDB_VAL_STRING:
@@ -159,6 +194,10 @@ func documentToObj(val *C.DbValue, keyStr map[string]interface{}) (map[string]in
 	return keyStr, nil
 }
 
+func valueToObj(val *C.DbValue) interface{} {
+	return nil
+}
+
 func stringToObj(val *C.DbValue) (string, error) {
 	var resString *C.char
 	resCode := C.PLDB_value_get_string_utf8(val, &resString)
@@ -172,7 +211,7 @@ func intToObj(val *C.DbValue) (int, error) {
 	var res C.longlong
 	resCode := C.PLDB_value_get_i64(val, &res)
 	if resCode < 0 {
-		return -1, errors.New("DbValue get string error")
+		return -1, errors.New("DbValue get int error")
 	}
 	return int(res), nil
 }
@@ -192,7 +231,51 @@ func objIdToObj(val *C.DbValue) (*C.DbObjectId, error) {
 	var res *C.DbObjectId
 	resCode := C.PLDB_value_get_object_id(val, &res)
 	if resCode < 0 {
-		return nil, errors.New("DbValue get string error")
+		return nil, errors.New("DbValue get object id error")
 	}
 	return res, nil
+}
+
+func doubleToObj(val *C.DbValue) (float64, error) {
+	var res C.double
+	resCode := C.PLDB_value_get_double(val, &res)
+	if resCode < 0 {
+		return -1, errors.New("DbValue get double error")
+	}
+	return res, nil
+}
+
+func booleanToObj(val *C.DbValue) (bool, error) {
+	var res C.bool
+	resCode := C.PLDB_value_get_bool(val, &res)
+	if resCode < 0 {
+		return false, errors.New("DbValue get double error")
+	}
+	return res, nil
+}
+
+func arrayToObj(val *C.DbValue) ([]interface{}, error){
+	var dbArr C.DbArray
+	var resArray []interface{}
+	resCode := C.PLDB_value_get_array(val, &dbArr)
+	if resCode < 0 {
+		return nil, errors.New("DbValue get array error")
+	}
+	arrLen := C.PLDB_arr_len(dbArr)
+	for i := 0; i < arrLen; i++ {
+		var tempVal C.DbValue
+		if C.PLDB_arr_get(dbArr, i, &tempVal) < 0 {
+			C.PLDB_free_arr(dbArr)
+			return nil, errors.New("DbValue get array error")
+		}
+
+		item := valueToObj(tempVal)
+		if item == nil {
+			return nil, errors.New("DbValue get array error")
+		}
+		resArray = append(resArray, item)
+		C.PLDB_free_value(tempVal)
+	}
+	C.PLDB_free_arr(dbArr)
+	return resArray, nil
 }
