@@ -27,3 +27,18 @@ def test_create_collection():
     assert result[0]['age'] == 14
   finally:
     db.close()
+  
+  # open again
+  db = polodb.Database(DB_PATH)
+  try :
+    collection = db.collection('test')
+    result = collection.find({
+      'name': 'Vincent Chan',
+      'age': 14,
+    })
+    print(len(result))
+    assert len(result) == 1
+    assert result[0]['name'] == 'Vincent Chan'
+    assert result[0]['age'] == 14
+  finally:
+    db.close()

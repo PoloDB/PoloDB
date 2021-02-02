@@ -155,7 +155,7 @@ static PyObject* DatabaseObject_create_collection(DatabaseObject* self, PyObject
 
 static PyObject* DatabaseObject_collection(DatabaseObject* self, PyObject* args) {
   PyObject* name;
-  if (PyArg_ParseTuple(args, "O", &name)) {
+  if (!PyArg_ParseTuple(args, "O", &name)) {
     return NULL;
   }
 
