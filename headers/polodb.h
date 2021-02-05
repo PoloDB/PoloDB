@@ -1,3 +1,6 @@
+#ifndef POLODB_H
+#define POLODB_H
+
 #include <stdint.h>
 
 struct Database;
@@ -212,4 +215,6 @@ void PLDB_free_UTCDateTime(DbUTCDateTime* dt);
 
 #ifdef __cplusplus
 }
+#endif
+
 #endif
