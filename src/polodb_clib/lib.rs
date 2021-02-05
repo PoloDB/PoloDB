@@ -869,6 +869,19 @@ pub unsafe extern "C" fn PLDB_mk_object_id(db: *mut DbContext) -> *mut ObjectId 
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn PLDB_mk_object_id_from_bytes(bytes: *const c_char) -> *mut ObjectId {
+    let mut bytes_array: [u8; 12] = [0; 12];
+    bytes.cast::<u8>().copy_to(bytes_array.as_mut_ptr(), 12);
+    let oid_result = ObjectId::deserialize(&bytes_array);
+    if let Err(err) = oid_result {
+        set_global_error(DbErr::BsonErr(Box::new(err)));
+        return null_mut();
+    }
+    let oid = Box::new(oid_result.unwrap());
+    Box::into_raw(oid)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn PLDB_free_object_id(oid: *mut ObjectId) {
     let _ptr = Box::from_raw(oid);
 }
