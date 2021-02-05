@@ -6,6 +6,8 @@ use crate::BsonResult;
 use crate::error::{BsonErr, parse_error_reason};
 use crate::document::Document;
 use crate::object_id::ObjectId;
+use std::vec::Drain;
+use std::ops::RangeBounds;
 
 #[derive(Debug, Clone)]
 pub struct Array(Vec<Value>);
@@ -50,6 +52,17 @@ impl Array {
 
     pub fn push(&mut self, elm: Value) {
         self.0.push(elm)
+    }
+
+    pub fn pop(&mut self) -> Option<Value> {
+        self.0.pop()
+    }
+
+    pub fn drain<R>(&mut self, range: R) -> Drain<'_, Value>
+    where
+        R: RangeBounds<usize>,
+    {
+        self.0.drain(range)
     }
 
     #[inline]

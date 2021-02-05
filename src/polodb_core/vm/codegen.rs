@@ -1,4 +1,5 @@
 use polodb_bson::{Value, Document, Array};
+use std::rc::Rc;
 use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
@@ -10,7 +11,6 @@ const PATH_DEFAULT_SIZE: usize = 8;
 
 mod update_op {
     use polodb_bson::Value;
-    use std::rc::Rc;
     use crate::vm::codegen::Codegen;
     use crate::DbResult;
     use crate::vm::op::DbOp;
@@ -24,9 +24,8 @@ mod update_op {
             let next_element_label = codegen.new_label();
             let set_field_label = codegen.new_label();
 
-            let rc_str: Rc<str> = key.as_str().into();
-            let key_id_1 = codegen.push_static(Value::String(rc_str.clone()));
-            let key_id_2 = codegen.push_static(Value::String(rc_str));
+            let key_id_1 = codegen.push_static(Value::from(key.clone()));
+            let key_id_2 = codegen.push_static(Value::from(key.clone()));
             let value_id = codegen.push_static(value.clone());
 
             codegen.emit_goto2(DbOp::GetField, key_id_1, next_element_label);  // stack +1
@@ -136,11 +135,15 @@ impl Codegen {
         if self.skip_annotation {
             self.program.label_slots[label.u_pos()] = LabelSlot::UnnamedLabel(current_loc);
         } else {
-            self.program.label_slots[label.u_pos()] = LabelSlot::LabelWithString(current_loc, name.into());
+            self.program.label_slots[label.u_pos()] = LabelSlot::LabelWithString(
+                current_loc, name.into()
+            );
         }
     }
 
-    fn emit_query_layout_has_pkey<F>(&mut self, pkey: Value, query: &Document, result_callback: F) -> DbResult<()> where
+    fn emit_query_layout_has_pkey<F>(
+        &mut self, pkey: Value, query: &Document, result_callback: F
+    ) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
         let close_label = self.new_label();
         let result_label = self.new_label();
@@ -159,11 +162,11 @@ impl Codegen {
 
         self.emit_label(result_label);
         for (key, value) in query.iter() {
-            if key == "_id" {
+            if key.as_ref() == "_id" {
                 continue;
             }
 
-            let key_static_id = self.push_static(Value::String(key.as_str().into()));
+            let key_static_id = self.push_static(Value::String(key.clone()));
             let value_static_id = self.push_static(value.clone());
 
             self.emit_goto2(DbOp::GetField, key_static_id, close_label); // push a value1
@@ -184,7 +187,9 @@ impl Codegen {
         Ok(())
     }
 
-    pub(super) fn emit_query_layout<F>(&mut self, query: &Document, result_callback: F) -> DbResult<()> where
+    pub(super) fn emit_query_layout<F>(
+        &mut self, query: &Document, result_callback: F
+    ) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
 
         if let Some(id_value) = query.pkey_id() {
@@ -255,7 +260,7 @@ impl Codegen {
                                not_found_label: Label
     ) -> DbResult<()> {
         for (key, value) in query_doc.iter() {
-            path_hint!(self, key.as_str(), {
+            path_hint!(self, key.as_ref(), {
                 self.emit_query_tuple(
                     key, value,
                     result_label,
@@ -286,7 +291,9 @@ impl Codegen {
 
     fn emit_logic_and(&mut self,
                       arr: &Array,
-                      result_label: Label, get_field_failed_label: Label, not_found_label: Label
+                      result_label: Label,
+                      get_field_failed_label: Label,
+                      not_found_label: Label
     ) -> DbResult<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
@@ -304,7 +311,9 @@ impl Codegen {
 
     fn emit_logic_or(&mut self,
                      arr: &Array,
-                     result_label: Label, global_get_field_failed_label: Label, not_found_label: Label
+                     result_label: Label,
+                     global_get_field_failed_label: Label,
+                     not_found_label: Label
     ) -> DbResult<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
@@ -312,7 +321,10 @@ impl Codegen {
                 let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
                 if index == (arr.len() as usize) - 1 { // last item
                     for (key, value) in item_doc.iter() {
-                        self.emit_query_tuple(key, value, result_label, global_get_field_failed_label, not_found_label)?;
+                        self.emit_query_tuple(
+                            key, value, result_label,
+                            global_get_field_failed_label, not_found_label
+                        )?;
                     }
                 } else {
                     let go_next_label = self.new_label();
@@ -349,7 +361,8 @@ impl Codegen {
                         value: &Value,
                         result_label: Label,
                         get_field_failed_label: Label,
-                        not_found_label: Label) -> DbResult<()> {
+                        not_found_label: Label
+    ) -> DbResult<()> {
         if key.chars().next().unwrap() == '$' {
             match key {
                 "$and" => {
@@ -382,7 +395,10 @@ impl Codegen {
                     );
                 }
 
-                _ => return Err(DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))),
+                _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                    self.last_key().into(), self.gen_path())
+                )),
+
             }
         } else {
             match value {
@@ -393,8 +409,10 @@ impl Codegen {
                     );
                 }
 
-                Value::Array(_) => return
-                    Err(DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))),
+                Value::Array(_) =>
+                    return Err(DbErr::InvalidField(mk_invalid_query_field(
+                        self.last_key().into(), self.gen_path())
+                    )),
 
                 _ => {
                     let key_static_id = self.push_static(key.into());
@@ -425,7 +443,12 @@ impl Codegen {
         slices.len()
     }
 
-    fn emit_query_tuple_document_kv(&mut self, key: &str, get_field_failed_label: Label, not_found_label: Label, sub_key: &str, sub_value: &Value) -> DbResult<()> {
+    fn emit_query_tuple_document_kv(&mut self,
+                                    key: &str,
+                                    get_field_failed_label: Label,
+                                    not_found_label: Label, sub_key: &str,
+                                    sub_value: &Value
+    ) -> DbResult<()> {
         match sub_key {
             "$eq" => {
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -471,7 +494,9 @@ impl Codegen {
             "$in" => {
                 match sub_value {
                     Value::Array(_) => (),
-                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))),
+                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                        self.last_key().into(), self.gen_path())
+                    )),
                 }
 
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -530,9 +555,9 @@ impl Codegen {
             "$nin" => {
                 match sub_value {
                     Value::Array(_) => (),
-                    _ => return Err(
-                        DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
-                    ),
+                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                        self.last_key().into(), self.gen_path())
+                    )),
                 }
 
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -550,9 +575,9 @@ impl Codegen {
             "$size" => {
                 let expected_size = match sub_value {
                     Value::Int(i) => *i,
-                    _ => return Err(
-                        DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
-                    ),
+                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                        self.last_key().into(), self.gen_path()
+                    ))),
                 };
 
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -569,20 +594,25 @@ impl Codegen {
                 self.emit_u32((field_size + 1) as u32);
             }
 
-            _ => return Err(
-                DbErr::InvalidField(mk_invalid_query_field(self.last_key().into(), self.gen_path()))
-            ),
+            _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                self.last_key().into(), self.gen_path())
+            )),
         }
         Ok(())
     }
 
     // very complex query document
-    fn emit_query_tuple_document(&mut self, key: &str, value: &Document, get_field_failed_label: Label, not_found_label: Label) -> DbResult<()> {
+    fn emit_query_tuple_document(&mut self,
+                                 key: &str,
+                                 value: &Document,
+                                 get_field_failed_label: Label,
+                                 not_found_label: Label
+    ) -> DbResult<()> {
         for (sub_key, sub_value) in value.iter() {
-            path_hint!(self, sub_key.as_str(), {
+            path_hint!(self, sub_key.as_ref(), {
                 self.emit_query_tuple_document_kv(
                     key, get_field_failed_label, not_found_label,
-                    sub_key.as_str(), sub_value
+                    sub_key.as_ref(), sub_value
                 )?;
             });
         }
@@ -591,62 +621,9 @@ impl Codegen {
 
     pub(super) fn emit_update_operation(&mut self, update: &Document) -> DbResult<()> {
         for (key, value) in update.iter() {
-            match key.as_str() {
-                "$inc" => {
-                    let doc = crate::try_unwrap_document!("$inc", value);
-
-                    self.iterate_add_op(DbOp::IncField, doc.as_ref())?;
-                }
-
-                "$set" => {
-                    let doc = crate::try_unwrap_document!("$set", value);
-
-                    self.iterate_add_op(DbOp::SetField, doc.as_ref())?;
-                }
-
-                "$max" => {
-                    update_op::update_op_min_max(self, value, false)?;
-                }
-
-                "$min" => {
-                    update_op::update_op_min_max(self, value, true)?;
-                }
-
-                "$mul" => {
-                    let doc = crate::try_unwrap_document!("$mul", value);
-
-                    self.iterate_add_op(DbOp::MulField, doc.as_ref())?;
-                }
-
-                "$rename" => {
-                    let doc = crate::try_unwrap_document!("$set", value);
-
-                    for (key, value) in doc.iter() {
-                        let new_name = match value {
-                            Value::String(new_name) => new_name,
-                            t => {
-                                let err = mk_field_name_type_unexpected(key, "String", t.ty_name());
-                                return Err(err);
-                            }
-                        };
-
-                        self.emit_rename_field(key.as_str(), new_name.as_ref());
-                    }
-                }
-
-                "$unset" => {
-                    let doc = crate::try_unwrap_document!("$unset", value);
-
-                    for (key, _) in doc.iter() {
-                        self.emit_unset_field(key.as_str());
-                    }
-                }
-
-                _ => {
-                    return Err(DbErr::UnknownUpdateOperation(key.clone()))
-                }
-
-            }
+            path_hint!(self, key.as_ref(), {
+                self.emit_update_operation_kv(key, value)?;
+            });
         }
 
         self.emit(DbOp::UpdateCurrent);
@@ -654,16 +631,109 @@ impl Codegen {
         Ok(())
     }
 
+    fn emit_update_operation_kv(&mut self, key: &Rc<str>, value: &Value) -> DbResult<()> {
+        match key.as_ref() {
+            "$inc" => {
+                let doc = crate::try_unwrap_document!("$inc", value);
+
+                self.iterate_add_op(DbOp::IncField, doc.as_ref())?;
+            }
+
+            "$set" => {
+                let doc = crate::try_unwrap_document!("$set", value);
+
+                self.iterate_add_op(DbOp::SetField, doc.as_ref())?;
+            }
+
+            "$max" => {
+                update_op::update_op_min_max(self, value, false)?;
+            }
+
+            "$min" => {
+                update_op::update_op_min_max(self, value, true)?;
+            }
+
+            "$mul" => {
+                let doc = crate::try_unwrap_document!("$mul", value);
+
+                self.iterate_add_op(DbOp::MulField, doc.as_ref())?;
+            }
+
+            "$rename" => {
+                let doc = crate::try_unwrap_document!("$set", value);
+
+                for (key, value) in doc.iter() {
+                    let new_name = match value {
+                        Value::String(new_name) => new_name,
+                        t => {
+                            let err = mk_field_name_type_unexpected(
+                                key,
+                                "String",
+                                t.ty_name()
+                            );
+                            return Err(err);
+                        }
+                    };
+
+                    self.emit_rename_field(key.as_ref(), new_name.as_ref());
+                }
+            }
+
+            "$unset" => {
+                let doc = crate::try_unwrap_document!("$unset", value);
+
+                for (key, _) in doc.iter() {
+                    self.emit_unset_field(key.as_ref());
+                }
+            }
+
+            "$push" => {
+                let doc = crate::try_unwrap_document!("$push", value);
+
+                for (key, value) in doc.iter() {
+                    self.emit_push_field(key.as_ref(), value);
+                }
+            }
+
+            "$pop" => {
+                let doc = crate::try_unwrap_document!("$pop", value);
+
+                for (key, value) in doc.iter() {
+                    let num = match value {
+                        Value::Int(i) => *i,
+                        _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                            self.last_key().into(),
+                            self.gen_path()
+                        )))
+                    };
+                    self.emit_pop_field(key.clone(), match num {
+                        1 => false,
+                        -1 => true,
+                        _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
+                            self.last_key().into(),
+                            self.gen_path()
+                        )))
+                    });
+                }
+            }
+
+            _ => return Err(DbErr::UnknownUpdateOperation(key.clone())),
+
+        }
+
+        Ok(())
+    }
+
     fn iterate_add_op(&mut self, op: DbOp, doc: &Document) -> DbResult<()> {
         for (index, (key, value)) in doc.iter().enumerate() {
-            if index == 0 && key == "_id" {
+            if index == 0 && key.as_ref() == "_id" {
                 return Err(DbErr::UnableToUpdatePrimaryKey);
             }
 
             let value_id = self.push_static(value.clone());
             self.emit_push_value(value_id);
 
-            let key_id = self.push_static(Value::String(key.as_str().into()));
+            let key_id = self.push_static(Value::String(key.clone()));
             self.emit(op);
             self.emit_u32(key_id);
 
@@ -733,6 +803,49 @@ impl Codegen {
         let value_id = self.push_static(Value::String(name.into()));
         self.emit(DbOp::UnsetField);
         self.emit_u32(value_id);
+    }
+
+    pub(super) fn emit_push_field(&mut self, field_name: &str, value: &Value) {
+        let get_field_failed_label = self.new_label();
+        let name_id = self.push_static(field_name.into());
+        self.emit_goto2(DbOp::GetField, name_id, get_field_failed_label);
+
+        let value_id = self.push_static(value.clone());
+        self.emit(DbOp::PushValue);
+        self.emit_u32(value_id);
+
+        self.emit(DbOp::ArrayPush);
+
+        self.emit(DbOp::Pop);
+
+        self.emit(DbOp::SetField);
+        self.emit_u32(name_id);
+
+        self.emit(DbOp::Pop);
+
+        self.emit_label(get_field_failed_label);
+    }
+
+    pub(super) fn emit_pop_field(&mut self, field_name: Rc<str>, is_first: bool) {
+        let get_field_failed_label = self.new_label();
+        let name_id = self.push_static(field_name.into());
+
+        // <<---- push an array on stack
+        self.emit_goto2(DbOp::GetField, name_id, get_field_failed_label);
+
+        self.emit(if is_first {
+            DbOp::ArrayPopFirst
+        } else {
+            DbOp::ArrayPopLast
+        });
+
+        self.emit(DbOp::SetField);
+        self.emit_u32(name_id);
+
+        // <<---- pop an array on stack
+        self.emit(DbOp::Pop);
+
+        self.emit_label(get_field_failed_label);
     }
 
     pub(super) fn emit_goto(&mut self, op: DbOp, label: Label) {

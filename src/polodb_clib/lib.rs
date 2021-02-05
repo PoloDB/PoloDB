@@ -654,7 +654,7 @@ pub unsafe extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char
     let local_value = value.as_ref().unwrap();
     let key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
     let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    let result = local_doc_mut.insert(key.to_string(), local_value.clone());
+    let result = local_doc_mut.insert(key.into(), local_value.clone());
     if result.is_some() {
         1
     } else {
@@ -791,14 +791,14 @@ pub unsafe extern "C" fn PLDB_doc_len(doc: *mut Rc<Document>) -> c_int {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_iter(doc: *mut Rc<Document>) -> *mut Iter<'static, String, Value> {
+pub unsafe extern "C" fn PLDB_doc_iter(doc: *mut Rc<Document>) -> *mut Iter<'static, Rc<str>, Value> {
     let local_doc = doc.as_mut().unwrap();
     let iter = local_doc.iter();
     Box::into_raw(Box::new(iter))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, String, Value>,
+pub unsafe extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, Rc<str>, Value>,
                                      key_buffer: *mut c_char, key_buffer_size: c_uint, out_val: *mut *mut Value) -> c_int {
 
     let local_iter = iter.as_mut().unwrap();
@@ -812,7 +812,7 @@ pub unsafe extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, String, Val
             }
             let real_size = std::cmp::min(key_len, key_buffer_size as usize);
 
-            let cstr = CString::new(key.clone()).unwrap();
+            let cstr = CString::new(key.as_ref()).unwrap();
             cstr.as_ptr().copy_to_nonoverlapping(key_buffer, real_size);
 
             let boxed_value = Box::new(value.clone());
@@ -865,6 +865,19 @@ pub unsafe extern "C" fn PLDB_mk_object_id(db: *mut DbContext) -> *mut ObjectId 
     let rust_db = db.as_mut().unwrap();
     let oid = rust_db.object_id_maker().mk_object_id();
     let oid = Box::new(oid);
+    Box::into_raw(oid)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_mk_object_id_from_bytes(bytes: *const c_char) -> *mut ObjectId {
+    let mut bytes_array: [u8; 12] = [0; 12];
+    bytes.cast::<u8>().copy_to(bytes_array.as_mut_ptr(), 12);
+    let oid_result = ObjectId::deserialize(&bytes_array);
+    if let Err(err) = oid_result {
+        set_global_error(DbErr::BsonErr(Box::new(err)));
+        return null_mut();
+    }
+    let oid = Box::new(oid_result.unwrap());
     Box::into_raw(oid)
 }
 
@@ -933,6 +946,7 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::InvalidField(_) => 42,
         DbErr::CollectionAlreadyExits(_) => 43,
         DbErr::UnableToUpdatePrimaryKey => 44,
+        DbErr::UnexpectedTypeForOp(_) => 45,
 
     }
 }

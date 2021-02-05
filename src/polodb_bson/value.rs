@@ -49,7 +49,7 @@ impl Value {
         }
     }
 
-    pub fn ty_name(&self) -> &str {
+    pub fn ty_name(&self) -> &'static str {
         match self {
             Value::Null           => "Null",
             Value::Double(_)      => "Double",

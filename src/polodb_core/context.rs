@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::borrow::Borrow;
 use std::path::{Path, PathBuf};
+use std::num::NonZeroU32;
 use polodb_bson::{Document, Value, ObjectIdMaker, mk_document};
 use super::page::{header_page_wrapper, PageHandler};
 use super::error::DbErr;
@@ -65,7 +66,7 @@ pub struct CollectionMeta {
 impl DbContext {
 
     pub fn new(path: &Path, config: Config) -> DbResult<DbContext> {
-        let page_size = 4096;
+        let page_size = NonZeroU32::new(4096).unwrap();
 
         let page_handler = PageHandler::with_config(path, page_size, Rc::new(config))?;
 
@@ -253,7 +254,7 @@ impl DbContext {
 
     #[inline]
     fn item_size(&self) -> u32 {
-        (self.page_handler.page_size - HEADER_SIZE) / ITEM_SIZE
+        (self.page_handler.page_size.get() - HEADER_SIZE) / ITEM_SIZE
     }
 
     pub(crate) fn make_handle(&mut self, program: SubProgram) -> DbHandle {
@@ -307,14 +308,14 @@ impl DbContext {
             if let Value::Int(1) = value_of_key {
                 // nothing
             } else {
-                return Err(DbErr::InvalidOrderOfIndex(key_name.into()));
+                return Err(DbErr::InvalidOrderOfIndex(key_name.clone()));
             }
 
             match meta_doc.doc_ref().get(meta_doc_key::INDEXES) {
                 Some(indexes_obj) => match indexes_obj {
                     Value::Document(index_doc) => {
                         if index_already_exists(index_doc.borrow(), key_name) {
-                            return Err(DbErr::IndexAlreadyExists(key_name.into()));
+                            return Err(DbErr::IndexAlreadyExists(key_name.clone()));
                         }
 
                         unimplemented!()
@@ -332,7 +333,7 @@ impl DbContext {
 
                     let root_pid = self.page_handler.alloc_page_id()?;
                     let options_doc = merge_options_into_default(root_pid, options)?;
-                    doc.insert(key_name.into(), Value::Document(Rc::new(options_doc)));
+                    doc.insert(key_name.clone(), Value::Document(Rc::new(options_doc)));
 
                     meta_doc.set_indexes(doc);
                 }
@@ -725,7 +726,7 @@ impl DbContext {
     }
 
     fn dump_all_pages(&mut self, file_len: u64) -> DbResult<Vec<PageDump>> {
-        let page_count = file_len / (self.page_handler.page_size as u64);
+        let page_count = file_len / (self.page_handler.page_size.get() as u64);
         let mut result = Vec::with_capacity(page_count as usize);
 
         for index in 0..page_count {

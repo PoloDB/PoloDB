@@ -125,6 +125,14 @@ pub enum DbOp {
     // 1 byte
     ArraySize,
 
+    // push an element to the array
+    //
+    // 1 byte
+    ArrayPush,
+
+    ArrayPopFirst,
+    ArrayPopLast,
+
     // update current item on cursor
     //
     // 1 byte

@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 
 // 24 bytes
 pub(super) struct FrameHeader {
@@ -13,7 +14,7 @@ pub(super) struct FrameHeader {
     // should be the same as the header of journal file
     // is they are not equal, abandon this frame
     pub(super) salt1:         u32,  // offset 16
-    pub(super) salt2:         u32,  // offset 20
+    pub(super) salt2:         NonZeroU32,  // offset 20
 }
 
 impl FrameHeader {
@@ -34,7 +35,7 @@ impl FrameHeader {
 
         let mut buffer: [u8; 4] = [0; 4];
         buffer.copy_from_slice(&bytes[20..24]);
-        let salt2 = u32::from_be_bytes(buffer);
+        let salt2 = NonZeroU32::new(u32::from_be_bytes(buffer)).unwrap();
 
         FrameHeader {
             page_id,
@@ -54,7 +55,7 @@ impl FrameHeader {
         let salt1_be = self.salt1.to_be_bytes();
         buffer[16..20].copy_from_slice(&salt1_be);
 
-        let salt2_be = self.salt2.to_be_bytes();
+        let salt2_be = self.salt2.get().to_be_bytes();
         buffer[20..24].copy_from_slice(&salt2_be);
     }
 

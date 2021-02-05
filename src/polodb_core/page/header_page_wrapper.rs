@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use super::RawPage;
 
 static HEADER_DESP: &str          = "PoloDB Format v0.2";
@@ -29,7 +30,7 @@ pub(crate) struct HeaderPageWrapper(pub RawPage);
 
 impl HeaderPageWrapper {
 
-    pub(crate) fn init(page_id: u32, page_size: u32) -> HeaderPageWrapper {
+    pub(crate) fn init(page_id: u32, page_size: NonZeroU32) -> HeaderPageWrapper {
         let raw_page = RawPage::new(page_id, page_size);
         let mut wrapper = HeaderPageWrapper::from_raw_page(raw_page);
         wrapper.set_title(HEADER_DESP);
@@ -184,12 +185,13 @@ impl HeaderPageWrapper {
 mod tests {
     // use crate::page::HeaderPage;
 
+    use std::num::NonZeroU32;
     use crate::page::RawPage;
     use crate::page::header_page_wrapper::*;
 
     #[test]
     fn parse_and_gen() {
-        let raw_page = RawPage::new(0, 4096);
+        let raw_page = RawPage::new(0, NonZeroU32::new(4096).unwrap());
 
         let mut wrapper = HeaderPageWrapper::from_raw_page(raw_page);
 

@@ -11,4 +11,4 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 polodb_core = { path = "../polodb_core" }
-polodb_bson = "0.6.0"
+polodb_bson = { path = "../polodb_bson" }

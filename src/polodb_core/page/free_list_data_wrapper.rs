@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use crate::page::{RawPage, PageType};
 
 const SIZE_OFFSET: u32 = 4;
@@ -17,7 +18,7 @@ pub(crate) struct FreeListDataWrapper {
 
 impl FreeListDataWrapper {
 
-    pub(crate) fn init(page_id: u32, page_size: u32) -> FreeListDataWrapper {
+    pub(crate) fn init(page_id: u32, page_size: NonZeroU32) -> FreeListDataWrapper {
         let mut raw_page = RawPage::new(page_id, page_size);
         let page_type = PageType::FreeList;
         raw_page.put(&page_type.to_magic());

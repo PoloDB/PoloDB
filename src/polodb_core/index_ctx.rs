@@ -9,7 +9,7 @@ use crate::page::PageHandler;
 use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
 
 pub(crate) struct IndexCtx {
-    key_to_entry: HashMap<String, IndexEntry>,
+    key_to_entry: HashMap<Rc<str>, IndexEntry>,
 }
 
 impl IndexCtx {

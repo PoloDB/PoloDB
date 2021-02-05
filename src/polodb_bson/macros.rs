@@ -8,7 +8,7 @@ macro_rules! mk_document(
         {
             let mut m = $crate::Document::new_without_id();
             $(
-                m.insert(String::from($key), $crate::Value::from($value));
+                m.insert($key.into(), $crate::Value::from($value));
             )+
             m
         }

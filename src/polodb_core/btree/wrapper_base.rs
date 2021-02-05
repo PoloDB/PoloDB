@@ -1,3 +1,4 @@
+use std::num::NonZeroU32;
 use crate::DbResult;
 use crate::page::{RawPage, PageHandler};
 use super::{BTreeNode, HEADER_SIZE, ITEM_SIZE};
@@ -8,8 +9,8 @@ pub(super) struct BTreePageWrapperBase<'a> {
     pub(super) item_size:          u32,
 }
 
-pub fn cal_item_size(page_size: u32) -> u32 {
-    (page_size - HEADER_SIZE) / ITEM_SIZE
+pub fn cal_item_size(page_size: NonZeroU32) -> u32 {
+    (page_size.get() - HEADER_SIZE) / ITEM_SIZE
 }
 
 impl<'a> BTreePageWrapperBase<'a> {
