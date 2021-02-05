@@ -898,6 +898,15 @@ pub unsafe extern "C" fn PLDB_object_id_to_hex(oid: *const ObjectId, buffer: *mu
 }
 
 #[no_mangle]
+pub unsafe extern  "C" fn PLDB_object_id_to_bytes(oid: *const ObjectId, bytes: *mut c_char) {
+    let oid = oid.as_ref().unwrap();
+    let mut vec: Vec<u8> = Vec::with_capacity(12);
+    oid.serialize(&mut vec).unwrap();
+
+    vec.as_ptr().copy_to(bytes.cast(), 12);
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn PLDB_free_value(val: *mut Value) {
     let _val = Box::from_raw(val);
 }

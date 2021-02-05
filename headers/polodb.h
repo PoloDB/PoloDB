@@ -194,6 +194,8 @@ DbObjectId* PLDB_mk_object_id(Database* db);
 
 DbObjectId* PLDB_mk_object_id_from_bytes(const char* bytes);
 
+void PLDB_object_id_to_bytes(const *ObjectId oid, char* bytes);
+
 void PLDB_free_object_id(DbObjectId*);
 
 int PLDB_object_id_to_hex(const DbObjectId* oid, char* buffer, unsigned int size);
