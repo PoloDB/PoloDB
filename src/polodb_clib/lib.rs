@@ -709,6 +709,18 @@ pub unsafe extern "C" fn PLDB_mk_object_id(db: *mut DbContext) -> *mut ObjectId 
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn PLDB_mk_str_value(str: *const c_char, size: u32) -> ValueMock {
+    let buffer: *mut c_char = libc::malloc((size + 1) as usize).cast();
+    str.copy_to(buffer, size as usize);
+    ValueMock {
+        tag: ty_int::STRING,
+        value: ValueUnion {
+            str: buffer
+        },
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn PLDB_dup_object_id(oid: *const ObjectId) -> *mut ObjectId {
     let oid_ref = oid.as_ref().unwrap();
     let new_oid = Box::new(oid_ref.clone());
