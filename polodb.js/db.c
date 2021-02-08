@@ -739,8 +739,10 @@ static napi_value DbValueToJsValue(napi_env env, PLDBValue value) {
       status = napi_get_reference_value(env, objectid_ref, &objectid_ctor);
       CHECK_STAT(status);
 
+      DbObjectId* clone = PLDB_dup_object_id(value.v.oid);
+
       napi_value oid_ext;
-      status = napi_create_external(env, value.v.oid, NULL, NULL, &oid_ext);
+      status = napi_create_external(env, clone, NULL, NULL, &oid_ext);
       CHECK_STAT(status);
 
       size_t argc = 1;
