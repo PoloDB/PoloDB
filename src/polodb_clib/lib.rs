@@ -398,21 +398,6 @@ pub unsafe extern "C" fn PLDB_close(db: *mut DbContext) {
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_mk_int(val: i64) -> *mut Value {
-    let val = Box::new(Value::Int(val));
-    Box::into_raw(val)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_value_mk_binary(buffer: *const c_char, size: u32) -> *mut Value {
-    let mut v: Vec<u8> = Vec::with_capacity(size as usize);
-    v.resize(size as usize, 0);
-    buffer.copy_to(v.as_mut_ptr().cast(), size as usize);
-    let val = Box::new(Value::Binary(Rc::new(v)));
-    Box::into_raw(val)
-}
-
-#[no_mangle]
 pub extern "C" fn PLDB_mk_arr() -> *mut Rc<Array> {
     let result = Box::new(Rc::new(Array::new()));
     Box::into_raw(result)
@@ -435,27 +420,6 @@ pub unsafe extern "C" fn PLDB_arr_push(arr: *mut Rc<Array>, val: ValueMock) {
     let arr_mut = Rc::get_mut(local_arr).unwrap();
     let local_value = mock_value_to_db_value(val).unwrap();
     arr_mut.push(local_value)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_get(arr: *mut Rc<Array>, index: c_uint, out_val: *mut *mut Value) -> c_int {
-    let local_arr = arr.as_mut().unwrap();
-    let val = &local_arr[index as usize];
-    let out_box = Box::new(val.clone());
-    out_val.write(Box::into_raw(out_box));
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_len(arr: *mut Rc<Array>) -> c_uint {
-    let local_arr = arr.as_ref().unwrap();
-    local_arr.len()
-}
-
-#[no_mangle]
-pub extern "C" fn PLDB_mk_doc() -> *mut Rc<Document> {
-    let result = Box::new(Rc::new(Document::new_without_id()));
-    Box::into_raw(result)
 }
 
 unsafe fn db_value_to_mock_value(value: &Value) -> ValueMock {
@@ -616,6 +580,27 @@ unsafe fn mock_value_to_db_value(v: ValueMock) -> Option<Value> {
         _ => None,
 
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_arr_get(arr: *mut Rc<Array>, index: c_uint, out_val: *mut ValueMock) -> c_int {
+    let local_arr = arr.as_mut().unwrap();
+    let val = &local_arr[index as usize];
+    let mock = db_value_to_mock_value(val);
+    out_val.write(mock);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_arr_len(arr: *mut Rc<Array>) -> c_uint {
+    let local_arr = arr.as_ref().unwrap();
+    local_arr.len()
+}
+
+#[no_mangle]
+pub extern "C" fn PLDB_mk_doc() -> *mut Rc<Document> {
+    let result = Box::new(Rc::new(Document::new_without_id()));
+    Box::into_raw(result)
 }
 
 #[no_mangle]
