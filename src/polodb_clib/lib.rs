@@ -791,7 +791,7 @@ pub unsafe extern "C" fn PLDB_doc_len(doc: *mut Rc<Document>) -> c_int {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_iter(doc: *mut Rc<Document>) -> *mut Iter<'static, Rc<str>, Value> {
+pub unsafe extern "C" fn PLDB_doc_iter(doc: *mut Rc<Document>) -> *mut Iter<'static, String, Value> {
     let local_doc = doc.as_mut().unwrap();
     let iter = local_doc.iter();
     Box::into_raw(Box::new(iter))

@@ -11,7 +11,7 @@ use crate::object_id::{ ObjectIdMaker, ObjectId };
 
 #[derive(Debug, Clone)]
 pub struct Document {
-    map: LinkedHashMap<Rc<str>, Value>,
+    map: LinkedHashMap<String, Value>,
 }
 
 impl Document {
@@ -32,7 +32,7 @@ impl Document {
     }
 
     #[inline]
-    pub fn insert(&mut self, key: Rc<str>, value: Value) -> Option<Value> {
+    pub fn insert(&mut self, key: String, value: Value) -> Option<Value> {
         self.map.insert(key, value)
     }
 
@@ -116,7 +116,7 @@ impl Document {
                     let (value, to_ptr) = Document::parse_key(bytes, ptr)?;
                     ptr = to_ptr;
 
-                    doc.map.insert(key, Value::String(value.into()));
+                    doc.map.insert(key, Value::from(Rc::new(value)));
                 }
 
                 ty_int::OBJECT_ID => {
@@ -198,14 +198,14 @@ impl Document {
         Ok(doc)
     }
 
-    pub fn parse_key(bytes: &[u8], mut ptr: usize) -> BsonResult<(Rc<str>, usize)> {
+    pub fn parse_key(bytes: &[u8], mut ptr: usize) -> BsonResult<(String, usize)> {
         let mut buffer = Vec::with_capacity(128);
         while bytes[ptr] != 0 {
             buffer.push(bytes[ptr]);
             ptr += 1;
         }
 
-        let str = str::from_utf8(&buffer)?;
+        let str = String::from_utf8(buffer)?;
         Ok((str.into(), ptr + 1))
     }
 
@@ -309,7 +309,7 @@ impl Document {
         }
 
         for (key, value) in &self.map {
-            if is_id_inserted && key.as_ref() == "_id" {
+            if is_id_inserted && key == "_id" {
                 continue;
             }
 
@@ -322,7 +322,7 @@ impl Document {
     }
 
     #[inline]
-    pub fn iter(&self) -> Iter<Rc<str>, Value> {
+    pub fn iter(&self) -> Iter<String, Value> {
         self.map.iter()
     }
 
@@ -331,19 +331,13 @@ impl Document {
         data.push(0); // cstring end
     }
 
-}
-
-impl std::convert::AsRef<Document> for Document {
-
-    fn as_ref(&self) -> &Document {
+    #[inline]
+    pub fn as_ref(&self) -> &Self {
         self
     }
 
-}
-
-impl std::convert::AsMut<Document> for Document {
-
-    fn as_mut(&mut self) -> &mut Document {
+    #[inline]
+    pub fn as_mut(&mut self) -> &mut Self {
         self
     }
 
@@ -384,12 +378,14 @@ impl fmt::Display for Document {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{{ ")?;
 
-        for (index, (key, value)) in (&self.map).iter().enumerate() {
+        let mut index = 0;
+        for (key, value) in &self.map {
             write!(f, "{}: {}", key, value)?;
 
             if index < self.map.len() - 1 {
                 write!(f, ", ")?;
             }
+            index += 1;
         }
 
         write!(f, " }}")

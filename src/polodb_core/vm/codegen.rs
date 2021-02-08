@@ -1,5 +1,5 @@
-use polodb_bson::{Value, Document, Array};
 use std::rc::Rc;
+use polodb_bson::{Value, Document, Array};
 use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
@@ -77,7 +77,7 @@ pub(super) struct Codegen {
 
 macro_rules! path_hint {
     ($self:tt, $key: expr, $content:block) => {
-        $self.paths.push($key.into());
+        $self.paths.push($key);
         $content;
         $self.paths.pop();
     }
@@ -162,11 +162,11 @@ impl Codegen {
 
         self.emit_label(result_label);
         for (key, value) in query.iter() {
-            if key.as_ref() == "_id" {
+            if key == "_id" {
                 continue;
             }
 
-            let key_static_id = self.push_static(Value::String(key.clone()));
+            let key_static_id = self.push_static(Value::String(Rc::new(key.clone())));
             let value_static_id = self.push_static(value.clone());
 
             self.emit_goto2(DbOp::GetField, key_static_id, close_label); // push a value1
@@ -260,7 +260,7 @@ impl Codegen {
                                not_found_label: Label
     ) -> DbResult<()> {
         for (key, value) in query_doc.iter() {
-            path_hint!(self, key.as_ref(), {
+            path_hint!(self, key.clone(), {
                 self.emit_query_tuple(
                     key, value,
                     result_label,
@@ -297,7 +297,7 @@ impl Codegen {
     ) -> DbResult<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
-            path_hint!(self, path_msg.as_str(), {
+            path_hint!(self, path_msg, {
                 let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
                 self.emit_standard_query_doc(
                     item_doc,
@@ -317,7 +317,7 @@ impl Codegen {
     ) -> DbResult<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
-            path_hint!(self, path_msg.as_str(), {
+            path_hint!(self, path_msg, {
                 let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
                 if index == (arr.len() as usize) - 1 { // last item
                     for (key, value) in item_doc.iter() {
@@ -609,7 +609,7 @@ impl Codegen {
                                  not_found_label: Label
     ) -> DbResult<()> {
         for (sub_key, sub_value) in value.iter() {
-            path_hint!(self, sub_key.as_ref(), {
+            path_hint!(self, sub_key.clone(), {
                 self.emit_query_tuple_document_kv(
                     key, get_field_failed_label, not_found_label,
                     sub_key.as_ref(), sub_value
@@ -621,7 +621,7 @@ impl Codegen {
 
     pub(super) fn emit_update_operation(&mut self, update: &Document) -> DbResult<()> {
         for (key, value) in update.iter() {
-            path_hint!(self, key.as_ref(), {
+            path_hint!(self, key.clone(), {
                 self.emit_update_operation_kv(key, value)?;
             });
         }
@@ -631,7 +631,7 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_update_operation_kv(&mut self, key: &Rc<str>, value: &Value) -> DbResult<()> {
+    fn emit_update_operation_kv(&mut self, key: &str, value: &Value) -> DbResult<()> {
         match key.as_ref() {
             "$inc" => {
                 let doc = crate::try_unwrap_document!("$inc", value);
@@ -664,7 +664,7 @@ impl Codegen {
 
                 for (key, value) in doc.iter() {
                     let new_name = match value {
-                        Value::String(new_name) => new_name,
+                        Value::String(new_name) => new_name.as_str(),
                         t => {
                             let err = mk_field_name_type_unexpected(
                                 key,
@@ -675,7 +675,7 @@ impl Codegen {
                         }
                     };
 
-                    self.emit_rename_field(key.as_ref(), new_name.as_ref());
+                    self.emit_rename_field(key.as_ref(), new_name);
                 }
             }
 
@@ -706,7 +706,7 @@ impl Codegen {
                             self.gen_path()
                         )))
                     };
-                    self.emit_pop_field(key.clone(), match num {
+                    self.emit_pop_field(key.as_str(), match num {
                         1 => false,
                         -1 => true,
                         _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
@@ -717,7 +717,7 @@ impl Codegen {
                 }
             }
 
-            _ => return Err(DbErr::UnknownUpdateOperation(key.clone())),
+            _ => return Err(DbErr::UnknownUpdateOperation(key.into())),
 
         }
 
@@ -726,14 +726,14 @@ impl Codegen {
 
     fn iterate_add_op(&mut self, op: DbOp, doc: &Document) -> DbResult<()> {
         for (index, (key, value)) in doc.iter().enumerate() {
-            if index == 0 && key.as_ref() == "_id" {
+            if index == 0 && key == "_id" {
                 return Err(DbErr::UnableToUpdatePrimaryKey);
             }
 
             let value_id = self.push_static(value.clone());
             self.emit_push_value(value_id);
 
-            let key_id = self.push_static(Value::String(key.clone()));
+            let key_id = self.push_static(Value::from(key.clone()));
             self.emit(op);
             self.emit_u32(key_id);
 
@@ -784,8 +784,8 @@ impl Codegen {
 
     pub(super) fn emit_rename_field(&mut self, old_name: &str, new_name: &str) {
         let get_field_failed_label = self.new_label();
-        let old_name_id = self.push_static(Value::String(old_name.into()));
-        let new_name_id = self.push_static(Value::String(new_name.into()));
+        let old_name_id = self.push_static(Value::String(Rc::new(old_name.into())));
+        let new_name_id = self.push_static(Value::String(Rc::new(new_name.into())));
         self.emit_goto2(DbOp::GetField, old_name_id, get_field_failed_label);
 
         self.emit(DbOp::SetField);
@@ -800,7 +800,7 @@ impl Codegen {
     }
 
     pub(super) fn emit_unset_field(&mut self, name: &str) {
-        let value_id = self.push_static(Value::String(name.into()));
+        let value_id = self.push_static(Value::String(Rc::new(name.into())));
         self.emit(DbOp::UnsetField);
         self.emit_u32(value_id);
     }
@@ -826,7 +826,7 @@ impl Codegen {
         self.emit_label(get_field_failed_label);
     }
 
-    pub(super) fn emit_pop_field(&mut self, field_name: Rc<str>, is_first: bool) {
+    pub(super) fn emit_pop_field(&mut self, field_name: &str, is_first: bool) {
         let get_field_failed_label = self.new_label();
         let name_id = self.push_static(field_name.into());
 

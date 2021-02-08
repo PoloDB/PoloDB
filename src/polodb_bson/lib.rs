@@ -50,7 +50,7 @@ mod tests {
     #[test]
     fn print_value_size() {
         let size = std::mem::size_of::<crate::Value>();
-        assert_eq!(size, 24);
+        assert_eq!(size, 16);
     }
 
 }

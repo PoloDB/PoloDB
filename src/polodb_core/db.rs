@@ -539,7 +539,7 @@ mod tests {
             new_str.push('0');
         }
 
-        doc.insert("_id".into(), Value::String(new_str.into()));
+        doc.insert("_id".into(), Value::String(Rc::new(new_str.clone())));
 
         let _ = collection.insert(doc.as_mut()).unwrap();
     }
@@ -556,7 +556,7 @@ mod tests {
         collection.create_index(&keys, None).unwrap();
 
         for i in 0..10 {
-            let str: Rc<str> = i.to_string().into();
+            let str = Rc::new(i.to_string());
             let mut data = mk_document! {
                 "name": str.clone(),
                 "user_id": str.clone(),
