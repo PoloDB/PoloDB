@@ -718,7 +718,7 @@ static napi_value DbValueToJsValue(napi_env env, PLDBValue value) {
       const char* content = value.v.str;
 
       result = NULL;
-      status = napi_create_string_utf8(env, content, ec, &result);
+      status = napi_create_string_utf8(env, content, NAPI_AUTO_LENGTH, &result);
 
       return result;
     }
