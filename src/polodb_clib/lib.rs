@@ -671,7 +671,7 @@ pub unsafe extern "C" fn PLDB_doc_iter(doc: *mut Rc<Document>) -> *mut Iter<'sta
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, Rc<str>, Value>,
+pub unsafe extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, String, Value>,
                                      key_buffer: *mut c_char, key_buffer_size: c_uint, out_val: *mut ValueMock) -> c_int {
 
     let local_iter = iter.as_mut().unwrap();
@@ -685,7 +685,7 @@ pub unsafe extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, Rc<str>, Va
             }
             let real_size = std::cmp::min(key_len, key_buffer_size as usize);
 
-            let cstr = CString::new(key.as_ref()).unwrap();
+            let cstr = CString::new(key.as_str()).unwrap();
             cstr.as_ptr().copy_to_nonoverlapping(key_buffer, real_size);
 
             let value_mock = db_value_to_mock_value(value);
