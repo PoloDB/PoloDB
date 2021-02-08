@@ -724,6 +724,13 @@ pub unsafe extern "C" fn PLDB_mk_object_id(db: *mut DbContext) -> *mut ObjectId 
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn PLDB_dup_object_id(oid: *const ObjectId) -> *mut ObjectId {
+    let oid_ref = oid.as_ref().unwrap();
+    let new_oid = Box::new(oid_ref.clone());
+    Box::into_raw(new_oid)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn PLDB_mk_object_id_from_bytes(bytes: *const c_char) -> *mut ObjectId {
     let mut bytes_array: [u8; 12] = [0; 12];
     bytes.cast::<u8>().copy_to(bytes_array.as_mut_ptr(), 12);
