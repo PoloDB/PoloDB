@@ -716,6 +716,12 @@ pub unsafe extern "C" fn PLDB_dup_object_id(oid: *const ObjectId) -> *mut Object
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn PLDB_dup_value(val: ValueMock) -> ValueMock {
+    let val = mock_value_to_db_value(val).unwrap();
+    db_value_to_mock_value(&val)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn PLDB_mk_object_id_from_bytes(bytes: *const c_char) -> *mut ObjectId {
     let mut bytes_array: [u8; 12] = [0; 12];
     bytes.cast::<u8>().copy_to(bytes_array.as_mut_ptr(), 12);
