@@ -5,7 +5,7 @@ use polodb_bson::{Value, ObjectId, Document, Array, UTCDateTime, ty_int};
 use polodb_bson::linked_hash_map::Iter;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::os::raw::{c_char, c_uint, c_int, c_double, c_uchar, c_longlong};
+use std::os::raw::{c_char, c_uint, c_int, c_double, c_longlong};
 use std::ptr::{null_mut, write_bytes, null};
 use std::ffi::{CStr, CString};
 use std::borrow::Borrow;
@@ -18,7 +18,7 @@ thread_local! {
 }
 
 #[repr(C)]
-pub union PoloValue {
+pub union ValueUnion {
     int_value: i64,
     double_value: c_double,
     bool_value: c_int,
@@ -27,13 +27,13 @@ pub union PoloValue {
     arr: *mut Rc<Array>,
     doc: *mut Rc<Document>,
     bin: *mut Rc<Vec<u8>>,
-    utc: *mut UTCDateTime,
+    utc: u64,
 }
 
 #[repr(C)]
 pub struct ValueMock {
     tag:   u8,
-    value: PoloValue,
+    value: ValueUnion,
 }
 
 macro_rules! try_read_utf8 {
@@ -331,11 +331,10 @@ pub unsafe extern "C" fn PLDB_handle_state(handle: *mut DbHandle) -> c_int {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_handle_get(handle: *mut DbHandle, out_val: *mut *mut Value) {
+pub unsafe extern "C" fn PLDB_handle_get(handle: *mut DbHandle, out_val: *mut ValueMock) {
     let rust_handle = handle.as_mut().unwrap();
-    let boxed_handle = Box::new(rust_handle.get().clone());
-    let handle_ptr = Box::into_raw(boxed_handle);
-    out_val.write(handle_ptr);
+    let mock = db_value_to_mock_value(rust_handle.get());
+    out_val.write(mock);
 }
 
 #[no_mangle]
@@ -414,135 +413,6 @@ pub unsafe extern "C" fn PLDB_value_mk_binary(buffer: *const c_char, size: u32) 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_value_type(val: *const Value) -> c_int {
-    let local_val = val.as_ref().unwrap();
-    let ty = local_val.ty_int();
-
-    ty as c_int
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_value_get_i64(val: *const Value, out_val: *mut i64) -> c_int {
-    let local_val = val.as_ref().unwrap();
-    match local_val {
-        Value::Int(i) => {
-            out_val.write(*i);
-            0
-        }
-
-        _ => -1
-
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_value_get_bool(val: *const Value) -> c_int {
-    let local_val = val.as_ref().unwrap();
-    match local_val {
-        Value::Boolean(bl) =>{
-            if *bl {
-                1
-            } else {
-                0
-            }
-        }
-
-        _ => -1,
-
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_value_get_double(val: *const Value, out: *mut c_double) -> c_int {
-    let local_val = val.as_ref().unwrap();
-    match local_val {
-        Value::Double(num) => {
-            out.write(*num);
-            0
-        }
-
-        _ => -1,
-
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_value_get_array(val: *const Value, out: *mut *mut Rc<Array>) -> c_int {
-    let local_val = val.as_ref().unwrap();
-    match local_val {
-        Value::Array(arr) => {
-            let boxed_array = Box::new(arr.clone());
-            out.write(Box::into_raw(boxed_array));
-            0
-        }
-
-        _ => -1,
-
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_value_get_object_id(val: *const Value, out: *mut *mut ObjectId) -> c_int {
-    let local_val = val.as_ref().unwrap();
-    match local_val {
-        Value::ObjectId(oid) => {
-            let boxed_oid: Box<ObjectId> = Box::new(oid.as_ref().clone());
-            out.write(Box::into_raw(boxed_oid));
-            0
-        }
-
-        _ => -1,
-
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_value_get_document(val: *const Value, out: *mut *mut Rc<Document>) -> c_int {
-    let local_val = val.as_ref().unwrap();
-    match local_val {
-        Value::Document(doc) => {
-            let boxed_doc = Box::new(doc.clone());
-            out.write(Box::into_raw(boxed_doc));
-            0
-        }
-
-        _ => -1,
-
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_value_get_string_utf8(val: *const Value, out_str: *mut *const c_char) -> c_int {
-    let local_val = val.as_ref().unwrap();
-    match local_val {
-        Value::String(str) => {
-            let len = str.len();
-            let str_ptr = str.as_ptr().cast::<c_char>();
-
-            out_str.write(str_ptr);
-
-            len as c_int
-        }
-
-        _ => -1,
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_value_get_utc_datetime(val: *const Value, out_time: *mut *mut UTCDateTime) -> c_int {
-    let local_val = val.as_ref().unwrap();
-    match local_val {
-        Value::UTCDateTime(dt) => {
-            let boxed_time = Box::new(dt.as_ref().clone());
-            out_time.write(Box::into_raw(boxed_time));
-            0
-        }
-
-        _ => -1,
-    }
-}
-
-#[no_mangle]
 pub extern "C" fn PLDB_mk_arr() -> *mut Rc<Array> {
     let result = Box::new(Rc::new(Array::new()));
     Box::into_raw(result)
@@ -560,98 +430,11 @@ pub unsafe extern "C" fn PLDB_free_arr(arr: *mut Rc<Array>) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_push(arr: *mut Rc<Array>, val: *const Value) {
+pub unsafe extern "C" fn PLDB_arr_push(arr: *mut Rc<Array>, val: ValueMock) {
     let local_arr = arr.as_mut().unwrap();
     let arr_mut = Rc::get_mut(local_arr).unwrap();
-    let local_val = val.as_ref().unwrap();
-    arr_mut.push(local_val.clone())
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_set_null(doc: *mut Rc<Array>, index: c_uint) -> c_int {
-    let local_arr = doc.as_mut().unwrap();
-    let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    local_arr_mut[index as usize] = Value::Null;
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_set_int(arr: *mut Rc<Array>, index: c_uint, value: i64) -> c_int {
-    let local_arr = arr.as_mut().unwrap();
-    let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    local_arr_mut[index as usize] = value.into();
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_set_bool(arr: *mut Rc<Array>, index: c_uint, value: c_int) -> c_int {
-    let local_arr = arr.as_mut().unwrap();
-    let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    local_arr_mut[index as usize] = Value::Boolean(value != 0);
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_set_double(arr: *mut Rc<Array>, index: c_uint, value: f64) -> c_int {
-    let local_arr = arr.as_mut().unwrap();
-    let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    local_arr_mut[index as usize] = value.into();
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_set_string(arr: *mut Rc<Array>, index: c_uint, value: *const c_char) -> c_int {
-    let local_arr = arr.as_mut().unwrap();
-    let value_str = CStr::from_ptr(value);
-    let utf8_value = try_read_utf8!(value_str.to_str(), PLDB_error_code());
-    let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    local_arr_mut[index as usize] = utf8_value.into();
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_set_binary(arr: *mut Rc<Array>, index: c_uint, data: *mut c_uchar, size: c_uint) -> c_int {
-    let mut buffer: Vec<u8> = vec![0; size as usize];
-    data.copy_to(buffer.as_mut_ptr(), size as usize);
-    let local_arr = arr.as_mut().unwrap();
-    let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    local_arr_mut[index as usize] = buffer.into();
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_set_arr(arr: *mut Rc<Array>, index: c_uint, value: *const Rc<Array>) -> c_int {
-    let local_arr = arr.as_mut().unwrap();
-    let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    let value_arr = value.as_ref().unwrap();
-    local_arr_mut[index as usize] = Value::Array(value_arr.clone());
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_set_doc(arr: *mut Rc<Array>, index: c_uint, value: *const Rc<Document>) -> c_uint {
-    let local_arr = arr.as_mut().unwrap();
-    let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    let value_doc = value.as_ref().unwrap();
-    local_arr_mut[index as usize] = Value::Document(value_doc.clone());
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_set_UTCDateTime(arr: *mut Rc<Array>, index: c_uint, value: i64) -> c_uint {
-    let local_arr = arr.as_mut().unwrap();
-    let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    local_arr_mut[index as usize] = Value::UTCDateTime(Rc::new(UTCDateTime::new(value as u64)));
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_set_object_id(arr: *mut Rc<Array>, index: c_uint, value: *const ObjectId) -> c_uint {
-    let local_arr = arr.as_mut().unwrap();
-    let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    let value_oid = value.as_ref().unwrap();
-    local_arr_mut[index as usize] = Value::ObjectId(Rc::new(value_oid.clone()));
-    0
+    let local_value = mock_value_to_db_value(val).unwrap();
+    arr_mut.push(local_value)
 }
 
 #[no_mangle]
@@ -675,64 +458,174 @@ pub extern "C" fn PLDB_mk_doc() -> *mut Rc<Document> {
     Box::into_raw(result)
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char, value: *const ValueMock) -> c_int {
-    let local_doc = doc.as_mut().unwrap();
-    let key_str = CStr::from_ptr(key);
-    let local_value = value.as_ref().unwrap();
-    let key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    let result = match local_value.tag {
+unsafe fn db_value_to_mock_value(value: &Value) -> ValueMock {
+    match value {
+        Value::Null => {
+            ValueMock {
+                tag: ty_int::NULL,
+                value: ValueUnion {
+                    int_value: 0,
+                },
+            }
+        }
+
+        Value::Int(i) => {
+            ValueMock {
+                tag: ty_int::INT,
+                value: ValueUnion {
+                    int_value: *i,
+                },
+            }
+        }
+
+        Value::Double(db) => {
+            ValueMock {
+                tag: ty_int::DOUBLE,
+                value: ValueUnion {
+                    double_value: *db,
+                },
+            }
+        }
+
+        Value::Boolean(bl) => {
+            ValueMock {
+                tag: ty_int::BOOLEAN,
+                value: ValueUnion {
+                    bool_value: if *bl {
+                        1
+                    } else {
+                        0
+                    },
+                },
+            }
+        }
+
+        Value::String(str) => {
+            let len = str.len();
+            let bytes: *mut c_char = libc::malloc(len + 1).cast();
+            libc::memset(bytes.cast(), 0, len + 1);
+            str.as_ptr().copy_to(bytes.cast(), len);
+            ValueMock {
+                tag: ty_int::STRING,
+                value: ValueUnion {
+                    str: bytes,
+                },
+            }
+        }
+
+        Value::Binary(arr) => {
+            let bin: *mut Rc<Vec<u8>> = Box::into_raw(Box::new(arr.clone()));
+            ValueMock {
+                tag: ty_int::BINARY,
+                value: ValueUnion {
+                    bin,
+                },
+            }
+        }
+
+        Value::Document(doc) => {
+            let d: *mut Rc<Document> = Box::into_raw(Box::new(doc.clone()));
+            ValueMock {
+                tag: ty_int::DOCUMENT,
+                value: ValueUnion {
+                    doc: d,
+                },
+            }
+        }
+
+        Value::Array(arr) => {
+            let a: *mut Rc<Array> = Box::into_raw(Box::new(arr.clone()));
+            ValueMock {
+                tag: ty_int::ARRAY,
+                value: ValueUnion {
+                    arr: a,
+                },
+            }
+        }
+
+        Value::ObjectId(oid) =>{
+            let a: *mut ObjectId = Box::into_raw(Box::new(oid.as_ref().clone()));
+            ValueMock {
+                tag: ty_int::OBJECT_ID,
+                value: ValueUnion {
+                    oid: a,
+                },
+            }
+        }
+
+        Value::UTCDateTime(dt) => {
+            ValueMock {
+                tag: ty_int::UTC_DATETIME,
+                value: ValueUnion {
+                    utc: dt.timestamp(),
+                },
+            }
+        }
+
+    }
+}
+
+unsafe fn mock_value_to_db_value(v: ValueMock) -> Option<Value> {
+    match v.tag {
         ty_int::NULL => {
-            local_doc_mut.insert(key.into(), Value::Null)
+            Some(Value::Null)
         }
 
         ty_int::DOUBLE => {
-            local_doc_mut.insert(key.into(), Value::from(local_value.value.double_value))
+            Some(Value::from(v.value.double_value))
         }
 
         ty_int::BOOLEAN => {
-            local_doc_mut.insert(key.into(), Value::Boolean(local_value.value.bool_value != 0))
+            Some(Value::Boolean(v.value.bool_value != 0))
         }
 
         ty_int::INT => {
-            local_doc_mut.insert(key.into(), Value::Int(local_value.value.int_value))
+            Some(Value::Int(v.value.int_value))
         }
 
         ty_int::STRING => {
-            let local_str = CStr::from_ptr(local_value.value.str);
-            let utf8 = try_read_utf8!(local_str.to_str(), PLDB_error_code());
-            local_doc_mut.insert(key.into(), Value::from(utf8))
+            let local_str = CStr::from_ptr(v.value.str);
+            let utf8 = local_str.to_str().unwrap();
+            Some(Value::from(utf8))
         }
 
         ty_int::OBJECT_ID => {
-            let oid_ref = local_value.value.oid.as_ref().unwrap();
-            local_doc_mut.insert(key.into(), Value::ObjectId(Rc::new(oid_ref.clone())))
+            let oid_ref = v.value.oid.as_ref().unwrap();
+            Some(Value::ObjectId(Rc::new(oid_ref.clone())))
         }
 
         ty_int::ARRAY => {
-            let local_ref = local_value.value.arr.as_ref().unwrap();
-            local_doc_mut.insert(key.into(), Value::Array(local_ref.clone()))
+            let local_ref = v.value.arr.as_ref().unwrap();
+            Some(Value::Array(local_ref.clone()))
         }
 
         ty_int::DOCUMENT => {
-            let local_ref = local_value.value.doc.as_ref().unwrap();
-            local_doc_mut.insert(key.into(), Value::Document(local_ref.clone()))
+            let local_ref = v.value.doc.as_ref().unwrap();
+            Some(Value::Document(local_ref.clone()))
         }
 
         ty_int::BINARY => {
-            let local_bin = local_value.value.bin.as_ref().unwrap();
-            local_doc_mut.insert(key.into(), Value::Binary(local_bin.clone()))
+            let local_bin = v.value.bin.as_ref().unwrap();
+            Some(Value::Binary(local_bin.clone()))
         }
 
         ty_int::UTC_DATETIME => {
-            let local_utc = local_value.value.utc.as_ref().unwrap();
-            local_doc_mut.insert(key.into(), Value::UTCDateTime(Rc::new(local_utc.clone())))
+            Some(Value::UTCDateTime(Rc::new(UTCDateTime::new(v.value.utc))))
         }
 
-        _ => unreachable!(),
+        _ => None,
 
-    };
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char, value: ValueMock) -> c_int {
+    let local_doc = doc.as_mut().unwrap();
+    let key_str = CStr::from_ptr(key);
+    let key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
+    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
+    let v = mock_value_to_db_value(value).unwrap();
+    let result = local_doc_mut.insert(key.into(), v);
     if result.is_some() {
         1
     } else {
@@ -741,180 +634,23 @@ pub unsafe extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_arr_set(arr: *mut Rc<Array>, index: u32, value: *const ValueMock) -> c_int {
+pub unsafe extern "C" fn PLDB_arr_set(arr: *mut Rc<Array>, index: u32, value: ValueMock) -> c_int {
     let local_arr = arr.as_mut().unwrap();
-    let local_value = value.as_ref().unwrap();
     let local_arr_mut = Rc::get_mut(local_arr).unwrap();
-    match local_value.tag {
-        ty_int::NULL => {
-            local_arr_mut[index as usize] = Value::Null;
-        }
-
-        ty_int::DOUBLE => {
-            local_arr_mut[index as usize] = Value::from(local_value.value.double_value);
-        }
-
-        ty_int::BOOLEAN => {
-            local_arr_mut[index as usize] = Value::Boolean(local_value.value.bool_value != 0);
-        }
-
-        ty_int::INT => {
-            local_arr_mut[index as usize] = Value::Int(local_value.value.int_value);
-        }
-
-        ty_int::STRING => {
-            let local_str = CStr::from_ptr(local_value.value.str);
-            let utf8 = try_read_utf8!(local_str.to_str(), PLDB_error_code());
-            local_arr_mut[index as usize] = Value::from(utf8);
-        }
-
-        ty_int::OBJECT_ID => {
-            let oid_ref = local_value.value.oid.as_ref().unwrap();
-            local_arr_mut[index as usize] = Value::ObjectId(Rc::new(oid_ref.clone()));
-        }
-
-        ty_int::ARRAY => {
-            let local_ref = local_value.value.arr.as_ref().unwrap();
-            local_arr_mut[index as usize] = Value::Array(local_ref.clone());
-        }
-
-        ty_int::DOCUMENT => {
-            let local_ref = local_value.value.doc.as_ref().unwrap();
-            local_arr_mut[index as usize] = Value::Document(local_ref.clone());
-        }
-
-        ty_int::BINARY => {
-            let local_bin = local_value.value.bin.as_ref().unwrap();
-            local_arr_mut[index as usize] = Value::Binary(local_bin.clone());
-        }
-
-        ty_int::UTC_DATETIME => {
-            let local_utc = local_value.value.utc.as_ref().unwrap();
-            local_arr_mut[index as usize] = Value::UTCDateTime(Rc::new(local_utc.clone()));
-        }
-
-        _ => unreachable!(),
-
-    };
+    let result = mock_value_to_db_value(value).unwrap();
+    local_arr_mut[index as usize] = result;
     0
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set_null(doc: *mut Rc<Document>, key: *const c_char) -> c_int {
-    let local_doc = doc.as_mut().unwrap();
-    let key_str = CStr::from_ptr(key);
-    let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    local_doc_mut.insert(utf8_key.into(), Value::Null);
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set_int(doc: *mut Rc<Document>, key: *const c_char, value: i64) -> c_int {
-    let local_doc = doc.as_mut().unwrap();
-    let key_str = CStr::from_ptr(key);
-    let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    local_doc_mut.insert(utf8_key.into(), value.into());
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set_bool(doc: *mut Rc<Document>, key: *const c_char, value: c_int) -> c_int {
-    let local_doc = doc.as_mut().unwrap();
-    let key_str = CStr::from_ptr(key);
-    let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    local_doc_mut.insert(utf8_key.into(), Value::Boolean(value != 0));
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set_double(doc: *mut Rc<Document>, key: *const c_char, value: f64) -> c_int {
-    let local_doc = doc.as_mut().unwrap();
-    let key_str = CStr::from_ptr(key);
-    let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    local_doc_mut.insert(utf8_key.into(), value.into());
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set_string(doc: *mut Rc<Document>, key: *const c_char, value: *const c_char) -> c_int {
-    let local_doc = doc.as_mut().unwrap();
-    let key_str = CStr::from_ptr(key);
-    let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-    let value_str = CStr::from_ptr(value);
-    let utf8_value = try_read_utf8!(value_str.to_str(), PLDB_error_code());
-    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    local_doc_mut.insert(utf8_key.into(), utf8_value.into());
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set_binary(doc: *mut Rc<Document>, key: *const c_char, data: *mut c_uchar, size: c_uint) -> c_int {
-    let mut buffer: Vec<u8> = vec![0; size as usize];
-    data.copy_to(buffer.as_mut_ptr(), size as usize);
-    let local_doc = doc.as_mut().unwrap();
-    let key_str = CStr::from_ptr(key);
-    let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    local_doc_mut.insert(utf8_key.into(), buffer.into());
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set_doc(doc: *mut Rc<Document>, key: *const c_char, value: *const Rc<Document>) -> c_int {
-    let local_doc = doc.as_mut().unwrap();
-    let key_str = CStr::from_ptr(key);
-    let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    let value_doc = value.as_ref().unwrap();
-    local_doc_mut.insert(utf8_key.into(), Value::Document(value_doc.clone()));
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set_arr(doc: *mut Rc<Document>, key: *const c_char, value: *const Rc<Array>) -> c_int {
-    let local_doc = doc.as_mut().unwrap();
-    let key_str = CStr::from_ptr(key);
-    let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    let value_arr = value.as_ref().unwrap();
-    local_doc_mut.insert(utf8_key.into(), Value::Array(value_arr.clone()));
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set_object_id(doc: *mut Rc<Document>, key: *const c_char, value: *const ObjectId) -> c_int {
-    let local_doc = doc.as_mut().unwrap();
-    let key_str = CStr::from_ptr(key);
-    let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    let value_oid = value.as_ref().unwrap();
-    local_doc_mut.insert(utf8_key.into(), Value::ObjectId(Rc::new(value_oid.clone())));
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set_UTCDateTime(doc: *mut Rc<Document>, key: *const c_char, value: i64) -> c_int {
-    let local_doc = doc.as_mut().unwrap();
-    let key_str = CStr::from_ptr(key);
-    let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
-    let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    local_doc_mut.insert(utf8_key.into(), Value::UTCDateTime(Rc::new(UTCDateTime::new(value as u64))));
-    0
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_get(doc: *mut Rc<Document>, key: *const c_char, result: *mut *mut Value) -> c_int {
+pub unsafe extern "C" fn PLDB_doc_get(doc: *mut Rc<Document>, key: *const c_char, result: *mut ValueMock) -> c_int {
     let local_doc = doc.as_mut().unwrap();
     let key_str = CStr::from_ptr(key);
     let utf8_key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
     let get_result = local_doc.get(utf8_key);
     if let Some(value) = get_result {
-        let out_box = Box::new(value.clone());
-        result.write(Box::into_raw(out_box));
+        let value_mock = db_value_to_mock_value(value);
+        result.write(value_mock);
         return 1;
     }
     0
@@ -936,7 +672,7 @@ pub unsafe extern "C" fn PLDB_doc_iter(doc: *mut Rc<Document>) -> *mut Iter<'sta
 
 #[no_mangle]
 pub unsafe extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, Rc<str>, Value>,
-                                     key_buffer: *mut c_char, key_buffer_size: c_uint, out_val: *mut *mut Value) -> c_int {
+                                     key_buffer: *mut c_char, key_buffer_size: c_uint, out_val: *mut ValueMock) -> c_int {
 
     let local_iter = iter.as_mut().unwrap();
     let tuple = local_iter.next();
@@ -952,8 +688,8 @@ pub unsafe extern "C" fn PLDB_doc_iter_next(iter: *mut Iter<'static, Rc<str>, Va
             let cstr = CString::new(key.as_ref()).unwrap();
             cstr.as_ptr().copy_to_nonoverlapping(key_buffer, real_size);
 
-            let boxed_value = Box::new(value.clone());
-            out_val.write(Box::into_raw(boxed_value));
+            let value_mock = db_value_to_mock_value(value);
+            out_val.write(value_mock);
             real_size as c_int
         }
 
@@ -975,26 +711,8 @@ pub unsafe extern "C" fn PLDB_free_doc(doc: *mut Rc<Document>) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_mk_UTCDateTime(time: i64) -> *mut UTCDateTime {
-    let datetime = if time >= 0 {
-        UTCDateTime::new(time as u64)
-    } else {
-        UTCDateTime::now()
-    };
-
-    let boxed_datetime = Box::new(datetime);
-    Box::into_raw(boxed_datetime)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_UTCDateTime_get_timestamp(dt: *const UTCDateTime) -> i64 {
-    let dt = dt.as_ref().unwrap();
-    dt.timestamp() as i64
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_free_UTCDateTime(dt: *mut UTCDateTime) {
-    let _ = Box::from_raw(dt);
+pub unsafe extern "C" fn PLDB_mk_UTCDateTime() -> u64 {
+    UTCDateTime::now().timestamp()
 }
 
 #[no_mangle]
@@ -1044,40 +762,37 @@ pub unsafe extern  "C" fn PLDB_object_id_to_bytes(oid: *const ObjectId, bytes: *
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_free_value(val: *mut ValueMock) {
-    let val_ref = val.as_ref().unwrap();
-    match val_ref.tag {
+pub unsafe extern "C" fn PLDB_free_value(v: ValueMock) {
+    match v.tag {
         ty_int::NULL
         | ty_int::DOUBLE
 
         | ty_int::BOOLEAN
+
+        | ty_int::UTC_DATETIME
 
         | ty_int::INT => {
             // ignore
         }
 
         ty_int::STRING => {
-            libc::free(val_ref.value.str.cast());
+            libc::free(v.value.str.cast());
         }
 
         ty_int::OBJECT_ID => {
-            let _ = Box::from_raw(val_ref.value.oid);
+            let _ = Box::from_raw(v.value.oid);
         }
 
         ty_int::ARRAY => {
-            let _ = Box::from_raw(val_ref.value.arr);
+            let _ = Box::from_raw(v.value.arr);
         }
 
         ty_int::DOCUMENT => {
-            let _ = Box::from_raw(val_ref.value.doc);
+            let _ = Box::from_raw(v.value.doc);
         }
 
         ty_int::BINARY => {
-            let _ = Box::from_raw(val_ref.value.bin);
-        }
-
-        ty_int::UTC_DATETIME => {
-            let _ = Box::from_raw(val_ref.value.utc);
+            let _ = Box::from_raw(v.value.bin);
         }
 
         _ => unreachable!(),
