@@ -42,6 +42,17 @@ enum PLDB_VALUE_TYPE {
   PLDB_VAL_UTC_DATETIME = 0x09,
 };
 
+struct PLDBValue {
+    PLDB_VALUE_TYPE tag: 8,
+    union {
+        int64_t int_value,
+        double double_value,
+        int bool_value,
+        const char* str,
+        DbObjectId* oid,
+    } v;
+};
+
 enum PLDB_ERR_TYPE {
   PLDB_ERR_COLLECTION_NOT_FOUND = -24,
 };
@@ -137,7 +148,9 @@ DbDocument* PLDB_mk_doc();
 
 void PLDB_free_doc(DbDocument* doc);
 
-int PLDB_doc_set(DbDocument* doc, const char* key, DbValue* val);
+int PLDB_doc_set(DbDocument* doc, const char* key, const PLDBValue* val);
+
+int PLDB_arr_set(DbDocument* doc, uint32_t index, const PLDBValue* val);
 
 int PLDB_doc_set_string(DbDocument* doc, const char* key, const char* value);
 

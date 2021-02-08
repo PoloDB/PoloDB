@@ -10,5 +10,6 @@ path="lib.rs"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
+libc = "0.2"
 polodb_core = { path = "../polodb_core" }
 polodb_bson = { path = "../polodb_bson" }

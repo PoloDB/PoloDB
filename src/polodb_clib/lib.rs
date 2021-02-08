@@ -1,7 +1,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 use polodb_core::{DbContext, DbErr, DbHandle, TransactionType, Config};
-use polodb_bson::{Value, ObjectId, Document, Array, UTCDateTime};
+use polodb_bson::{Value, ObjectId, Document, Array, UTCDateTime, ty_int};
 use polodb_bson::linked_hash_map::Iter;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -15,6 +15,25 @@ const DB_ERROR_MSG_SIZE: usize = 512;
 thread_local! {
     static DB_GLOBAL_ERROR: RefCell<Option<DbErr>> = RefCell::new(None);
     static DB_GLOBAL_ERROR_MSG: RefCell<[c_char; DB_ERROR_MSG_SIZE]> = RefCell::new([0; DB_ERROR_MSG_SIZE]);
+}
+
+#[repr(C)]
+pub union PoloValue {
+    int_value: i64,
+    double_value: c_double,
+    bool_value: c_int,
+    str: *mut c_char,
+    oid: *mut ObjectId,
+    arr: *mut Rc<Array>,
+    doc: *mut Rc<Document>,
+    bin: *mut Rc<Vec<u8>>,
+    utc: *mut UTCDateTime,
+}
+
+#[repr(C)]
+pub struct ValueMock {
+    tag:   u8,
+    value: PoloValue,
 }
 
 macro_rules! try_read_utf8 {
@@ -657,18 +676,127 @@ pub extern "C" fn PLDB_mk_doc() -> *mut Rc<Document> {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char, value: *const Value) -> c_int {
+pub unsafe extern "C" fn PLDB_doc_set(doc: *mut Rc<Document>, key: *const c_char, value: *const ValueMock) -> c_int {
     let local_doc = doc.as_mut().unwrap();
     let key_str = CStr::from_ptr(key);
     let local_value = value.as_ref().unwrap();
     let key = try_read_utf8!(key_str.to_str(), PLDB_error_code());
     let local_doc_mut = Rc::get_mut(local_doc).unwrap();
-    let result = local_doc_mut.insert(key.into(), local_value.clone());
+    let result = match local_value.tag {
+        ty_int::NULL => {
+            local_doc_mut.insert(key.into(), Value::Null)
+        }
+
+        ty_int::DOUBLE => {
+            local_doc_mut.insert(key.into(), Value::from(local_value.value.double_value))
+        }
+
+        ty_int::BOOLEAN => {
+            local_doc_mut.insert(key.into(), Value::Boolean(local_value.value.bool_value != 0))
+        }
+
+        ty_int::INT => {
+            local_doc_mut.insert(key.into(), Value::Int(local_value.value.int_value))
+        }
+
+        ty_int::STRING => {
+            let local_str = CStr::from_ptr(local_value.value.str);
+            let utf8 = try_read_utf8!(local_str.to_str(), PLDB_error_code());
+            local_doc_mut.insert(key.into(), Value::from(utf8))
+        }
+
+        ty_int::OBJECT_ID => {
+            let oid_ref = local_value.value.oid.as_ref().unwrap();
+            local_doc_mut.insert(key.into(), Value::ObjectId(Rc::new(oid_ref.clone())))
+        }
+
+        ty_int::ARRAY => {
+            let local_ref = local_value.value.arr.as_ref().unwrap();
+            local_doc_mut.insert(key.into(), Value::Array(local_ref.clone()))
+        }
+
+        ty_int::DOCUMENT => {
+            let local_ref = local_value.value.doc.as_ref().unwrap();
+            local_doc_mut.insert(key.into(), Value::Document(local_ref.clone()))
+        }
+
+        ty_int::BINARY => {
+            let local_bin = local_value.value.bin.as_ref().unwrap();
+            local_doc_mut.insert(key.into(), Value::Binary(local_bin.clone()))
+        }
+
+        ty_int::UTC_DATETIME => {
+            let local_utc = local_value.value.utc.as_ref().unwrap();
+            local_doc_mut.insert(key.into(), Value::UTCDateTime(Rc::new(local_utc.clone())))
+        }
+
+        _ => unreachable!(),
+
+    };
     if result.is_some() {
         1
     } else {
         0
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_arr_set(arr: *mut Rc<Array>, index: u32, value: *const ValueMock) -> c_int {
+    let local_arr = arr.as_mut().unwrap();
+    let local_value = value.as_ref().unwrap();
+    let local_arr_mut = Rc::get_mut(local_arr).unwrap();
+    match local_value.tag {
+        ty_int::NULL => {
+            local_arr_mut[index as usize] = Value::Null;
+        }
+
+        ty_int::DOUBLE => {
+            local_arr_mut[index as usize] = Value::from(local_value.value.double_value);
+        }
+
+        ty_int::BOOLEAN => {
+            local_arr_mut[index as usize] = Value::Boolean(local_value.value.bool_value != 0);
+        }
+
+        ty_int::INT => {
+            local_arr_mut[index as usize] = Value::Int(local_value.value.int_value);
+        }
+
+        ty_int::STRING => {
+            let local_str = CStr::from_ptr(local_value.value.str);
+            let utf8 = try_read_utf8!(local_str.to_str(), PLDB_error_code());
+            local_arr_mut[index as usize] = Value::from(utf8);
+        }
+
+        ty_int::OBJECT_ID => {
+            let oid_ref = local_value.value.oid.as_ref().unwrap();
+            local_arr_mut[index as usize] = Value::ObjectId(Rc::new(oid_ref.clone()));
+        }
+
+        ty_int::ARRAY => {
+            let local_ref = local_value.value.arr.as_ref().unwrap();
+            local_arr_mut[index as usize] = Value::Array(local_ref.clone());
+        }
+
+        ty_int::DOCUMENT => {
+            let local_ref = local_value.value.doc.as_ref().unwrap();
+            local_arr_mut[index as usize] = Value::Document(local_ref.clone());
+        }
+
+        ty_int::BINARY => {
+            let local_bin = local_value.value.bin.as_ref().unwrap();
+            local_arr_mut[index as usize] = Value::Binary(local_bin.clone());
+        }
+
+        ty_int::UTC_DATETIME => {
+            let local_utc = local_value.value.utc.as_ref().unwrap();
+            local_arr_mut[index as usize] = Value::UTCDateTime(Rc::new(local_utc.clone()));
+        }
+
+        _ => unreachable!(),
+
+    };
+    0
 }
 
 #[no_mangle]
@@ -916,8 +1044,45 @@ pub unsafe extern  "C" fn PLDB_object_id_to_bytes(oid: *const ObjectId, bytes: *
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_free_value(val: *mut Value) {
-    let _val = Box::from_raw(val);
+pub unsafe extern "C" fn PLDB_free_value(val: *mut ValueMock) {
+    let val_ref = val.as_ref().unwrap();
+    match val_ref.tag {
+        ty_int::NULL
+        | ty_int::DOUBLE
+
+        | ty_int::BOOLEAN
+
+        | ty_int::INT => {
+            // ignore
+        }
+
+        ty_int::STRING => {
+            libc::free(val_ref.value.str.cast());
+        }
+
+        ty_int::OBJECT_ID => {
+            let _ = Box::from_raw(val_ref.value.oid);
+        }
+
+        ty_int::ARRAY => {
+            let _ = Box::from_raw(val_ref.value.arr);
+        }
+
+        ty_int::DOCUMENT => {
+            let _ = Box::from_raw(val_ref.value.doc);
+        }
+
+        ty_int::BINARY => {
+            let _ = Box::from_raw(val_ref.value.bin);
+        }
+
+        ty_int::UTC_DATETIME => {
+            let _ = Box::from_raw(val_ref.value.utc);
+        }
+
+        _ => unreachable!(),
+
+    }
 }
 
 fn error_code_of_db_err(err: &DbErr) -> i32 {
