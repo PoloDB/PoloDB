@@ -386,6 +386,15 @@ pub extern "C" fn PLDB_mk_int(val: i64) -> *mut Value {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn PLDB_value_mk_binary(buffer: *const c_char, size: u32) -> *mut Value {
+    let mut v: Vec<u8> = Vec::with_capacity(size as usize);
+    v.resize(size as usize, 0);
+    buffer.copy_to(v.as_mut_ptr().cast(), size as usize);
+    let val = Box::new(Value::Binary(Rc::new(v)));
+    Box::into_raw(val)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn PLDB_value_type(val: *const Value) -> c_int {
     let local_val = val.as_ref().unwrap();
     let ty = local_val.ty_int();
