@@ -56,7 +56,10 @@ impl DataPageWrapper {
     pub(crate) fn put(&mut self, data: &[u8]) {
         let data_size = data.len() as u32;
         let last_bar = self.get_last_bar();
-        let begin_bar = (last_bar as u32) - data_size;
+        let begin_bar: i64 = (last_bar as i64) - (data_size as i64);
+        if begin_bar < 0 {
+            panic!("data overflow data page size, last_bar: {}, data_size: {}", last_bar, data_size);
+        }
         self.page.seek(begin_bar as u32);
         self.page.put(data);
 

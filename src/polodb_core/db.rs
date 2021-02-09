@@ -645,6 +645,13 @@ mod tests {
         file.read_to_end(&mut data).unwrap();
 
         println!("data size: {}", data.len());
+        let mut db = prepare_db("test-very-large-data");
+        let mut collection = db.create_collection("test").unwrap();
+
+        let mut doc = Document::new_without_id();
+        doc.insert("content".into(), Value::from(data));
+
+        assert!(collection.insert(&mut doc).unwrap())
     }
 
 }

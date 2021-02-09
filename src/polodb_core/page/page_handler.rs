@@ -285,6 +285,9 @@ impl PageHandler {
         let mut wrapper = self.distribute_data_page_wrapper(bytes.len() as u32)?;
         let index = wrapper.bar_len() as u16;
         let pid = wrapper.pid();
+        if (wrapper.remain_size() as usize) < bytes.len() {
+            panic!("page size not enough: {}, bytes: {}", wrapper.remain_size(), bytes.len());
+        }
         wrapper.put(&bytes);
 
         self.pipeline_write_page(wrapper.borrow_page())?;
