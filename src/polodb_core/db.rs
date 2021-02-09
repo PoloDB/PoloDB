@@ -308,6 +308,9 @@ mod tests {
     use std::env;
     use polodb_bson::{Document, Value, mk_document};
     use crate::{Database, Config};
+    use std::io::Read;
+    use std::path::PathBuf;
+    use std::fs::File;
 
     static TEST_SIZE: usize = 1000;
 
@@ -627,6 +630,21 @@ mod tests {
             let result = collection.find(&find_doc).unwrap();
             assert_eq!(result.len(), 0, "item with key: {}", key);
         }
+    }
+
+    #[test]
+    fn test_very_large_binary() {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.pop();
+        d.pop();
+        d.push("fixtures/test_img.jpg");
+
+        let mut file = File::open(d).unwrap();
+
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+
+        println!("data size: {}", data.len());
     }
 
 }
