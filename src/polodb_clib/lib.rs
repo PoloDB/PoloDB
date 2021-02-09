@@ -398,6 +398,20 @@ pub unsafe extern "C" fn PLDB_close(db: *mut DbContext) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn PLDB_mk_binary_value(ptr: *const c_char, size: u32) -> ValueMock {
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.resize(size as usize, 0);
+    ptr.copy_to(bytes.as_mut_ptr().cast(), size as usize);
+    let raw: *mut Rc<Vec<u8>> = Box::into_raw(Box::new(Rc::new(bytes)));
+    ValueMock {
+        tag: ty_int::BINARY,
+        value: ValueUnion {
+            bin: raw,
+        },
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn PLDB_mk_arr() -> *mut Rc<Array> {
     let result = Box::new(Rc::new(Array::new()));
     Box::into_raw(result)

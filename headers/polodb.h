@@ -151,6 +151,7 @@ void PLDB_free_doc_iter(DbDocumentIter* iter);
 
 // DbValue {
 
+PLDBValue PLDB_mk_binary_value(const char* bytes, uint32_t size);
 PLDBValue PLDB_dup_value(PLDBValue val);
 void PLDB_free_value(PLDBValue val);
 // }
