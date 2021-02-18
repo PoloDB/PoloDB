@@ -21,6 +21,17 @@ impl DataTicket {
         result
     }
 
+    pub fn large_ticket(pid: u32) -> DataTicket {
+        DataTicket {
+            pid,
+            index: u16::max_value(),
+        }
+    }
+
+    pub fn is_large_data(&self) -> bool {
+        return self.index == u16::max_value();
+    }
+
     pub fn from_bytes(bytes: &[u8]) -> DataTicket {
         let mut pid_bytes = [0; 4];
         let mut index_bytes = [0; 2];
