@@ -63,16 +63,18 @@ impl PageHandler {
         Ok(wrapper.0)
     }
 
-    fn init_db(file: &mut File, page_size: NonZeroU32, init_block_count: NonZeroU64) -> std::io::Result<InitDbResult> {
+    fn init_db(file: &mut File, page_size: NonZeroU32, init_block_count: NonZeroU64) -> DbResult<InitDbResult> {
         let meta = file.metadata()?;
         let file_len = meta.len();
-        if file_len < page_size.get() as u64 {
+        if file_len == 0 {
             let expected_file_size: u64 = (page_size.get() as u64) * init_block_count.get();
             file.set_len(expected_file_size)?;
             PageHandler::force_write_first_block(file, page_size)?;
             Ok(InitDbResult { db_file_size: expected_file_size })
-        } else {
+        } else if file_len % page_size.get() as u64 == 0 {
             Ok(InitDbResult { db_file_size: file_len })
+        } else {
+            Err(DbErr::NotAValidDatabase)
         }
     }
 
