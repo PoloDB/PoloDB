@@ -147,6 +147,7 @@ impl DbContext {
 
     pub(crate) fn get_meta_source(&mut self) -> DbResult<MetaSource> {
         let head_page = self.page_handler.pipeline_read_page(0)?;
+        DbContext::check_first_page_valid(&head_page)?;
         let head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
         let meta_id_counter = head_page_wrapper.get_meta_id_counter();
         let meta_version = head_page_wrapper.get_meta_version();
@@ -156,6 +157,21 @@ impl DbContext {
             meta_version,
             meta_pid,
         })
+    }
+
+    fn check_first_page_valid(page: &RawPage) -> DbResult<()> {
+        let mut title_area: [u8; 32] = [0; 32];
+        title_area.copy_from_slice(&page.data[0..32]);
+
+        match std::str::from_utf8(&title_area) {
+            Ok(s) => {
+                if !s.starts_with("PoloDB") {
+                    return Err(DbErr::NotAValidDatabase);
+                }
+                Ok(())
+            },
+            Err(_) => Err(DbErr::NotAValidDatabase),
+        }
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<CollectionMeta> {

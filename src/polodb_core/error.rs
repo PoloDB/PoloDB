@@ -135,6 +135,7 @@ pub enum DbErr {
     MetaVersionMismatched(u32, u32),
     CollectionAlreadyExits(String),
     UnableToUpdatePrimaryKey,
+    NotAValidDatabase,
     Busy
 }
 
@@ -197,6 +198,7 @@ impl fmt::Display for DbErr {
             DbErr::Busy => write!(f, "database busy"),
             DbErr::CollectionAlreadyExits(name) => write!(f, "collection name '{}' already exists", name),
             DbErr::UnableToUpdatePrimaryKey => write!(f, "it's illegal to update '_id' field"),
+            DbErr::NotAValidDatabase => write!(f, "the file is not a valid database"),
         }
     }
 
