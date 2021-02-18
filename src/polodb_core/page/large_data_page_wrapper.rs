@@ -1,5 +1,5 @@
 use std::num::NonZeroU32;
-use crate::page::RawPage;
+use crate::page::{RawPage, PageType};
 
 /**
  * Offset 0 (2 bytes): magic number
@@ -14,7 +14,10 @@ pub(crate) struct LargeDataPageWrapper {
 impl LargeDataPageWrapper {
 
     pub(crate) fn init(page_id: u32, page_size: NonZeroU32) -> LargeDataPageWrapper {
-        let raw_page = RawPage::new(page_id, page_size);
+        let mut raw_page = RawPage::new(page_id, page_size);
+        let page_type = PageType::LargeData;
+        raw_page.put(&page_type.to_magic());
+
         LargeDataPageWrapper {
             page: raw_page,
         }
