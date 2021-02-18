@@ -25,6 +25,8 @@ typedef struct DbObjectId DbObjectId;
 #define PLDB_TRANS_READ 1
 #define PLDB_TRANS_WRITE 2
 
+#define PLDB_ERR_NOT_A_VALID_DB -46
+
 typedef enum PLDB_VALUE_TYPE {
   PLDB_VAL_NULL = 0x0A,
   PLDB_VAL_DOUBL = 0x01,
