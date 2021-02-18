@@ -363,12 +363,13 @@ impl JournalManager {
     }
 
     pub(crate) fn append_raw_page(&mut self, raw_page: &RawPage) -> DbResult<()> {
-        match &self.transaction_state {
-            Some(state) if state.ty == TransactionType::Write => (),
+        let state = match &self.transaction_state {
+            Some(state) if state.ty == TransactionType::Write => state,
             _ => return Err(DbErr::CannotWriteDbWithoutTransaction),
-        }
+        };
 
-        let start_pos = self.journal_file.seek(SeekFrom::Current(0))?;
+        let start_pos: u64 = JOURNAL_DATA_BEGIN + (state.frame_count as u64) * (self.page_size.get() as u64 + FRAME_HEADER_SIZE);
+        self.journal_file.seek(SeekFrom::Start(start_pos))?;
 
         let frame_header = FrameHeader {
             page_id: raw_page.page_id,
