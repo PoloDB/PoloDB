@@ -19,6 +19,7 @@ use crate::data_ticket::DataTicket;
 use crate::page::free_list_data_wrapper::FreeListDataWrapper;
 use crate::page::large_data_page_wrapper::LargeDataPageWrapper;
 use std::cmp::min;
+use std::io::{Seek, SeekFrom};
 
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
@@ -260,7 +261,7 @@ impl PageHandler {
         let offset = (page_id as u64) * (self.page_size.get() as u64);
         let mut result = RawPage::new(page_id, self.page_size);
 
-        if self.journal_manager.record_db_size() >= offset + (self.page_size.get() as u64) {
+        if self.file.seek(SeekFrom::End(0))? >= offset + (self.page_size.get() as u64) {
             result.read_from_file(&mut self.file, offset)?;
         }
 

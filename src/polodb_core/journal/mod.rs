@@ -430,8 +430,6 @@ impl JournalManager {
 
         let data_offset = offset + FRAME_HEADER_SIZE;
 
-        self.journal_file.seek(SeekFrom::Start(data_offset))?;
-
         let mut result = RawPage::new(page_id, self.page_size);
         result.read_from_file(&mut self.journal_file, data_offset)?;
 
@@ -447,8 +445,6 @@ impl JournalManager {
 
         for (page_id, offset) in &self.offset_map {
             let data_offset = offset + FRAME_HEADER_SIZE;
-
-            self.journal_file.seek(SeekFrom::Start(data_offset))?;
 
             let mut result = RawPage::new(*page_id, self.page_size);
             result.read_from_file(&mut self.journal_file, data_offset)?;
