@@ -128,6 +128,14 @@ impl Value {
         }
     }
 
+    #[inline]
+    pub fn unwrap_binary(&self) -> &Rc<Vec<u8>> {
+        match self {
+            Value::Binary(bin) => bin,
+            _ => panic!("unwrap error: binary expected, but it's {}", self.ty_name()),
+        }
+    }
+
     pub fn is_valid_key_type(&self) -> bool {
         matches!(self, Value::String(_) |
                        Value::Int(_) |

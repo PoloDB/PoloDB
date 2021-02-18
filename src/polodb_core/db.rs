@@ -649,9 +649,18 @@ mod tests {
         let mut collection = db.create_collection("test").unwrap();
 
         let mut doc = Document::new_without_id();
+        let origin_data = data.clone();
         doc.insert("content".into(), Value::from(data));
 
-        assert!(collection.insert(&mut doc).unwrap())
+        assert!(collection.insert(&mut doc).unwrap());
+
+        let new_id = doc.pkey_id().unwrap();
+        let back = collection.find_one(&mk_document! {
+            "_id": new_id,
+        }).unwrap().unwrap();
+
+        let back_bin = back.get("content").unwrap();
+        assert_eq!(back_bin.unwrap_binary().as_ref(), &origin_data);
     }
 
 }

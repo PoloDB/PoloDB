@@ -17,6 +17,8 @@ use crate::error::DbErr;
 use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::data_ticket::DataTicket;
 use crate::page::free_list_data_wrapper::FreeListDataWrapper;
+use crate::page::large_data_page_wrapper::LargeDataPageWrapper;
+use std::cmp::min;
 
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
@@ -270,6 +272,9 @@ impl PageHandler {
     }
 
     pub(crate) fn get_doc_from_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Option<Rc<Document>>> {
+        if data_ticket.is_large_data() {
+            return self.get_doc_from_large_page(data_ticket.pid);
+        }
         let page = self.pipeline_read_page(data_ticket.pid)?;
         let wrapper = DataPageWrapper::from_raw(page);
         let bytes = wrapper.get(data_ticket.index as u32);
@@ -280,8 +285,29 @@ impl PageHandler {
         Ok(None)
     }
 
+    fn get_doc_from_large_page(&mut self, pid: u32) -> DbResult<Option<Rc<Document>>> {
+        let mut bytes: Vec<u8> = Vec::with_capacity(self.page_size.get() as usize);
+
+        let mut next_pid = pid;
+
+        while next_pid != 0 {
+            let page = self.pipeline_read_page(next_pid)?;
+            let wrapper = LargeDataPageWrapper::from_raw(page);
+            wrapper.write_to_buffer(&mut bytes);
+            next_pid = wrapper.next_pid();
+        }
+
+        let doc = Document::from_bytes(&bytes)?;
+        Ok(Some(Rc::new(doc)))
+    }
+
     pub(crate) fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
         let bytes = doc.to_bytes()?;
+
+        if bytes.len() >= self.page_size.get() as usize / 2 {
+            return self.store_large_data(&bytes);
+        }
+
         let mut wrapper = self.distribute_data_page_wrapper(bytes.len() as u32)?;
         let index = wrapper.bar_len() as u16;
         let pid = wrapper.pid();
@@ -300,8 +326,40 @@ impl PageHandler {
         })
     }
 
+    fn store_large_data(&mut self, bytes: &Vec<u8>) -> DbResult<DataTicket> {
+        let mut remain: i64 = bytes.len() as i64;
+        let mut pages: Vec<LargeDataPageWrapper> = Vec::new();
+        while remain > 0 {
+            let new_id = self.alloc_page_id()?;
+            let mut large_page_wrapper = LargeDataPageWrapper::init(new_id, self.page_size);
+            let max_cap = large_page_wrapper.max_data_cap() as usize;
+            let start_index: usize = (bytes.len() as i64 - remain) as usize;
+            let end_index: usize = min(start_index + max_cap, bytes.len());
+            large_page_wrapper.put(&bytes[start_index..end_index]);
+
+            if pages.len() > 0 {
+                let prev = pages.last_mut().unwrap();
+                prev.put_next_pid(new_id);
+            }
+            pages.push(large_page_wrapper);
+            remain = (bytes.len() - end_index) as i64;
+        }
+
+        let first_pid = pages.first().unwrap().borrow_page().page_id;
+
+        for page in pages {
+            self.pipeline_write_page(page.borrow_page())?;
+        }
+
+        Ok(DataTicket::large_ticket(first_pid))
+    }
+
     pub(crate) fn free_data_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> {
         crate::polo_log!("free data ticket: {}", data_ticket);
+
+        if data_ticket.is_large_data() {
+            return self.free_large_data_page(data_ticket.pid);
+        }
 
         let page = self.pipeline_read_page(data_ticket.pid)?;
         let mut wrapper = DataPageWrapper::from_raw(page);
@@ -313,6 +371,24 @@ impl PageHandler {
         let page = wrapper.consume_page();
         self.pipeline_write_page(&page)?;
         Ok(bytes)
+    }
+
+    fn free_large_data_page(&mut self, pid: u32) -> DbResult<Vec<u8>> {
+        let mut result: Vec<u8> = Vec::with_capacity(self.page_size.get() as usize);
+        let mut free_pid: Vec<u32> = Vec::new();
+
+        let mut next_pid = pid;
+        while next_pid != 0 {
+            free_pid.push(next_pid);
+
+            let page = self.pipeline_read_page(next_pid)?;
+            let wrapper = LargeDataPageWrapper::from_raw(page);
+            wrapper.write_to_buffer(&mut result);
+            next_pid = wrapper.next_pid();
+        }
+
+        self.free_pages(&free_pid)?;
+        Ok(result)
     }
 
     #[inline]
