@@ -8,7 +8,7 @@ from setuptools import setup, Extension
 
 user_agent = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.7) Gecko/2009021910 Firefox/3.0.7'
 BUF_SIZE = 65536
-LIB_VERSION = '0.8.0'
+LIB_VERSION = '0.10.0'
 
 def get_platform_name():
        if os.name == 'nt':
@@ -100,7 +100,7 @@ module1 = Extension('polodb',
 long_description = ''
 
 setup (name = 'polodb',
-       version = '0.8.1',
+       version = '0.10.0',
        description = 'PoloDB for Python',
        long_description=long_description,
        long_description_content_type="text/markdown",
