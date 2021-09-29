@@ -266,8 +266,8 @@ static PyObject* CollectionObject_new(PyTypeObject* type, PyObject* args, PyObje
 static int CollectionObject_init(CollectionObject* self, PyObject* args, PyObject* kwds) {
   PyObject* db_obj;
   const char* name;
-  uint32_t col_id = 0;
-  uint32_t meta_version = 0;
+  unsigned long col_id = 0;
+  unsigned long meta_version = 0;
   if (!PyArg_ParseTuple(args, "Oskk", &db_obj, &name, &col_id, &meta_version)) {
     return -1;
   }
