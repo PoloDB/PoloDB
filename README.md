@@ -64,14 +64,9 @@ The features will be implemented one by one in order.
   - [ ] Indexes
   - [ ] Aggregation
 - [x] Command line Tools
-- [x] Mobile Platform Compilation
-  - [x] iOS
-  - [ ] Android
-  - [ ] Flutter
 - [ ] Language bindings
   - [x] C/C++
   - [ ] Go
-  - [x] Swift ([Repo](https://github.com/vincentdchan/SwiftyPoloDB))
   - [x] Python ([Doc](./docs/en-US/Python/READEME.md))
   - [x] Node.js ([Doc](./docs/en-US/Node.js/READEME.md))
   - [ ] Java/Kotlin
@@ -92,4 +87,3 @@ The features will be implemented one by one in order.
 | CLI tool | `src/polodb_cli` | The command line tool of PoloDB |
 | Node.js bindings | `polodb.js` | The Node.js binding using N-API |
 | Python bindings | `pypolodb` | The CPython binding using Extension API |
-| Swift bindings | [SwiftyPoloDB](https://github.com/vincentdchan/SwiftyPoloDB) | The Swift binding |
