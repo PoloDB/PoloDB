@@ -15,6 +15,7 @@ path="lib.rs"
 
 [dependencies]
 libc = "0.2"
+lru = "0.7.0"
 polodb_bson = "0.10.0"
 crc64fast = "1.0"
 
