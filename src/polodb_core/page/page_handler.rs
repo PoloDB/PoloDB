@@ -3,7 +3,7 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::num::{NonZeroU32, NonZeroU64};
 use polodb_bson::Document;
 use super::RawPage;
@@ -78,13 +78,6 @@ impl PageHandler {
         }
     }
 
-    fn mk_journal_path(db_path: &Path) -> PathBuf {
-        let mut buf = db_path.to_path_buf();
-        let filename = buf.file_name().unwrap().to_str().unwrap();
-        let new_filename = String::from(filename) + ".journal";
-        buf.set_file_name(new_filename);
-        buf
-    }
 
     #[allow(dead_code)]
     pub fn new(path: &Path, page_size: NonZeroU32) -> DbResult<PageHandler> {
@@ -101,9 +94,8 @@ impl PageHandler {
 
         let init_result = PageHandler::init_db(&mut file, page_size, config.init_block_count)?;
 
-        let journal_file_path: PathBuf = PageHandler::mk_journal_path(path);
         let journal_manager = JournalManager::open(
-            &journal_file_path, page_size, init_result.db_file_size
+            &path, page_size, init_result.db_file_size
         )?;
 
         let page_cache = PageCache::new_default(page_size);

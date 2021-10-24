@@ -1,5 +1,7 @@
 mod frame_header;
 mod transaction;
+mod shared_state;
+mod salt;
 
 pub use transaction::TransactionType;
 
@@ -9,10 +11,11 @@ use std::collections::BTreeMap;
 use std::io::{Seek, Write, SeekFrom, Read};
 use std::cell::Cell;
 use std::num::NonZeroU32;
-use libc::rand;
 use frame_header::FrameHeader;
 use transaction::TransactionState;
 use crc64fast::Digest;
+use shared_state::SharedState;
+use salt::generate_a_nonzero_salt;
 use crate::page::RawPage;
 use crate::DbResult;
 use crate::error::DbErr;
@@ -20,6 +23,7 @@ use crate::dump::{JournalDump, JournalFrameDump};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::io::AsRawHandle;
+use crate::journal::shared_state::InternalState;
 
 static HEADER_DESP: &str       = "PoloDB Journal v0.2";
 const JOURNAL_DATA_BEGIN: u64 = 64;
@@ -35,34 +39,12 @@ const FRAME_HEADER_SIZE: u64  = 40;
 pub struct JournalManager {
     file_path:        PathBuf,
     journal_file:     File,
-    version:          [u8; 4],
-    page_size:        NonZeroU32,
-    salt1:            u32,
-    salt2:            NonZeroU32,
+    shared_state:     SharedState,
     transaction_state:   Option<Box<TransactionState>>,
-
-    // origin_state
-    db_file_size:     u64,
 
     // page_id => file_position
     pub offset_map:       BTreeMap<u32, u64>,
 
-    // count of all frames
-    count:            u32,
-}
-
-fn generate_a_salt() -> u32 {
-    unsafe {
-        rand() as u32
-    }
-}
-
-fn generate_a_nonzero_salt() -> NonZeroU32 {
-    let mut salt = generate_a_salt();
-    while salt == 0 {
-        salt = generate_a_salt();
-    }
-    NonZeroU32::new(salt).unwrap()
 }
 
 fn crc64(bytes: &[u8]) -> u64 {
@@ -71,29 +53,34 @@ fn crc64(bytes: &[u8]) -> u64 {
     c.sum64()
 }
 
+fn mk_journal_path(db_path: &Path) -> PathBuf {
+    let mut buf = db_path.to_path_buf();
+    let filename = buf.file_name().unwrap().to_str().unwrap();
+    let new_filename = String::from(filename) + ".journal";
+    buf.set_file_name(new_filename);
+    buf
+}
+
 impl JournalManager {
 
-    pub fn open(path: &Path, page_size: NonZeroU32, db_file_size: u64) -> DbResult<JournalManager> {
+    pub fn open(db_path: &Path, page_size: NonZeroU32, db_file_size: u64) -> DbResult<JournalManager> {
+        let path = mk_journal_path(db_path);
         let journal_file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .read(true)
-            .open(path)?;
+            .open(&path)?;
+        let shared_state = SharedState::open(db_path, db_file_size, page_size.get())?;
         let meta = journal_file.metadata()?;
 
         let file_path: PathBuf = path.to_path_buf();
         let mut result = JournalManager {
             file_path,
             journal_file,
-            version: [0, 0, 1, 0],
-            page_size,
-            db_file_size,
-            salt1: generate_a_salt(),
-            salt2: generate_a_nonzero_salt(),
+            shared_state,
             transaction_state: None,
 
             offset_map: BTreeMap::new(),
-            count: 0,
         };
 
         if meta.len() == 0 {  // init the file
@@ -113,6 +100,7 @@ impl JournalManager {
     }
 
     fn write_header_to_file(&mut self) -> DbResult<()> {
+        let state = self.shared_state.state();
         let mut header48: Vec<u8> = vec![];
         header48.resize(48, 0);
 
@@ -121,16 +109,16 @@ impl JournalManager {
         header48[0..title_bytes.len()].copy_from_slice(title_bytes);
 
         // copy version
-        header48[32..36].copy_from_slice(&self.version);
+        header48[32..36].copy_from_slice(&state.version);
 
         // write page_size
-        let page_size_be = self.page_size.get().to_be_bytes();
+        let page_size_be = state.page_size.to_be_bytes();
         header48[36..40].copy_from_slice(&page_size_be);
 
-        let salt_1_be = self.salt1.to_be_bytes();
+        let salt_1_be = state.salt1.to_be_bytes();
         header48[40..44].copy_from_slice(&salt_1_be);
 
-        let salt_2_be = self.salt2.get().to_be_bytes();
+        let salt_2_be = state.salt2.to_be_bytes();
         header48[44..48].copy_from_slice(&salt_2_be);
 
         self.journal_file.seek(SeekFrom::Start(0))?;
@@ -155,28 +143,30 @@ impl JournalManager {
             return Err(DbErr::ChecksumMismatch);
         }
 
-        // copy version
-        self.version.copy_from_slice(&header48[32..36]);
+        let state = self.shared_state.mut_state();
 
-        self.page_size = NonZeroU32::new({
+        // copy version
+        state.version.copy_from_slice(&header48[32..36]);
+
+        state.page_size = {
             let mut buffer: [u8; 4] = [0; 4];
             buffer.copy_from_slice(&header48[36..40]);
             let actual_page_size = u32::from_be_bytes(buffer);
 
-            if actual_page_size != self.page_size.get() {
-                return Err(DbErr::JournalPageSizeMismatch(actual_page_size, self.page_size.get()));
+            if actual_page_size != state.page_size {
+                return Err(DbErr::JournalPageSizeMismatch(actual_page_size, state.page_size));
             }
 
             actual_page_size
-        }).unwrap();
+        };
 
         let mut buffer: [u8; 4] = [0; 4];
         buffer.copy_from_slice(&header48[40..44]);
-        self.salt1 = u32::from_be_bytes(buffer);
+        state.salt1 = u32::from_be_bytes(buffer);
 
         let mut buffer: [u8; 4] = [0; 4];
         buffer.copy_from_slice(&header48[44..48]);
-        self.salt2 = NonZeroU32::new(u32::from_be_bytes(buffer)).unwrap();
+        state.salt2 = u32::from_be_bytes(buffer);
 
         Ok(())
     }
@@ -189,14 +179,18 @@ impl JournalManager {
     }
 
     fn new_write_state(&mut self) {
+        let mem_state = self.shared_state.state();
+        let count = mem_state.count;
+        let db_file_size = mem_state.db_file_size;
         let new_state = Box::new(TransactionState::new(
-            TransactionType::Write, self.count, self.db_file_size));
+            TransactionType::Write, count, db_file_size));
         self.transaction_state = Some(new_state);
     }
 
     #[inline]
     fn full_frame_size(&self) -> u64 {
-        (self.page_size.get() as u64) + FRAME_HEADER_SIZE
+        let state = self.shared_state.state();
+        (state.page_size as u64) + FRAME_HEADER_SIZE
     }
 
     fn load_all_pages(&mut self, file_size: u64) -> DbResult<()> {
@@ -243,9 +237,11 @@ impl JournalManager {
     }
 
     fn recover_file_and_state(&mut self) -> DbResult<()> {
+        let state = self.shared_state.mut_state();
+        let count = state.count;
         self.transaction_state = None;
-        let frame_size = FRAME_HEADER_SIZE + (self.page_size.get() as u64);
-        let expected_journal_file_size = JOURNAL_DATA_BEGIN + frame_size * (self.count as u64);
+        let frame_size = FRAME_HEADER_SIZE + (state.page_size as u64);
+        let expected_journal_file_size = JOURNAL_DATA_BEGIN + frame_size * (count as u64);
         self.journal_file.set_len(expected_journal_file_size)?;
         self.journal_file.seek(SeekFrom::End(0))?;
         Ok(())
@@ -277,7 +273,9 @@ impl JournalManager {
             return Err(DbErr::ChecksumMismatch);
         }
 
-        if frame_header.salt1 != self.salt1 || frame_header.salt2 != self.salt2 {
+        let mut state = self.shared_state.mut_state();
+
+        if frame_header.salt1 != state.salt1 || frame_header.salt2 != state.salt2 {
             return Err(DbErr::SaltMismatch);
         }
 
@@ -286,7 +284,7 @@ impl JournalManager {
 
         // is a commit frame
         if frame_header.db_size != 0 {
-            self.db_file_size = frame_header.db_size;
+            state.db_file_size = frame_header.db_size;
             is_commit.set(true);
         }
         Ok(())
@@ -297,8 +295,9 @@ impl JournalManager {
         for (page_id, offset) in &state.offset_map {
             self.offset_map.insert(*page_id, *offset);
         }
-        self.db_file_size = state.db_file_size;
-        self.count = state.frame_count;
+        let mem_state = self.shared_state.mut_state();
+        mem_state.db_file_size = state.db_file_size;
+        mem_state.count = state.frame_count;
         state.ty
     }
 
@@ -313,7 +312,7 @@ impl JournalManager {
     pub(crate) fn record_db_size(&self) -> u64 {
         match &self.transaction_state {
             Some(state) => state.db_file_size,
-            None => self.db_file_size,
+            None => self.shared_state.state().db_file_size,
         }
     }
 
@@ -324,7 +323,7 @@ impl JournalManager {
         self.journal_file.read_exact(&mut data)?;
         let mut frame_header = FrameHeader::from_bytes(&data);
 
-        frame_header.db_size = self.db_file_size;
+        frame_header.db_size = self.shared_state.state().db_file_size;
 
         // update header
         let mut header24: [u8; 24] = [0; 24];
@@ -368,14 +367,16 @@ impl JournalManager {
             _ => return Err(DbErr::CannotWriteDbWithoutTransaction),
         };
 
-        let start_pos: u64 = JOURNAL_DATA_BEGIN + (state.frame_count as u64) * (self.page_size.get() as u64 + FRAME_HEADER_SIZE);
+        let mem_state = self.shared_state.mut_state();
+        let page_size = mem_state.page_size;
+        let start_pos: u64 = JOURNAL_DATA_BEGIN + (state.frame_count as u64) * (page_size as u64 + FRAME_HEADER_SIZE);
         self.journal_file.seek(SeekFrom::Start(start_pos))?;
 
         let frame_header = FrameHeader {
             page_id: raw_page.page_id,
             db_size: 0,
-            salt1: self.salt1,
-            salt2: self.salt2,
+            salt1: mem_state.salt1,
+            salt2: mem_state.salt2,
         };
 
         // calculate checksum of page data
@@ -389,7 +390,7 @@ impl JournalManager {
         state.offset_map.insert(raw_page.page_id, start_pos);
         state.frame_count += 1;
 
-        let expected_db_size = (raw_page.page_id as u64) * (self.page_size.get() as u64);
+        let expected_db_size = (raw_page.page_id as u64) * (page_size as u64);
         if expected_db_size > state.db_file_size {
             state.db_file_size = expected_db_size;
         }
@@ -430,7 +431,8 @@ impl JournalManager {
 
         let data_offset = offset + FRAME_HEADER_SIZE;
 
-        let mut result = RawPage::new(page_id, self.page_size);
+        let mem_state = self.shared_state.state();
+        let mut result = RawPage::new(page_id, NonZeroU32::new(mem_state.page_size).unwrap());
         result.read_from_file(&mut self.journal_file, data_offset)?;
 
         crate::polo_log!("read page from journal, page_id: {}, data_offset:\t\t0x{:0>8X}", page_id, offset);
@@ -440,16 +442,18 @@ impl JournalManager {
 
     pub(crate) fn checkpoint_journal(&mut self, db_file: &mut File) -> DbResult<()> {
         debug_assert!(self.transaction_state.is_none());
+        let mem_state = self.shared_state.state();
+        let page_size = mem_state.page_size;
 
-        db_file.set_len(self.db_file_size)?;
+        db_file.set_len(mem_state.db_file_size)?;
 
         for (page_id, offset) in &self.offset_map {
             let data_offset = offset + FRAME_HEADER_SIZE;
 
-            let mut result = RawPage::new(*page_id, self.page_size);
+            let mut result = RawPage::new(*page_id, NonZeroU32::new(page_size).unwrap());
             result.read_from_file(&mut self.journal_file, data_offset)?;
 
-            result.sync_to_file(db_file, (*page_id as u64) * (self.page_size.get() as u64))?;
+            result.sync_to_file(db_file, (*page_id as u64) * (page_size as u64))?;
         }
 
         db_file.flush()?;  // only checkpoint flush the file
@@ -457,24 +461,25 @@ impl JournalManager {
         self.checkpoint_finished()
     }
 
-    fn plus_salt1(&mut self) {
-        if self.salt1 == u32::max_value() {
-            self.salt1 = 0;
+    fn plus_salt1(mem_state: &mut InternalState) {
+        if mem_state.salt1 == u32::MAX {
+            mem_state.salt1 = 0;
             return;
         }
-        self.salt1 += 1;
+        mem_state.salt1 += 1;
     }
 
     fn checkpoint_finished(&mut self) -> DbResult<()> {
+        let mem_state = self.shared_state.mut_state();
         self.journal_file.set_len(64)?;  // truncate file to 64 bytes
 
         // clear all data
-        self.count = 0;
+        mem_state.count = 0;
 
         self.offset_map.clear();
 
-        self.plus_salt1();
-        self.salt2 = generate_a_nonzero_salt();
+        JournalManager::plus_salt1(mem_state);
+        mem_state.salt2 = generate_a_nonzero_salt();
         self.write_header_to_file()
     }
 
@@ -494,8 +499,11 @@ impl JournalManager {
 
         }
 
+        let mem_state = self.shared_state.state();
+        let frame_count = mem_state.count;
+        let db_file_size = mem_state.db_file_size;
         let new_state = Box::new(
-            TransactionState::new(ty, self.count, self.db_file_size)
+            TransactionState::new(ty, frame_count, db_file_size)
         );
         self.transaction_state = Some(new_state);
 
@@ -532,8 +540,11 @@ impl JournalManager {
 
         self.exclusive_lock_file()?;
 
+        let mem_state = self.shared_state.state();
+        let frame_count = mem_state.count;
+        let db_file_size = mem_state.db_file_size;
         let new_state = Box::new(
-            TransactionState::new(TransactionType::Write, self.count, self.db_file_size)
+            TransactionState::new(TransactionType::Write, frame_count, db_file_size)
         );
         self.transaction_state = Some(new_state);
         Ok(())
@@ -671,9 +682,8 @@ impl JournalManager {
         self.file_path.as_path()
     }
 
-    #[inline]
     pub(crate) fn len(&self) -> u32 {
-        self.count
+        self.shared_state.state().count
     }
 
     pub(crate) fn transaction_type(&self) -> Option<TransactionType> {
@@ -683,10 +693,11 @@ impl JournalManager {
     pub(crate) fn dump(&mut self) -> DbResult<JournalDump> {
         let file_meta =self.journal_file.metadata()?;
         let frames = self.dump_frames()?;
+        let frame_count = self.shared_state.state().count;
         let dump = JournalDump {
             path: self.file_path.clone(),
             file_meta,
-            frame_count: self.count as usize,
+            frame_count: frame_count as usize,
             frames,
         };
         Ok(dump)
@@ -694,10 +705,13 @@ impl JournalManager {
 
     pub(crate) fn dump_frames(&mut self) -> DbResult<Vec<JournalFrameDump>> {
         let mut result = vec![];
+        let mem_state = self.shared_state.state();
+        let page_size = mem_state.page_size;
+        let frame_count = mem_state.count;
 
-        for index in 0..self.count {
+        for index in 0..frame_count {
             let frame_header_offset: u64 =
-                JOURNAL_DATA_BEGIN + (self.page_size.get() as u64 + FRAME_HEADER_SIZE) * (index as u64);
+                JOURNAL_DATA_BEGIN + (page_size as u64 + FRAME_HEADER_SIZE) * (index as u64);
 
             let mut header_buffer: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
             self.journal_file.seek(SeekFrom::Start(frame_header_offset))?;
@@ -709,7 +723,7 @@ impl JournalManager {
                 frame_id: index,
                 db_size: header.db_size,
                 salt1: header.salt1,
-                salt2: header.salt2,
+                salt2: NonZeroU32::new(header.salt2).unwrap(),
             });
         }
 
@@ -795,13 +809,13 @@ mod tests {
             }
 
             journal_manager.commit().unwrap();
-            mem_count = journal_manager.count;
+            mem_count = journal_manager.len();
         }
 
         let journal_manager = JournalManager::open(
             TEST_FILE.as_ref(), NonZeroU32::new(4096).unwrap(), 4096
         ).unwrap();
-        assert_eq!(mem_count, journal_manager.count);
+        assert_eq!(mem_count, journal_manager.len());
     }
 
 }

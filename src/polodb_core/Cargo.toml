@@ -18,6 +18,7 @@ libc = "0.2"
 lru = "0.7.0"
 polodb_bson = "0.10.0"
 crc64fast = "1.0"
+memmap = "0.7.0"
 
 [dev-dependencies]
 polodb_line_diff = { path = "../polodb_line_diff" }
