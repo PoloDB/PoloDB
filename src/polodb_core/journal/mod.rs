@@ -19,10 +19,9 @@ use salt::generate_a_nonzero_salt;
 use crate::page::RawPage;
 use crate::DbResult;
 use crate::error::DbErr;
+use crate::file_lock::{shared_lock_file, exclusive_lock_file, unlock_file};
 use crate::dump::{JournalDump, JournalFrameDump};
 
-#[cfg(target_os = "windows")]
-use std::os::windows::io::AsRawHandle;
 use crate::journal::shared_state::InternalState;
 
 static HEADER_DESP: &str       = "PoloDB Journal v0.2";
@@ -490,11 +489,11 @@ impl JournalManager {
 
         match ty {
             TransactionType::Read => {
-                self.shared_lock_file()?;
+                shared_lock_file(&self.journal_file)?;
             }
 
             TransactionType::Write => {
-                self.exclusive_lock_file()?;
+                exclusive_lock_file(&self.journal_file)?;
             }
 
         }
@@ -519,7 +518,7 @@ impl JournalManager {
         if transaction_ty == TransactionType::Write {
             self.update_last_frame()?;
         }
-        self.unlock_file()?;
+        unlock_file(&self.journal_file)?;
 
         Ok(())
     }
@@ -530,7 +529,7 @@ impl JournalManager {
         }
 
         self.recover_file_and_state()?;
-        self.unlock_file()?;
+        unlock_file(&self.journal_file)?;
 
         Ok(())
     }
@@ -538,7 +537,7 @@ impl JournalManager {
     pub(crate) fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
         debug_assert!(self.transaction_state.is_some(), "can not upgrade transaction because there is no transaction");
 
-        self.exclusive_lock_file()?;
+        exclusive_lock_file(&self.journal_file)?;
 
         let mem_state = self.shared_state.state();
         let frame_count = mem_state.count;
@@ -548,133 +547,6 @@ impl JournalManager {
         );
         self.transaction_state = Some(new_state);
         Ok(())
-    }
-
-    #[cfg(target_os = "windows")]
-    fn exclusive_lock_file(&mut self) -> DbResult<()> {
-        use winapi::um::fileapi::LockFileEx;
-        use winapi::um::minwinbase::OVERLAPPED;
-        use winapi::um::minwinbase::{LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY};
-        use winapi::ctypes;
-
-        let handle = self.journal_file.as_raw_handle();
-
-        let bl = unsafe {
-            let overlapped: *mut OVERLAPPED = libc::malloc(std::mem::size_of::<OVERLAPPED>()).cast::<OVERLAPPED>();
-            libc::memset(overlapped.cast::<libc::c_void>(), 0, std::mem::size_of::<OVERLAPPED>());
-            let result: i32 = LockFileEx(
-                handle.cast::<ctypes::c_void>(),
-                LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
-                0, 0, 0, overlapped);
-            libc::free(overlapped.cast::<libc::c_void>());
-            result
-        };
-
-        if bl == 0 {
-            return Err(DbErr::Busy);
-        }
-
-        Ok(())
-    }
-
-    #[cfg(target_os = "windows")]
-    fn shared_lock_file(&mut self) -> DbResult<()> {
-        use winapi::um::fileapi::LockFileEx;
-        use winapi::um::minwinbase::OVERLAPPED;
-        use winapi::um::minwinbase::LOCKFILE_FAIL_IMMEDIATELY;
-        use winapi::ctypes;
-
-        let handle = self.journal_file.as_raw_handle();
-
-        let bl = unsafe {
-            let overlapped: *mut OVERLAPPED = libc::malloc(std::mem::size_of::<OVERLAPPED>()).cast::<OVERLAPPED>();
-            libc::memset(overlapped.cast::<libc::c_void>(), 0, std::mem::size_of::<OVERLAPPED>());
-            let result: i32 = LockFileEx(handle.cast::<ctypes::c_void>(), LOCKFILE_FAIL_IMMEDIATELY, 0, 0, 0, overlapped);
-            libc::free(overlapped.cast::<libc::c_void>());
-            result
-        };
-
-        if bl == 0 {
-            return Err(DbErr::Busy);
-        }
-
-        Ok(())
-    }
-
-    #[cfg(target_os = "windows")]
-    fn unlock_file(&mut self) -> DbResult<()> {
-        use winapi::um::fileapi::UnlockFileEx;
-        use winapi::um::minwinbase::OVERLAPPED;
-        use winapi::ctypes;
-
-        let handle = self.journal_file.as_raw_handle();
-
-        let bl = unsafe {
-            let overlapped: *mut OVERLAPPED = libc::malloc(std::mem::size_of::<OVERLAPPED>()).cast::<OVERLAPPED>();
-            libc::memset(overlapped.cast::<libc::c_void>(), 0, std::mem::size_of::<OVERLAPPED>());
-            let result: i32 = UnlockFileEx(handle.cast::<ctypes::c_void>(), 0, 0, 0, overlapped);
-            libc::free(overlapped.cast::<libc::c_void>());
-            result
-        };
-
-        if bl == 0 {
-            return Err(DbErr::Busy);
-        }
-
-        Ok(())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn exclusive_lock_file(&mut self) -> DbResult<()> {
-        use std::os::unix::prelude::*;
-        use libc::{flock, LOCK_EX, LOCK_NB};
-
-        let fd = self.journal_file.as_raw_fd();
-        let result = unsafe {
-            flock(fd, LOCK_EX | LOCK_NB)
-        };
-
-        if result == 0 {
-            Ok(())
-        } else {
-            Err(DbErr::Busy)
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    fn shared_lock_file(&mut self) -> DbResult<()> {
-        use std::os::unix::prelude::*;
-        use libc::{flock, LOCK_SH, LOCK_NB};
-
-        let fd = self.journal_file.as_raw_fd();
-        let result = unsafe {
-            flock(fd, LOCK_SH | LOCK_NB)
-        };
-
-        if result == 0 {
-            Ok(())
-        } else {
-            Err(DbErr::Busy)
-        }
-    }
-
-    /// LOCK_UN: unlock
-    /// LOCK_NB: non-blocking
-    #[cfg(not(target_os = "windows"))]
-    fn unlock_file(&mut self) -> DbResult<()> {
-        use std::os::unix::prelude::*;
-        use libc::{flock, LOCK_UN, LOCK_NB};
-
-        let fd = self.journal_file.as_raw_fd();
-        let result = unsafe {
-            flock(fd, LOCK_UN | LOCK_NB)
-        };
-
-        if result == 0 {
-            Ok(())
-        } else {
-            Err(DbErr::Busy)
-        }
     }
 
     #[inline]

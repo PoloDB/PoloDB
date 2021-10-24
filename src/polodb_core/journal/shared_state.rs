@@ -97,6 +97,12 @@ impl SharedState {
 
 }
 
+impl Drop for SharedState {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::journal::shared_state::InternalState;
