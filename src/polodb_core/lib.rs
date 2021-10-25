@@ -38,6 +38,7 @@ mod db_handle;
 pub mod dump;
 mod config;
 mod macros;
+mod file_lock;
 
 pub use db::{Database, DbResult};
 pub use config::Config;

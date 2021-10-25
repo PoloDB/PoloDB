@@ -1,7 +1,5 @@
 use libc::{ malloc, free };
 use std::num::NonZeroU32;
-use std::collections::HashMap;
-use std::ptr::null_mut;
 use lru::LruCache;
 use crate::page::RawPage;
 
