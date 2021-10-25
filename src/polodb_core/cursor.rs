@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::collections::LinkedList;
 use polodb_bson::{Document, Value};
-use crate::backend::journal::page_handler::PageHandler;
+use crate::page_handler::PageHandler;
 use crate::page::RawPage;
 use crate::btree::*;
 use crate::DbResult;

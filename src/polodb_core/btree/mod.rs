@@ -11,7 +11,7 @@ pub(crate) use insert_wrapper::{BTreePageInsertWrapper, InsertBackwardItem, Inse
 use std::cmp::Ordering;
 use polodb_bson::{vli, Value, ObjectId, ty_int};
 use crate::db::DbResult;
-use crate::backend::journal::page_handler::PageHandler;
+use crate::page_handler::PageHandler;
 use crate::page::{RawPage, PageType};
 use crate::error::{DbErr, mk_unexpected_header_for_btree_page};
 use crate::data_ticket::DataTicket;

@@ -1,6 +1,5 @@
 mod frame_header;
-mod pagecache;
-pub(crate) mod page_handler;
+pub(crate) mod pagecache;
 mod transaction_state;
 
 use std::fs::File;

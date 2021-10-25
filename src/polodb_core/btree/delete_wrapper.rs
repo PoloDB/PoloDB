@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashMap};
 use polodb_bson::{Value, Document};
 use crate::DbResult;
 use crate::page::RawPage;
-use crate::backend::journal::page_handler::PageHandler;
+use crate::page_handler::PageHandler;
 use super::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;
 use crate::data_ticket::DataTicket;

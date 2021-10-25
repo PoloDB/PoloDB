@@ -1,7 +1,7 @@
 use polodb_bson::{Document, Value};
 use crate::DbResult;
 use crate::page::RawPage;
-use crate::backend::journal::page_handler::PageHandler;
+use crate::page_handler::PageHandler;
 use super::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;
 use crate::error::DbErr;

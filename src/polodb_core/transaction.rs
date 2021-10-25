@@ -12,4 +12,3 @@ pub(crate) enum TransactionState {
     UserAuto,
     DbAuto,
 }
-

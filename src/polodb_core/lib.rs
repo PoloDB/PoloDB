@@ -40,6 +40,7 @@ mod macros;
 mod file_lock;
 mod backend;
 mod transaction;
+mod page_handler;
 
 pub use db::{Database, DbResult};
 pub use config::Config;

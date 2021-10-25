@@ -6,10 +6,11 @@ use std::rc::Rc;
 use std::path::{Path, PathBuf};
 use std::num::{NonZeroU32, NonZeroU64};
 use polodb_bson::Document;
-use super::RawPage;
-use super::pagecache::PageCache;
-use super::JournalManager;
+use crate::backend::journal::pagecache::PageCache;
 use crate::transaction::{TransactionType, TransactionState};
+use crate::page::RawPage;
+use crate::backend::journal::JournalManager;
+use crate::backend::{Backend, AutoStartResult};
 use crate::page::header_page_wrapper;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::dump::JournalDump;
@@ -38,11 +39,6 @@ pub(crate) struct PageHandler {
 
     config:                   Rc<Config>,
 
-}
-
-#[derive(Debug, Copy, Clone)]
-pub(crate) struct AutoStartResult {
-    pub auto_start: bool,
 }
 
 struct InitDbResult {
@@ -126,43 +122,6 @@ impl PageHandler {
             config,
 
         })
-    }
-
-    pub(crate) fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<AutoStartResult> {
-        let mut result = AutoStartResult { auto_start: false };
-        match self.transaction_state {
-            TransactionState::NoTrans => {
-                self.start_transaction(ty)?;
-                self.transaction_state = TransactionState::DbAuto;
-                result.auto_start = true;
-            }
-
-            // current is auto-read, but going to write
-            TransactionState::UserAuto => {
-                if let (TransactionType::Write, Some(TransactionType::Read)) = (ty, self.transaction_type()) {
-                    self.upgrade_read_transaction_to_write()?;
-                }
-            }
-
-            _ => ()
-        }
-        Ok(result)
-    }
-
-    pub(crate) fn auto_rollback(&mut self) -> DbResult<()> {
-        if self.transaction_state == TransactionState::DbAuto {
-            self.rollback()?;
-            self.transaction_state = TransactionState::NoTrans;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn auto_commit(&mut self) -> DbResult<()> {
-        if self.transaction_state == TransactionState::DbAuto {
-            self.commit()?;
-            self.transaction_state = TransactionState::NoTrans;
-        }
-        Ok(())
     }
 
     pub(crate) fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper> {
@@ -597,11 +556,6 @@ impl PageHandler {
     }
 
     #[inline]
-    pub fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        self.journal_manager.start_transaction(ty)
-    }
-
-    #[inline]
     pub fn transaction_type(&mut self) -> Option<TransactionType> {
         self.journal_manager.transaction_type()
     }
@@ -621,24 +575,6 @@ impl PageHandler {
         self.transaction_state
     }
 
-    pub fn commit(&mut self) -> DbResult<()> {
-        self.journal_manager.commit()?;
-        if self.is_journal_full() {
-            self.checkpoint_journal()?;
-            crate::polo_log!("checkpoint journal finished");
-        }
-        Ok(())
-    }
-
-    // after the rollback
-    // all the cache are wrong
-    // cleat it
-    pub fn rollback(&mut self) -> DbResult<()> {
-        self.journal_manager.rollback()?;
-        self.page_cache = Box::new(PageCache::new_default(self.page_size));
-        Ok(())
-    }
-
     pub fn only_rollback_journal(&mut self) -> DbResult<()> {
         self.journal_manager.rollback()
     }
@@ -651,6 +587,69 @@ impl PageHandler {
     pub fn dump_journal(&mut self) -> DbResult<Box<JournalDump>> {
         let journal_dump = self.journal_manager.dump()?;
         Ok(Box::new(journal_dump))
+    }
+
+}
+
+impl Backend for PageHandler {
+
+    fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<AutoStartResult> {
+        let mut result = AutoStartResult { auto_start: false };
+        match self.transaction_state {
+            TransactionState::NoTrans => {
+                self.start_transaction(ty)?;
+                self.transaction_state = TransactionState::DbAuto;
+                result.auto_start = true;
+            }
+
+            // current is auto-read, but going to write
+            TransactionState::UserAuto => {
+                if let (TransactionType::Write, Some(TransactionType::Read)) = (ty, self.transaction_type()) {
+                    self.upgrade_read_transaction_to_write()?;
+                }
+            }
+
+            _ => ()
+        }
+        Ok(result)
+    }
+
+    fn auto_rollback(&mut self) -> DbResult<()> {
+        if self.transaction_state == TransactionState::DbAuto {
+            self.rollback()?;
+            self.transaction_state = TransactionState::NoTrans;
+        }
+        Ok(())
+    }
+
+    fn auto_commit(&mut self) -> DbResult<()> {
+        if self.transaction_state == TransactionState::DbAuto {
+            self.commit()?;
+            self.transaction_state = TransactionState::NoTrans;
+        }
+        Ok(())
+    }
+
+    fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+        self.journal_manager.start_transaction(ty)
+    }
+
+    fn commit(&mut self) -> DbResult<()> {
+        self.journal_manager.commit()?;
+        if self.is_journal_full() {
+            self.checkpoint_journal()?;
+            crate::polo_log!("checkpoint journal finished");
+        }
+        Ok(())
+    }
+
+    // after the rollback
+    // all the cache are wrong
+    // cleat it
+    fn rollback(&mut self) -> DbResult<()> {
+        self.journal_manager.rollback()?;
+        self.page_cache = Box::new(PageCache::new_default(self.page_size));
+        Ok(())
     }
 
 }
@@ -669,7 +668,8 @@ mod test {
     use std::collections::HashSet;
     use std::num::NonZeroU32;
     use crate::TransactionType;
-    use crate::backend::journal::page_handler::PageHandler;
+    use crate::backend::Backend;
+    use crate::page_handler::PageHandler;
 
     const TEST_FREE_LIST_SIZE: usize = 10000;
     const DB_NAME: &str = "test-page-handler";

@@ -11,11 +11,12 @@ use std::cmp::Ordering;
 use polodb_bson::Value;
 use op::DbOp;
 use crate::cursor::Cursor;
-use crate::backend::journal::page_handler::PageHandler;
+use crate::page_handler::PageHandler;
 use crate::btree::{HEADER_SIZE, ITEM_SIZE};
 use crate::{TransactionType, DbResult, DbErr};
 use crate::error::{mk_field_name_type_unexpected, mk_unexpected_type_for_op};
 use std::cell::Cell;
+use crate::backend::Backend;
 
 const STACK_SIZE: usize = 256;
 
