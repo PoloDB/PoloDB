@@ -18,6 +18,7 @@ use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::data_ticket::DataTicket;
 use crate::page::free_list_data_wrapper::FreeListDataWrapper;
 use crate::page::large_data_page_wrapper::LargeDataPageWrapper;
+use crate::file_lock::{exclusive_lock_file, unlock_file};
 use std::cmp::min;
 use std::io::{Seek, SeekFrom};
 
@@ -98,6 +99,16 @@ impl PageHandler {
             .write(true)
             .read(true)
             .open(path)?;
+
+        match exclusive_lock_file(&file) {
+            Err(DbErr::Busy) => {
+                return Err(DbErr::DatabaseOccupied);
+            }
+            Err(err) => {
+                return Err(err);
+            },
+            _ => (),
+        };
 
         let init_result = PageHandler::init_db(&mut file, page_size, config.init_block_count)?;
 
@@ -647,6 +658,14 @@ impl PageHandler {
     pub fn dump_journal(&mut self) -> DbResult<Box<JournalDump>> {
         let journal_dump = self.journal_manager.dump()?;
         Ok(Box::new(journal_dump))
+    }
+
+}
+
+impl Drop for PageHandler {
+
+    fn drop(&mut self) {
+        let _ = unlock_file(&self.file);
     }
 
 }

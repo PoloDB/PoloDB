@@ -858,6 +858,7 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::UnableToUpdatePrimaryKey => 44,
         DbErr::UnexpectedTypeForOp(_) => 45,
         DbErr::NotAValidDatabase => 46,
+        DbErr::DatabaseOccupied => 47,
 
     }
 }
