@@ -14,6 +14,7 @@ use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::index_ctx::{IndexCtx, merge_options_into_default};
 use crate::btree::*;
 use crate::transaction::TransactionState;
+use crate::backend::journal::JournalBackend;
 use crate::page::RawPage;
 use crate::db_handle::DbHandle;
 use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeListPageDump, BTreePageDump};
@@ -78,10 +79,12 @@ pub struct CollectionMeta {
 
 impl DbContext {
 
-    pub fn new(path: &Path, config: Config) -> DbResult<DbContext> {
+    pub fn open_file(path: &Path, config: Config) -> DbResult<DbContext> {
         let page_size = NonZeroU32::new(4096).unwrap();
 
-        let page_handler = PageHandler::with_config(path, page_size, Rc::new(config))?;
+        let config = Rc::new(config);
+        let backend = Box::new(JournalBackend::open(path, page_size, config.clone())?);
+        let page_handler = PageHandler::new(backend, page_size, config)?;
 
         let obj_id_maker = ObjectIdMaker::new();
 

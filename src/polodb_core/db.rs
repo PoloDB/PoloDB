@@ -210,7 +210,7 @@ impl<'a>  Collection<'a> {
 /// ```rust
 /// use polodb_core::Database;
 ///
-/// let mut db = Database::open("/tmp/test-polo.db").unwrap();
+/// let mut db = Database::open_file("/tmp/test-polo.db").unwrap();
 /// let test_collection = db.collection("test").unwrap();
 /// ```
 pub struct Database {
@@ -226,12 +226,22 @@ impl Database {
         self.ctx.object_id_maker().mk_object_id()
     }
 
+    #[deprecated]
     pub fn open<P: AsRef<Path>>(path: P) -> DbResult<Database>  {
-        Database::open_with_config(path, Config::default())
+        Database::open_file(path)
     }
 
+    #[deprecated]
     pub fn open_with_config<P: AsRef<Path>>(path: P, config: Config) -> DbResult<Database>  {
-        let ctx = DbContext::new(path.as_ref(), config)?;
+        Database::open_file_with_config(path, config)
+    }
+
+    pub fn open_file<P: AsRef<Path>>(path: P) -> DbResult<Database>  {
+        Database::open_file_with_config(path, Config::default())
+    }
+
+    pub fn open_file_with_config<P: AsRef<Path>>(path: P, config: Config) -> DbResult<Database>  {
+        let ctx = DbContext::open_file(path.as_ref(), config)?;
         let rc_ctx = Box::new(ctx);
 
         Ok(Database {
@@ -341,7 +351,7 @@ mod tests {
         let _ = std::fs::remove_file(db_path.as_path());
         let _ = std::fs::remove_file(journal_path);
 
-        Database::open_with_config(db_path.as_path().to_str().unwrap(), config)
+        Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config)
     }
 
     fn prepare_db(db_name: &str) -> DbResult<Database> {
@@ -586,7 +596,7 @@ mod tests {
         {
             let mut db_path = env::temp_dir();
             db_path.push("test-reopen.db");
-            let _db2 = Database::open(db_path.as_path().to_str().unwrap()).unwrap();
+            let _db2 = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
         }
     }
 
@@ -626,16 +636,16 @@ mod tests {
         let db_path = mk_db_path(DB_NAME);
         {
             let config = Config::default();
-            let _db1 = Database::open_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
+            let _db1 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
             let config = Config::default();
-            let db2 = Database::open_with_config(db_path.as_path().to_str().unwrap(), config);
+            let db2 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config);
             match db2 {
                 Err(DbErr::DatabaseOccupied) => assert!(true),
                 _ => assert!(false),
             }
         }
         let config = Config::default();
-        let _db3 = Database::open_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
+        let _db3 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
     }
 
     #[test]

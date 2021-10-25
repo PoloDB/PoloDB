@@ -2,14 +2,12 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
-use std::path::Path;
 use std::num::NonZeroU32;
 use polodb_bson::Document;
 use crate::backend::journal::pagecache::PageCache;
 use crate::transaction::{TransactionType, TransactionState};
 use crate::page::RawPage;
 use crate::backend::{Backend, AutoStartResult};
-use crate::backend::journal::JournalBackend;
 use crate::page::header_page_wrapper;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::dump::JournalDump;
@@ -39,19 +37,11 @@ pub(crate) struct PageHandler {
 
 impl PageHandler {
 
-    #[allow(dead_code)]
-    pub fn new(path: &Path, page_size: NonZeroU32) -> DbResult<PageHandler> {
-        let config = Rc::new(Config::default());
-        PageHandler::with_config(path, page_size, config)
-    }
-
-    pub fn with_config(path: &Path, page_size: NonZeroU32, config: Rc<Config>) -> DbResult<PageHandler> {
-        let backend = JournalBackend::open(path, page_size, config.clone())?;
-
+    pub fn new(backend: Box<dyn Backend>, page_size: NonZeroU32, config: Rc<Config>) -> DbResult<PageHandler> {
         let page_cache = PageCache::new_default(page_size);
 
         Ok(PageHandler {
-            backend: Box::new(backend),
+            backend,
 
             page_size,
             page_cache: Box::new(page_cache),
@@ -556,7 +546,9 @@ mod test {
     use std::env;
     use std::collections::HashSet;
     use std::num::NonZeroU32;
-    use crate::TransactionType;
+    use std::rc::Rc;
+    use crate::backend::journal::JournalBackend;
+    use crate::{Config, TransactionType};
     use crate::page_handler::PageHandler;
 
     const TEST_FREE_LIST_SIZE: usize = 10000;
@@ -576,8 +568,11 @@ mod test {
         let _ = std::fs::remove_file(db_path.as_path());
         let _ = std::fs::remove_file(journal_path);
 
+        let page_size = NonZeroU32::new(4096).unwrap();
+        let config = Rc::new(Config::default());
+        let backend = Box::new(JournalBackend::open(db_path.as_ref(), page_size, config.clone()).unwrap());
         let mut page_handler = PageHandler::new(
-            db_path.as_ref(), NonZeroU32::new(4096).unwrap()).unwrap();
+            backend, page_size, config).unwrap();
         page_handler.start_transaction(TransactionType::Write).unwrap();
 
         let (free_pid, free_size) = page_handler.first_page_free_list_pid_and_size().unwrap();

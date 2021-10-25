@@ -19,7 +19,7 @@ pub(crate) fn dump(src_path: &str, page_detail: bool) {
         println!("database not exist: {}", src_path);
         process::exit(2);
     }
-    let mut db = Database::open(src_path).unwrap();
+    let mut db = Database::open_file(src_path).unwrap();
     let dump = db.dump().unwrap();
     println!("{}", FullDumpWrapper{ dump: &dump, print_page_detail: page_detail });
 }

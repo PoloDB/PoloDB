@@ -102,7 +102,7 @@ fn main() {
     if let Some(sub) = matches.subcommand_matches("attach") {
         let path = sub.value_of("path").expect("no path");
 
-        let db = Rc::new(RefCell::new(Database::open(path).expect("open database failed")));
+        let db = Rc::new(RefCell::new(Database::open_file(path).expect("open database failed")));
         let context = Context::new().unwrap();
 
         {
