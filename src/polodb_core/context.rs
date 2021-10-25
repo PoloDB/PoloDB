@@ -6,7 +6,6 @@ use polodb_bson::{Document, Value, ObjectIdMaker, mk_document};
 use super::page::header_page_wrapper;
 use super::error::DbErr;
 use super::TransactionType;
-use crate::backend::Backend;
 use crate::page_handler::PageHandler;
 use crate::Config;
 use crate::vm::{SubProgram, VM, VmState};
@@ -729,7 +728,6 @@ impl DbContext {
     }
 
     pub fn dump(&mut self) -> DbResult<FullDump> {
-        let file_meta = self.page_handler.file_meta()?;
         let first_page = self.page_handler.pipeline_read_page(0)?;
         let first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
         let version = first_page_wrapper.get_version();
@@ -738,23 +736,22 @@ impl DbContext {
         let free_list_size = first_page_wrapper.get_free_list_size();
         let page_size = self.page_handler.page_size;
 
-        let pages = self.dump_all_pages(file_meta.len())?;
         let journal_dump = self.page_handler.dump_journal()?;
         let full_dump = FullDump {
             path: self.path.clone(),
             identifier: first_page_wrapper.get_title(),
             version: dump_version(&version),
-            file_meta,
             journal_dump,
             meta_pid,
             free_list_pid,
             free_list_size,
             page_size,
-            pages,
+            pages: vec![],
         };
         Ok(full_dump)
     }
 
+    #[allow(dead_code)]
     fn dump_all_pages(&mut self, file_len: u64) -> DbResult<Vec<PageDump>> {
         let page_count = file_len / (self.page_handler.page_size.get() as u64);
         let mut result = Vec::with_capacity(page_count as usize);
@@ -774,6 +771,7 @@ impl DbContext {
 
 }
 
+#[allow(dead_code)]
 fn dump_page(raw_page: RawPage) -> DbResult<PageDump> {
     let first = raw_page.data[0];
     let second = raw_page.data[1];
@@ -814,11 +812,6 @@ impl Drop for DbContext {
     fn drop(&mut self) {
         if self.page_handler.transaction_state() != TransactionState::NoTrans {
             let _ = self.page_handler.only_rollback_journal();
-        }
-        let checkpoint_result = self.page_handler.checkpoint_journal();  // ignored
-        if checkpoint_result.is_ok() {
-            let path = self.page_handler.journal_file_path().to_path_buf();
-            let _ = std::fs::remove_file(path);  // ignore the result
         }
     }
 

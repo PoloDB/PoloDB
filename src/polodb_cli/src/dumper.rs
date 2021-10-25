@@ -45,13 +45,6 @@ impl<'a> fmt::Display for FullDumpWrapper<'a> {
         write_kv!(f, "Free List Page Id" ,self.dump.free_list_pid)?;
         write_kv!(f, "Free List Size", self.dump.free_list_size)?;
 
-        let created_datetime: DateTime<Local> = self.dump.file_meta.created().unwrap().into();
-        write_kv!(f, "Created Time", format_datetime(&created_datetime))?;
-        let modified_datetime: DateTime<Local> = self.dump.file_meta.modified().unwrap().into();
-        write_kv!(f, "Modified Time", format_datetime(&modified_datetime))?;
-        let size = self.dump.file_meta.len();
-        write_kv!(f, "Size", size)?;
-
         if self.print_page_detail {
             for page_dump in &self.dump.pages {
                 let wrapper: PageDumpWrapper = page_dump.into();
