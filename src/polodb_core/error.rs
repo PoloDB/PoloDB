@@ -136,7 +136,8 @@ pub enum DbErr {
     CollectionAlreadyExits(String),
     UnableToUpdatePrimaryKey,
     NotAValidDatabase,
-    Busy
+    Busy,
+    DatabaseOccupied,
 }
 
 impl fmt::Display for DbErr {
@@ -199,6 +200,7 @@ impl fmt::Display for DbErr {
             DbErr::CollectionAlreadyExits(name) => write!(f, "collection name '{}' already exists", name),
             DbErr::UnableToUpdatePrimaryKey => write!(f, "it's illegal to update '_id' field"),
             DbErr::NotAValidDatabase => write!(f, "the file is not a valid database"),
+            DbErr::DatabaseOccupied => write!(f, "this file is occupied by another connection"),
         }
     }
 

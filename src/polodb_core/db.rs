@@ -307,35 +307,45 @@ mod tests {
     use std::rc::Rc;
     use std::env;
     use polodb_bson::{Document, Value, mk_document};
-    use crate::{Database, Config};
+    use crate::{Database, Config, DbResult, DbErr};
     use std::io::Read;
     use std::path::PathBuf;
     use std::fs::File;
 
     static TEST_SIZE: usize = 1000;
 
-    fn prepare_db_with_config(db_name: &str, config: Config) -> Database {
+    fn mk_db_path(db_name: &str) -> PathBuf {
         let mut db_path = env::temp_dir();
+        let db_filename = String::from(db_name) + ".db";
+        db_path.push(db_filename);
+        db_path
+    }
+
+    fn mk_journal_path(db_name: &str) -> PathBuf {
         let mut journal_path = env::temp_dir();
 
-        let db_filename = String::from(db_name) + ".db";
         let journal_filename = String::from(db_name) + ".db.journal";
-
-        db_path.push(db_filename);
         journal_path.push(journal_filename);
+
+        journal_path
+    }
+
+    fn prepare_db_with_config(db_name: &str, config: Config) -> DbResult<Database> {
+        let db_path = mk_db_path(db_name);
+        let journal_path = mk_journal_path(db_name);
 
         let _ = std::fs::remove_file(db_path.as_path());
         let _ = std::fs::remove_file(journal_path);
 
-        Database::open_with_config(db_path.as_path().to_str().unwrap(), config).unwrap()
+        Database::open_with_config(db_path.as_path().to_str().unwrap(), config)
     }
 
-    fn prepare_db(db_name: &str) -> Database {
+    fn prepare_db(db_name: &str) -> DbResult<Database> {
         prepare_db_with_config(db_name, Config::default())
     }
 
     fn create_and_return_db_with_items(db_name: &str, size: usize) -> Database {
-        let mut db = prepare_db(db_name);
+        let mut db = prepare_db(db_name).unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
         // let meta = db.query_all_meta().unwrap();
@@ -369,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_transaction_commit() {
-        let mut db = prepare_db("test-transaction");
+        let mut db = prepare_db("test-transaction").unwrap();
         db.start_transaction(None).unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
@@ -388,7 +398,7 @@ mod tests {
     fn test_commit_after_commit() {
         let mut config = Config::default();
         config.journal_full_size = 1;
-        let mut db = prepare_db_with_config("test-commit-2", config);
+        let mut db = prepare_db_with_config("test-commit-2", config).unwrap();
         db.start_transaction(None).unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
@@ -417,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_rollback() {
-        let mut db = prepare_db("test-rollback");
+        let mut db = prepare_db("test-rollback").unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
         assert_eq!(collection.count().unwrap(), 0);
@@ -444,7 +454,7 @@ mod tests {
     #[test]
     fn test_create_collection_with_number_pkey() {
         let mut db = {
-            let mut db = prepare_db("test-number-pkey");
+            let mut db = prepare_db("test-number-pkey").unwrap();
             let mut collection = db.create_collection("test").unwrap();
 
             for i in 0..TEST_SIZE {
@@ -532,7 +542,7 @@ mod tests {
 
     #[test]
     fn test_insert_bigger_key() {
-        let mut db = prepare_db("test-insert-bigger-key");
+        let mut db = prepare_db("test-insert-bigger-key").unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
         let mut doc = Document::new_without_id();
@@ -548,8 +558,26 @@ mod tests {
     }
 
     #[test]
+    fn test_db_occupied() {
+        const DB_NAME: &'static str = "test-db-lock";
+        let db_path = mk_db_path(DB_NAME);
+        {
+            let config = Config::default();
+            let _db1 = Database::open_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
+            let config = Config::default();
+            let db2 = Database::open_with_config(db_path.as_path().to_str().unwrap(), config);
+            match db2 {
+                Err(DbErr::DatabaseOccupied) => assert!(true),
+                _ => assert!(false),
+            }
+        }
+        let config = Config::default();
+        let _db3 = Database::open_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
+    }
+
+    #[test]
     fn test_create_index() {
-        let mut db = prepare_db("test-create-index");
+        let mut db = prepare_db("test-create-index").unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
         let keys = mk_document! {
@@ -576,7 +604,7 @@ mod tests {
 
     #[test]
     fn test_one_delete_item() {
-        let mut db = prepare_db("test-delete-item");
+        let mut db = prepare_db("test-delete-item").unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
         let mut doc_collection  = vec![];
@@ -603,7 +631,7 @@ mod tests {
 
     #[test]
     fn test_delete_all_items() {
-        let mut db = prepare_db("test-delete-all-items");
+        let mut db = prepare_db("test-delete-all-items").unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
         let mut doc_collection  = vec![];
@@ -645,7 +673,7 @@ mod tests {
         file.read_to_end(&mut data).unwrap();
 
         println!("data size: {}", data.len());
-        let mut db = prepare_db("test-very-large-data");
+        let mut db = prepare_db("test-very-large-data").unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
         let mut doc = Document::new_without_id();
