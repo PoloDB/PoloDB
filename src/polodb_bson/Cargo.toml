@@ -12,4 +12,4 @@ name="polodb_bson"
 path="lib.rs"
 
 [dependencies]
-libc = "0.2"
+getrandom = "0.2.3"

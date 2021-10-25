@@ -1,11 +1,12 @@
-use libc::{ malloc, free };
 use std::num::NonZeroU32;
 use lru::LruCache;
+use std::alloc::{alloc, dealloc, Layout};
 use crate::page::RawPage;
 
 pub(crate) struct PageCache {
     page_count: usize,
     page_size:  NonZeroU32,
+    layout:     Layout,
     data:       *mut u8,
     lru_map:    LruCache<u32, u32>,
 }
@@ -19,13 +20,15 @@ impl PageCache {
     pub fn new(page_count: usize, page_size: NonZeroU32) -> PageCache {
         let cache_size = page_count * (page_size.get() as usize);
 
+        let layout = Layout::from_size_align(cache_size, 8).unwrap();
         let data: *mut u8 = unsafe {
-            malloc(cache_size).cast()
+            alloc(layout.clone()).cast()
         };
 
         PageCache {
             page_count,
             page_size,
+            layout,
             data,
             lru_map: LruCache::new(page_count),
         }
@@ -79,9 +82,10 @@ impl PageCache {
 impl Drop for PageCache {
 
     fn drop (&mut self) {
+        let layout = self.layout.clone();
         unsafe {
-            free(self.data.cast())
-        }
+            dealloc(self.data.cast(), layout)
+        };
     }
 
 }

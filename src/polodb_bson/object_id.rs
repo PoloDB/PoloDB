@@ -2,8 +2,7 @@ use std::fmt;
 use std::io::Write;
 use std::cmp::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::ptr::null_mut;
-use std::os::raw::c_uint;
+use getrandom::getrandom;
 use super::hex;
 use crate::BsonResult;
 use crate::error::{BsonErr, parse_error_reason};
@@ -104,18 +103,14 @@ pub struct ObjectIdMaker {
 }
 
 fn random_i32() -> i32 {
-    unsafe {
-        libc::rand()
-    }
+    let mut buf: [u8; 4] = [0; 4];
+    getrandom(&mut buf).unwrap();
+    i32::from_le_bytes(buf)
 }
 
 impl ObjectIdMaker {
 
     pub fn new() -> ObjectIdMaker {
-        unsafe {
-            let time = libc::time(null_mut());
-            libc::srand(time as c_uint);
-        }
         let counter: u32 = random_i32() as u32;
         ObjectIdMaker { counter }
     }

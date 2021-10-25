@@ -18,6 +18,7 @@ libc = "0.2"
 lru = "0.7.0"
 polodb_bson = "0.10.4"
 crc64fast = "1.0"
+getrandom = "0.2.3"
 
 [dev-dependencies]
 polodb_line_diff = { path = "../polodb_line_diff" }

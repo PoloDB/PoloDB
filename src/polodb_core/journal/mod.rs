@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::io::{Seek, Write, SeekFrom, Read};
 use std::cell::Cell;
 use std::num::NonZeroU32;
-use libc::rand;
+use getrandom::getrandom;
 use frame_header::FrameHeader;
 use transaction::TransactionState;
 use crc64fast::Digest;
@@ -50,9 +50,9 @@ pub struct JournalManager {
 }
 
 fn generate_a_salt() -> u32 {
-    unsafe {
-        rand() as u32
-    }
+    let mut buf: [u8; 4] = [0; 4];
+    getrandom(&mut buf).unwrap();
+    u32::from_le_bytes(buf)
 }
 
 fn generate_a_nonzero_salt() -> NonZeroU32 {
