@@ -8,9 +8,10 @@ use std::num::{NonZeroU32, NonZeroU64};
 use polodb_bson::Document;
 use super::RawPage;
 use super::pagecache::PageCache;
-use super::header_page_wrapper;
-use super::header_page_wrapper::HeaderPageWrapper;
-use crate::journal::{JournalManager, TransactionType};
+use super::JournalManager;
+use crate::transaction::{TransactionType, TransactionState};
+use crate::page::header_page_wrapper;
+use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::dump::JournalDump;
 use crate::{DbResult, Config};
 use crate::error::DbErr;
@@ -23,14 +24,6 @@ use std::cmp::min;
 use std::io::{Seek, SeekFrom};
 
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
-
-#[derive(Eq, PartialEq, Copy, Clone)]
-pub(crate) enum TransactionState {
-    NoTrans,
-    User,
-    UserAuto,
-    DbAuto,
-}
 
 pub(crate) struct PageHandler {
     file:                     File,
@@ -675,8 +668,8 @@ mod test {
     use std::env;
     use std::collections::HashSet;
     use std::num::NonZeroU32;
-    use crate::page::PageHandler;
     use crate::TransactionType;
+    use crate::backend::journal::page_handler::PageHandler;
 
     const TEST_FREE_LIST_SIZE: usize = 10000;
     const DB_NAME: &str = "test-page-handler";

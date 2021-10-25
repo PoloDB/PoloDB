@@ -1,7 +1,7 @@
 mod frame_header;
-mod transaction;
-
-pub use transaction::TransactionType;
+mod pagecache;
+pub(crate) mod page_handler;
+mod transaction_state;
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -11,8 +11,9 @@ use std::cell::Cell;
 use std::num::NonZeroU32;
 use getrandom::getrandom;
 use frame_header::FrameHeader;
-use transaction::TransactionState;
+use transaction_state::TransactionState;
 use crc64fast::Digest;
+use crate::transaction::TransactionType;
 use crate::page::RawPage;
 use crate::DbResult;
 use crate::error::DbErr;
@@ -592,9 +593,9 @@ impl JournalManager {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
-    use crate::journal::JournalManager;
     use crate::page::RawPage;
     use crate::TransactionType;
+    use crate::backend::journal::JournalManager;
 
     static TEST_PAGE_LEN: u32 = 100;
 

@@ -1,6 +1,6 @@
 use crate::DbResult;
 use crate::meta_doc_helper::MetaDocEntry;
-use crate::page::PageHandler;
+use crate::backend::journal::page_handler::PageHandler;
 use super::wrapper_base::cal_item_size;
 use crate::btree::BTreeNode;
 

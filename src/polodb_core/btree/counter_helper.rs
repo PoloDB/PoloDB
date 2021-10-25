@@ -1,4 +1,4 @@
-use crate::page::PageHandler;
+use crate::backend::journal::page_handler::PageHandler;
 use crate::meta_doc_helper::MetaDocEntry;
 use crate::DbResult;
 use super::BTreeNode;

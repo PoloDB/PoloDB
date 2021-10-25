@@ -1,12 +1,9 @@
 
 pub(crate) mod header_page_wrapper;
-mod page_handler;
-mod pagecache;
-mod data_page_wrapper;
-mod free_list_data_wrapper;
-mod large_data_page_wrapper;
+pub(crate) mod data_page_wrapper;
+pub(crate) mod free_list_data_wrapper;
+pub(crate) mod large_data_page_wrapper;
 
-pub(crate) use page_handler::{PageHandler, TransactionState};
 pub(crate) use free_list_data_wrapper::FreeListDataWrapper;
 
 use std::fs::File;
