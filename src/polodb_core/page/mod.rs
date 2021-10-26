@@ -57,7 +57,7 @@ impl PageType {
 
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct RawPage {
     pub page_id:    u32,
     pub data:       Vec<u8>,
@@ -181,7 +181,6 @@ impl RawPage {
     }
 
     #[inline]
-    #[allow(dead_code)]
     pub fn len(&self) -> u32 {
         self.data.len() as u32
     }

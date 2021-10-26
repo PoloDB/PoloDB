@@ -26,23 +26,23 @@ const FRAME_HEADER_SIZE: u64  = 40;
 // salt_2:     4bytes(offset 44)
 // checksum before 48:   8bytes(offset 48)
 // data begin: 64 bytes
-pub struct JournalManager {
-    file_path:        PathBuf,
-    journal_file:     File,
-    version:          [u8; 4],
-    page_size:        NonZeroU32,
-    salt1:            u32,
-    salt2:            NonZeroU32,
-    transaction_state:   Option<Box<TransactionState>>,
+pub(super) struct JournalManager {
+    file_path:         PathBuf,
+    journal_file:      File,
+    version:           [u8; 4],
+    page_size:         NonZeroU32,
+    salt1:             u32,
+    salt2:             NonZeroU32,
+    transaction_state: Option<Box<TransactionState>>,
 
     // origin_state
-    db_file_size:     u64,
+    db_file_size:      u64,
 
     // page_id => file_position
-    pub offset_map:       BTreeMap<u32, u64>,
+    offset_map:        BTreeMap<u32, u64>,
 
     // count of all frames
-    count:            u32,
+    count:             u32,
 }
 
 fn generate_a_salt() -> u32 {
@@ -67,7 +67,7 @@ fn crc64(bytes: &[u8]) -> u64 {
 
 impl JournalManager {
 
-    pub fn open(path: &Path, page_size: NonZeroU32, db_file_size: u64) -> DbResult<JournalManager> {
+    pub(super) fn open(path: &Path, page_size: NonZeroU32, db_file_size: u64) -> DbResult<JournalManager> {
         let journal_file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -296,7 +296,7 @@ impl JournalManager {
         state.ty
     }
 
-    pub(crate) fn expand_db_size(&mut self, size: u64) -> DbResult<()> {
+    pub(super) fn expand_db_size(&mut self, size: u64) -> DbResult<()> {
         if let Some(state) = &mut self.transaction_state {
             state.db_file_size += size;
             return Ok(());
@@ -304,7 +304,7 @@ impl JournalManager {
         Err(DbErr::CannotWriteDbWithoutTransaction)
     }
 
-    pub(crate) fn record_db_size(&self) -> u64 {
+    pub(super) fn record_db_size(&self) -> u64 {
         match &self.transaction_state {
             Some(state) => state.db_file_size,
             None => self.db_file_size,
@@ -356,7 +356,7 @@ impl JournalManager {
         Ok(())
     }
 
-    pub(crate) fn append_raw_page(&mut self, raw_page: &RawPage) -> DbResult<()> {
+    pub(super) fn append_raw_page(&mut self, raw_page: &RawPage) -> DbResult<()> {
         let state = match &self.transaction_state {
             Some(state) if state.ty == TransactionType::Write => state,
             _ => return Err(DbErr::CannotWriteDbWithoutTransaction),
@@ -591,7 +591,7 @@ mod tests {
     use std::num::NonZeroU32;
     use crate::page::RawPage;
     use crate::TransactionType;
-    use crate::backend::journal::JournalManager;
+    use crate::backend::file::journal_manager::JournalManager;
 
     static TEST_PAGE_LEN: u32 = 100;
 

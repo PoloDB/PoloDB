@@ -249,6 +249,19 @@ impl Database {
         })
     }
 
+    pub fn open_memory() -> DbResult<Database> {
+        Database::open_memory_wht_config(Config::default())
+    }
+
+    pub fn open_memory_wht_config(config: Config) -> DbResult<Database> {
+        let ctx = DbContext::open_memory(config)?;
+        let rc_ctx = Box::new(ctx);
+
+        Ok(Database {
+            ctx: rc_ctx,
+        })
+    }
+
     pub fn create_collection(&mut self, name: &str) -> DbResult<Collection> {
         let collection_meta = self.ctx.create_collection(name)?;
         Ok(Collection::new(self,

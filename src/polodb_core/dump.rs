@@ -13,7 +13,6 @@ pub enum PageDump {
 }
 
 pub struct FullDump {
-    pub path:           PathBuf,
     pub identifier:     String,
     pub version:        String,
     pub journal_dump:   Box<JournalDump>,

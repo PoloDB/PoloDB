@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::io::{SeekFrom, Seek};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use super::JournalManager;
+use super::journal_manager::JournalManager;
 use crate::file_lock::{exclusive_lock_file, unlock_file};
 use crate::backend::Backend;
 use crate::{DbResult, DbErr, Config};
@@ -12,7 +12,7 @@ use crate::page::RawPage;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::transaction::TransactionType;
 
-pub(crate) struct JournalBackend {
+pub(crate) struct FileBackend {
     file:            RefCell<File>,
     page_size:       NonZeroU32,
     journal_manager: RefCell<JournalManager>,
@@ -23,7 +23,7 @@ struct InitDbResult {
     db_file_size: u64,
 }
 
-impl JournalBackend {
+impl FileBackend {
 
     fn mk_journal_path(db_path: &Path) -> PathBuf {
         let mut buf = db_path.to_path_buf();
@@ -33,7 +33,7 @@ impl JournalBackend {
         buf
     }
 
-    pub(crate) fn open(path: &Path, page_size: NonZeroU32, config: Rc<Config>) -> DbResult<JournalBackend> {
+    pub(crate) fn open(path: &Path, page_size: NonZeroU32, config: Rc<Config>) -> DbResult<FileBackend> {
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -50,14 +50,14 @@ impl JournalBackend {
             _ => (),
         };
 
-        let init_result = JournalBackend::init_db(&mut file, page_size, config.init_block_count)?;
+        let init_result = FileBackend::init_db(&mut file, page_size, config.init_block_count)?;
 
-        let journal_file_path: PathBuf = JournalBackend::mk_journal_path(path);
+        let journal_file_path: PathBuf = FileBackend::mk_journal_path(path);
         let journal_manager = JournalManager::open(
             &journal_file_path, page_size, init_result.db_file_size
         )?;
 
-        Ok(JournalBackend {
+        Ok(FileBackend {
             file: RefCell::new(file),
             page_size,
             journal_manager: RefCell::new(journal_manager),
@@ -77,7 +77,7 @@ impl JournalBackend {
         if file_len == 0 {
             let expected_file_size: u64 = (page_size.get() as u64) * init_block_count.get();
             file.set_len(expected_file_size)?;
-            JournalBackend::force_write_first_block(file, page_size)?;
+            FileBackend::force_write_first_block(file, page_size)?;
             Ok(InitDbResult { db_file_size: expected_file_size })
         } else if file_len % page_size.get() as u64 == 0 {
             Ok(InitDbResult { db_file_size: file_len })
@@ -93,7 +93,7 @@ impl JournalBackend {
 
 }
 
-impl Backend for JournalBackend {
+impl Backend for FileBackend {
 
     fn read_page(&self, page_id: u32) -> DbResult<RawPage> {
         let mut journal_manager = self.journal_manager.borrow_mut();
@@ -162,7 +162,7 @@ impl Backend for JournalBackend {
 
 }
 
-impl Drop for JournalBackend {
+impl Drop for FileBackend {
 
     fn drop(&mut self) {
         let mut journal_manager = self.journal_manager.borrow_mut();

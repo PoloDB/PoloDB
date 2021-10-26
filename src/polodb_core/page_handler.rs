@@ -4,7 +4,7 @@ use std::ops::Bound::{Included, Unbounded};
 use std::rc::Rc;
 use std::num::NonZeroU32;
 use polodb_bson::Document;
-use crate::backend::journal::pagecache::PageCache;
+use crate::backend::file::pagecache::PageCache;
 use crate::transaction::{TransactionType, TransactionState};
 use crate::page::RawPage;
 use crate::backend::{Backend, AutoStartResult};
@@ -547,7 +547,7 @@ mod test {
     use std::collections::HashSet;
     use std::num::NonZeroU32;
     use std::rc::Rc;
-    use crate::backend::journal::JournalBackend;
+    use crate::backend::file::FileBackend;
     use crate::{Config, TransactionType};
     use crate::page_handler::PageHandler;
 
@@ -570,7 +570,7 @@ mod test {
 
         let page_size = NonZeroU32::new(4096).unwrap();
         let config = Rc::new(Config::default());
-        let backend = Box::new(JournalBackend::open(db_path.as_ref(), page_size, config.clone()).unwrap());
+        let backend = Box::new(FileBackend::open(db_path.as_ref(), page_size, config.clone()).unwrap());
         let mut page_handler = PageHandler::new(
             backend, page_size, config).unwrap();
         page_handler.start_transaction(TransactionType::Write).unwrap();

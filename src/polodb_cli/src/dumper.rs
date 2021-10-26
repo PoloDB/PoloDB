@@ -37,7 +37,6 @@ macro_rules! write_kv {
 impl<'a> fmt::Display for FullDumpWrapper<'a> {
 
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write_kv!(f, "Path", self.dump.path.to_str().unwrap())?;
         write_kv!(f, "Identifier", self.dump.identifier)?;
         write_kv!(f, "Version", self.dump.version)?;
         write_kv!(f, "Page Size", self.dump.page_size)?;
