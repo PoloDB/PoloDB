@@ -17,6 +17,17 @@ use crate::journal::TransactionType;
 use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeListPageDump, BTreePageDump};
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 
+macro_rules! try_multiple {
+    ($err: expr, $action: expr) => {
+        match $action {
+            Ok(ret) => ret,
+            Err(expr_err) => {
+                return Err($err.add(expr_err))
+            },
+        }
+    }
+}
+
 macro_rules! try_db_op {
     ($self: tt, $action: expr) => {
         match $action {
@@ -26,8 +37,8 @@ macro_rules! try_db_op {
             }
 
             Err(err) => {
-                $self.page_handler.auto_rollback()?;
-                $self.reset_meta_version()?;
+                try_multiple!(err, $self.page_handler.auto_rollback());
+                try_multiple!(err, $self.reset_meta_version());
                 return Err(err);
             }
         }

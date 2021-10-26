@@ -138,6 +138,24 @@ pub enum DbErr {
     NotAValidDatabase,
     Busy,
     DatabaseOccupied,
+    Multiple(Vec<DbErr>),
+}
+
+impl DbErr {
+
+    pub(crate) fn add(self, next: DbErr) -> DbErr {
+        match self {
+            DbErr::Multiple(mut result) => {
+                result.push(next);
+                DbErr::Multiple(result)
+            }
+            _ => {
+                let result = vec![self, next];
+                DbErr::Multiple(result)
+            }
+        }
+    }
+
 }
 
 impl fmt::Display for DbErr {
@@ -201,6 +219,13 @@ impl fmt::Display for DbErr {
             DbErr::UnableToUpdatePrimaryKey => write!(f, "it's illegal to update '_id' field"),
             DbErr::NotAValidDatabase => write!(f, "the file is not a valid database"),
             DbErr::DatabaseOccupied => write!(f, "this file is occupied by another connection"),
+            DbErr::Multiple(errors) => {
+                for (i, err) in errors.iter().enumerate() {
+                    writeln!(f, "Multiple errors:")?;
+                    writeln!(f, "{}: {}", i, err)?;
+                }
+                Ok(())
+            }
         }
     }
 
