@@ -55,7 +55,7 @@ impl Backend for MemoryBackend {
         self.data.len() as u64
     }
 
-    fn set_db_size(&mut self, size: u64) -> DbResult<()> {
+    fn set_db_size(&mut self, _size: u64) -> DbResult<()> {
         todo!()
     }
 

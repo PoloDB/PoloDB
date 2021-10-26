@@ -15,7 +15,7 @@ use crate::transaction::TransactionType;
 pub(crate) struct FileBackend {
     file:            RefCell<File>,
     page_size:       NonZeroU32,
-    journal_manager: RefCell<JournalManager>,
+    journal_manager: JournalManager,
     config:          Rc<Config>,
 }
 
@@ -60,7 +60,7 @@ impl FileBackend {
         Ok(FileBackend {
             file: RefCell::new(file),
             page_size,
-            journal_manager: RefCell::new(journal_manager),
+            journal_manager,
             config,
         })
     }
@@ -87,8 +87,8 @@ impl FileBackend {
     }
 
     #[inline]
-    fn is_journal_full(&self, journal_manager: &JournalManager) -> bool {
-        (journal_manager.len() as u64) >= self.config.journal_full_size
+    fn is_journal_full(&self) -> bool {
+        (self.journal_manager.len() as u64) >= self.config.journal_full_size
     }
 
 }
@@ -96,8 +96,7 @@ impl FileBackend {
 impl Backend for FileBackend {
 
     fn read_page(&self, page_id: u32) -> DbResult<RawPage> {
-        let mut journal_manager = self.journal_manager.borrow_mut();
-        if let Some(page) = journal_manager.read_page(page_id)? {
+        if let Some(page) = self.journal_manager.read_page(page_id)? {
             return Ok(page);
         }
 
@@ -115,49 +114,41 @@ impl Backend for FileBackend {
     }
 
     fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
-        let mut journal_manager = self.journal_manager.borrow_mut();
-        journal_manager.append_raw_page(page)
+        self.journal_manager.append_raw_page(page)
     }
 
     fn commit(&mut self) -> DbResult<()> {
-        let mut journal_manager = self.journal_manager.borrow_mut();
         let mut main_db = self.file.borrow_mut();
-        journal_manager.commit()?;
-        if self.is_journal_full(&journal_manager) {
-            journal_manager.checkpoint_journal(&mut main_db)?;
+        self.journal_manager.commit()?;
+        if self.is_journal_full() {
+            self.journal_manager.checkpoint_journal(&mut main_db)?;
             crate::polo_log!("checkpoint journal finished");
         }
         Ok(())
     }
 
     fn db_size(&self) -> u64 {
-        let journal = self.journal_manager.borrow();
-        journal.record_db_size()
+        self.journal_manager.record_db_size()
     }
 
     fn set_db_size(&mut self, size: u64) -> DbResult<()> {
-        let mut journal = self.journal_manager.borrow_mut();
-        journal.expand_db_size(size)
+        self.journal_manager.expand_db_size(size)
     }
 
     fn transaction_type(&self) -> Option<TransactionType> {
-        let journal = self.journal_manager.borrow();
-        journal.transaction_type()
+        self.journal_manager.transaction_type()
     }
 
     fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
-        let mut journal = self.journal_manager.borrow_mut();
-        journal.upgrade_read_transaction_to_write()
+        self.journal_manager.upgrade_read_transaction_to_write()
     }
 
     fn rollback(&mut self) -> DbResult<()> {
-        let mut journal = self.journal_manager.borrow_mut();
-        journal.rollback()
+        self.journal_manager.rollback()
     }
 
     fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        let mut journal = self.journal_manager.borrow_mut();
-        journal.start_transaction(ty)
+        self.journal_manager.start_transaction(ty)
     }
 
 }
@@ -165,12 +156,11 @@ impl Backend for FileBackend {
 impl Drop for FileBackend {
 
     fn drop(&mut self) {
-        let mut journal_manager = self.journal_manager.borrow_mut();
         let mut main_db = self.file.borrow_mut();
         let _ = unlock_file(&main_db);
-        let result = journal_manager.checkpoint_journal(&mut main_db);
+        let result = self.journal_manager.checkpoint_journal(&mut main_db);
         if result.is_ok() {
-            let path = journal_manager.path();
+            let path = self.journal_manager.path();
             let _ = std::fs::remove_file(path);
         }
     }

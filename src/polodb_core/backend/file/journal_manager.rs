@@ -2,7 +2,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::collections::BTreeMap;
 use std::io::{Seek, Write, SeekFrom, Read};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 use getrandom::getrandom;
 use crc64fast::Digest;
@@ -28,7 +28,7 @@ const FRAME_HEADER_SIZE: u64  = 40;
 // data begin: 64 bytes
 pub(super) struct JournalManager {
     file_path:         PathBuf,
-    journal_file:      File,
+    journal_file:      RefCell<File>,
     version:           [u8; 4],
     page_size:         NonZeroU32,
     salt1:             u32,
@@ -78,7 +78,7 @@ impl JournalManager {
         let file_path: PathBuf = path.to_path_buf();
         let mut result = JournalManager {
             file_path,
-            journal_file,
+            journal_file: RefCell::new(journal_file),
             version: [0, 0, 1, 0],
             page_size,
             db_file_size,
@@ -96,7 +96,10 @@ impl JournalManager {
             result.read_and_check_from_file()?;
         }
 
-        result.journal_file.seek(SeekFrom::Start(JOURNAL_DATA_BEGIN))?;
+        {
+            let mut journal_file = result.journal_file.borrow_mut();
+            journal_file.seek(SeekFrom::Start(JOURNAL_DATA_BEGIN))?;
+        }
         result.load_all_pages(meta.len())?;
 
         Ok(result)
@@ -127,21 +130,25 @@ impl JournalManager {
         let salt_2_be = self.salt2.get().to_be_bytes();
         header48[44..48].copy_from_slice(&salt_2_be);
 
-        self.journal_file.seek(SeekFrom::Start(0))?;
-        self.journal_file.write_all(&header48)?;
+        let mut journal_file = self.journal_file.borrow_mut();
+        journal_file.seek(SeekFrom::Start(0))?;
+        journal_file.write_all(&header48)?;
 
         let checksum = crc64(&header48);
         let checksum_be = checksum.to_be_bytes();
 
-        self.journal_file.seek(SeekFrom::Start(48))?;
-        self.journal_file.write_all(&checksum_be)?;
+        journal_file.seek(SeekFrom::Start(48))?;
+        journal_file.write_all(&checksum_be)?;
 
         Ok(())
     }
 
     fn read_and_check_from_file(&mut self) -> DbResult<()> {
         let mut header48: Vec<u8> = vec![0; 48];
-        self.journal_file.read_exact(&mut header48)?;
+        {
+            let mut journal_file = self.journal_file.borrow_mut();
+            journal_file.read_exact(&mut header48)?;
+        }
 
         let checksum = crc64(&header48);
         let checksum_from_file = self.read_checksum_from_file()?;
@@ -175,10 +182,11 @@ impl JournalManager {
         Ok(())
     }
 
-    fn read_checksum_from_file(&mut self) -> DbResult<u64> {
-        self.journal_file.seek(SeekFrom::Start(48))?;
+    fn read_checksum_from_file(&self) -> DbResult<u64> {
+        let mut journal_file = self.journal_file.borrow_mut();
+        journal_file.seek(SeekFrom::Start(48))?;
         let mut buffer: [u8; 8] = [0; 8];
-        self.journal_file.read_exact(&mut buffer)?;
+        journal_file.read_exact(&mut buffer)?;
         Ok(u64::from_be_bytes(buffer))
     }
 
@@ -194,7 +202,10 @@ impl JournalManager {
     }
 
     fn load_all_pages(&mut self, file_size: u64) -> DbResult<()> {
-        let mut current_pos = self.journal_file.seek(SeekFrom::Current(0))?;
+        let mut current_pos = {
+            let mut journal_file = self.journal_file.borrow_mut();
+            journal_file.seek(SeekFrom::Current(0))?
+        };
         let frame_size = self.full_frame_size();
 
         while current_pos + frame_size <= file_size {
@@ -205,15 +216,19 @@ impl JournalManager {
             let mut buffer = vec![];
             buffer.resize(frame_size as usize, 0);
 
-            self.journal_file.read_exact(&mut buffer)?;
+            {
+                let mut journal_file = self.journal_file.borrow_mut();
+                journal_file.read_exact(&mut buffer)?;
+            }
 
             let is_commit = Cell::new(false);
             match self.check_and_load_frame(current_pos, &buffer, &is_commit) {
                 Ok(()) => (),
                 Err(DbErr::SaltMismatch) |
                 Err(DbErr::ChecksumMismatch) => {
-                    self.journal_file.set_len(current_pos)?;  // trim the tail
-                    self.journal_file.seek(SeekFrom::End(0))?;  // recover position
+                    let mut journal_file = self.journal_file.borrow_mut();
+                    journal_file.set_len(current_pos)?;  // trim the tail
+                    journal_file.seek(SeekFrom::End(0))?;  // recover position
                     break;  // finish the loop
                 }
                 Err(err) => return Err(err),
@@ -221,7 +236,10 @@ impl JournalManager {
 
             let state = self.transaction_state.as_mut().unwrap();
             state.frame_count += 1;
-            current_pos = self.journal_file.seek(SeekFrom::Current(0))?;
+            current_pos = {
+                let mut journal_file = self.journal_file.borrow_mut();
+                journal_file.seek(SeekFrom::Current(0))?
+            };
 
             if is_commit.get() {
                 self.merge_transaction_state();
@@ -240,8 +258,9 @@ impl JournalManager {
         self.transaction_state = None;
         let frame_size = FRAME_HEADER_SIZE + (self.page_size.get() as u64);
         let expected_journal_file_size = JOURNAL_DATA_BEGIN + frame_size * (self.count as u64);
-        self.journal_file.set_len(expected_journal_file_size)?;
-        self.journal_file.seek(SeekFrom::End(0))?;
+        let mut journal_file = self.journal_file.borrow_mut();
+        journal_file.set_len(expected_journal_file_size)?;
+        journal_file.seek(SeekFrom::End(0))?;
         Ok(())
     }
 
@@ -312,10 +331,11 @@ impl JournalManager {
     }
 
     fn update_last_frame(&mut self) -> DbResult<()> {
+        let mut journal_file = self.journal_file.borrow_mut();
         let full_frame_size = self.full_frame_size();
-        let begin_loc = self.journal_file.seek(SeekFrom::End((full_frame_size as i64) * -1))?;
+        let begin_loc = journal_file.seek(SeekFrom::End((full_frame_size as i64) * -1))?;
         let mut data: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
-        self.journal_file.read_exact(&mut data)?;
+        journal_file.read_exact(&mut data)?;
         let mut frame_header = FrameHeader::from_bytes(&data);
 
         frame_header.db_size = self.db_file_size;
@@ -324,15 +344,15 @@ impl JournalManager {
         let mut header24: [u8; 24] = [0; 24];
         frame_header.to_bytes(&mut header24);
 
-        self.journal_file.seek(SeekFrom::Start(begin_loc))?;
-        self.journal_file.write_all(&header24)?;
+        journal_file.seek(SeekFrom::Start(begin_loc))?;
+        journal_file.write_all(&header24)?;
 
         // update header checksum
         let checksum1 = crc64(&header24);
         let checksum1_be = checksum1.to_be_bytes();
-        self.journal_file.write_all(&checksum1_be)?;
+        journal_file.write_all(&checksum1_be)?;
 
-        self.journal_file.seek(SeekFrom::End(0))?;
+        journal_file.seek(SeekFrom::End(0))?;
         Ok(())
     }
 
@@ -340,18 +360,18 @@ impl JournalManager {
     // checksum1:    8 bytes(offset 24)  header24 checksum
     // checksum2:    8 bytes(offset 32)  page checksum
     // data_begin:   page size(offset 40)
-    fn append_frame_header(&mut self, frame_header: &FrameHeader, checksum2: u64) -> std::io::Result<()> {
+    fn append_frame_header(journal_file: &mut File, frame_header: &FrameHeader, checksum2: u64) -> std::io::Result<()> {
         let mut header24: [u8; 24] = [0; 24];
         frame_header.to_bytes(&mut header24);
 
-        self.journal_file.write_all(&header24)?;
+        journal_file.write_all(&header24)?;
 
         let checksum1 = crc64(&header24);
         let checksum1_be = checksum1.to_be_bytes();
-        self.journal_file.write_all(&checksum1_be)?;
+        journal_file.write_all(&checksum1_be)?;
 
         let checksum2_be = checksum2.to_be_bytes();
-        self.journal_file.write_all(&checksum2_be)?;
+        journal_file.write_all(&checksum2_be)?;
 
         Ok(())
     }
@@ -362,8 +382,9 @@ impl JournalManager {
             _ => return Err(DbErr::CannotWriteDbWithoutTransaction),
         };
 
+        let mut journal_file = self.journal_file.borrow_mut();
         let start_pos: u64 = JOURNAL_DATA_BEGIN + (state.frame_count as u64) * (self.page_size.get() as u64 + FRAME_HEADER_SIZE);
-        self.journal_file.seek(SeekFrom::Start(start_pos))?;
+        journal_file.seek(SeekFrom::Start(start_pos))?;
 
         let frame_header = FrameHeader {
             page_id: raw_page.page_id,
@@ -375,9 +396,9 @@ impl JournalManager {
         // calculate checksum of page data
         let checksum2 = crc64(&raw_page.data);
 
-        self.append_frame_header(&frame_header, checksum2)?;
+        JournalManager::append_frame_header(&mut journal_file, &frame_header, checksum2)?;
 
-        self.journal_file.write_all(&raw_page.data)?;
+        journal_file.write_all(&raw_page.data)?;
 
         let state = self.transaction_state.as_mut().unwrap();
         state.offset_map.insert(raw_page.page_id, start_pos);
@@ -393,7 +414,7 @@ impl JournalManager {
         Ok(())
     }
 
-    pub(crate) fn read_page(&mut self, page_id: u32) -> std::io::Result<Option<RawPage>> {
+    pub(crate) fn read_page(&self, page_id: u32) -> std::io::Result<Option<RawPage>> {
         let offset = match &self.transaction_state {
 
             // currently in transaction state
@@ -424,8 +445,9 @@ impl JournalManager {
 
         let data_offset = offset + FRAME_HEADER_SIZE;
 
+        let mut journal_file = self.journal_file.borrow_mut();
         let mut result = RawPage::new(page_id, self.page_size);
-        result.read_from_file(&mut self.journal_file, data_offset)?;
+        result.read_from_file(&mut journal_file, data_offset)?;
 
         crate::polo_log!("read page from journal, page_id: {}, data_offset:\t\t0x{:0>8X}", page_id, offset);
 
@@ -437,13 +459,16 @@ impl JournalManager {
 
         db_file.set_len(self.db_file_size)?;
 
-        for (page_id, offset) in &self.offset_map {
-            let data_offset = offset + FRAME_HEADER_SIZE;
+        {
+            let mut journal_file = self.journal_file.borrow_mut();
+            for (page_id, offset) in &self.offset_map {
+                let data_offset = offset + FRAME_HEADER_SIZE;
 
-            let mut result = RawPage::new(*page_id, self.page_size);
-            result.read_from_file(&mut self.journal_file, data_offset)?;
+                let mut result = RawPage::new(*page_id, self.page_size);
+                result.read_from_file(&mut journal_file, data_offset)?;
 
-            result.sync_to_file(db_file, (*page_id as u64) * (self.page_size.get() as u64))?;
+                result.sync_to_file(db_file, (*page_id as u64) * (self.page_size.get() as u64))?;
+            }
         }
 
         db_file.flush()?;  // only checkpoint flush the file
@@ -452,7 +477,7 @@ impl JournalManager {
     }
 
     fn plus_salt1(&mut self) {
-        if self.salt1 == u32::max_value() {
+        if self.salt1 == u32::MAX {
             self.salt1 = 0;
             return;
         }
@@ -460,7 +485,10 @@ impl JournalManager {
     }
 
     fn checkpoint_finished(&mut self) -> DbResult<()> {
-        self.journal_file.set_len(64)?;  // truncate file to 64 bytes
+        {
+            let journal_file = self.journal_file.borrow();
+            journal_file.set_len(64)?;  // truncate file to 64 bytes
+        }
 
         // clear all data
         self.count = 0;
@@ -477,13 +505,14 @@ impl JournalManager {
             return Err(DbErr::StartTransactionInAnotherTransaction);
         }
 
+        let mut journal_file = self.journal_file.borrow_mut();
         match ty {
             TransactionType::Read => {
-                shared_lock_file(&self.journal_file)?;
+                shared_lock_file(&mut journal_file)?;
             }
 
             TransactionType::Write => {
-                exclusive_lock_file(&self.journal_file)?;
+                exclusive_lock_file(&mut journal_file)?;
             }
 
         }
@@ -505,7 +534,10 @@ impl JournalManager {
         if transaction_ty == TransactionType::Write {
             self.update_last_frame()?;
         }
-        unlock_file(&self.journal_file)?;
+        {
+            let mut journal_file = self.journal_file.borrow_mut();
+            unlock_file(&mut journal_file)?;
+        }
 
         Ok(())
     }
@@ -516,7 +548,10 @@ impl JournalManager {
         }
 
         self.recover_file_and_state()?;
-        unlock_file(&self.journal_file)?;
+        {
+            let mut journal_file = self.journal_file.borrow_mut();
+            unlock_file(&mut journal_file)?;
+        }
 
         Ok(())
     }
@@ -524,7 +559,8 @@ impl JournalManager {
     pub(crate) fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
         debug_assert!(self.transaction_state.is_some(), "can not upgrade transaction because there is no transaction");
 
-        exclusive_lock_file(&self.journal_file)?;
+        let mut journal_file = self.journal_file.borrow_mut();
+        exclusive_lock_file(&mut journal_file)?;
 
         let new_state = Box::new(
             TransactionState::new(TransactionType::Write, self.count, self.db_file_size)
@@ -549,7 +585,10 @@ impl JournalManager {
 
     #[allow(dead_code)]
     pub(crate) fn dump(&mut self) -> DbResult<JournalDump> {
-        let file_meta =self.journal_file.metadata()?;
+        let file_meta = {
+            let journal_file = self.journal_file.borrow();
+            journal_file.metadata()?
+        };
         let frames = self.dump_frames()?;
         let dump = JournalDump {
             path: self.file_path.clone(),
@@ -562,14 +601,15 @@ impl JournalManager {
 
     pub(crate) fn dump_frames(&mut self) -> DbResult<Vec<JournalFrameDump>> {
         let mut result = vec![];
+        let mut journal_file = self.journal_file.borrow_mut();
 
         for index in 0..self.count {
             let frame_header_offset: u64 =
                 JOURNAL_DATA_BEGIN + (self.page_size.get() as u64 + FRAME_HEADER_SIZE) * (index as u64);
 
             let mut header_buffer: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
-            self.journal_file.seek(SeekFrom::Start(frame_header_offset))?;
-            self.journal_file.read_exact(&mut header_buffer)?;
+            journal_file.seek(SeekFrom::Start(frame_header_offset))?;
+            journal_file.read_exact(&mut header_buffer)?;
 
             let header = FrameHeader::from_bytes(&header_buffer);
 
