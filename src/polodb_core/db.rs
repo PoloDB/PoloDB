@@ -406,19 +406,24 @@ mod tests {
 
     #[test]
     fn test_transaction_commit() {
-        let mut db = prepare_db("test-transaction").unwrap();
-        db.start_transaction(None).unwrap();
-        let mut collection = db.create_collection("test").unwrap();
+        vec![Some("test-collection"), None].iter().for_each(|value| {
+            let mut db = match value {
+                Some(name) => prepare_db(name).unwrap(),
+                None => Database::open_memory().unwrap()
+            };
+            db.start_transaction(None).unwrap();
+            let mut collection = db.create_collection("test").unwrap();
 
-        for i in 0..10{
-            let content = i.to_string();
-            let mut new_doc = mk_document! {
+            for i in 0..10{
+                let content = i.to_string();
+                let mut new_doc = mk_document! {
                     "_id": i,
                     "content": content,
                 };
-            collection.insert(&mut new_doc).unwrap();
-        }
-        db.commit().unwrap()
+                collection.insert(&mut new_doc).unwrap();
+            }
+            db.commit().unwrap()
+        });
     }
 
     #[test]
@@ -513,28 +518,33 @@ mod tests {
 
     #[test]
     fn test_rollback() {
-        let mut db = prepare_db("test-rollback").unwrap();
-        let mut collection = db.create_collection("test").unwrap();
+        vec![Some("test-collection"), None].iter().for_each(|value| {
+            let mut db = match value {
+                Some(name) => prepare_db(name).unwrap(),
+                None => Database::open_memory().unwrap()
+            };
+            let mut collection = db.create_collection("test").unwrap();
 
-        assert_eq!(collection.count().unwrap(), 0);
+            assert_eq!(collection.count().unwrap(), 0);
 
-        db.start_transaction(None).unwrap();
+            db.start_transaction(None).unwrap();
 
-        let mut collection = db.collection("test").unwrap();
-        for i in 0..10{
-            let content = i.to_string();
-            let mut new_doc = mk_document! {
+            let mut collection = db.collection("test").unwrap();
+            for i in 0..10 {
+                let content = i.to_string();
+                let mut new_doc = mk_document! {
                 "_id": i,
                 "content": content,
             };
-            collection.insert(new_doc.as_mut()).unwrap();
-        }
-        assert_eq!(collection.count().unwrap(), 10);
+                collection.insert(new_doc.as_mut()).unwrap();
+            }
+            assert_eq!(collection.count().unwrap(), 10);
 
-        db.rollback().unwrap();
+            db.rollback().unwrap();
 
-        let mut collection = db.collection("test").unwrap();
-        assert_eq!(collection.count().unwrap(), 0);
+            let mut collection = db.collection("test").unwrap();
+            assert_eq!(collection.count().unwrap(), 0);
+        });
     }
 
     #[test]

@@ -404,7 +404,7 @@ impl JournalManager {
         state.offset_map.insert(raw_page.page_id, start_pos);
         state.frame_count += 1;
 
-        let expected_db_size = (raw_page.page_id as u64) * (self.page_size.get() as u64);
+        let expected_db_size = (raw_page.page_id as u64 + 1) * (self.page_size.get() as u64);
         if expected_db_size > state.db_file_size {
             state.db_file_size = expected_db_size;
         }

@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use crate::backend::Backend;
 use crate::{DbResult, Config, TransactionType, DbErr};
 use crate::page::RawPage;
+use crate::page::header_page_wrapper::HeaderPageWrapper;
 
 struct Transaction {
     ty: TransactionType,
@@ -30,10 +31,17 @@ pub(crate) struct MemoryBackend {
 
 impl MemoryBackend {
 
+    fn force_write_first_block(data: &mut Vec<u8>, page_size: NonZeroU32) {
+        let wrapper = HeaderPageWrapper::init(0, page_size);
+        let wrapper_size = wrapper.0.data.len();
+        data[0..wrapper_size].copy_from_slice(&wrapper.0.data);
+    }
+
     pub(crate) fn new(page_size: NonZeroU32, config: Rc<Config>) -> MemoryBackend {
         let data_len = config.init_block_count.get() * (page_size.get() as u64);
         let data_len = data_len as usize;
-        let data = vec![0; data_len];
+        let mut data = vec![0; data_len];
+        MemoryBackend::force_write_first_block(&mut data, page_size);
         MemoryBackend {
             page_size,
             data,
@@ -42,11 +50,19 @@ impl MemoryBackend {
     }
 
     fn merge_transaction(&mut self) {
-        unimplemented!()
+        let state = self.transaction.take().unwrap();
+        let db_file_size = state.db_file_size;
+        self.data.resize(db_file_size as usize, 0);
+        for (key, value) in state.offset_map {
+            let page_size = self.page_size.get() as usize;
+            let start = (key as usize) * page_size;
+            let end = start + page_size;
+            self.data[start..end].copy_from_slice(&value.data);
+        }
     }
 
     fn recover_file_and_state(&mut self) {
-        unimplemented!()
+        self.transaction = None;
     }
 
 }
@@ -79,7 +95,7 @@ impl Backend for MemoryBackend {
         let page_id = page.page_id;
         state.offset_map.insert(page_id, page.clone());
 
-        let expected_db_size = (page_id as u64) * (self.page_size.get() as u64);
+        let expected_db_size = (page_id as u64 + 1) * (self.page_size.get() as u64);
         if expected_db_size > state.db_file_size {
             state.db_file_size = expected_db_size;
         }
@@ -134,4 +150,60 @@ impl Backend for MemoryBackend {
 
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Config, TransactionType};
+    use crate::page::RawPage;
+    use crate::backend::memory::MemoryBackend;
+    use crate::backend::Backend;
+    use std::num::NonZeroU32;
+    use std::rc::Rc;
+
+    fn make_raw_page(page_id: u32) -> RawPage {
+        let mut page = RawPage::new(
+            page_id, NonZeroU32::new(4096).unwrap());
+
+        for i in 0..4096 {
+            page.data[i] = unsafe {
+                libc::rand() as u8
+            }
+        }
+
+        page
+    }
+
+    static TEST_PAGE_LEN: u32 = 100;
+
+    #[test]
+    fn test_commit() {
+        let config = Config::default();
+        let mut backend = MemoryBackend::new(
+            NonZeroU32::new(4096).unwrap(), Rc::new(config)
+        );
+
+        let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);
+
+        for i in 0..TEST_PAGE_LEN {
+            ten_pages.push(make_raw_page(i))
+        }
+
+        backend.start_transaction(TransactionType::Write).unwrap();
+        for item in &ten_pages {
+            backend.write_page(item).unwrap();
+        }
+
+        backend.commit().unwrap();
+
+        for i in 0..TEST_PAGE_LEN {
+            let page = backend.read_page(i).unwrap();
+
+            for (index, ch) in page.data.iter().enumerate() {
+                assert_eq!(*ch, ten_pages[i as usize].data[index])
+            }
+        }
+
+    }
+
 }
