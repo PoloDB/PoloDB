@@ -107,16 +107,20 @@ impl<'a>  Collection<'a> {
     /// Return the first element in the collection satisfies the query.
     pub fn find_one(&mut self, query: &Document) -> DbResult<Option<Rc<Document>>> {
         let mut handle = self.db.ctx.find(
-            self.id, self.meta_version, Some(query)
+              self.id, self.meta_version, Some(query)
         )?;
         handle.step()?;
 
         if !handle.has_row() {
+            handle.commit_and_close_vm()?;
             return Ok(None);
         }
 
-        let result = handle.get().unwrap_document();
-        Ok(Some(result.clone()))
+        let result = handle.get().unwrap_document().clone();
+
+        handle.commit_and_close_vm()?;
+
+        Ok(Some(result))
     }
 
     pub fn name(&self) -> &str {
