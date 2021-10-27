@@ -107,16 +107,20 @@ impl<'a>  Collection<'a> {
     /// Return the first element in the collection satisfies the query.
     pub fn find_one(&mut self, query: &Document) -> DbResult<Option<Rc<Document>>> {
         let mut handle = self.db.ctx.find(
-            self.id, self.meta_version, Some(query)
+              self.id, self.meta_version, Some(query)
         )?;
         handle.step()?;
 
         if !handle.has_row() {
+            handle.commit_and_close_vm()?;
             return Ok(None);
         }
 
-        let result = handle.get().unwrap_document();
-        Ok(Some(result.clone()))
+        let result = handle.get().unwrap_document().clone();
+
+        handle.commit_and_close_vm()?;
+
+        Ok(Some(result))
     }
 
     pub fn name(&self) -> &str {
@@ -423,6 +427,65 @@ mod tests {
             collection2.insert(&mut new_doc).expect(&*format!("insert failed: {}", i));
         }
         db.commit().unwrap();
+    }
+
+    #[test]
+    fn test_multiple_find_one() {
+        let mut db = prepare_db("test-multiple-find-one").unwrap();
+        {
+            let mut collection = db.collection("config").unwrap();
+            let mut doc1 = mk_document! {
+                "_id": "c1",
+                "value": "c1",
+            };
+            collection.insert(&mut doc1).unwrap();
+
+            let mut doc2 = mk_document! {
+                "_id": "c2",
+                "value": "c2",
+            };
+            collection.insert(&mut doc2).unwrap();
+
+            let mut doc2 = mk_document! {
+                "_id": "c3",
+                "value": "c3",
+            };
+            collection.insert(&mut doc2).unwrap();
+
+            assert_eq!(collection.count().unwrap(), 3);
+        }
+
+        {
+            let mut collection = db.collection("config").unwrap();
+            collection.update(Some(&mk_document! {
+                "_id": "c2",
+            }), &mk_document! {
+                "$set": mk_document! {
+                    "value": "c33",
+                },
+            }).unwrap();
+            collection.update(Some(&mk_document! {
+                "_id": "c2",
+            }), &mk_document! {
+                "$set": mk_document! {
+                    "value": "c22",
+                },
+            }).unwrap();
+        }
+
+        let mut collection = db.collection("config").unwrap();
+        let doc1 = collection.find_one(&mk_document! {
+            "_id": "c1",
+        }).unwrap().unwrap();
+
+        assert_eq!(doc1.get("value").unwrap().unwrap_string(), "c1");
+
+        let mut collection = db.collection("config").unwrap();
+        let doc1 = collection.find_one(&mk_document! {
+            "_id": "c2",
+        }).unwrap().unwrap();
+
+        assert_eq!(doc1.get("value").unwrap().unwrap_string(), "c22");
     }
 
     #[test]
