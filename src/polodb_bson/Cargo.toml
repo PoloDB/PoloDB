@@ -1,6 +1,6 @@
 [package]
 name = "polodb_bson"
-version = "0.10.3"
+version = "0.10.4"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 license = "MIT"
 edition = "2018"
