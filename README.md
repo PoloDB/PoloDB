@@ -19,7 +19,20 @@ PoloDB is an embedded JSON-based database.
 - NoSQL
 - MongoDB-like API
 - Cross-Platform
-- Store data in ONE file
+- Multiple backends
+  - Filesystem(WAL)
+  - Memory
+
+## Filesystem Backend
+
+With the filesystem backend, PoloDB stores data in ONE file.
+All the data are saved persistently on the disk.
+
+PoloDB uses WAL(write-ahead logging) to implement transactional writing and protect your data from program crashes. Your data is SAFE.
+
+## Memory Backend
+
+With the memory backend, all the data all stored in memory, making PoloDB a pure memory database.
 
 # Introduction
 
@@ -64,14 +77,10 @@ The features will be implemented one by one in order.
   - [ ] Indexes
   - [ ] Aggregation
 - [x] Command line Tools
-- [ ] Language bindings
+- [x] Language bindings
   - [x] C/C++
-  - [ ] Go
   - [x] Python ([Doc](./docs/en-US/Python/READEME.md))
   - [x] Node.js ([Doc](./docs/en-US/Node.js/READEME.md))
-  - [ ] Java/Kotlin
-  - [ ] Dart
-- [ ] Tons of tests
 - [ ] Multi-threads support
 - [ ] Extension API
   - [ ] Data Encryption

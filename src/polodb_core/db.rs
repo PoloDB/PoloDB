@@ -152,6 +152,8 @@ impl<'a>  Collection<'a> {
         self.db.ctx.update(self.id, self.meta_version, query, update)
     }
 
+    /// Insert a document into the database.
+    /// The returning boolean value represents if the DB inserted a "_id" for you.
     #[inline]
     pub fn insert(&mut self, doc: &mut Document) -> DbResult<bool> {
         self.db.ctx.insert(self.id, self.meta_version, doc)
@@ -170,7 +172,7 @@ impl<'a>  Collection<'a> {
         }
     }
 
-    // // release in 0.2
+    /// release in 0.12
     #[allow(dead_code)]
     fn create_index(&mut self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         self.db.ctx.create_index(self.id, keys, options)
