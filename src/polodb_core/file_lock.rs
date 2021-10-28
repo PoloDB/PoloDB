@@ -5,7 +5,7 @@ use crate::{DbErr, DbResult};
 use std::os::windows::io::AsRawHandle;
 
 #[cfg(target_os = "windows")]
-pub(crate) fn exclusive_lock_file(&file: File) -> DbResult<()> {
+pub(crate) fn exclusive_lock_file(file: &File) -> DbResult<()> {
     use winapi::um::fileapi::LockFileEx;
     use winapi::um::minwinbase::OVERLAPPED;
     use winapi::um::minwinbase::{LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY};

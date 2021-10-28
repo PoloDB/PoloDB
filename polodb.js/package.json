@@ -1,6 +1,6 @@
 {
   "name": "polodb",
-  "version": "0.10.0",
+  "version": "0.10.4",
   "description": "PoloDB is an embedded JSON-based database.",
   "main": "index.js",
   "engines": {
@@ -17,6 +17,7 @@
   },
   "keywords": [
     "database",
+    "json",
     "embedded"
   ],
   "author": "Vincent Chan",
@@ -28,6 +29,7 @@
   "devDependencies": {
     "bindings": "^1.5.0",
     "chai": "^4.2.0",
+    "cmake-js": "^6.2.1",
     "mocha": "^8.2.0"
   }
 }
