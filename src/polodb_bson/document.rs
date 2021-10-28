@@ -352,7 +352,7 @@ mod tests {
     fn test_serialize() {
         // let mut id_maker = ObjectIdMaker::new();
 
-        let doc = mk_document! {
+        let doc = doc! {
             "avater_utl": "https://doc.rust-lang.org/std/iter/trait.Iterator.html",
             "name": "嘻嘻哈哈",
             "group_id": "70xxx80057ba0bba964fxxx1ca3d7252fe075a8b",

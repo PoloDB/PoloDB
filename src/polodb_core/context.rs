@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::borrow::Borrow;
 use std::path::Path;
 use std::num::NonZeroU32;
-use polodb_bson::{Document, Value, ObjectIdMaker, mk_document};
+use polodb_bson::{Document, Value, ObjectIdMaker, doc};
 use super::page::header_page_wrapper;
 use super::error::DbErr;
 use super::TransactionType;
@@ -143,11 +143,11 @@ impl DbContext {
 
         let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
 
-        let query_doc = mk_document! {
+        let query_doc = doc! {
             "name": name,
         };
 
-        let meta_doc = mk_document!{};
+        let meta_doc = doc!{};
 
         let subprogram = SubProgram::compile_query(
             &collection_meta,
@@ -212,11 +212,11 @@ impl DbContext {
     fn check_collection_exist(&mut self, name: &str, meta_src: &MetaSource) -> DbResult<bool> {
         let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
 
-        let query_doc = mk_document! {
+        let query_doc = doc! {
             "name": name,
         };
 
-        let meta_doc = mk_document!{};
+        let meta_doc = doc!{};
 
         let subprogram = SubProgram::compile_query(
             &collection_meta,

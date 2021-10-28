@@ -51,11 +51,11 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
 /// ```rust
 /// use std::rc::Rc;
 /// use polodb_core::Database;
-/// use polodb_bson::mk_document;
+/// use polodb_bson::doc;
 ///
-/// let mut db = Database::open("/tmp/test-collection").unwrap();
+/// let mut db = Database::open_file("/tmp/test-collection").unwrap();
 /// let mut collection = db.collection("test").unwrap();
-/// collection.insert(mk_document! {
+/// collection.insert(doc! {
 ///     "_id": 0,
 ///     "name": "Vincent Chan",
 ///     "score": 99.99,
@@ -335,7 +335,7 @@ impl Database {
 mod tests {
     use std::rc::Rc;
     use std::env;
-    use polodb_bson::{Document, Value, mk_document};
+    use polodb_bson::{Document, Value, doc};
     use crate::{Database, Config, DbResult, DbErr};
     use std::io::Read;
     use std::path::PathBuf;
@@ -381,7 +381,7 @@ mod tests {
 
         for i in 0..size {
             let content = i.to_string();
-            let mut new_doc = mk_document! {
+            let mut new_doc = doc! {
                 "content": content,
             };
             collection.insert(&mut new_doc).unwrap();
@@ -397,7 +397,7 @@ mod tests {
         let mut test_collection = db.collection("test").unwrap();
         let all = test_collection.find_all( ).unwrap();
 
-        let second = test_collection.find_one(&mk_document! {
+        let second = test_collection.find_one(&doc! {
             "content": "1",
         }).unwrap().unwrap();
         assert_eq!(second.get("content").unwrap().unwrap_string(), "1");
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn test_transaction_commit() {
-        vec![Some("test-collection"), None].iter().for_each(|value| {
+        vec![Some("test-transaction-commit"), None].iter().for_each(|value| {
             let mut db = match value {
                 Some(name) => prepare_db(name).unwrap(),
                 None => Database::open_memory().unwrap()
@@ -418,7 +418,7 @@ mod tests {
 
             for i in 0..10{
                 let content = i.to_string();
-                let mut new_doc = mk_document! {
+                let mut new_doc = doc! {
                     "_id": i,
                     "content": content,
                 };
@@ -438,7 +438,7 @@ mod tests {
 
         for i in 0..1000 {
             let content = i.to_string();
-            let mut new_doc = mk_document! {
+            let mut new_doc = doc! {
                 "_id": i,
                 "content": content,
             };
@@ -450,7 +450,7 @@ mod tests {
         let mut collection2 = db.create_collection("test-2").unwrap();
         for i in 0..10{
             let content = i.to_string();
-            let mut new_doc = mk_document! {
+            let mut new_doc = doc! {
                 "_id": i,
                 "content": content,
             };
@@ -464,19 +464,19 @@ mod tests {
         let mut db = prepare_db("test-multiple-find-one").unwrap();
         {
             let mut collection = db.collection("config").unwrap();
-            let mut doc1 = mk_document! {
+            let mut doc1 = doc! {
                 "_id": "c1",
                 "value": "c1",
             };
             collection.insert(&mut doc1).unwrap();
 
-            let mut doc2 = mk_document! {
+            let mut doc2 = doc! {
                 "_id": "c2",
                 "value": "c2",
             };
             collection.insert(&mut doc2).unwrap();
 
-            let mut doc2 = mk_document! {
+            let mut doc2 = doc! {
                 "_id": "c3",
                 "value": "c3",
             };
@@ -487,31 +487,31 @@ mod tests {
 
         {
             let mut collection = db.collection("config").unwrap();
-            collection.update(Some(&mk_document! {
+            collection.update(Some(&doc! {
                 "_id": "c2",
-            }), &mk_document! {
-                "$set": mk_document! {
+            }), &doc! {
+                "$set": doc! {
                     "value": "c33",
                 },
             }).unwrap();
-            collection.update(Some(&mk_document! {
+            collection.update(Some(&doc! {
                 "_id": "c2",
-            }), &mk_document! {
-                "$set": mk_document! {
+            }), &doc! {
+                "$set": doc! {
                     "value": "c22",
                 },
             }).unwrap();
         }
 
         let mut collection = db.collection("config").unwrap();
-        let doc1 = collection.find_one(&mk_document! {
+        let doc1 = collection.find_one(&doc! {
             "_id": "c1",
         }).unwrap().unwrap();
 
         assert_eq!(doc1.get("value").unwrap().unwrap_string(), "c1");
 
         let mut collection = db.collection("config").unwrap();
-        let doc1 = collection.find_one(&mk_document! {
+        let doc1 = collection.find_one(&doc! {
             "_id": "c2",
         }).unwrap().unwrap();
 
@@ -534,7 +534,7 @@ mod tests {
             let mut collection = db.collection("test").unwrap();
             for i in 0..10 {
                 let content = i.to_string();
-                let mut new_doc = mk_document! {
+                let mut new_doc = doc! {
                 "_id": i,
                 "content": content,
             };
@@ -557,7 +557,7 @@ mod tests {
 
             for i in 0..TEST_SIZE {
                 let content = i.to_string();
-                let mut new_doc = mk_document! {
+                let mut new_doc = doc! {
                     "_id": i,
                     "content": content,
                 };
@@ -583,7 +583,7 @@ mod tests {
         let mut collection = db.collection("test").unwrap();
 
         let result = collection.find(
-            &mk_document! {
+            &doc! {
                 "content": "3",
             }
         ).unwrap();
@@ -605,7 +605,7 @@ mod tests {
 
         let first_key = &all[0].pkey_id().unwrap();
 
-        let result = collection.find(&mk_document! {
+        let result = collection.find(&doc! {
             "_id": first_key.clone(),
         }).unwrap();
 
@@ -629,7 +629,7 @@ mod tests {
     fn test_pkey_type_check() {
         let mut db = create_and_return_db_with_items("test-type-check", TEST_SIZE);
 
-        let mut doc = mk_document! {
+        let mut doc = doc! {
             "_id": 10,
             "value": "something",
         };
@@ -678,7 +678,7 @@ mod tests {
         let mut db = prepare_db("test-create-index").unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
-        let keys = mk_document! {
+        let keys = doc! {
             "user_id": 1,
         };
 
@@ -686,14 +686,14 @@ mod tests {
 
         for i in 0..10 {
             let str = Rc::new(i.to_string());
-            let mut data = mk_document! {
+            let mut data = doc! {
                 "name": str.clone(),
                 "user_id": str.clone(),
             };
             collection.insert(data.as_mut()).unwrap();
         }
 
-        let mut data = mk_document! {
+        let mut data = doc! {
             "name": "what",
             "user_id": 3,
         };
@@ -710,7 +710,7 @@ mod tests {
         for i in 0..100 {
             let content = i.to_string();
 
-            let mut new_doc = mk_document! {
+            let mut new_doc = doc! {
                 "content": content,
             };
 
@@ -720,7 +720,7 @@ mod tests {
 
         let third = &doc_collection[3];
         let third_key = third.get("_id").unwrap();
-        let delete_doc = mk_document! {
+        let delete_doc = doc! {
             "_id": third_key.clone(),
         };
         assert!(collection.delete(Some(&delete_doc)).unwrap() > 0);
@@ -736,7 +736,7 @@ mod tests {
 
         for i in 0..1000 {
             let content = i.to_string();
-            let mut new_doc = mk_document! {
+            let mut new_doc = doc! {
                 "_id": i,
                 "content": content,
             };
@@ -746,11 +746,11 @@ mod tests {
 
         for doc in &doc_collection {
             let key = doc.get("_id").unwrap();
-            let deleted = collection.delete(Some(&mk_document!{
+            let deleted = collection.delete(Some(&doc!{
                 "_id": key.clone(),
             })).unwrap();
             assert!(deleted > 0, "delete nothing with key: {}", key);
-            let find_doc = mk_document! {
+            let find_doc = doc! {
                 "_id": key.clone(),
             };
             let result = collection.find(&find_doc).unwrap();
@@ -781,7 +781,7 @@ mod tests {
         assert!(collection.insert(&mut doc).unwrap());
 
         let new_id = doc.pkey_id().unwrap();
-        let back = collection.find_one(&mk_document! {
+        let back = collection.find_one(&doc! {
             "_id": new_id,
         }).unwrap().unwrap();
 
