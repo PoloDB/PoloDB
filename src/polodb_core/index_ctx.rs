@@ -1,6 +1,6 @@
 use std::rc::Rc;
-use std::collections::HashMap;
 use std::borrow::Borrow;
+use hashbrown::HashMap;
 use polodb_bson::{Document, Value, mk_document, mk_array};
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::DbResult;

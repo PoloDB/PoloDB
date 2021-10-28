@@ -13,3 +13,4 @@ path="lib.rs"
 
 [dependencies]
 getrandom = "0.2.3"
+hashbrown = "0.11.2"

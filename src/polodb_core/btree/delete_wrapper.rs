@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::borrow::BorrowMut;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
+use hashbrown::HashMap;
 use polodb_bson::{Value, Document};
 use crate::DbResult;
 use crate::page::RawPage;
