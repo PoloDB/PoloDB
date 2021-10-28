@@ -199,10 +199,10 @@ impl Array {
                 }
 
                 ty_int::INT => {
-                    let (integer, offset) = vli::decode_u64(&bytes[ptr..])?;
+                    let (integer, offset) = vli::decode(&bytes[ptr..])?;
                     ptr += offset;
 
-                    arr.0.push(Value::Int(integer as i64));
+                    arr.0.push(Value::Int(integer));
                 }
 
                 ty_int::STRING => {

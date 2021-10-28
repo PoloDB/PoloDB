@@ -2,7 +2,7 @@ use crate::BsonResult;
 use crate::error::BsonErr;
 use std::io::Write;
 
-// http://www.dlugosz.com/ZIP2/VLI.html
+// Extended from http://www.dlugosz.com/ZIP2/VLI.html
 
 // prefix bits	bytes	data bits	unsigned range
 // 0	        1	    7	        127
@@ -14,14 +14,20 @@ use std::io::Write;
 // 111 11 000	6	    40	        1,099,511,627,776 (1T)
 // 111 11 001	9	    64	        A full 64-bit value with one byte overhead
 // 111 11 010	17	    128	        A GUID/UUID
+// 111 11 011	n	    any	        A negative number
 // 111 11 111	n	    any	        Any multi-precision integer
 
-static BYTE_MARK1: u8 = 0b10000000;
-static BYTE_MARK2: u8 = 0b11000000;
-static BYTE_MARK3: u8 = 0b11100000;
-static BYTE_MARK5: u8 = 0b11111000;
+const BYTE_MARK1: u8 = 0b10000000;
+const BYTE_MARK2: u8 = 0b11000000;
+const BYTE_MARK3: u8 = 0b11100000;
+const BYTE_MARK5: u8 = 0b11111000;
+const NEG_FLAG:   u8 = 0b11111011;
 
 pub fn encode(writer: &mut dyn Write, num: i64) -> BsonResult<()> {
+    if num < 0 {
+        writer.write(&[ NEG_FLAG ])?;
+        return encode_u64(writer, (num * -1) as u64);
+    }
     encode_u64(writer, num as u64)
 }
 
@@ -64,6 +70,17 @@ macro_rules! read_byte_plus {
             byte
         }
     }
+}
+
+pub fn decode(bytes: &[u8]) -> BsonResult<(i64, usize)> {
+    let mut ptr: usize = 0;
+    let first_byte = read_byte_plus!(bytes, ptr);
+    if first_byte == NEG_FLAG {
+        let (tmp, size) = decode_u64(&bytes[1..])?;
+        return Ok(((tmp as i64) * -1, size + ptr))
+    }
+    let (tmp, size) = decode_u64(bytes)?;
+    Ok((tmp as i64, size))
 }
 
 pub fn decode_u64(bytes: &[u8]) -> BsonResult<(u64, usize)> {
@@ -155,7 +172,29 @@ pub fn decode_u64(bytes: &[u8]) -> BsonResult<(u64, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use crate::vli::{encode_u64, decode_u64};
+    use crate::vli::{encode_u64, decode_u64, encode, decode};
+
+    #[test]
+    fn test_legacy_negative() {
+        let n1 = vec![0xf9, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+        assert_eq!(decode_u64(&n1).unwrap().0 as i64, -1);
+        assert_eq!(decode(&n1).unwrap().0, -1);
+    }
+
+    #[test]
+    fn test_new_negative() {
+        let mut bytes = vec![];
+        encode(&mut bytes, -1).expect("encode error");
+        assert_eq!(bytes.len(), 2);
+
+        for i in -20000..-1 {
+            let num = i as i64;
+            let mut bytes = vec![];
+            encode(&mut bytes, num).expect("encode error");
+
+            assert_eq!(decode(&bytes).unwrap().0, num);
+        }
+    }
 
     #[test]
     fn test_ts() {
