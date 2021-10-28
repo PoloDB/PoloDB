@@ -1,6 +1,6 @@
 [package]
 name = "polodb_bson"
-version = "0.10.4"
+version = "0.11.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 license = "MIT"
 edition = "2018"
@@ -12,4 +12,5 @@ name="polodb_bson"
 path="lib.rs"
 
 [dependencies]
-libc = "0.2"
+getrandom = "0.2.3"
+hashbrown = "0.11.2"

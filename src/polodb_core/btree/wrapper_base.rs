@@ -1,6 +1,7 @@
 use std::num::NonZeroU32;
 use crate::DbResult;
-use crate::page::{RawPage, PageHandler};
+use crate::page::RawPage;
+use crate::page_handler::PageHandler;
 use super::{BTreeNode, HEADER_SIZE, ITEM_SIZE};
 
 pub(super) struct BTreePageWrapperBase<'a> {

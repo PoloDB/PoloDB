@@ -3,9 +3,9 @@
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 #![cfg_attr(feature = "clippy", deny(clippy))]
 
+use hashbrown::hash_map::{self, HashMap};
 use std::borrow::Borrow;
 use std::cmp::Ordering;
-use std::collections::hash_map::{self, HashMap};
 use std::fmt;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::iter;
@@ -24,7 +24,7 @@ struct Node<K, V> {
 }
 
 /// A linked hash map.
-pub struct LinkedHashMap<K, V, S = hash_map::RandomState> {
+pub struct LinkedHashMap<K, V, S = hash_map::DefaultHashBuilder> {
     map: HashMap<KeyRef<K>, *mut Node<K, V>, S>,
     head: *mut Node<K, V>,
     free: *mut Node<K, V>,
@@ -803,7 +803,7 @@ pub struct IntoIter<K, V> {
 
 /// An insertion-order iterator over a `LinkedHashMap`'s entries represented as
 /// an `OccupiedEntry`.
-pub struct Entries<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
+pub struct Entries<'a, K: 'a, V: 'a, S: 'a = hash_map::DefaultHashBuilder> {
     map: *mut LinkedHashMap<K, V, S>,
     head: *mut Node<K, V>,
     remaining: usize,
@@ -1110,7 +1110,7 @@ impl<K: Hash + Eq, V, S: BuildHasher> IntoIterator for LinkedHashMap<K, V, S> {
 }
 
 /// A view into a single location in a map, which may be vacant or occupied.
-pub enum Entry<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
+pub enum Entry<'a, K: 'a, V: 'a, S: 'a = hash_map::DefaultHashBuilder> {
     /// An occupied Entry.
     Occupied(OccupiedEntry<'a, K, V, S>),
     /// A vacant Entry.
@@ -1118,14 +1118,14 @@ pub enum Entry<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
 }
 
 /// A view into a single occupied location in a `LinkedHashMap`.
-pub struct OccupiedEntry<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
+pub struct OccupiedEntry<'a, K: 'a, V: 'a, S: 'a = hash_map::DefaultHashBuilder> {
     entry: *mut Node<K, V>,
     map: *mut LinkedHashMap<K, V, S>,
     marker: marker::PhantomData<&'a K>,
 }
 
 /// A view into a single empty location in a `LinkedHashMap`.
-pub struct VacantEntry<'a, K: 'a, V: 'a, S: 'a = hash_map::RandomState> {
+pub struct VacantEntry<'a, K: 'a, V: 'a, S: 'a = hash_map::DefaultHashBuilder> {
     key: K,
     map: &'a mut LinkedHashMap<K, V, S>,
 }

@@ -19,7 +19,7 @@ pub(crate) fn dump(src_path: &str, page_detail: bool) {
         println!("database not exist: {}", src_path);
         process::exit(2);
     }
-    let mut db = Database::open(src_path).unwrap();
+    let mut db = Database::open_file(src_path).unwrap();
     let dump = db.dump().unwrap();
     println!("{}", FullDumpWrapper{ dump: &dump, print_page_detail: page_detail });
 }
@@ -37,20 +37,12 @@ macro_rules! write_kv {
 impl<'a> fmt::Display for FullDumpWrapper<'a> {
 
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write_kv!(f, "Path", self.dump.path.to_str().unwrap())?;
         write_kv!(f, "Identifier", self.dump.identifier)?;
         write_kv!(f, "Version", self.dump.version)?;
         write_kv!(f, "Page Size", self.dump.page_size)?;
         write_kv!(f, "Meta Page Id", self.dump.meta_pid)?;
         write_kv!(f, "Free List Page Id" ,self.dump.free_list_pid)?;
         write_kv!(f, "Free List Size", self.dump.free_list_size)?;
-
-        let created_datetime: DateTime<Local> = self.dump.file_meta.created().unwrap().into();
-        write_kv!(f, "Created Time", format_datetime(&created_datetime))?;
-        let modified_datetime: DateTime<Local> = self.dump.file_meta.modified().unwrap().into();
-        write_kv!(f, "Modified Time", format_datetime(&modified_datetime))?;
-        let size = self.dump.file_meta.len();
-        write_kv!(f, "Size", size)?;
 
         if self.print_page_detail {
             for page_dump in &self.dump.pages {

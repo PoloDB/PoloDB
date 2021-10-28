@@ -13,10 +13,8 @@ pub enum PageDump {
 }
 
 pub struct FullDump {
-    pub path:           PathBuf,
     pub identifier:     String,
     pub version:        String,
-    pub file_meta:      Metadata,
     pub journal_dump:   Box<JournalDump>,
     pub meta_pid:       u32,
     pub free_list_pid:  u32,
@@ -46,6 +44,7 @@ pub struct BTreePageDump {
 
 impl BTreePageDump {
 
+    #[allow(dead_code)]
     pub(crate) fn from_page(page: &RawPage) -> DbResult<BTreePageDump> {
         Ok(BTreePageDump {
             pid: page.page_id,
@@ -63,6 +62,7 @@ pub struct DataPageDump {
 
 impl DataPageDump {
 
+    #[allow(dead_code)]
     pub(crate) fn from_page(page: &RawPage) -> DbResult<DataPageDump> {
         Ok(DataPageDump {
             pid: page.page_id,
@@ -79,6 +79,7 @@ pub struct FreeListPageDump {
 
 impl FreeListPageDump {
 
+    #[allow(dead_code)]
     pub(crate) fn from_page(page: RawPage) -> DbResult<FreeListPageDump> {
         let pid = page.page_id;
         let wrapper = FreeListDataWrapper::from_raw(page);

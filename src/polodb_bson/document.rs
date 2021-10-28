@@ -346,14 +346,20 @@ impl Document {
 #[cfg(test)]
 mod tests {
     use crate::document::Document;
-    // use crate::object_id::ObjectIdMaker;
+    use std::fs::OpenOptions;
+    use std::io::Read;
+    use std::path::PathBuf;
 
     #[test]
     fn test_serialize() {
-        // let mut id_maker = ObjectIdMaker::new();
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.pop();
+        d.pop();
+        d.push("fixtures/serialize.bson");
+        println!("path: {}", d.to_str().unwrap());
 
-        let doc = mk_document! {
-            "avater_utl": "https://doc.rust-lang.org/std/iter/trait.Iterator.html",
+        let doc = doc! {
+            "avatar_utl": "https://doc.rust-lang.org/std/iter/trait.Iterator.html",
             "name": "嘻嘻哈哈",
             "group_id": "70xxx80057ba0bba964fxxx1ca3d7252fe075a8b",
             "user_id": "6500xxx139040719xxx",
@@ -365,6 +371,17 @@ mod tests {
         };
 
         let bytes = doc.to_bytes().expect("serial error");
+
+        let mut file = OpenOptions::new()
+            .read(true)
+            .open(&d).unwrap();
+        let len = file.metadata().unwrap().len() as usize;
+        let mut expect_bytes: Vec<u8> = vec![0; len];
+        file.read_exact(&mut expect_bytes).unwrap();
+
+        for (index, byte) in expect_bytes.iter().enumerate() {
+            assert_eq!(bytes[index], *byte);
+        }
 
         let parsed_doc = Document::from_bytes(&bytes).expect("deserialize error");
 

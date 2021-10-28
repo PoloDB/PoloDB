@@ -1,11 +1,11 @@
 use std::rc::Rc;
-use std::collections::HashMap;
 use std::borrow::Borrow;
+use hashbrown::HashMap;
 use polodb_bson::{Document, Value, mk_document, mk_array};
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::DbResult;
 use crate::error::{DbErr, mk_field_name_type_unexpected};
-use crate::page::PageHandler;
+use crate::page_handler::PageHandler;
 use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
 
 pub(crate) struct IndexCtx {

@@ -58,7 +58,7 @@ fn set_global_error(err: DbErr) {
 pub unsafe extern "C" fn PLDB_open(path: *const c_char) -> *mut DbContext {
     let cstr = CStr::from_ptr(path);
     let str = try_read_utf8!(cstr.to_str(), null_mut());
-    let db = match DbContext::new(str.as_ref(), Config::default()) {
+    let db = match DbContext::open_file(str.as_ref(), Config::default()) {
         Ok(db) => db,
         Err(err) => {
             set_global_error(err);

@@ -1,10 +1,5 @@
 use std::collections::BTreeMap;
-
-#[derive(Eq, PartialEq, Copy, Clone)]
-pub enum TransactionType {
-    Read,
-    Write,
-}
+use crate::transaction::TransactionType;
 
 pub(super) struct TransactionState {
     pub(super) ty: TransactionType,
@@ -25,4 +20,3 @@ impl TransactionState {
     }
 
 }
-

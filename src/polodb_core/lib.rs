@@ -24,7 +24,6 @@
 
 mod btree;
 mod page;
-mod journal;
 mod vm;
 mod error;
 mod cursor;
@@ -39,10 +38,13 @@ pub mod dump;
 mod config;
 mod macros;
 mod file_lock;
+mod backend;
+mod transaction;
+mod page_handler;
 
 pub use db::{Database, DbResult};
 pub use config::Config;
-pub use journal::TransactionType;
+pub use transaction::TransactionType;
 pub use context::DbContext;
 pub use db_handle::DbHandle;
 pub use error::DbErr;
