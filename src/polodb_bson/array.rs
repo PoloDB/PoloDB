@@ -277,6 +277,27 @@ impl Array {
         Ok(arr)
     }
 
+    pub fn to_msgpack(&self, buf: &mut Vec<u8>) -> BsonResult<()> {
+        rmp::encode::write_array_len(buf, self.len())?;
+        for value in self.iter() {
+            value.to_msgpack(buf)?;
+        }
+        Ok(())
+    }
+
+    pub fn from_msgpack(bytes: &mut &[u8]) -> BsonResult<Array> {
+        let mut buf: Vec<Value> = Vec::new();
+
+        let arr_len = rmp::decode::read_array_len(bytes)? as usize;
+
+        for _ in 0..arr_len {
+            let value = Value::from_msgpack(bytes)?;
+            buf.push(value);
+        }
+
+        Ok(Array(buf))
+    }
+
 }
 
 impl ops::Index<usize> for Array {

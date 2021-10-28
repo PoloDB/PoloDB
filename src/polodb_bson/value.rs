@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::fmt;
 use std::cmp::Ordering;
+use rmp::Marker;
 use super::ObjectId;
 use super::document::Document;
 use super::array::Array;
@@ -77,6 +78,112 @@ impl Value {
             Value::Binary(_)      => ty_int::BINARY,
             Value::UTCDateTime(_) => ty_int::UTC_DATETIME,
 
+        }
+    }
+
+    pub fn to_msgpack(&self, buf: &mut Vec<u8>) -> BsonResult<()> {
+        match self {
+            Value::Null => rmp::encode::write_nil(buf)?,
+            Value::Double(fv) => {
+                if *fv <= (f32::MAX as f64) && *fv >= (f32::MIN as f64) {
+                    rmp::encode::write_f32(buf, *fv as f32)?;
+                } else {
+                    rmp::encode::write_f64(buf, *fv)?;
+                }
+            },
+            Value::Boolean(bv) => rmp::encode::write_bool(buf, *bv)?,
+            Value::Int(iv) => {
+                let v = *iv;
+                if v <= (i8::MAX as i64) && v >= (i8::MIN as i64) {
+                    rmp::encode::write_i8(buf, v as i8)?
+                } else if v <= (i16::MAX as i64) && v >= (i16::MIN as i64) {
+                    rmp::encode::write_i16(buf, v as i16)?;
+                } else if v <= (i32::MAX as i64) && v >= (i32::MIN as i64) {
+                    rmp::encode::write_i32(buf, v as i32)?;
+                } else {
+                    rmp::encode::write_i64(buf, v)?;
+                }
+            }
+            Value::String(str) => {
+                rmp::encode::write_str(buf, str)?;
+            },
+            Value::ObjectId(oid) => {
+                rmp::encode::write_ext_meta(buf, 1, ty_int::OBJECT_ID as i8)?;
+                oid.serialize(buf)?;
+            },
+            Value::Array(arr) => {
+                arr.to_msgpack(buf)?;
+            },
+            Value::Document(doc) => {
+                doc.to_msgpack(buf)?;
+            },
+            Value::Binary(bin) => {
+                rmp::encode::write_bin(buf, bin)?;
+            },
+            Value::UTCDateTime(_) => {
+                unimplemented!()
+            },
+        }
+        Ok(())
+    }
+
+    pub fn from_msgpack(bytes: &mut &[u8]) -> BsonResult<Value> {
+        let marker = rmp::decode::read_marker(bytes)?;
+        match marker {
+            Marker::Null => {
+                Ok(Value::Null)
+            }
+            Marker::True => {
+                Ok(Value::Boolean(true))
+            }
+            Marker::False => {
+                Ok(Value::Boolean(false))
+            }
+            Marker::U8 => {
+                // TODO: if bytes empty
+                let b = bytes[0];
+                *bytes = &bytes[1..];
+                Ok(Value::Int(b as i64))
+            }
+            Marker::U16 => {
+                let mut buf = [0u8; 2];
+                buf.copy_from_slice(&bytes[0..2]);
+                let value = u16::from_be_bytes(buf);
+                *bytes = &bytes[2..];
+                Ok(Value::Int(value as i64))
+            }
+            Marker::U32 => {}
+            Marker::U64 => {}
+            Marker::I8 => {}
+            Marker::I16 => {}
+            Marker::I32 => {}
+            Marker::I64 => {}
+            Marker::F32 => {}
+            Marker::F64 => {}
+            Marker::FixStr(_) => {}
+            Marker::Str8 => {}
+            Marker::Str16 => {}
+            Marker::Str32 => {}
+            Marker::Bin8 => {}
+            Marker::Bin16 => {}
+            Marker::Bin32 => {}
+            Marker::FixArray(_) => {}
+            Marker::Array16 => {}
+            Marker::Array32 => {}
+            Marker::FixMap(_) => {}
+            Marker::Map16 => {}
+            Marker::Map32 => {}
+            Marker::FixExt1 => {}
+            Marker::FixExt2 => {}
+            Marker::FixExt4 => {}
+            Marker::FixExt8 => {}
+            Marker::FixExt16 => {}
+            Marker::Ext8 => {}
+            Marker::Ext16 => {}
+            Marker::Ext32 => {}
+            _ => {
+                Err(BsonErr::ParseError("unexpected meta"))
+            }
         }
     }
 

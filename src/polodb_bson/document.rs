@@ -321,6 +321,36 @@ impl Document {
         Ok(result)
     }
 
+    pub fn to_msgpack(&self, buf: &mut Vec<u8>) -> BsonResult<()> {
+        rmp::encode::write_map_len(buf, self.len() as u32)?;
+
+        for (key, value) in self.iter() {
+            rmp::encode::write_str(buf, key)?;
+            value.to_msgpack(buf)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn from_msgpack(bytes: &mut &[u8]) -> BsonResult<Document> {
+        let len = rmp::decode::read_map_len(bytes)?;
+
+        let mut doc = Document::new_without_id();
+
+        for _ in 0..len {
+            let key_len = rmp::decode::read_str_len(bytes)? as usize;
+            let mut buf = vec![0u8; key_len];
+
+            buf.copy_from_slice(&bytes[0..key_len]);
+
+            let value = Value::from_msgpack(bytes)?;
+
+            doc.insert(String::from_utf8(buf)?, value);
+        }
+
+        Ok(doc)
+    }
+
     #[inline]
     pub fn iter(&self) -> Iter<String, Value> {
         self.map.iter()
