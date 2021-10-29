@@ -51,7 +51,12 @@ impl FileBackend {
             _ => (),
         };
 
-        let init_result = FileBackend::init_db(&mut file, page_size, config.init_block_count)?;
+        let init_result = FileBackend::init_db(
+            &mut file,
+            page_size,
+            config.init_block_count,
+            config.check_db_version
+        )?;
 
         let journal_file_path: PathBuf = FileBackend::mk_journal_path(path);
         let journal_manager = JournalManager::open(
@@ -72,7 +77,7 @@ impl FileBackend {
         Ok(wrapper.0)
     }
 
-    fn init_db(file: &mut File, page_size: NonZeroU32, init_block_count: NonZeroU64) -> DbResult<InitDbResult> {
+    fn init_db(file: &mut File, page_size: NonZeroU32, init_block_count: NonZeroU64, check_db_version: bool) -> DbResult<InitDbResult> {
         let meta = file.metadata()?;
         let file_len = meta.len();
         if file_len == 0 {
@@ -81,7 +86,9 @@ impl FileBackend {
             FileBackend::force_write_first_block(file, page_size)?;
             Ok(InitDbResult { db_file_size: expected_file_size })
         } else if file_len % page_size.get() as u64 == 0 {
-            FileBackend::check_db_version(file)?;
+            if check_db_version {
+                FileBackend::check_db_version(file)?;
+            }
             Ok(InitDbResult { db_file_size: file_len })
         } else {
             Err(DbErr::NotAValidDatabase)
