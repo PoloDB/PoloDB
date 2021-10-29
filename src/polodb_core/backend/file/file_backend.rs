@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::cell::RefCell;
-use std::io::{SeekFrom, Seek};
+use std::io::{SeekFrom, Seek, Read};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use super::journal_manager::JournalManager;
@@ -9,8 +9,9 @@ use crate::file_lock::{exclusive_lock_file, unlock_file};
 use crate::backend::Backend;
 use crate::{DbResult, DbErr, Config};
 use crate::page::RawPage;
-use crate::page::header_page_wrapper::HeaderPageWrapper;
+use crate::page::header_page_wrapper::{HeaderPageWrapper, DATABASE_VERSION};
 use crate::transaction::TransactionType;
+use crate::error::VersionMismatchError;
 
 pub(crate) struct FileBackend {
     file:            RefCell<File>,
@@ -80,10 +81,27 @@ impl FileBackend {
             FileBackend::force_write_first_block(file, page_size)?;
             Ok(InitDbResult { db_file_size: expected_file_size })
         } else if file_len % page_size.get() as u64 == 0 {
+            FileBackend::check_db_version(file)?;
             Ok(InitDbResult { db_file_size: file_len })
         } else {
             Err(DbErr::NotAValidDatabase)
         }
+    }
+
+    fn check_db_version(file: &mut File) -> DbResult<()> {
+        let mut version = [0u8; 4];
+        file.seek(SeekFrom::Start(32))?;
+        file.read_exact(&mut version)?;
+
+        if version != DATABASE_VERSION {
+            let err = VersionMismatchError {
+                expect_version: DATABASE_VERSION,
+                actual_version: version,
+            };
+            return Err(DbErr::VersionMismatch(Box::new(err)))
+        }
+
+        Ok(())
     }
 
     #[inline]

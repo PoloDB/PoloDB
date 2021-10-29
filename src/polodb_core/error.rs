@@ -92,6 +92,12 @@ pub fn mk_unexpected_type_for_op(op: &'static str, expected_ty: &'static str, ac
 }
 
 #[derive(Debug)]
+pub struct VersionMismatchError {
+    pub actual_version: [u8; 4],
+    pub expect_version: [u8; 4],
+}
+
+#[derive(Debug)]
 pub enum DbErr {
     UnexpectedIdType(u8, u8),
     NotAValidKeyType(String),
@@ -139,6 +145,7 @@ pub enum DbErr {
     Busy,
     DatabaseOccupied,
     Multiple(Vec<DbErr>),
+    VersionMismatch(Box<VersionMismatchError>),
 }
 
 impl DbErr {
@@ -225,6 +232,13 @@ impl fmt::Display for DbErr {
                     writeln!(f, "{}: {}", i, err)?;
                 }
                 Ok(())
+            }
+            DbErr::VersionMismatch(err) => {
+                writeln!(f, "db version mismatched, please upgrade")?;
+                let actual = err.actual_version;
+                let expect = err.expect_version;
+                writeln!(f, "expect: {}.{}.{}.{}", expect[0], expect[1], expect[2], expect[3])?;
+                writeln!(f, "actual: {}.{}.{}.{}", actual[0], actual[1], actual[2], actual[3])
             }
         }
     }

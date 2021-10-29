@@ -860,6 +860,6 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::NotAValidDatabase => 46,
         DbErr::DatabaseOccupied => 47,
         DbErr::Multiple(_) => 48,
-
+        DbErr::VersionMismatch(_) => 49,
     }
 }
