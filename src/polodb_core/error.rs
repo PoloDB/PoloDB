@@ -1,7 +1,6 @@
 use std::io;
 use std::fmt;
-use std::rc::Rc;
-use polodb_bson::{Value, ty_int};
+use polodb_bson::ty_int;
 use polodb_bson::error::BsonErr;
 
 #[derive(Debug)]
@@ -114,7 +113,7 @@ pub enum DbErr {
     DataSizeTooLarge(u32, u32),
     DecodeEOF,
     DataOverflow,
-    DataExist(Value),
+    DataExist(String),
     PageSpaceNotEnough,
     DataHasNoPrimaryKey,
     ChecksumMismatch,
@@ -135,7 +134,7 @@ pub enum DbErr {
     UnexpectedPageType,
     UnknownTransactionType,
     BufferNotEnough(usize),
-    UnknownUpdateOperation(Rc<str>),
+    UnknownUpdateOperation(String),
     IncrementNullField,
     VmIsHalt,
     MetaVersionMismatched(u32, u32),
@@ -268,6 +267,8 @@ impl From<std::str::Utf8Error> for DbErr {
     }
 
 }
+
+impl std::error::Error for DbErr {}
 
 #[cfg(test)]
 mod tests {

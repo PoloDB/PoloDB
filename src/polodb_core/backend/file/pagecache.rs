@@ -79,6 +79,8 @@ impl PageCache {
 
 }
 
+unsafe impl Send for PageCache {}
+
 impl Drop for PageCache {
 
     fn drop (&mut self) {

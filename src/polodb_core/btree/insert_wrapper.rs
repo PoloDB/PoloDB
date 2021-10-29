@@ -142,7 +142,8 @@ impl<'a> BTreePageInsertWrapper<'a> {
                         _primary_key: doc_pkey.clone(),
                     })
                 } else {
-                    Err(DbErr::DataExist(doc_pkey.clone()))
+                    let str = format!("data exist: {}", doc_pkey);
+                    Err(DbErr::DataExist(str))
                 }
             }
 

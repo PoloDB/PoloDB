@@ -113,3 +113,7 @@ impl From<MarkerReadError> for BsonErr {
         BsonErr::RmpMarkerReadError(Box::new(err))
     }
 }
+
+impl std::error::Error for BsonErr {
+    
+}

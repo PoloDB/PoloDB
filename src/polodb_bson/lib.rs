@@ -17,6 +17,7 @@ pub use document::Document;
 pub use array::Array;
 pub use datetime::UTCDateTime;
 pub use value::*;
+pub use error::BsonErr;
 
 pub type BsonResult<T> = Result<T, error::BsonErr>;
 

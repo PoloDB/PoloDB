@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::fmt;
 use std::cmp::Ordering;
+use std::io::Read;
 use rmp::Marker;
 use super::ObjectId;
 use super::document::Document;
@@ -9,7 +10,6 @@ use super::hex;
 use crate::BsonResult;
 use crate::error::BsonErr;
 use crate::datetime::UTCDateTime;
-use std::io::Read;
 use byteorder::{self, ReadBytesExt, BigEndian};
 
 const BINARY_MAX_DISPLAY_LEN: usize = 64;

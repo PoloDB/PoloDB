@@ -3,7 +3,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 use std::cell::RefCell;
 use std::io::{SeekFrom, Seek, Read};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::Arc;
 use super::journal_manager::JournalManager;
 use crate::file_lock::{exclusive_lock_file, unlock_file};
 use crate::backend::Backend;
@@ -17,7 +17,7 @@ pub(crate) struct FileBackend {
     file:            RefCell<File>,
     page_size:       NonZeroU32,
     journal_manager: JournalManager,
-    config:          Rc<Config>,
+    config:          Arc<Config>,
 }
 
 struct InitDbResult {
@@ -34,7 +34,7 @@ impl FileBackend {
         buf
     }
 
-    pub(crate) fn open(path: &Path, page_size: NonZeroU32, config: Rc<Config>) -> DbResult<FileBackend> {
+    pub(crate) fn open(path: &Path, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<FileBackend> {
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)

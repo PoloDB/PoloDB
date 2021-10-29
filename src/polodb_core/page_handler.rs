@@ -1,8 +1,9 @@
 use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::ops::Bound::{Included, Unbounded};
-use std::rc::Rc;
+use std::sync::Arc;
 use std::num::NonZeroU32;
+use std::rc::Rc;
 use polodb_bson::Document;
 use crate::backend::file::pagecache::PageCache;
 use crate::transaction::{TransactionType, TransactionState};
@@ -22,7 +23,7 @@ use std::cmp::min;
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
 pub(crate) struct PageHandler {
-    backend:                  Box<dyn Backend>,
+    backend:                  Box<dyn Backend + Send>,
 
     pub page_size:            NonZeroU32,
     page_cache:               Box<PageCache>,
@@ -31,13 +32,13 @@ pub(crate) struct PageHandler {
 
     transaction_state:        TransactionState,
 
-    config:                   Rc<Config>,
+    config:                   Arc<Config>,
 
 }
 
 impl PageHandler {
 
-    pub fn new(backend: Box<dyn Backend>, page_size: NonZeroU32, config: Rc<Config>) -> DbResult<PageHandler> {
+    pub fn new(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<PageHandler> {
         let page_cache = PageCache::new_default(page_size);
 
         Ok(PageHandler {
@@ -553,7 +554,7 @@ mod test {
     use std::env;
     use std::collections::HashSet;
     use std::num::NonZeroU32;
-    use std::rc::Rc;
+    use std::sync::Arc;
     use crate::backend::file::FileBackend;
     use crate::{Config, TransactionType};
     use crate::page_handler::PageHandler;
@@ -576,7 +577,7 @@ mod test {
         let _ = std::fs::remove_file(journal_path);
 
         let page_size = NonZeroU32::new(4096).unwrap();
-        let config = Rc::new(Config::default());
+        let config = Arc::new(Config::default());
         let backend = Box::new(FileBackend::open(db_path.as_ref(), page_size, config.clone()).unwrap());
         let mut page_handler = PageHandler::new(
             backend, page_size, config).unwrap();

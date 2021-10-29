@@ -1,7 +1,8 @@
-use std::rc::Rc;
 use std::borrow::Borrow;
 use std::path::Path;
 use std::num::NonZeroU32;
+use std::sync::Arc;
+use std::rc::Rc;
 use polodb_bson::{Document, Value, ObjectIdMaker, doc};
 use super::page::header_page_wrapper;
 use super::error::DbErr;
@@ -62,7 +63,7 @@ pub struct DbContext {
     page_handler: Box<PageHandler>,
     obj_id_maker: ObjectIdMaker,
     pub(crate)meta_version: u32,
-    config:       Rc<Config>,
+    config:       Arc<Config>,
 
 }
 
@@ -84,19 +85,19 @@ impl DbContext {
     pub fn open_file(path: &Path, config: Config) -> DbResult<DbContext> {
         let page_size = NonZeroU32::new(4096).unwrap();
 
-        let config = Rc::new(config);
+        let config = Arc::new(config);
         let backend = Box::new(FileBackend::open(path, page_size, config.clone())?);
         DbContext::open_with_backend(backend, page_size, config)
     }
 
     pub fn open_memory(config: Config) -> DbResult<DbContext> {
         let page_size = NonZeroU32::new(4096).unwrap();
-        let config = Rc::new(config);
-        let backend = Box::new(MemoryBackend::new(page_size, config.clone()));
+        let config = Arc::new(config);
+        let backend = Box::new(MemoryBackend::new(page_size, config.init_block_count));
         DbContext::open_with_backend(backend, page_size, config)
     }
 
-    fn open_with_backend(backend: Box<dyn Backend>, page_size: NonZeroU32, config: Rc<Config>) -> DbResult<DbContext> {
+    fn open_with_backend(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<DbContext> {
         let page_handler = PageHandler::new(backend, page_size, config.clone())?;
 
         let obj_id_maker = ObjectIdMaker::new();

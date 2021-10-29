@@ -1,8 +1,7 @@
-use std::rc::Rc;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::collections::BTreeMap;
 use crate::backend::Backend;
-use crate::{DbResult, Config, TransactionType, DbErr};
+use crate::{DbResult, TransactionType, DbErr};
 use crate::page::RawPage;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 
@@ -37,8 +36,8 @@ impl MemoryBackend {
         data[0..wrapper_size].copy_from_slice(&wrapper.0.data);
     }
 
-    pub(crate) fn new(page_size: NonZeroU32, config: Rc<Config>) -> MemoryBackend {
-        let data_len = config.init_block_count.get() * (page_size.get() as u64);
+    pub(crate) fn new(page_size: NonZeroU32, init_block_count: NonZeroU64) -> MemoryBackend {
+        let data_len = init_block_count.get() * (page_size.get() as u64);
         let data_len = data_len as usize;
         let mut data = vec![0; data_len];
         MemoryBackend::force_write_first_block(&mut data, page_size);
@@ -159,7 +158,6 @@ mod tests {
     use crate::backend::memory::MemoryBackend;
     use crate::backend::Backend;
     use std::num::NonZeroU32;
-    use std::rc::Rc;
 
     fn make_raw_page(page_id: u32) -> RawPage {
         let mut page = RawPage::new(
@@ -180,7 +178,7 @@ mod tests {
     fn test_commit() {
         let config = Config::default();
         let mut backend = MemoryBackend::new(
-            NonZeroU32::new(4096).unwrap(), Rc::new(config)
+            NonZeroU32::new(4096).unwrap(), config.init_block_count
         );
 
         let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);

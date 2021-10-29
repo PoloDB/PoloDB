@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use polodb_bson::Document;
-use crate::{DbResult, Config, SerializeType, DbContext, TransactionType, Database};
+use crate::context::DbContext;
+use crate::{DbResult, Config, SerializeType, TransactionType, Database};
 
 fn mk_old_db_path(db_path: &Path) -> PathBuf {
     let mut buf = db_path.to_path_buf();
