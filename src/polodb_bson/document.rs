@@ -8,6 +8,7 @@ use crate::BsonResult;
 use crate::error::{BsonErr, parse_error_reason};
 use crate::array::Array;
 use crate::object_id::{ ObjectIdMaker, ObjectId };
+use std::io::Read;
 
 #[derive(Debug, Clone)]
 pub struct Document {
@@ -332,16 +333,19 @@ impl Document {
         Ok(())
     }
 
-    pub fn from_msgpack(bytes: &mut &[u8]) -> BsonResult<Document> {
+    pub fn from_msgpack<R: Read>(bytes: &mut R) -> BsonResult<Document> {
         let len = rmp::decode::read_map_len(bytes)?;
+        Document::from_msgpack_with_len(bytes, len as usize)
+    }
 
+    pub fn from_msgpack_with_len<R: Read>(bytes: &mut R, len: usize) -> BsonResult<Document> {
         let mut doc = Document::new_without_id();
 
         for _ in 0..len {
             let key_len = rmp::decode::read_str_len(bytes)? as usize;
             let mut buf = vec![0u8; key_len];
 
-            buf.copy_from_slice(&bytes[0..key_len]);
+            bytes.read(&mut buf)?;
 
             let value = Value::from_msgpack(bytes)?;
 
@@ -401,6 +405,7 @@ mod tests {
         };
 
         let bytes = doc.to_bytes().expect("serial error");
+        assert_eq!(bytes.len(), 237);
 
         let mut file = OpenOptions::new()
             .read(true)
@@ -416,6 +421,25 @@ mod tests {
         let parsed_doc = Document::from_bytes(&bytes).expect("deserialize error");
 
         assert_eq!(parsed_doc.len(), doc.len());
+    }
+
+    #[test]
+    fn test_msgpack() {
+        let doc = doc! {
+            "avatar_utl": "https://doc.rust-lang.org/std/iter/trait.Iterator.html",
+            "name": "嘻嘻哈哈",
+            "group_id": "70xxx80057ba0bba964fxxx1ca3d7252fe075a8b",
+            "user_id": "6500xxx139040719xxx",
+            "time": 6662496067319235000_i64,
+            "can_do_a": true,
+            "can_do_b": false,
+            "can_do_c": false,
+            "permissions": mk_array![ 1, 2, 3 ],
+        };
+
+        let mut buf = Vec::new();
+        doc.to_msgpack(&mut buf).expect("serial error");
+        assert_eq!(buf.len(), 228);
     }
 
 }

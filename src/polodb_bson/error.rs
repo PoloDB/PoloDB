@@ -48,6 +48,7 @@ impl fmt::Display for BsonErr {
             BsonErr::RmpWriteError(err) => write!(f, "{}", err),
             BsonErr::RmpReadError(err) => write!(f, "{}", err),
             BsonErr::DecodeStringErr(err) => write!(f, "{}", err),
+            BsonErr::RmpMarkerReadError(_err) => write!(f, "RmpMarkerReadError"),
         }
     }
 

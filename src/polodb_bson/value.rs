@@ -9,6 +9,8 @@ use super::hex;
 use crate::BsonResult;
 use crate::error::BsonErr;
 use crate::datetime::UTCDateTime;
+use std::io::Read;
+use byteorder::{self, ReadBytesExt, BigEndian};
 
 const BINARY_MAX_DISPLAY_LEN: usize = 64;
 
@@ -127,7 +129,7 @@ impl Value {
         Ok(())
     }
 
-    pub fn from_msgpack(bytes: &mut &[u8]) -> BsonResult<Value> {
+    pub fn from_msgpack<R: Read>(bytes: &mut R) -> BsonResult<Value> {
         let marker = rmp::decode::read_marker(bytes)?;
         match marker {
             Marker::Null => {
@@ -140,49 +142,148 @@ impl Value {
                 Ok(Value::Boolean(false))
             }
             Marker::U8 => {
-                // TODO: if bytes empty
-                let b = bytes[0];
-                *bytes = &bytes[1..];
+                let b = bytes.read_u8()?;
                 Ok(Value::Int(b as i64))
             }
             Marker::U16 => {
-                let mut buf = [0u8; 2];
-                buf.copy_from_slice(&bytes[0..2]);
-                let value = u16::from_be_bytes(buf);
-                *bytes = &bytes[2..];
-                Ok(Value::Int(value as i64))
+                let v = bytes.read_u16::<BigEndian>()?;
+                Ok(Value::Int(v as i64))
             }
-            Marker::U32 => {}
-            Marker::U64 => {}
-            Marker::I8 => {}
-            Marker::I16 => {}
-            Marker::I32 => {}
-            Marker::I64 => {}
-            Marker::F32 => {}
-            Marker::F64 => {}
-            Marker::FixStr(_) => {}
-            Marker::Str8 => {}
-            Marker::Str16 => {}
-            Marker::Str32 => {}
-            Marker::Bin8 => {}
-            Marker::Bin16 => {}
-            Marker::Bin32 => {}
-            Marker::FixArray(_) => {}
-            Marker::Array16 => {}
-            Marker::Array32 => {}
-            Marker::FixMap(_) => {}
-            Marker::Map16 => {}
-            Marker::Map32 => {}
-            Marker::FixExt1 => {}
-            Marker::FixExt2 => {}
-            Marker::FixExt4 => {}
-            Marker::FixExt8 => {}
-            Marker::FixExt16 => {}
-            Marker::Ext8 => {}
-            Marker::Ext16 => {}
-            Marker::Ext32 => {}
+            Marker::U32 => {
+                let v = bytes.read_u32::<BigEndian>()?;
+                Ok(Value::Int(v as i64))
+            }
+            Marker::U64 => {
+                let v = bytes.read_u64::<BigEndian>()?;
+                Ok(Value::Int(v as i64))
+            }
+            Marker::I8 => {
+                let v = bytes.read_i8()?;
+                Ok(Value::Int(v as i64))
+            }
+            Marker::I16 => {
+                let v = bytes.read_i16::<BigEndian>()?;
+                Ok(Value::Int(v as i64))
+            }
+            Marker::I32 => {
+                let v = bytes.read_i32::<BigEndian>()?;
+                Ok(Value::Int(v as i64))
+            }
+            Marker::I64 => {
+                let v = bytes.read_i64::<BigEndian>()?;
+                Ok(Value::Int(v))
+            }
+            Marker::F32 => {
+                let v = bytes.read_f32::<BigEndian>()?;
+                Ok(Value::Double(v as f64))
+            }
+            Marker::F64 => {
+                let v = bytes.read_f64::<BigEndian>()?;
+                Ok(Value::Double(v))
+            }
+            Marker::FixStr(size) => {
+                let len = size as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                let str = String::from_utf8(buf)?;
+                Ok(str.into())
+            }
+            Marker::Str8 => {
+                let len = bytes.read_u8()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                let str = String::from_utf8(buf)?;
+                Ok(str.into())
+            }
+            Marker::Str16 => {
+                let len = bytes.read_u16::<BigEndian>()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                let str = String::from_utf8(buf)?;
+                Ok(str.into())
+            }
+            Marker::Str32 => {
+                let len = bytes.read_u32::<BigEndian>()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                let str = String::from_utf8(buf)?;
+                Ok(str.into())
+            }
+            Marker::Bin8 => {
+                let len = bytes.read_u8()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                Ok(buf.into())
+            }
+            Marker::Bin16 => {
+                let len = bytes.read_u16::<BigEndian>()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                Ok(buf.into())
+            }
+            Marker::Bin32 => {
+                let len = bytes.read_u32::<BigEndian>()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                Ok(buf.into())
+            }
+            Marker::FixArray(size) => {
+                let len = size as usize;
+                let arr = Array::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Array(Rc::new(arr)))
+            }
+            Marker::Array16 => {
+                let len = bytes.read_u16::<BigEndian>()? as usize;
+                let arr = Array::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Array(Rc::new(arr)))
+            }
+            Marker::Array32 => {
+                let len = bytes.read_u32::<BigEndian>()? as usize;
+                let arr = Array::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Array(Rc::new(arr)))
+            }
+            Marker::FixMap(size) => {
+                let len = size as usize;
+                let doc = Document::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Document(Rc::new(doc)))
+            }
+            Marker::Map16 => {
+                let len = bytes.read_u16::<BigEndian>()? as usize;
+                let doc = Document::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Document(Rc::new(doc)))
+            }
+            Marker::Map32 => {
+                let len = bytes.read_u32::<BigEndian>()? as usize;
+                let doc = Document::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Document(Rc::new(doc)))
+            }
+            Marker::FixExt1 => {
+                let ty = bytes.read_u8()?;
+                if ty == ty_int::OBJECT_ID {
+                    let mut buf = [0; 12];
+                    bytes.read(&mut buf)?;
+                    let oid = ObjectId::deserialize(&buf)?;
+                    Ok(Value::ObjectId(Rc::new(oid)))
+                } else {
+                    Err(BsonErr::ParseError("unknown ext type".into()))
+                }
+            }
             _ => {
-                Err(BsonErr::ParseError("unexpected meta"))
+                Err(BsonErr::ParseError("unexpected meta".into()))
             }
         }
     }
