@@ -61,7 +61,7 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
 pub struct DbContext {
     page_handler: Box<PageHandler>,
     obj_id_maker: ObjectIdMaker,
-    meta_version: u32,
+    pub(crate)meta_version: u32,
     config:       Rc<Config>,
 
 }
@@ -696,22 +696,29 @@ impl DbContext {
         counter_helper::count(&mut self.page_handler, collection_meta)
     }
 
-    pub fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
-        // let meta_page_id = self.get_meta_page_id()?;
-        //
-        // let mut result = vec![];
-        // let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
-        //
-        // while cursor.has_next() {
-        //     let ticket = cursor.peek().unwrap();
-        //     let doc = cursor.get_doc_from_ticket(&ticket)?;
-        //     result.push(doc);
-        //
-        //     let _ = cursor.next()?;
-        // }
-        //
-        // Ok(result)
-        unimplemented!()
+    pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
+        let meta_src = self.get_meta_source()?;
+
+        let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
+
+        let subprogram = SubProgram::compile_query_all(
+            &collection_meta,
+            true)?;
+
+        let mut handle = self.make_handle(subprogram);
+        handle.step()?;
+
+        let mut result = vec![];
+
+        while handle.state() == (VmState::HasRow as i8) {
+            let doc = handle.get().unwrap_document();
+
+            result.push(doc.clone());
+
+            handle.step()?;
+        }
+
+        Ok(result)
     }
 
     pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
