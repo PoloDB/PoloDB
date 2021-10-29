@@ -141,6 +141,9 @@ impl Value {
             Marker::False => {
                 Ok(Value::Boolean(false))
             }
+            Marker::FixPos(int) => {
+                Ok(Value::Int(int as i64))
+            }
             Marker::U8 => {
                 let b = bytes.read_u8()?;
                 Ok(Value::Int(b as i64))

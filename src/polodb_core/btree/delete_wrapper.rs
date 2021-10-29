@@ -379,7 +379,8 @@ impl<'a> BTreePageDeleteWrapper<'a> {
     fn erase_item(&mut self, item: &DataTicket) -> DbResult<Rc<Document>> {
         let bytes = self.base.page_handler.free_data_ticket(&item)?;
         debug_assert!(!bytes.is_empty(), "bytes is empty");
-        let doc = Document::from_bytes(bytes.as_ref())?;
+        let mut my_ref: &[u8] = bytes.as_ref();
+        let doc = Document::from_msgpack(&mut my_ref)?;
         Ok(Rc::new(doc))
     }
 
