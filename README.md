@@ -14,8 +14,12 @@ PoloDB is an embedded JSON-based database.
 
 - Simple/Lightweight/Easy to learn and use
 - Various language bindings
-- Embedded (No standalone processes, no cross-process calls)
-- No runtime dependency
+- Can be embedded or standalone
+  - Embedded:
+    - No standalone processes
+    - No cross-process calls
+    - No runtime dependency
+  - Standalone: Run as a process, communicate with IPC
 - NoSQL
 - MongoDB-like API
 - Cross-Platform
