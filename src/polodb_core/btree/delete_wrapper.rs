@@ -3,33 +3,36 @@ use std::borrow::BorrowMut;
 use std::collections::BTreeSet;
 use hashbrown::HashMap;
 use polodb_bson::{Value, Document};
+use super::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
+use super::wrapper_base::BTreePageWrapperBase;
 use crate::DbResult;
 use crate::page::RawPage;
 use crate::page_handler::PageHandler;
-use super::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
-use super::wrapper_base::BTreePageWrapperBase;
+use crate::doc_serializer::SerializeType;
 use crate::data_ticket::DataTicket;
 
 struct DeleteBackwardItem {
-    is_leaf:       bool,
-    child_size:    usize,
-    deleted_ticket:   Box<DataTicket>,
+    is_leaf:        bool,
+    child_size:     usize,
+    deleted_ticket: Box<DataTicket>,
 }
 
 pub struct BTreePageDeleteWrapper<'a> {
-    base:         BTreePageWrapperBase<'a>,
-    dirty_set:    BTreeSet<u32>,
-    cache_btree:  HashMap<u32, Box<BTreeNode>>,
+    base:           BTreePageWrapperBase<'a>,
+    dirty_set:      BTreeSet<u32>,
+    cache_btree:    HashMap<u32, Box<BTreeNode>>,
+    serialize_type: SerializeType,
 }
 
 impl<'a> BTreePageDeleteWrapper<'a> {
 
-    pub(crate) fn new(page_handler: &mut PageHandler, root_page_id: u32) -> BTreePageDeleteWrapper {
+    pub(crate) fn new(page_handler: &mut PageHandler, root_page_id: u32, serialize_type: SerializeType) -> BTreePageDeleteWrapper {
         let base = BTreePageWrapperBase::new(page_handler, root_page_id);
         BTreePageDeleteWrapper {
             base,
             dirty_set: BTreeSet::new(),
             cache_btree: HashMap::new(),
+            serialize_type,
         }
     }
 
@@ -380,7 +383,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         let bytes = self.base.page_handler.free_data_ticket(&item)?;
         debug_assert!(!bytes.is_empty(), "bytes is empty");
         let mut my_ref: &[u8] = bytes.as_ref();
-        let doc = Document::from_msgpack(&mut my_ref)?;
+        let doc = crate::doc_serializer::deserialize(self.serialize_type, &mut my_ref)?;
         Ok(Rc::new(doc))
     }
 

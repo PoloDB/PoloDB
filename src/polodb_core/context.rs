@@ -59,9 +59,10 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
  * API for all platforms
  */
 pub struct DbContext {
-    page_handler:        Box<PageHandler>,
-    obj_id_maker:        ObjectIdMaker,
-    meta_version:        u32,
+    page_handler: Box<PageHandler>,
+    obj_id_maker: ObjectIdMaker,
+    meta_version: u32,
+    config:       Rc<Config>,
 
 }
 
@@ -96,7 +97,7 @@ impl DbContext {
     }
 
     fn open_with_backend(backend: Box<dyn Backend>, page_size: NonZeroU32, config: Rc<Config>) -> DbResult<DbContext> {
-        let page_handler = PageHandler::new(backend, page_size, config)?;
+        let page_handler = PageHandler::new(backend, page_size, config.clone())?;
 
         let obj_id_maker = ObjectIdMaker::new();
 
@@ -105,6 +106,7 @@ impl DbContext {
             // first_page,
             obj_id_maker,
             meta_version: 0,
+            config,
         };
 
         let meta_source = ctx.get_meta_source()?;
@@ -432,7 +434,8 @@ impl DbContext {
         let mut is_meta_changed = false;
 
         // insert index begin
-        let mut index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
+        let serialize_type = self.config.serialize_type;
+        let mut index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref(), serialize_type);
         if let Some(index_ctx) = &mut index_ctx_opt {
             let mut is_ctx_changed = false;
 
@@ -542,8 +545,9 @@ impl DbContext {
             0, meta_source.meta_pid, col_id)?;
         delete_all_helper::delete_all(&mut self.page_handler, collection_meta)?;
 
+        let serialize_type = self.config.serialize_type;
         let mut btree_wrapper = BTreePageDeleteWrapper::new(
-            &mut self.page_handler, meta_source.meta_pid);
+            &mut self.page_handler, meta_source.meta_pid, serialize_type);
 
         let pkey = Value::from(col_id);
         btree_wrapper.delete_item(&pkey)?;
@@ -663,15 +667,17 @@ impl DbContext {
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
+        let serialize_type = self.config.serialize_type;
         let mut delete_wrapper = BTreePageDeleteWrapper::new(
             &mut self.page_handler,
-            collection_meta.root_pid() as u32
+            collection_meta.root_pid() as u32,
+            serialize_type
         );
         let result = delete_wrapper.delete_item(key)?;
         delete_wrapper.flush_pages()?;
 
         if let Some(deleted_item) = &result {
-            let index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
+            let index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref(), serialize_type);
             if let Some(index_ctx) = &index_ctx_opt {
                 index_ctx.delete_index_by_content(deleted_item.borrow(), &mut self.page_handler)?;
             }

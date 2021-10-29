@@ -41,9 +41,12 @@ mod file_lock;
 mod backend;
 mod transaction;
 mod page_handler;
+mod migration;
+mod doc_serializer;
 
 pub use db::{Database, DbResult};
 pub use config::Config;
+pub use doc_serializer::SerializeType;
 pub use transaction::TransactionType;
 pub use context::DbContext;
 pub use db_handle::DbHandle;

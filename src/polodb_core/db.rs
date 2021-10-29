@@ -332,7 +332,7 @@ impl Database {
     /// Upgrade DB from v1 to v2
     /// The older file will be renamed as (name).old
     pub fn v1_to_v2(path: &Path) -> DbResult<()> {
-        Ok(())
+        crate::migration::v1_to_v2(path)
     }
 
 }
@@ -665,6 +665,7 @@ mod tests {
     fn test_db_occupied() {
         const DB_NAME: &'static str = "test-db-lock";
         let db_path = mk_db_path(DB_NAME);
+        let _ = std::fs::remove_file(&db_path);
         {
             let config = Config::default();
             let _db1 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
