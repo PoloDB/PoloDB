@@ -21,6 +21,8 @@ polodb_bson = { path = "../polodb_bson" }
 crc64fast = "1.0"
 hashbrown = "0.11.2"
 getrandom = "0.2.3"
+byteorder = "1.4.3"
+num_enum = "0.5.4"
 
 [dev-dependencies]
 polodb_line_diff = { path = "../polodb_line_diff" }

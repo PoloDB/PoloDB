@@ -1,27 +1,21 @@
 mod dumper;
-mod msg_ty;
 
 use crate::dumper::dump;
-use msg_ty::MsgTy;
 use polodb_core::Database;
-use polodb_bson::Value;
 use clap::{Arg, App};
 use std::net::{TcpListener, TcpStream, Shutdown};
 use std::process::exit;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::Arc;
-use std::convert::TryFrom;
-use std::ops::DerefMut;
 use std::thread;
 use std::sync::Mutex;
-use byteorder::{BigEndian, ReadBytesExt};
-use error_chain::{error_chain, bail};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use error_chain::error_chain;
 
 error_chain! {
 
     foreign_links {
         Bson( polodb_bson::BsonErr);
-        Enum( num_enum::TryFromPrimitiveError<MsgTy>);
         Db( polodb_core::DbErr);
         Fmt(::std::fmt::Error);
         Io(::std::io::Error);
@@ -53,7 +47,7 @@ impl AppContext {
         }
     }
 
-    fn handle_incoming_connection(&self, conn: &mut TcpStream) -> Result<()> {
+    fn handle_incoming_connection(&self, mut conn: TcpStream) -> Result<()> {
         let mut db = self.db.lock().unwrap();
         let mut header_buffer = [0u8; 4];
 
@@ -66,43 +60,17 @@ impl AppContext {
 
         let req_id = conn.read_u64::<BigEndian>()?;
 
-        let msg_ty = conn.read_u32::<BigEndian>()?;
-        let val = Value::from_msgpack(conn)?;
+        let mut ret_buffer = Vec::new();
 
-        let msg_ty = MsgTy::try_from(msg_ty as i32)?;
-        match msg_ty {
-            MsgTy::Find => {
-                return handle_find_operation(conn, req_id, val, db.deref_mut());
-            },
+        db.handle_request(&mut conn, &mut ret_buffer);
 
-            _ => {
-                eprintln!("unknown msg type");
-                conn.shutdown(Shutdown::Both)?;
-                return Ok(())
-            }
+        conn.write(&HEAD)?;
+        conn.write_u64::<BigEndian>(req_id)?;
+        conn.write(&ret_buffer)?;
 
-        }
+        Ok(())
     }
 
-}
-
-fn handle_find_operation(conn: &mut TcpStream, req_id: u64, value: Value, db: &mut Database) -> Result<()> {
-    let doc = match value {
-        Value::Document(doc) => doc,
-        _ => bail!(ErrorKind::UnwrapDocument),
-    };
-
-    let col_id = match doc.get("col_id") {
-        Some(Value::Int(id)) => id,
-        _ => bail!(ErrorKind::UnwrapFail("col_id".into())),
-    };
-
-    let meta_version = match doc.get("meta_version") {
-        Some(Value::Int(id)) => id,
-        _ => bail!(ErrorKind::UnwrapFail("meta_version".into())),
-    };
-
-    Ok(())
 }
 
 fn start_tcp_server(path: &str, listen: &str) {
@@ -120,12 +88,12 @@ fn start_tcp_server(path: &str, listen: &str) {
     // let pool = ThreadPool::new();
 
     for stream in listener.incoming() {
-        let mut stream = stream.unwrap();
+        let stream = stream.unwrap();
 
         println!("Connection established!");
         let app = app.clone();
         thread::spawn(move || {
-            let result = app.handle_incoming_connection(&mut stream);
+            let result = app.handle_incoming_connection(stream);
             if let Err(err) = result {
                 eprintln!("error: {}", err);
             }

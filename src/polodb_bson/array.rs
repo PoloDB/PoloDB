@@ -8,7 +8,7 @@ use crate::document::Document;
 use crate::object_id::ObjectId;
 use std::vec::Drain;
 use std::ops::RangeBounds;
-use std::io::Read;
+use std::io::{Read, Write};
 
 #[derive(Debug, Clone)]
 pub struct Array(Vec<Value>);
@@ -278,7 +278,7 @@ impl Array {
         Ok(arr)
     }
 
-    pub fn to_msgpack(&self, buf: &mut Vec<u8>) -> BsonResult<()> {
+    pub fn to_msgpack<W: Write>(&self, buf: &mut W) -> BsonResult<()> {
         rmp::encode::write_array_len(buf, self.len())?;
         for value in self.iter() {
             value.to_msgpack(buf)?;

@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::fmt;
 use std::cmp::Ordering;
-use std::io::Read;
+use std::io::{Read, Write};
 use rmp::Marker;
 use super::ObjectId;
 use super::document::Document;
@@ -83,7 +83,7 @@ impl Value {
         }
     }
 
-    pub fn to_msgpack(&self, buf: &mut Vec<u8>) -> BsonResult<()> {
+    pub fn to_msgpack<W: Write>(&self, buf: &mut W) -> BsonResult<()> {
         match self {
             Value::Null => rmp::encode::write_nil(buf)?,
             Value::Double(fv) => {
@@ -288,6 +288,62 @@ impl Value {
             _ => {
                 Err(BsonErr::ParseError("unexpected meta".into()))
             }
+        }
+    }
+
+    #[inline]
+    pub fn try_document(&self) -> Option<&Rc<Document>> {
+        match self {
+            Value::Document(doc) => Some(doc),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_array(&self) -> Option<&Rc<Array>> {
+        match self {
+            Value::Array(arr) => Some(arr),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_document_mut(&mut self) -> Option<&mut Rc<Document>> {
+        match self {
+            Value::Document(doc) => Some(doc),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_boolean(&self) -> Option<bool> {
+        match self {
+            Value::Boolean(bl) => Some(*bl),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_int(&self) -> Option<i64> {
+        match self {
+            Value::Int(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_string(&self) -> Option<&str> {
+        match self {
+            Value::String(str) => Some(str),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_binary(&self) -> Option<&Rc<Vec<u8>>> {
+        match self {
+            Value::Binary(bin) => Some(bin),
+            _ => None,
         }
     }
 

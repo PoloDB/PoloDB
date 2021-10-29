@@ -43,6 +43,7 @@ mod transaction;
 mod page_handler;
 mod migration;
 mod doc_serializer;
+mod msg_ty;
 
 pub use db::{Database, DbResult};
 pub use config::Config;

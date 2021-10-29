@@ -1,7 +1,11 @@
+use std::convert::TryFrom;
 use std::rc::Rc;
 use std::path::Path;
-use polodb_bson::{Document, ObjectId};
+use std::io::{Read, Write};
+use polodb_bson::{Document, ObjectId, Value};
+use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
 use super::error::DbErr;
+use crate::msg_ty::MsgTy;
 use crate::Config;
 use crate::context::DbContext;
 use crate::{DbHandle, TransactionType};
@@ -333,6 +337,94 @@ impl Database {
     /// The older file will be renamed as (name).old
     pub fn v1_to_v2(path: &Path) -> DbResult<()> {
         crate::migration::v1_to_v2(path)
+    }
+
+    /// handle request for database
+    pub fn handle_request<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) {
+        let mut buffer: Vec<u8> = Vec::new();
+        let result = self.handle_request_with_result(pipe_in, &mut buffer);
+        let resp_result = self.handle_response_with_result(pipe_out, result, buffer);
+        if let Err(err) = resp_result {
+            eprintln!("resp error: {}", err);
+        }
+    }
+
+    fn handle_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<MsgTy>, body: Vec<u8>) -> DbResult<()> {
+        match result {
+            Ok(msg_ty) => {
+                let val = msg_ty as i32;
+                pipe_out.write_i32::<BigEndian>(val)?;
+                pipe_out.write(&body)?;
+            }
+
+            Err(err) => {
+                let str = format!("resp with error: {}", err);
+                let str_buf = str.as_bytes();
+                pipe_out.write_i32::<BigEndian>(-1)?;
+                pipe_out.write(str_buf)?;
+                pipe_out.write_u8(0u8)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_request_with_result<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<MsgTy> {
+        let msg_ty_int = pipe_in.read_i32::<BigEndian>()?;
+
+        let msg_ty = MsgTy::try_from(msg_ty_int)?;
+
+        pipe_out.write_i32::<BigEndian>(msg_ty_int * - 1)?;
+
+        match msg_ty {
+            MsgTy::Find => {
+                self.handle_find_operation(pipe_in, pipe_out)?;
+            },
+
+            _ => {
+                return Err(DbErr::ParseError("unknown msg type".into()));
+            }
+
+        };
+
+        Ok(msg_ty)
+    }
+
+    fn handle_find_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = Value::from_msgpack(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError("value is not a doc in find request".into())),
+        };
+
+        let collection_name: &str = match doc.get("cl") {
+            Some(Value::String(id)) => id.as_str(),
+            _ => return Err(DbErr::ParseError("cl not found in find request".into())),
+        };
+
+        let query_opt = match doc.get("query") {
+            Some(Value::Document(doc)) => Some(doc),
+            _ => None,
+        };
+
+        let mut collection = self.collection(collection_name)?;
+
+        let result = if let Some(query) = query_opt {
+            collection.find(query)?
+        } else {
+            collection.find_all()?
+        };
+
+        let mut value_arr = polodb_bson::Array::new();
+
+        for item in result {
+            value_arr.push(Value::Document(item));
+        }
+
+        let result_value = Value::Array(Rc::new(value_arr));
+        result_value.to_msgpack(pipe_out)?;
+
+        Ok(())
     }
 
 }

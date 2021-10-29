@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::fmt;
 use std::str;
+use std::io::{Read, Write};
 use super::value::{Value, ty_int};
 use super::linked_hash_map::{LinkedHashMap, Iter};
 use crate::{vli, UTCDateTime};
@@ -8,7 +9,6 @@ use crate::BsonResult;
 use crate::error::{BsonErr, parse_error_reason};
 use crate::array::Array;
 use crate::object_id::{ ObjectIdMaker, ObjectId };
-use std::io::Read;
 
 #[derive(Debug, Clone)]
 pub struct Document {
@@ -322,7 +322,7 @@ impl Document {
         Ok(result)
     }
 
-    pub fn to_msgpack(&self, buf: &mut Vec<u8>) -> BsonResult<()> {
+    pub fn to_msgpack<W: Write>(&self, buf: &mut W) -> BsonResult<()> {
         rmp::encode::write_map_len(buf, self.len() as u32)?;
 
         for (key, value) in self.iter() {
