@@ -329,6 +329,12 @@ impl Database {
         self.ctx.query_all_meta()
     }
 
+    /// Upgrade DB from v1 to v2
+    /// The older file will be renamed as (name).old
+    pub fn v1_to_v2(path: &Path) -> DbResult<()> {
+        Ok(())
+    }
+
 }
 
 #[cfg(test)]

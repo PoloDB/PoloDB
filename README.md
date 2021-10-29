@@ -28,7 +28,10 @@ PoloDB is an embedded JSON-based database.
 With the filesystem backend, PoloDB stores data in ONE file.
 All the data are saved persistently on the disk.
 
-PoloDB uses WAL(write-ahead logging) to implement transactional writing and protect your data from program crashes. Your data is SAFE.
+It's designed to be flexible, universal, and easy to be searched.
+All the data are encoded in [msgpack](https://msgpack.org/) format and stored in the PoloDB's btree format.
+
+PoloDB uses WAL(write-ahead logging) to implement transactional writing and protect your data from program crashes.
 
 ## Memory Backend
 
