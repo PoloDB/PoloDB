@@ -353,10 +353,10 @@ impl Database {
     fn handle_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<MsgTy>, body: Vec<u8>) -> DbResult<()> {
         match result {
             Ok(msg_ty) => {
+                eprintln!("resp with len: {}", body.len());
                 let val = msg_ty as i32;
                 pipe_out.write_i32::<BigEndian>(val)?;
                 pipe_out.write(&body)?;
-                pipe_out.write_u8(0u8)?;
             }
 
             Err(err) => {
@@ -374,9 +374,6 @@ impl Database {
         let msg_ty_int = pipe_in.read_i32::<BigEndian>()?;
 
         let msg_ty = MsgTy::try_from(msg_ty_int)?;
-        let _ = pipe_in.read_u8()?;  // last '\0'
-
-        pipe_out.write_i32::<BigEndian>(msg_ty_int * - 1)?;
 
         match msg_ty {
             MsgTy::Find => {
@@ -394,10 +391,11 @@ impl Database {
 
     fn handle_find_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
         let value = Value::from_msgpack(pipe_in)?;
+        let _ = pipe_in.read_u8()?;  // last '\0'
 
         let doc = match value {
             Value::Document(doc) => doc,
-            _ => return Err(DbErr::ParseError("value is not a doc in find request".into())),
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in find request, actual: {}", value))),
         };
 
         let collection_name: &str = match doc.get("cl") {

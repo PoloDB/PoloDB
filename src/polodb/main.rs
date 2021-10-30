@@ -47,27 +47,30 @@ impl AppContext {
         }
     }
 
-    fn handle_incoming_connection(&self, mut conn: UnixStream) -> Result<()> {
+    fn handle_incoming_connection(&self, conn: &mut UnixStream) -> Result<bool> {
         let mut db = self.db.lock().unwrap();
         let mut header_buffer = [0u8; 4];
 
         conn.read_exact(&mut header_buffer)?;
 
         if header_buffer != HEAD {
-            return Ok(())
+            eprintln!("head is not matched, exit...");
+            return Ok(false)
         }
 
         let req_id = conn.read_u32::<BigEndian>()?;
 
         let mut ret_buffer = Vec::new();
 
-        db.handle_request(&mut conn, &mut ret_buffer);
+        db.handle_request(conn, &mut ret_buffer);
 
         conn.write(&HEAD)?;
         conn.write_u32::<BigEndian>(req_id)?;
         conn.write(&ret_buffer)?;
 
-        Ok(())
+        eprintln!("return with byte: {}", ret_buffer.len());
+
+        Ok(true)
     }
 
 }
@@ -101,12 +104,33 @@ fn start_socket_server(path: Option<&str>, socket_addr: &str) {
     for stream in listener.incoming() {
         let stream = stream.unwrap();
 
-        println!("Connection established!");
+        eprintln!("Connection established!");
         let app = app.clone();
         thread::spawn(move || {
-            let result = app.handle_incoming_connection(stream);
-            if let Err(err) = result {
-                eprintln!("error: {}", err);
+            let mut moved_stream = stream;
+            loop {
+                let result = app.handle_incoming_connection(&mut moved_stream);
+                match result {
+                    Ok(true) => {
+                        eprintln!("handle req finished, ok: {}", result.is_ok());
+                    },
+
+                    Ok(false) => {
+                        return;
+                    },
+
+                    Err(err) => {
+                        match err.0 {
+                            ErrorKind::Io(_) => {
+                                eprintln!("io error: {}", err);
+                                return;
+                            }
+                            _ => {
+                                eprintln!("other error, continue: {}", err);
+                            }
+                        }
+                    }
+                }
             }
         });
     }
@@ -128,14 +152,26 @@ fn main() {
             .arg(Arg::with_name("detail").required(false)))
         .subcommand(App::new("serve")
             .about("attach the database, start the tcp server")
-            .arg(Arg::with_name("socket").help("the domain socket to listen on").required(true))
-            .arg(Arg::with_name("path"))
+            .arg(
+                Arg::with_name("socket")
+                    .short("s")
+                    .long("socket")
+                    .help("the domain socket to listen on").required(true)
+                    .takes_value(true)
+            )
+            .arg(
+                Arg::with_name("path")
+                    .short("p")
+                    .long("path")
+                    .value_name("PATH")
+                    .takes_value(true)
+            )
             .arg(Arg::with_name("memory"))
         );
 
     let matches = app.get_matches();
 
-    if let Some(sub) = matches.subcommand_matches("detail") {
+    if let Some(sub) = matches.subcommand_matches("serve") {
         let socket = sub.value_of("socket").unwrap();
         let path = sub.value_of("path");
         if let Some(path) = path {
