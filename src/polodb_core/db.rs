@@ -341,13 +341,18 @@ impl Database {
 
     /// handle request for database
     /// See [MsgTy] for message detail
-    pub fn handle_request<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) {
+    pub fn handle_request<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> MsgTy {
         let mut buffer: Vec<u8> = Vec::new();
         let result = self.handle_request_with_result(pipe_in, &mut buffer);
+        let ret = match &result {
+            Ok(t) => t.clone(),
+            Err(_) => MsgTy::Undefined,
+        };
         let resp_result = self.handle_response_with_result(pipe_out, result, buffer);
         if let Err(err) = resp_result {
             eprintln!("resp error: {}", err);
         }
+        ret
     }
 
     fn handle_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<MsgTy>, body: Vec<u8>) -> DbResult<()> {
@@ -380,6 +385,12 @@ impl Database {
                 self.handle_find_operation(pipe_in, pipe_out)?;
             },
 
+            MsgTy::FindOne => {
+                self.handle_find_one_operation(pipe_in, pipe_out)?;
+            },
+
+            MsgTy::SafelyQuit => (),
+
             _ => {
                 return Err(DbErr::ParseError("unknown msg type".into()));
             }
@@ -389,9 +400,41 @@ impl Database {
         Ok(msg_ty)
     }
 
+    fn handle_find_one_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = Value::from_msgpack(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in find request, actual: {}", value))),
+        };
+
+        let collection_name: &str = match doc.get("cl") {
+            Some(Value::String(id)) => id.as_str(),
+            _ => return Err(DbErr::ParseError("cl not found in find request".into())),
+        };
+
+        let mut query_opt = match doc.get("query") {
+            Some(Value::Document(doc)) => doc.clone(),
+            _ => return Err(DbErr::ParseError("query not found in find request".into())),
+        };
+
+        let mut_doc = Rc::make_mut(&mut query_opt);
+        let mut collection = self.collection(collection_name)?;
+
+        let result = collection.find_one(mut_doc)?;
+
+        let result_value = match result {
+            Some(doc) => Value::Document(doc),
+            None => Value::Null,
+        };
+
+        result_value.to_msgpack(pipe_out)?;
+
+        Ok(())
+    }
+
     fn handle_find_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
         let value = Value::from_msgpack(pipe_in)?;
-        let _ = pipe_in.read_u8()?;  // last '\0'
 
         let doc = match value {
             Value::Document(doc) => doc,

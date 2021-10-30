@@ -2,6 +2,7 @@ mod dumper;
 
 use crate::dumper::dump;
 use polodb_core::Database;
+use polodb_core::msg_ty::MsgTy;
 use clap::{Arg, App};
 use std::os::unix::net::{UnixStream, UnixListener};
 use std::process::exit;
@@ -36,19 +37,20 @@ const HEAD: [u8; 4] = [0xFF, 0x00, 0xAA, 0xBB];
 
 #[derive(Clone)]
 struct AppContext {
-    db: Arc<Mutex<Database>>,
+    db: Arc<Mutex<Option<Database>>>,
 }
 
 impl AppContext {
 
     fn new(db: Database) -> AppContext {
         AppContext {
-            db: Arc::new(Mutex::new(db)),
+            db: Arc::new(Mutex::new(Some(db))),
         }
     }
 
     fn handle_incoming_connection(&self, conn: &mut UnixStream) -> Result<bool> {
-        let mut db = self.db.lock().unwrap();
+        let mut db_guard = self.db.lock().unwrap();
+        let db = db_guard.as_mut().unwrap();
         let mut header_buffer = [0u8; 4];
 
         conn.read_exact(&mut header_buffer)?;
@@ -62,13 +64,17 @@ impl AppContext {
 
         let mut ret_buffer = Vec::new();
 
-        db.handle_request(conn, &mut ret_buffer);
+        let msg_ty = db.handle_request(conn, &mut ret_buffer);
 
         conn.write(&HEAD)?;
         conn.write_u32::<BigEndian>(req_id)?;
         conn.write(&ret_buffer)?;
 
         eprintln!("return with byte: {}", ret_buffer.len());
+
+        if msg_ty == MsgTy::SafelyQuit {
+            return Ok(false);
+        }
 
         Ok(true)
     }
@@ -116,7 +122,9 @@ fn start_socket_server(path: Option<&str>, socket_addr: &str) {
                     },
 
                     Ok(false) => {
-                        return;
+                        let mut db_guard = app.db.lock().unwrap();
+                        *db_guard = None;
+                        exit(0);
                     },
 
                     Err(err) => {
