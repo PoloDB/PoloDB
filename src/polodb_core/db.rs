@@ -340,6 +340,7 @@ impl Database {
     }
 
     /// handle request for database
+    /// See [MsgTy] for message detail
     pub fn handle_request<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) {
         let mut buffer: Vec<u8> = Vec::new();
         let result = self.handle_request_with_result(pipe_in, &mut buffer);
