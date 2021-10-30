@@ -356,6 +356,7 @@ impl Database {
                 let val = msg_ty as i32;
                 pipe_out.write_i32::<BigEndian>(val)?;
                 pipe_out.write(&body)?;
+                pipe_out.write_u8(0u8)?;
             }
 
             Err(err) => {
@@ -373,6 +374,7 @@ impl Database {
         let msg_ty_int = pipe_in.read_i32::<BigEndian>()?;
 
         let msg_ty = MsgTy::try_from(msg_ty_int)?;
+        let _ = pipe_in.read_u8()?;  // last '\0'
 
         pipe_out.write_i32::<BigEndian>(msg_ty_int * - 1)?;
 

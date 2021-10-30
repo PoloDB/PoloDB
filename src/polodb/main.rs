@@ -57,14 +57,14 @@ impl AppContext {
             return Ok(())
         }
 
-        let req_id = conn.read_u64::<BigEndian>()?;
+        let req_id = conn.read_u32::<BigEndian>()?;
 
         let mut ret_buffer = Vec::new();
 
         db.handle_request(&mut conn, &mut ret_buffer);
 
         conn.write(&HEAD)?;
-        conn.write_u64::<BigEndian>(req_id)?;
+        conn.write_u32::<BigEndian>(req_id)?;
         conn.write(&ret_buffer)?;
 
         Ok(())
