@@ -24,6 +24,15 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
     Ok(())
 }
 
+macro_rules! unwrap_str_or {
+    ($expr: expr, $or: expr) => {
+        match $expr {
+            Some(Value::String(id)) => id.as_str(),
+            _ => return Err(DbErr::ParseError($or)),
+        }
+    }
+}
+
 /// A wrapper of collection in struct.
 ///
 /// All CURD methods can be done through this structure.
@@ -389,6 +398,10 @@ impl Database {
                 self.handle_find_one_operation(pipe_in, pipe_out)?;
             },
 
+            MsgTy::Insert => {
+                self.handle_insert_operation(pipe_in, pipe_out)?;
+            }
+
             MsgTy::SafelyQuit => (),
 
             _ => {
@@ -405,13 +418,10 @@ impl Database {
 
         let doc = match value {
             Value::Document(doc) => doc,
-            _ => return Err(DbErr::ParseError(format!("value is not a doc in find request, actual: {}", value))),
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in find one request, actual: {}", value))),
         };
 
-        let collection_name: &str = match doc.get("cl") {
-            Some(Value::String(id)) => id.as_str(),
-            _ => return Err(DbErr::ParseError("cl not found in find request".into())),
-        };
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
 
         let mut query_opt = match doc.get("query") {
             Some(Value::Document(doc)) => doc.clone(),
@@ -441,10 +451,7 @@ impl Database {
             _ => return Err(DbErr::ParseError(format!("value is not a doc in find request, actual: {}", value))),
         };
 
-        let collection_name: &str = match doc.get("cl") {
-            Some(Value::String(id)) => id.as_str(),
-            _ => return Err(DbErr::ParseError("cl not found in find request".into())),
-        };
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
 
         let query_opt = match doc.get("query") {
             Some(Value::Document(doc)) => Some(doc),
@@ -467,6 +474,37 @@ impl Database {
 
         let result_value = Value::Array(Rc::new(value_arr));
         result_value.to_msgpack(pipe_out)?;
+
+        Ok(())
+    }
+
+    fn handle_insert_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = Value::from_msgpack(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in insert request, actual: {}", value))),
+        };
+
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
+
+        let mut insert_data = match doc.get("data") {
+            Some(Value::Document(doc)) => doc.clone(),
+            _ => return Err(DbErr::ParseError("query not found in insert request".into())),
+        };
+
+        let mut_doc = Rc::make_mut(&mut insert_data);
+
+        let mut collection = self.collection(collection_name)?;
+        let id_changed = collection.insert(mut_doc)?;
+
+        let ret_value = if id_changed {
+            mut_doc.get("_id").unwrap().clone()
+        } else {
+            Value::Null
+        };
+
+        ret_value.to_msgpack(pipe_out)?;
 
         Ok(())
     }

@@ -6,5 +6,6 @@ pub enum MsgTy {
     Undefined = 0,
     Find = 1,
     FindOne = 2,
+    Insert = 8,
     SafelyQuit = 255,
 }
