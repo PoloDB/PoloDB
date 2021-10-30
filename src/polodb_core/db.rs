@@ -402,6 +402,18 @@ impl Database {
                 self.handle_insert_operation(pipe_in, pipe_out)?;
             }
 
+            MsgTy::Update => {
+                self.handle_update_operation(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::Delete => {
+                self.handle_delete_operation(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::Count => {
+                self.handle_count_operation(pipe_in, pipe_out)?;
+            }
+
             MsgTy::SafelyQuit => (),
 
             _ => {
@@ -505,6 +517,81 @@ impl Database {
         };
 
         ret_value.to_msgpack(pipe_out)?;
+
+        Ok(())
+    }
+
+    fn handle_update_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = Value::from_msgpack(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in update request, actual: {}", value))),
+        };
+
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in update request".into());
+
+        let query = match doc.get("query") {
+            Some(Value::Document(doc)) => Some(doc.as_ref()),
+            Some(_) => return Err(DbErr::ParseError("query is not a document in update request".into())),
+            None => None
+        };
+
+        let update_data = match doc.get("update") {
+            Some(Value::Document(doc)) => doc.clone(),
+            _ => return Err(DbErr::ParseError("'update' not found in update request".into())),
+        };
+
+        let mut collection = self.collection(collection_name)?;
+        let size = collection.update(query, update_data.as_ref())?;
+
+        let ret_val = Value::Int(size as i64);
+        ret_val.to_msgpack(pipe_out)?;
+
+        Ok(())
+    }
+
+    fn handle_delete_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = Value::from_msgpack(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in delete request, actual: {}", value))),
+        };
+
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in delete request".into());
+
+        let query = match doc.get("query") {
+            Some(Value::Document(doc)) => Some(doc.as_ref()),
+            Some(_) => return Err(DbErr::ParseError("query is not a document in delete request".into())),
+            None => None
+        };
+
+        let mut collection = self.collection(collection_name)?;
+        let size = collection.delete(query)?;
+
+        let ret_val = Value::Int(size as i64);
+        ret_val.to_msgpack(pipe_out)?;
+
+        Ok(())
+    }
+
+    fn handle_count_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = Value::from_msgpack(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in count request, actual: {}", value))),
+        };
+
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in count request".into());
+
+        let mut collection = self.collection(collection_name)?;
+
+        let count = collection.count()?;
+
+        let ret_val = Value::Int(count as i64);
+        ret_val.to_msgpack(pipe_out)?;
 
         Ok(())
     }
