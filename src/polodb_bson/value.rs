@@ -110,8 +110,9 @@ impl Value {
                 rmp::encode::write_str(buf, str)?;
             },
             Value::ObjectId(oid) => {
-                rmp::encode::write_ext_meta(buf, 1, ty_int::OBJECT_ID as i8)?;
+                rmp::encode::write_ext_meta(buf, 16, ty_int::OBJECT_ID as i8)?;
                 oid.serialize(buf)?;
+                buf.write(&[0u8, 0u8, 0u8, 0u8])?;
             },
             Value::Array(arr) => {
                 arr.to_msgpack(buf)?;
@@ -274,9 +275,9 @@ impl Value {
                 let doc = Document::from_msgpack_with_len(bytes, len)?;
                 Ok(Value::Document(Rc::new(doc)))
             }
-            Marker::FixExt1 => {
-                let ty = bytes.read_u8()?;
-                if ty == ty_int::OBJECT_ID {
+            Marker::FixExt16 => {
+                let ty = bytes.read_i8()?;
+                if ty == ty_int::OBJECT_ID as i8 {
                     let mut buf = [0; 12];
                     bytes.read(&mut buf)?;
                     let oid = ObjectId::deserialize(&buf)?;
