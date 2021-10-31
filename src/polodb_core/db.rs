@@ -357,28 +357,29 @@ impl Database {
             Ok(t) => t.clone(),
             Err(_) => MsgTy::Undefined,
         };
-        let resp_result = self.handle_response_with_result(pipe_out, result, buffer);
+        let resp_result = self.send_response_with_result(pipe_out, result, buffer);
         if let Err(err) = resp_result {
             eprintln!("resp error: {}", err);
         }
         ret
     }
 
-    fn handle_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<MsgTy>, body: Vec<u8>) -> DbResult<()> {
+    fn send_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<MsgTy>, body: Vec<u8>) -> DbResult<()> {
         match result {
             Ok(msg_ty) => {
                 eprintln!("resp with len: {}", body.len());
                 let val = msg_ty as i32;
                 pipe_out.write_i32::<BigEndian>(val)?;
+                pipe_out.write_u32::<BigEndian>(body.len() as u32)?;
                 pipe_out.write(&body)?;
             }
 
             Err(err) => {
+                pipe_out.write_i32::<BigEndian>(-1)?;
                 let str = format!("resp with error: {}", err);
                 let str_buf = str.as_bytes();
-                pipe_out.write_i32::<BigEndian>(-1)?;
+                pipe_out.write_u32::<BigEndian>(str_buf.len() as u32)?;
                 pipe_out.write(str_buf)?;
-                pipe_out.write_u8(0u8)?;
             }
         }
         Ok(())
@@ -426,7 +427,7 @@ impl Database {
     }
 
     fn handle_find_one_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = Value::from_msgpack(pipe_in)?;
+        let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
             Value::Document(doc) => doc,
@@ -455,8 +456,17 @@ impl Database {
         Ok(())
     }
 
+    fn receive_request_body<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<Value> {
+        let request_size = pipe_in.read_u32::<BigEndian>()? as usize;
+        let mut request_body = vec![0u8; request_size];
+        pipe_in.read_exact(&mut request_body)?;
+        let mut body_ref: &[u8] = request_body.as_slice();
+        let val = Value::from_msgpack(&mut body_ref)?;
+        Ok(val)
+    }
+
     fn handle_find_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = Value::from_msgpack(pipe_in)?;
+        let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
             Value::Document(doc) => doc,
@@ -491,7 +501,7 @@ impl Database {
     }
 
     fn handle_insert_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = Value::from_msgpack(pipe_in)?;
+        let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
             Value::Document(doc) => doc,
@@ -522,7 +532,7 @@ impl Database {
     }
 
     fn handle_update_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = Value::from_msgpack(pipe_in)?;
+        let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
             Value::Document(doc) => doc,
@@ -552,7 +562,7 @@ impl Database {
     }
 
     fn handle_delete_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = Value::from_msgpack(pipe_in)?;
+        let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
             Value::Document(doc) => doc,
@@ -577,7 +587,7 @@ impl Database {
     }
 
     fn handle_count_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = Value::from_msgpack(pipe_in)?;
+        let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
             Value::Document(doc) => doc,

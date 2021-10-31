@@ -34,16 +34,19 @@ error_chain! {
 }
 
 const HEAD: [u8; 4] = [0xFF, 0x00, 0xAA, 0xBB];
+const PING_HEAD: [u8; 4] = [0xFF, 0x00, 0xAA, 0xCC];
 
 #[derive(Clone)]
 struct AppContext {
+    socket_path: String,
     db: Arc<Mutex<Option<Database>>>,
 }
 
 impl AppContext {
 
-    fn new(db: Database) -> AppContext {
+    fn new(socket_path: String, db: Database) -> AppContext {
         AppContext {
+            socket_path,
             db: Arc::new(Mutex::new(Some(db))),
         }
     }
@@ -56,6 +59,12 @@ impl AppContext {
         conn.read_exact(&mut header_buffer)?;
 
         if header_buffer != HEAD {
+            if header_buffer == PING_HEAD {
+                let req_id = conn.read_u32::<BigEndian>()?;
+                conn.write(&PING_HEAD)?;
+                conn.write_u32::<BigEndian>(req_id)?;
+                return Ok(true);
+            }
             eprintln!("head is not matched, exit...");
             return Ok(false)
         }
@@ -69,6 +78,7 @@ impl AppContext {
         conn.write(&HEAD)?;
         conn.write_u32::<BigEndian>(req_id)?;
         conn.write(&ret_buffer)?;
+        conn.flush()?;
 
         eprintln!("return with byte: {}", ret_buffer.len());
 
@@ -103,7 +113,7 @@ fn start_socket_server(path: Option<&str>, socket_addr: &str) {
         }
     };
 
-    let app = AppContext::new(db);
+    let app = AppContext::new(socket_addr.into(), db);
 
     let listener = UnixListener::bind(socket_addr).unwrap();
 
@@ -124,6 +134,8 @@ fn start_socket_server(path: Option<&str>, socket_addr: &str) {
                     Ok(false) => {
                         let mut db_guard = app.db.lock().unwrap();
                         *db_guard = None;
+                        let _ = std::fs::remove_file(&app.socket_path);
+                        eprintln!("safely exit");
                         exit(0);
                     },
 
@@ -146,7 +158,7 @@ fn start_socket_server(path: Option<&str>, socket_addr: &str) {
 
 fn main() {
     let version = Database::get_version();
-    let app = App::new("PoloDB Cli")
+    let app = App::new("PoloDB")
         .version(version.as_str())
         .about("Command line tool for PoloDB")
         .author("Vincent Chan <okcdz@diverse.space>")
