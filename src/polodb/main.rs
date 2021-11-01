@@ -12,6 +12,8 @@ use std::thread;
 use std::sync::Mutex;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use error_chain::error_chain;
+use signal_hook::{iterator::Signals};
+use signal_hook::consts::TERM_SIGNALS;
 
 error_chain! {
 
@@ -115,45 +117,62 @@ fn start_socket_server(path: Option<&str>, socket_addr: &str) {
 
     let app = AppContext::new(socket_addr.into(), db);
 
-    let listener = UnixListener::bind(socket_addr).unwrap();
+    start_app_async(app.clone(), socket_addr);
 
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
+    let mut signals = Signals::new(TERM_SIGNALS).unwrap();
+    for _ in signals.forever() {
+        eprintln!("Received quit signal, prepare to exit");
+        safely_quit(app.clone());
+    }
+}
 
-        eprintln!("Connection established!");
-        let app = app.clone();
-        thread::spawn(move || {
-            let mut moved_stream = stream;
-            loop {
-                let result = app.handle_incoming_connection(&mut moved_stream);
-                match result {
-                    Ok(true) => {
-                        eprintln!("handle req finished, ok: {}", result.is_ok());
-                    },
+fn start_app_async(app: AppContext, socket_addr: &str) {
+    let socket_attr_copy: String = socket_addr.into();
+    thread::spawn(move || {
+        let listener = UnixListener::bind(socket_attr_copy).unwrap();
 
-                    Ok(false) => {
-                        let mut db_guard = app.db.lock().unwrap();
-                        *db_guard = None;
-                        let _ = std::fs::remove_file(&app.socket_path);
-                        eprintln!("safely exit");
-                        exit(0);
-                    },
+        for stream in listener.incoming() {
+            let stream = stream.unwrap();
 
-                    Err(err) => {
-                        match err.0 {
-                            ErrorKind::Io(_) => {
-                                eprintln!("io error: {}", err);
-                                return;
-                            }
-                            _ => {
-                                eprintln!("other error, continue: {}", err);
+            eprintln!("Connection established!");
+            let app = app.clone();
+            thread::spawn(move || {
+                let mut moved_stream = stream;
+                loop {
+                    let result = app.handle_incoming_connection(&mut moved_stream);
+                    match result {
+                        Ok(true) => {
+                            eprintln!("handle req finished, ok: {}", result.is_ok());
+                        },
+
+                        Ok(false) => {
+                            safely_quit(app.clone());
+                        },
+
+                        Err(err) => {
+                            match err.0 {
+                                ErrorKind::Io(_) => {
+                                    eprintln!("io error: {}", err);
+                                    return;
+                                }
+                                _ => {
+                                    eprintln!("other error, continue: {}", err);
+                                }
                             }
                         }
                     }
                 }
-            }
-        });
-    }
+            });
+        }
+    });
+}
+
+fn safely_quit(app: AppContext) {
+    let mut db_guard = app.db.lock().unwrap();
+    *db_guard = None;
+    let _ = std::fs::remove_file(&app.socket_path);
+    eprintln!("safely exit");
+    exit(0);
 }
 
 fn main() {
