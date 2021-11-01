@@ -12,16 +12,19 @@ PoloDB is an embedded JSON-based database.
 
 # Features
 
-- Simple/Lightweight/Easy to learn and use
+- Simple and Lightweight
+  - Only cost ~500kb memory to serve a database
+  - The database server binary is only ~1.5Mb
+- Easy to learn and use
+  - NoSQL
+  - MongoDB-like API
 - Various language bindings
 - Can be embedded or standalone
-  - Embedded:
+  - Embedded Mode
     - No standalone processes
     - No cross-process calls
     - No runtime dependency
   - Standalone: Run as a process, communicate with IPC
-- NoSQL
-- MongoDB-like API
 - Cross-Platform
 - Multiple backends
   - Filesystem(WAL)
@@ -93,6 +96,24 @@ The features will be implemented one by one in order.
   - [ ] Data Encryption
   - [ ] JavaScript Engine
 - [ ] Visualization Tools
+
+# V1 to V2
+
+PoloDB V2 uses [msgpack](https://msgpack.org/) to encode data.
+
+PoloDB V1 uses custom format.
+
+## Migration
+
+### Rust
+
+`Database::v1_to_v2` can be used to migrate from v1 to v2.
+
+### Tool
+
+```sh
+polodb migrate --target v2 ./mydb
+```
 
 # Contribute
 
