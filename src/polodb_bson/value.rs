@@ -10,7 +10,7 @@ use super::hex;
 use crate::BsonResult;
 use crate::error::BsonErr;
 use crate::datetime::UTCDateTime;
-use byteorder::{self, ReadBytesExt, BigEndian};
+use byteorder::{self, ReadBytesExt, BigEndian, WriteBytesExt};
 
 const BINARY_MAX_DISPLAY_LEN: usize = 64;
 
@@ -123,8 +123,9 @@ impl Value {
             Value::Binary(bin) => {
                 rmp::encode::write_bin(buf, bin)?;
             },
-            Value::UTCDateTime(_) => {
-                unimplemented!()
+            Value::UTCDateTime(datetime) => {
+                rmp::encode::write_ext_meta(buf, 8, ty_int::UTC_DATETIME as i8)?;
+                buf.write_u64::<BigEndian>(datetime.timestamp())?;
             },
         }
         Ok(())
@@ -274,6 +275,15 @@ impl Value {
                 let len = bytes.read_u32::<BigEndian>()? as usize;
                 let doc = Document::from_msgpack_with_len(bytes, len)?;
                 Ok(Value::Document(Rc::new(doc)))
+            }
+            Marker::FixExt8 => {
+                let ty = bytes.read_i8()?;
+                if ty == ty_int::UTC_DATETIME as i8 {
+                    let timestamp = bytes.read_u64::<BigEndian>()?;
+                    Ok(Value::UTCDateTime(Rc::new(UTCDateTime::new(timestamp))))
+                } else {
+                    Err(BsonErr::ParseError("unknown ext type".into()))
+                }
             }
             Marker::FixExt16 => {
                 let ty = bytes.read_i8()?;
