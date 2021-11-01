@@ -14,6 +14,7 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use error_chain::error_chain;
 use signal_hook::{iterator::Signals};
 use signal_hook::consts::TERM_SIGNALS;
+use std::path::{Path, PathBuf};
 
 error_chain! {
 
@@ -175,6 +176,14 @@ fn safely_quit(app: AppContext) {
     exit(0);
 }
 
+fn migrate_v1_to_v2(path: &Path) {
+    let result = Database::v1_to_v2(path);
+    if let Err(err) = result {
+        println!("{}", err);
+        exit(8);
+    }
+}
+
 fn main() {
     let version = Database::get_version();
     let app = App::new("PoloDB")
@@ -206,6 +215,21 @@ fn main() {
                     .takes_value(true)
             )
             .arg(Arg::with_name("memory"))
+        )
+        .subcommand(App::new("migrate")
+            .about("migrate the older database to the newer format")
+            .arg(
+                Arg::with_name("path")
+                    .index(1)
+                    .required(true)
+            )
+            .arg(
+                Arg::with_name("target")
+                    .long("target")
+                    .value_name("TARGET")
+                    .takes_value(true)
+                    .required(true)
+            )
         );
 
     let matches = app.get_matches();
@@ -227,6 +251,18 @@ fn main() {
         let path = sub.value_of("path").expect("no input path");
         let detail = sub.is_present("detail");
         dump(path, detail);
+        return;
+    }
+
+    if let Some(sub) = matches.subcommand_matches("migrate") {
+        let target = sub.value_of("target").expect("target version not found");
+        if target != "v2" {
+            println!("only v2 format is supported, but {} got", target);
+            exit(7);
+        }
+        let path_str = sub.value_of("path").expect("path not found");
+        let path = PathBuf::from(path_str);
+        migrate_v1_to_v2(&path);
         return;
     }
 
