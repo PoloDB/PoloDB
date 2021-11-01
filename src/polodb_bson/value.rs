@@ -124,8 +124,12 @@ impl Value {
                 rmp::encode::write_bin(buf, bin)?;
             },
             Value::UTCDateTime(datetime) => {
-                rmp::encode::write_ext_meta(buf, 8, ty_int::UTC_DATETIME as i8)?;
-                buf.write_u64::<BigEndian>(datetime.timestamp())?;
+                let ms = datetime.timestamp();
+                let secs = ms / 1000;
+                let nanos = (ms % 1000) * 1000000;
+                let data = (nanos << 34) | (secs & 0x3FFFFFFFF);
+                rmp::encode::write_ext_meta(buf, 8, -1)?;
+                buf.write_u64::<BigEndian>(data)?;
             },
         }
         Ok(())
@@ -276,13 +280,25 @@ impl Value {
                 let doc = Document::from_msgpack_with_len(bytes, len)?;
                 Ok(Value::Document(Rc::new(doc)))
             }
+            Marker::FixExt4 => {
+                let ty = bytes.read_i8()?;
+                if ty == -1 as i8 {
+                    let seconds = bytes.read_u32::<BigEndian>()? as u64;
+                    Ok(Value::UTCDateTime(Rc::new(UTCDateTime::new(seconds * 1000))))
+                } else {
+                    Err(BsonErr::ParseError(format!("unknown ext type: {}", ty)))
+                }
+            }
             Marker::FixExt8 => {
                 let ty = bytes.read_i8()?;
-                if ty == ty_int::UTC_DATETIME as i8 {
-                    let timestamp = bytes.read_u64::<BigEndian>()?;
-                    Ok(Value::UTCDateTime(Rc::new(UTCDateTime::new(timestamp))))
+                if ty == -1 {
+                    let origin = bytes.read_u64::<BigEndian>()?;
+                    let nano_secs = origin >> 34;
+                    let secs = origin & 0x3FFFFFFFF;
+                    let ms = secs * 1000 + (nano_secs / 1000000);
+                    Ok(Value::UTCDateTime(Rc::new(UTCDateTime::new(ms))))
                 } else {
-                    Err(BsonErr::ParseError("unknown ext type".into()))
+                    Err(BsonErr::ParseError(format!("unknown ext 8: {}", ty)))
                 }
             }
             Marker::FixExt16 => {
@@ -293,11 +309,11 @@ impl Value {
                     let oid = ObjectId::deserialize(&buf)?;
                     Ok(Value::ObjectId(Rc::new(oid)))
                 } else {
-                    Err(BsonErr::ParseError("unknown ext type".into()))
+                    Err(BsonErr::ParseError(format!("unexpected ext 16: {}", ty)))
                 }
             }
             _ => {
-                Err(BsonErr::ParseError("unexpected meta".into()))
+                Err(BsonErr::ParseError(format!("unexpected meta: {}", marker.to_u8())))
             }
         }
     }
