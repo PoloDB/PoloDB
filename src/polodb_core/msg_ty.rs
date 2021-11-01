@@ -10,6 +10,8 @@ pub enum MsgTy {
     Insert = 8,
     Update = 16,
     Delete = 32,
-    Version = 128,
+    StartTransaction = 128,
+    Commit,
+    Rollback,
     SafelyQuit = 255,
 }

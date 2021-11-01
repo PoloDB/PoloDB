@@ -14,7 +14,7 @@ PoloDB is an embedded JSON-based database.
 
 - Simple and Lightweight
   - Only cost ~500kb memory to serve a database
-  - The database server binary is only ~1.5Mb
+  - The database server binary is less than 2Mb 
 - Easy to learn and use
   - NoSQL
   - MongoDB-like API

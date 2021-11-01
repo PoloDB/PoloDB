@@ -76,7 +76,13 @@ impl AppContext {
 
         let mut ret_buffer = Vec::new();
 
-        let msg_ty = db.handle_request(conn, &mut ret_buffer);
+        let msg_ty_result = db.handle_request(conn, &mut ret_buffer);
+        if let Err(err) = msg_ty_result {
+            eprintln!("io error, exit: {}", err);
+            return Ok(false);
+        }
+
+        let msg_ty = msg_ty_result.unwrap();
 
         conn.write(&HEAD)?;
         conn.write_u32::<BigEndian>(req_id)?;

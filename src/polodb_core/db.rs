@@ -350,18 +350,24 @@ impl Database {
 
     /// handle request for database
     /// See [MsgTy] for message detail
-    pub fn handle_request<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> MsgTy {
+    pub fn handle_request<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> std::io::Result<MsgTy> {
         let mut buffer: Vec<u8> = Vec::new();
         let result = self.handle_request_with_result(pipe_in, &mut buffer);
         let ret = match &result {
             Ok(t) => t.clone(),
             Err(_) => MsgTy::Undefined,
         };
+        if let Err(DbErr::IOErr(io_err)) = result {
+            return Err(*io_err);
+        }
         let resp_result = self.send_response_with_result(pipe_out, result, buffer);
+        if let Err(DbErr::IOErr(io_err)) = resp_result {
+            return Err(*io_err);
+        }
         if let Err(err) = resp_result {
             eprintln!("resp error: {}", err);
         }
-        ret
+        Ok(ret)
     }
 
     fn send_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<MsgTy>, body: Vec<u8>) -> DbResult<()> {
@@ -411,6 +417,18 @@ impl Database {
                 self.handle_delete_operation(pipe_in, pipe_out)?;
             }
 
+            MsgTy::StartTransaction => {
+                self.handle_start_transaction(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::Commit => {
+                self.handle_commit(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::Rollback => {
+                self.handle_rollback(pipe_in, pipe_out)?;
+            }
+
             MsgTy::Count => {
                 self.handle_count_operation(pipe_in, pipe_out)?;
             }
@@ -424,6 +442,32 @@ impl Database {
         };
 
         Ok(msg_ty)
+    }
+
+    fn handle_start_transaction<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+        let transaction_type = match value {
+            Value::Int(val) => val,
+            _ => {
+                return Err(DbErr::ParseError("transaction needs a type".into()));
+            }
+        };
+        match transaction_type {
+            0 => self.start_transaction(None),
+            1 => self.start_transaction(Some(TransactionType::Read)),
+            2 => self.start_transaction(Some(TransactionType::Write)),
+            _ => return Err(DbErr::ParseError("invalid transaction type".into())),
+        }
+    }
+
+    fn handle_commit<R: Read, W: Write>(&mut self, _pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
+        self.commit()?;
+        Ok(())
+    }
+
+    fn handle_rollback<R: Read, W: Write>(&mut self, _pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
+        self.rollback()?;
+        Ok(())
     }
 
     fn handle_find_one_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
@@ -458,6 +502,9 @@ impl Database {
 
     fn receive_request_body<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<Value> {
         let request_size = pipe_in.read_u32::<BigEndian>()? as usize;
+        if request_size == 0 {
+            return Ok(Value::Null);
+        }
         let mut request_body = vec![0u8; request_size];
         pipe_in.read_exact(&mut request_body)?;
         let mut body_ref: &[u8] = request_body.as_slice();
