@@ -94,7 +94,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         let mut current_btree_node: Box<BTreeNode> = self.get_btree_by_pid(pid, parent_pid)?;
 
         if current_btree_node.is_empty() {
-            if parent_pid == 0 {
+            if parent_pid == 0 {  // it's a root node
                 return Ok(None);
             }
             panic!("unexpected: node is empty, parent_id={}, pid={}, key={}", parent_pid, pid, id);

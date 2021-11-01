@@ -267,6 +267,10 @@ impl DbContext {
 
         let insert_result = btree_wrapper.insert_item(&doc, false)?;
 
+        /// if a backward item returns, it's saying that the btree has been "rotated".
+        /// the center node of the btree has been changed.
+        /// So you have to distribute a new page to store the "central node",
+        /// and the newer page is the center of the btree.
         if let Some(backward_item) = insert_result.backward_item {
             let new_root_id = self.page_handler.alloc_page_id()?;
 
