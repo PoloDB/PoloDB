@@ -171,8 +171,6 @@ impl PageHandler {
     // 3. read from main db
     pub fn pipeline_read_page(&mut self, page_id: u32) -> DbResult<RawPage> {
         if let Some(page) = self.page_cache.get_from_cache(page_id) {
-            crate::polo_log!("read page from cache, page_id: {}", page_id);
-
             return Ok(page);
         }
 

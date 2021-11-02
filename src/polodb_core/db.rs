@@ -2,6 +2,7 @@ use std::convert::TryFrom;
 use std::rc::Rc;
 use std::path::Path;
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use polodb_bson::{Document, ObjectId, Value};
 use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
 use super::error::DbErr;
@@ -10,6 +11,8 @@ use crate::Config;
 use crate::context::DbContext;
 use crate::{DbHandle, TransactionType};
 use crate::dump::FullDump;
+
+pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 
 fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
     handle.step()?;
@@ -237,6 +240,12 @@ pub type DbResult<T> = Result<T, DbErr>;
 impl Database {
 
     #[inline]
+    pub fn set_log(v: bool) {
+        SHOULD_LOG.store(v, Ordering::SeqCst);
+        eprintln!("set log");
+    }
+
+    #[inline]
     pub fn mk_object_id(&mut self) -> ObjectId {
         self.ctx.object_id_maker().mk_object_id()
     }
@@ -373,7 +382,6 @@ impl Database {
     fn send_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<MsgTy>, body: Vec<u8>) -> DbResult<()> {
         match result {
             Ok(msg_ty) => {
-                eprintln!("resp with len: {}", body.len());
                 let val = msg_ty as i32;
                 pipe_out.write_i32::<BigEndian>(val)?;
                 pipe_out.write_u32::<BigEndian>(body.len() as u32)?;

@@ -210,6 +210,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
         self.0.write_btree_node(&left)?;
         self.0.write_btree_node(&right)?;
 
+
         let middle = &btree_node.content[middle_index];
         let backward_item = InsertBackwardItem {
             content: middle.clone(),

@@ -89,8 +89,6 @@ impl AppContext {
         conn.write(&ret_buffer)?;
         conn.flush()?;
 
-        eprintln!("return with byte: {}", ret_buffer.len());
-
         if msg_ty == MsgTy::SafelyQuit {
             return Ok(false);
         }
@@ -149,7 +147,7 @@ fn start_app_async(app: AppContext, socket_addr: &str) {
                     let result = app.handle_incoming_connection(&mut moved_stream);
                     match result {
                         Ok(true) => {
-                            eprintln!("handle req finished, ok: {}", result.is_ok());
+                            continue;
                         },
 
                         Ok(false) => {
@@ -221,6 +219,12 @@ fn main() {
                     .takes_value(true)
             )
             .arg(Arg::with_name("memory"))
+            .arg(
+                Arg::with_name("log")
+                    .help("print log")
+                    .long("log")
+                    .short("l")
+            )
         )
         .subcommand(App::new("migrate")
             .about("migrate the older database to the newer format")
@@ -236,11 +240,20 @@ fn main() {
                     .takes_value(true)
                     .required(true)
             )
+        )
+        .arg(
+            Arg::with_name("log")
+                .help("print log")
+                .long("log")
+                .short("l")
         );
 
     let matches = app.get_matches();
 
     if let Some(sub) = matches.subcommand_matches("serve") {
+        let should_log = sub.is_present("log");
+        Database::set_log(should_log);
+
         let socket = sub.value_of("socket").unwrap();
         let path = sub.value_of("path");
         if let Some(path) = path {
