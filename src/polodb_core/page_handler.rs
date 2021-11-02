@@ -1,6 +1,4 @@
 use std::cell::Cell;
-use std::collections::BTreeMap;
-use std::ops::Bound::{Included, Unbounded};
 use std::sync::Arc;
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -22,17 +20,81 @@ use std::cmp::min;
 
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
+struct DataPageAllocator {
+    // pid -> remain size
+    free_pages: Vec<(u32, u32)>,
+    stash: Option<Vec<(u32, u32)>>,
+}
+
+impl DataPageAllocator {
+
+    fn new() -> DataPageAllocator {
+        DataPageAllocator {
+            free_pages: Vec::new(),
+            stash: None,
+        }
+    }
+
+    fn add_tuple(&mut self, pid: u32, remain_size: u32) {
+        let t = self.stash.as_mut().expect("no transaction");
+        t.push((pid, remain_size));
+    }
+
+    fn try_allocate_data_page(&mut self, need_size: u32) -> Option<(u32, u32)> {
+        let t = self.stash.as_mut().unwrap();
+        let mut index: i64 = -1;
+        let mut result = None;
+        for (i, (pid, remain_size)) in t.iter().enumerate() {
+            if *remain_size >= need_size {
+                index = i as i64;
+                result = Some((*pid, *remain_size));
+                break;
+            }
+        }
+        if index >= 0 {
+            t.remove(index as usize);
+        }
+
+        result
+    }
+
+    fn free_page(&mut self, pid: u32) {
+        let t = self.stash.as_mut().unwrap();
+        let index_opt = t.iter().position(|(x_pid, _)| *x_pid == pid);
+        if let Some(index) = index_opt {
+            t.remove(index);
+        }
+    }
+
+    fn start_transaction(&mut self) {
+        let copy = self.free_pages.clone();
+        self.stash = Some(copy)
+    }
+
+    fn commit(&mut self) {
+        let opt = self.stash.take();
+        if let Some(list) = opt {
+            self.free_pages = list;
+        }
+    }
+
+    fn rollback(&mut self) {
+        self.stash = None;
+    }
+
+}
+
 pub(crate) struct PageHandler {
-    backend:                  Box<dyn Backend + Send>,
+    backend:             Box<dyn Backend + Send>,
 
-    pub page_size:            NonZeroU32,
-    page_cache:               Box<PageCache>,
+    pub page_size:       NonZeroU32,
+    page_cache:          Box<PageCache>,
 
-    data_page_map:            BTreeMap<u32, Vec<u32>>,
+    data_page_allocator: DataPageAllocator,
 
-    transaction_state:        TransactionState,
+    transaction_state:   TransactionState,
 
-    config:                   Arc<Config>,
+    config:              Arc<Config>,
 
 }
 
@@ -47,7 +109,7 @@ impl PageHandler {
             page_size,
             page_cache: Box::new(page_cache),
 
-            data_page_map: BTreeMap::new(),
+            data_page_allocator: DataPageAllocator::new(),
 
             transaction_state: TransactionState::NoTrans,
 
@@ -58,39 +120,14 @@ impl PageHandler {
 
     pub(crate) fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper> {
         let data_size = data_size + 2;  // preserve 2 bytes
-        let (wrapper, removed_key) = {
-            let mut range = self.data_page_map.range_mut((Included(data_size), Unbounded));
-            match range.next() {
-                Some((key, value)) => {
-                    if value.is_empty() {
-                        panic!("unexpected: distributed vector is empty");
-                    }
-                    let last_index = value[value.len() - 1];
-                    value.remove(value.len() - 1);
-
-                    let mut removed_key = None;
-
-                    if value.is_empty() {
-                        removed_key = Some(*key);
-                    }
-
-                    let raw_page = self.pipeline_read_page(last_index)?;
-                    let wrapper = DataPageWrapper::from_raw(raw_page);
-
-                    (wrapper, removed_key)
-                },
-                None => {
-                    let wrapper = self.force_distribute_new_data_page_wrapper()?;
-                    (wrapper, None)
-                },
-            }
-        };
-
-        if let Some(key) = removed_key {
-            self.data_page_map.remove(&key);
+        let try_result = self.data_page_allocator.try_allocate_data_page(data_size);
+        if let Some((pid, _)) = try_result {
+            let raw_page = self.pipeline_read_page(pid)?;
+            let wrapper = DataPageWrapper::from_raw(raw_page);
+            return Ok(wrapper);
         }
-
-        Ok(wrapper)
+        let wrapper = self.force_distribute_new_data_page_wrapper()?;
+        return Ok(wrapper);
     }
 
     #[inline]
@@ -106,20 +143,11 @@ impl PageHandler {
             return;
         }
 
-        if wrapper.bar_len() >= (u16::max_value() as u32) / 2 {  // len too large
+        if wrapper.bar_len() >= (u16::MAX as u32) / 2 {  // len too large
             return;
         }
 
-        match self.data_page_map.get_mut(&remain_size) {
-            Some(vector) => {
-                vector.push(wrapper.pid());
-            }
-
-            None => {
-                let vec = vec![ wrapper.pid() ];
-                self.data_page_map.insert(remain_size, vec);
-            }
-        }
+        self.data_page_allocator.add_tuple(wrapper.pid(), remain_size);
     }
 
     // 1. write to journal, if success
@@ -299,6 +327,16 @@ impl PageHandler {
     }
 
     pub fn free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
+        self.internal_free_pages(pages)?;
+
+        for pid in pages {
+            self.data_page_allocator.free_page(*pid);
+        }
+
+        Ok(())
+    }
+
+    fn internal_free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
         for pid in pages {
             crate::polo_log!("free page, id: {}", *pid);
         }
@@ -470,9 +508,10 @@ impl PageHandler {
         self.backend.transaction_type()
     }
 
-    #[inline]
     fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
-        self.backend.upgrade_read_transaction_to_write()
+        self.backend.upgrade_read_transaction_to_write()?;
+        self.data_page_allocator.start_transaction();
+        Ok(())
     }
 
     #[inline]
@@ -531,11 +570,17 @@ impl PageHandler {
     }
 
     pub fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        self.backend.start_transaction(ty)
+        self.backend.start_transaction(ty)?;
+        if ty == TransactionType::Write {
+            self.data_page_allocator.start_transaction();
+        }
+        Ok(())
     }
 
     pub fn commit(&mut self) -> DbResult<()> {
-        self.backend.commit()
+        self.backend.commit()?;
+        self.data_page_allocator.commit();
+        Ok(())
     }
 
     // after the rollback
@@ -543,6 +588,7 @@ impl PageHandler {
     // cleat it
     pub fn rollback(&mut self) -> DbResult<()> {
         self.backend.rollback()?;
+        self.data_page_allocator.rollback();
         self.page_cache = Box::new(PageCache::new_default(self.page_size));
         Ok(())
     }
