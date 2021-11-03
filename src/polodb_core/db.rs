@@ -424,6 +424,10 @@ impl Database {
                 self.handle_delete_operation(pipe_in, pipe_out)?;
             }
 
+            MsgTy::CreateCollection => {
+                self.handle_create_collection(pipe_in, pipe_out)?;
+            }
+
             MsgTy::Drop =>{
                 self.handle_drop_collection(pipe_in, pipe_out)?;
             }
@@ -646,7 +650,26 @@ impl Database {
         Ok(())
     }
 
-    fn handle_drop_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+    fn handle_create_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+        let doc: Rc<Document> = match value {
+            Value::Document(d) => d,
+            _ => return Err(DbErr::ParseError(format!("create document expect a document, actual: {}", value))),
+        };
+        let name: String = match doc.get("name") {
+            Some(Value::String(s)) => s.as_str().into(),
+            _ => return Err(DbErr::ParseError(format!("should give the name of the collection to create"))),
+        };
+        let ret = match self.create_collection(&name) {
+            Ok(_) => Value::Boolean(true),
+            Err(DbErr::CollectionAlreadyExits(_)) => Value::Boolean(false),
+            Err(err) => return Err(err),
+        };
+        ret.to_msgpack(pipe_out)?;
+        Ok(())
+    }
+
+    fn handle_drop_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
         let value = self.receive_request_body(pipe_in)?;
         let cl_name: String = match value {
             Value::String(s) => s.as_str().into(),
