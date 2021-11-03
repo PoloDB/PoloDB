@@ -425,6 +425,10 @@ impl Database {
                 self.handle_delete_operation(pipe_in, pipe_out)?;
             }
 
+            MsgTy::Drop =>{
+                self.handle_drop_collection(pipe_in, pipe_out)?;
+            }
+
             MsgTy::StartTransaction => {
                 self.handle_start_transaction(pipe_in, pipe_out)?;
             }
@@ -638,6 +642,21 @@ impl Database {
         let ret_val = Value::Int(size as i64);
         ret_val.to_msgpack(pipe_out)?;
 
+        Ok(())
+    }
+
+    fn handle_drop_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+        let cl_name: String = match value {
+            Value::String(s) => s.as_str().into(),
+            _ => return Err(DbErr::ParseError(format!("should give the name of the collection to drop, actual: {}", value))),
+        };
+        let info = match self.ctx.get_collection_meta_by_name(&cl_name) {
+            Ok(meta) => meta,
+            Err(DbErr::CollectionNotFound(_)) => self.ctx.create_collection(&cl_name)?,
+            Err(err) => return Err(err),
+        };
+        self.ctx.drop_collection(info.id, info.meta_version)?;
         Ok(())
     }
 

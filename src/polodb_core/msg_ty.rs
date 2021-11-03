@@ -10,6 +10,8 @@ pub enum MsgTy {
     Insert = 8,
     Update = 16,
     Delete = 32,
+    _CreateCollection = 64,
+    Drop = 65,
     StartTransaction = 128,
     Commit,
     Rollback,

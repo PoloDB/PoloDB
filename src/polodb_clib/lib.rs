@@ -153,7 +153,7 @@ pub unsafe extern "C" fn PLDB_create_collection(db: *mut DbContext,
 
 #[no_mangle]
 pub unsafe extern "C" fn PLDB_drop(db: *mut DbContext, col_id: c_uint, meta_version: c_uint) -> c_int {
-    let result = db.as_mut().unwrap().drop(col_id, meta_version);
+    let result = db.as_mut().unwrap().drop_collection(col_id, meta_version);
     if let Err(err) = result {
         set_global_error(err);
         return PLDB_error_code();

@@ -534,7 +534,7 @@ impl DbContext {
         Ok(vm.r2 as usize)
     }
 
-    pub fn drop(&mut self, col_id: u32, meta_version: u32) -> DbResult<()> {
+    pub fn drop_collection(&mut self, col_id: u32, meta_version: u32) -> DbResult<()> {
         self.check_meta_version(meta_version)?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
