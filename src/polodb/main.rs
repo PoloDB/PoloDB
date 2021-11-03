@@ -139,18 +139,10 @@ fn start_socket_server(path: Option<&str>, socket_addr: &str) {
 }
 
 
-#[cfg(windows)]
 fn start_app_async(app: AppContext, socket_addr: &str) {
     let socket_attr_copy: String = socket_addr.into();
-    thread::spawn(move || {
-    });
-}
-
-#[cfg(unix)]
-fn start_app_async(app: AppContext, socket_addr: &str) {
-    let socket_attr_copy: String = socket_addr.into();
-    thread::spawn(move || {
-        let listener = IPC::bind(socket_attr_copy).unwrap();
+    let _t = thread::spawn(move || {
+        let listener = IPC::bind(socket_attr_copy.as_str()).unwrap();
 
         for stream in listener.incoming() {
             let stream = stream.unwrap();
@@ -186,6 +178,9 @@ fn start_app_async(app: AppContext, socket_addr: &str) {
             });
         }
     });
+
+    #[cfg(windows)]
+    _t.join().unwrap();
 }
 
 fn safely_quit(app: AppContext) {
