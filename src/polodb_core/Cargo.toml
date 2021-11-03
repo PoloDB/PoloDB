@@ -28,4 +28,4 @@ num_enum = "0.5.4"
 polodb_line_diff = { path = "../polodb_line_diff" }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.9", features = ["fileapi"] }
+winapi = { version = "0.3.9", features = ["fileapi", "namedpipeapi"] }

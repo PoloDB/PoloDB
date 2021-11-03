@@ -13,7 +13,9 @@ use std::thread;
 use std::sync::Mutex;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use error_chain::error_chain;
+#[cfg(unix)]
 use signal_hook::{iterator::Signals};
+#[cfg(unix)]
 use signal_hook::consts::TERM_SIGNALS;
 use std::path::{Path, PathBuf};
 
@@ -125,13 +127,24 @@ fn start_socket_server(path: Option<&str>, socket_addr: &str) {
 
     start_app_async(app.clone(), socket_addr);
 
+    #[cfg(unix)]
     let mut signals = Signals::new(TERM_SIGNALS).unwrap();
+    #[cfg(unix)]
     for _ in signals.forever() {
         eprintln!("Received quit signal, prepare to exit");
         safely_quit(app.clone());
     }
 }
 
+
+#[cfg(windows)]
+fn start_app_async(app: AppContext, socket_addr: &str) {
+    let socket_attr_copy: String = socket_addr.into();
+    thread::spawn(move || {
+    });
+}
+
+#[cfg(unix)]
 fn start_app_async(app: AppContext, socket_addr: &str) {
     let socket_attr_copy: String = socket_addr.into();
     thread::spawn(move || {
