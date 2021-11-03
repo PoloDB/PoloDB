@@ -242,7 +242,6 @@ impl Database {
     #[inline]
     pub fn set_log(v: bool) {
         SHOULD_LOG.store(v, Ordering::SeqCst);
-        eprintln!("set log");
     }
 
     #[inline]
@@ -472,12 +471,14 @@ impl Database {
         }
     }
 
-    fn handle_commit<R: Read, W: Write>(&mut self, _pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
+    fn handle_commit<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
+        let _ = self.receive_request_body(pipe_in)?;
         self.commit()?;
         Ok(())
     }
 
-    fn handle_rollback<R: Read, W: Write>(&mut self, _pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
+    fn handle_rollback<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
+        let _ = self.receive_request_body(pipe_in)?;
         self.rollback()?;
         Ok(())
     }

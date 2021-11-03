@@ -71,7 +71,9 @@ impl AppContext {
                 conn.write_u32::<BigEndian>(req_id)?;
                 return Ok(true);
             }
-            eprintln!("head is not matched, exit...");
+            eprintln!("head is not matched, received: {:#x} {:#x} {:#x} {:#x}",
+                      header_buffer[0], header_buffer[1], header_buffer[2], header_buffer[3]);
+            eprintln!("exit");
             return Ok(false)
         }
 
