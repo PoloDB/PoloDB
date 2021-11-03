@@ -1,10 +1,11 @@
 mod dumper;
+mod ipc;
 
 use crate::dumper::dump;
+use crate::ipc::{IPC, Connection};
 use polodb_core::Database;
 use polodb_core::msg_ty::MsgTy;
 use clap::{Arg, App};
-use std::os::unix::net::{UnixStream, UnixListener};
 use std::process::exit;
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -54,7 +55,7 @@ impl AppContext {
         }
     }
 
-    fn handle_incoming_connection(&self, conn: &mut UnixStream) -> Result<bool> {
+    fn handle_incoming_connection(&self, conn: &mut Connection) -> Result<bool> {
         let mut db_guard = self.db.lock().unwrap();
         let db = db_guard.as_mut().unwrap();
         let mut header_buffer = [0u8; 4];
@@ -134,7 +135,7 @@ fn start_socket_server(path: Option<&str>, socket_addr: &str) {
 fn start_app_async(app: AppContext, socket_addr: &str) {
     let socket_attr_copy: String = socket_addr.into();
     thread::spawn(move || {
-        let listener = UnixListener::bind(socket_attr_copy).unwrap();
+        let listener = IPC::bind(socket_attr_copy).unwrap();
 
         for stream in listener.incoming() {
             let stream = stream.unwrap();

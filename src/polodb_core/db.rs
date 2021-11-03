@@ -452,7 +452,7 @@ impl Database {
         Ok(msg_ty)
     }
 
-    fn handle_start_transaction<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+    fn handle_start_transaction<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
         let value = self.receive_request_body(pipe_in)?;
         let transaction_type = match value {
             Value::Int(val) => val,
