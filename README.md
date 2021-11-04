@@ -3,7 +3,6 @@
 
 [![Build Status](https://travis-ci.com/vincentdchan/PoloDB.svg?branch=master)](https://travis-ci.com/vincentdchan/PoloDB)
 [![Crates.io](https://img.shields.io/crates/v/polodb_core.svg)](https://crates.io/crates/polodb_core)
-[![npm version](https://img.shields.io/npm/v/polodb.svg)](https://www.npmjs.com/package/polodb)
 [![PYPI version](https://img.shields.io/pypi/v/polodb.svg)](https://pypi.org/project/polodb/)
 
 PoloDB is an embedded JSON-based database.
@@ -74,7 +73,7 @@ Limited by my time, I have only compiled and tested on the following platforms:
 # Manual
 
 - [Rust](https://docs.rs/polodb_core)
-- [Node.js](./docs/en-US/Node.js/READEME.md)
+- [Node.js](https://github.com/vincentdchan/polodb.js)
 - [Python](./docs/en-US/Python/READEME.md)
 
 # Developing Plan
@@ -90,7 +89,7 @@ The features will be implemented one by one in order.
 - [x] Language bindings
   - [x] C/C++
   - [x] Python ([Doc](./docs/en-US/Python/READEME.md))
-  - [x] Node.js ([Doc](./docs/en-US/Node.js/READEME.md))
+  - [x] [Node.js](https://github.com/vincentdchan/polodb.js)
 - [ ] Multi-threads support
 - [ ] Extension API
   - [ ] Data Encryption
@@ -121,6 +120,6 @@ polodb migrate --target v2 ./mydb
 | -------| ---- | ----------- |
 | Core | `src/polodb_core`  | The core implementation of the Database |
 | C Library | `src/polodb_clib` | The C FFI implementation of PoloDB |
-| CLI tool | `src/polodb_cli` | The command line tool of PoloDB |
-| Node.js bindings | `polodb.js` | The Node.js binding using N-API |
+| CLI tool | `src/polodb` | The command line tool of PoloDB |
+| [Node.js](https://github.com/vincentdchan/polodb.js) | `polodb.js` | The Node.js binding using N-API |
 | Python bindings | `pypolodb` | The CPython binding using Extension API |

@@ -39,7 +39,7 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
 # 使用方法
 
 - [Rust](https://docs.rs/polodb_core)
-- [Node.js](./docs/zh-CN/Node.js/READEME.md)
+- [Node.js](https://github.com/vincentdchan/polodb.js)
 - [Python](./docs/zh-CN/Python/READEME.md)
 
 # 开发计划
@@ -61,7 +61,7 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
   - [ ] Go
   - [x] Swift([Repo](https://github.com/vincentdchan/SwiftyPoloDB))
   - [x] Python
-  - [x] Node.js
+  - [x] [Node.js](https://github.com/vincentdchan/polodb.js)
   - [ ] Java/Kotlin
   - [ ] Dart
 - [ ] 大量测试
@@ -77,7 +77,6 @@ PoloDB 的 API 和 [MongoDB](https://www.mongodb.com/) 类似，易学易用。
 | ----| --- | ---- |
 | Core | `src/polodb_core`  | 数据库功能的核心实现 |
 | C Library | `src/polodb_clib` | 数据库的 C FFI 实现 |
-| CLI tool | `src/polodb_cli` | 命令行工具 |
-| Node.js bindings | `polodb.js` | Node.js 绑定，用 N-API 实现 |
+| CLI tool | `src/polodb` | 命令行工具 |
+| [Node.js](https://github.com/vincentdchan/polodb.js | `polodb.js` | Node.js 绑定，用 N-API 实现 |
 | Python bindings | `pypolodb` | CPython 绑定，Extension API 实现 |
-| Swift bindings | `SwiftyPoloDB` | Swift |
