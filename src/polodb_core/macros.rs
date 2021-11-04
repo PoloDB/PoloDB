@@ -2,7 +2,7 @@
 #[macro_export]
 macro_rules! polo_log (
     ($($arg:tt)+) => {
-        if cfg!(log) {
+        if crate::db::SHOULD_LOG.load(std::sync::atomic::Ordering::SeqCst) {
             eprintln!($($arg)*);
         }
     }

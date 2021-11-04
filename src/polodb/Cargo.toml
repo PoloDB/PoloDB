@@ -1,0 +1,24 @@
+[package]
+name = "polodb"
+version = "2.0.0"
+authors = ["Vincent Chan <okcdz@diverse.space>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "polodb"
+path = "main.rs"
+
+[dependencies]
+polodb_core = { path = "../polodb_core" }
+polodb_bson = { path = "../polodb_bson" }
+byteorder = "1.4.3"
+clap = "2.33.3"
+chrono = "0.4"
+error-chain = "0.12.4"
+
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.3.10"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3.9", features = ["fileapi", "namedpipeapi"] }

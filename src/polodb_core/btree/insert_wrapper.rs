@@ -14,7 +14,7 @@ pub(crate) struct InsertBackwardItem {
 
 pub(crate) struct InsertResult {
     pub backward_item: Option<InsertBackwardItem>,
-    pub primary_key: Value,
+    pub _primary_key: Value,
 }
 
 impl InsertBackwardItem {
@@ -122,7 +122,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
             return Ok(InsertResult {
                 backward_item: None,
-                primary_key: doc.pkey_id().unwrap(),
+                _primary_key: doc.pkey_id().unwrap(),
             });
         }
 
@@ -139,10 +139,11 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
                     Ok(InsertResult {
                         backward_item: None,
-                        primary_key: doc_pkey.clone(),
+                        _primary_key: doc_pkey.clone(),
                     })
                 } else {
-                    Err(DbErr::DataExist(doc_pkey.clone()))
+                    let str = format!("data exist: {}", doc_pkey);
+                    Err(DbErr::DataExist(str))
                 }
             }
 
@@ -174,7 +175,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
         Ok(InsertResult {
             backward_item: None,
-            primary_key: doc_pkey.clone(),
+            _primary_key: doc_pkey.clone(),
         })
     }
 
@@ -209,6 +210,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
         self.0.write_btree_node(&left)?;
         self.0.write_btree_node(&right)?;
 
+
         let middle = &btree_node.content[middle_index];
         let backward_item = InsertBackwardItem {
             content: middle.clone(),
@@ -217,7 +219,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
         Ok(InsertResult {
             backward_item: Some(backward_item),
-            primary_key,
+            _primary_key: primary_key,
         })
     }
 

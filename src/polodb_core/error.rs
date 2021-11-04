@@ -1,8 +1,8 @@
 use std::io;
 use std::fmt;
-use std::rc::Rc;
-use polodb_bson::{Value, ty_int};
+use polodb_bson::ty_int;
 use polodb_bson::error::BsonErr;
+use crate::msg_ty::MsgTy;
 
 #[derive(Debug)]
 pub struct FieldTypeUnexpectedStruct {
@@ -92,6 +92,12 @@ pub fn mk_unexpected_type_for_op(op: &'static str, expected_ty: &'static str, ac
 }
 
 #[derive(Debug)]
+pub struct VersionMismatchError {
+    pub actual_version: [u8; 4],
+    pub expect_version: [u8; 4],
+}
+
+#[derive(Debug)]
 pub enum DbErr {
     UnexpectedIdType(u8, u8),
     NotAValidKeyType(String),
@@ -108,7 +114,7 @@ pub enum DbErr {
     DataSizeTooLarge(u32, u32),
     DecodeEOF,
     DataOverflow,
-    DataExist(Value),
+    DataExist(String),
     PageSpaceNotEnough,
     DataHasNoPrimaryKey,
     ChecksumMismatch,
@@ -129,7 +135,7 @@ pub enum DbErr {
     UnexpectedPageType,
     UnknownTransactionType,
     BufferNotEnough(usize),
-    UnknownUpdateOperation(Rc<str>),
+    UnknownUpdateOperation(String),
     IncrementNullField,
     VmIsHalt,
     MetaVersionMismatched(u32, u32),
@@ -139,6 +145,8 @@ pub enum DbErr {
     Busy,
     DatabaseOccupied,
     Multiple(Vec<DbErr>),
+    VersionMismatch(Box<VersionMismatchError>),
+    EnumError(Box<num_enum::TryFromPrimitiveError<MsgTy>>),
 }
 
 impl DbErr {
@@ -226,6 +234,15 @@ impl fmt::Display for DbErr {
                 }
                 Ok(())
             }
+            DbErr::VersionMismatch(err) => {
+                writeln!(f, "db version mismatched, please upgrade")?;
+                let actual = err.actual_version;
+                let expect = err.expect_version;
+                writeln!(f, "expect: {}.{}.{}.{}", expect[0], expect[1], expect[2], expect[3])?;
+                writeln!(f, "actual: {}.{}.{}.{}", actual[0], actual[1], actual[2], actual[3])
+            }
+
+            DbErr::EnumError(err) => err.as_ref().fmt(f),
         }
     }
 
@@ -254,6 +271,16 @@ impl From<std::str::Utf8Error> for DbErr {
     }
 
 }
+
+impl From<num_enum::TryFromPrimitiveError<MsgTy>> for DbErr {
+
+    fn from(error: num_enum::TryFromPrimitiveError<MsgTy>) -> Self {
+        DbErr::EnumError(Box::new(error))
+    }
+
+}
+
+impl std::error::Error for DbErr {}
 
 #[cfg(test)]
 mod tests {

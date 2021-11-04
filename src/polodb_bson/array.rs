@@ -8,6 +8,7 @@ use crate::document::Document;
 use crate::object_id::ObjectId;
 use std::vec::Drain;
 use std::ops::RangeBounds;
+use std::io::{Read, Write};
 
 #[derive(Debug, Clone)]
 pub struct Array(Vec<Value>);
@@ -275,6 +276,30 @@ impl Array {
         }
 
         Ok(arr)
+    }
+
+    pub fn to_msgpack<W: Write>(&self, buf: &mut W) -> BsonResult<()> {
+        rmp::encode::write_array_len(buf, self.len())?;
+        for value in self.iter() {
+            value.to_msgpack(buf)?;
+        }
+        Ok(())
+    }
+
+    pub fn from_msgpack<R: Read>(bytes: &mut R) -> BsonResult<Array> {
+        let arr_len = rmp::decode::read_array_len(bytes)? as usize;
+        Array::from_msgpack_with_len(bytes, arr_len)
+    }
+
+    pub fn from_msgpack_with_len<R: Read>(bytes: &mut R, len: usize) -> BsonResult<Array> {
+        let mut buf: Vec<Value> = Vec::with_capacity(len);
+
+        for _ in 0..len {
+            let value = Value::from_msgpack(bytes)?;
+            buf.push(value);
+        }
+
+        Ok(Array(buf))
     }
 
 }

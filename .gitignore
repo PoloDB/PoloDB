@@ -4,3 +4,4 @@ Cargo.lock
 .DS_Store
 src/*/target/
 /venv
+/pypolodb/venv

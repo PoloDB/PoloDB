@@ -1,11 +1,18 @@
+use std::convert::TryFrom;
 use std::rc::Rc;
 use std::path::Path;
-use polodb_bson::{Document, ObjectId};
+use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use polodb_bson::{Document, ObjectId, Value};
+use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
 use super::error::DbErr;
+use crate::msg_ty::MsgTy;
 use crate::Config;
 use crate::context::DbContext;
 use crate::{DbHandle, TransactionType};
 use crate::dump::FullDump;
+
+pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 
 fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
     handle.step()?;
@@ -18,6 +25,15 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
     }
 
     Ok(())
+}
+
+macro_rules! unwrap_str_or {
+    ($expr: expr, $or: expr) => {
+        match $expr {
+            Some(Value::String(id)) => id.as_str(),
+            _ => return Err(DbErr::ParseError($or)),
+        }
+    }
 }
 
 /// A wrapper of collection in struct.
@@ -224,6 +240,11 @@ pub type DbResult<T> = Result<T, DbErr>;
 impl Database {
 
     #[inline]
+    pub fn set_log(v: bool) {
+        SHOULD_LOG.store(v, Ordering::SeqCst);
+    }
+
+    #[inline]
     pub fn mk_object_id(&mut self) -> ObjectId {
         self.ctx.object_id_maker().mk_object_id()
     }
@@ -327,6 +348,360 @@ impl Database {
     #[allow(dead_code)]
     pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
         self.ctx.query_all_meta()
+    }
+
+    /// Upgrade DB from v1 to v2
+    /// The older file will be renamed as (name).old
+    pub fn v1_to_v2(path: &Path) -> DbResult<()> {
+        crate::migration::v1_to_v2(path)
+    }
+
+    /// handle request for database
+    /// See [MsgTy] for message detail
+    pub fn handle_request<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> std::io::Result<MsgTy> {
+        let mut buffer: Vec<u8> = Vec::new();
+        let result = self.handle_request_with_result(pipe_in, &mut buffer);
+        let ret = match &result {
+            Ok(t) => t.clone(),
+            Err(_) => MsgTy::Undefined,
+        };
+        if let Err(DbErr::IOErr(io_err)) = result {
+            return Err(*io_err);
+        }
+        let resp_result = self.send_response_with_result(pipe_out, result, buffer);
+        if let Err(DbErr::IOErr(io_err)) = resp_result {
+            return Err(*io_err);
+        }
+        if let Err(err) = resp_result {
+            eprintln!("resp error: {}", err);
+        }
+        Ok(ret)
+    }
+
+    fn send_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<MsgTy>, body: Vec<u8>) -> DbResult<()> {
+        match result {
+            Ok(msg_ty) => {
+                let val = msg_ty as i32;
+                pipe_out.write_i32::<BigEndian>(val)?;
+                pipe_out.write_u32::<BigEndian>(body.len() as u32)?;
+                pipe_out.write(&body)?;
+            }
+
+            Err(err) => {
+                pipe_out.write_i32::<BigEndian>(-1)?;
+                let str = format!("resp with error: {}", err);
+                let str_buf = str.as_bytes();
+                pipe_out.write_u32::<BigEndian>(str_buf.len() as u32)?;
+                pipe_out.write(str_buf)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_request_with_result<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<MsgTy> {
+        let msg_ty_int = pipe_in.read_i32::<BigEndian>()?;
+
+        let msg_ty = MsgTy::try_from(msg_ty_int)?;
+
+        match msg_ty {
+            MsgTy::Find => {
+                self.handle_find_operation(pipe_in, pipe_out)?;
+            },
+
+            MsgTy::FindOne => {
+                self.handle_find_one_operation(pipe_in, pipe_out)?;
+            },
+
+            MsgTy::Insert => {
+                self.handle_insert_operation(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::Update => {
+                self.handle_update_operation(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::Delete => {
+                self.handle_delete_operation(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::CreateCollection => {
+                self.handle_create_collection(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::Drop =>{
+                self.handle_drop_collection(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::StartTransaction => {
+                self.handle_start_transaction(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::Commit => {
+                self.handle_commit(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::Rollback => {
+                self.handle_rollback(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::Count => {
+                self.handle_count_operation(pipe_in, pipe_out)?;
+            }
+
+            MsgTy::SafelyQuit => (),
+
+            _ => {
+                return Err(DbErr::ParseError("unknown msg type".into()));
+            }
+
+        };
+
+        Ok(msg_ty)
+    }
+
+    fn handle_start_transaction<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+        let transaction_type = match value {
+            Value::Int(val) => val,
+            _ => {
+                return Err(DbErr::ParseError("transaction needs a type".into()));
+            }
+        };
+        match transaction_type {
+            0 => self.start_transaction(None),
+            1 => self.start_transaction(Some(TransactionType::Read)),
+            2 => self.start_transaction(Some(TransactionType::Write)),
+            _ => return Err(DbErr::ParseError("invalid transaction type".into())),
+        }
+    }
+
+    fn handle_commit<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
+        let _ = self.receive_request_body(pipe_in)?;
+        self.commit()?;
+        Ok(())
+    }
+
+    fn handle_rollback<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
+        let _ = self.receive_request_body(pipe_in)?;
+        self.rollback()?;
+        Ok(())
+    }
+
+    fn handle_find_one_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in find one request, actual: {}", value))),
+        };
+
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
+
+        let mut query_opt = match doc.get("query") {
+            Some(Value::Document(doc)) => doc.clone(),
+            _ => return Err(DbErr::ParseError("query not found in find request".into())),
+        };
+
+        let mut_doc = Rc::make_mut(&mut query_opt);
+        let mut collection = self.collection(collection_name)?;
+
+        let result = collection.find_one(mut_doc)?;
+
+        let result_value = match result {
+            Some(doc) => Value::Document(doc),
+            None => Value::Null,
+        };
+
+        result_value.to_msgpack(pipe_out)?;
+
+        Ok(())
+    }
+
+    fn receive_request_body<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<Value> {
+        let request_size = pipe_in.read_u32::<BigEndian>()? as usize;
+        if request_size == 0 {
+            return Ok(Value::Null);
+        }
+        let mut request_body = vec![0u8; request_size];
+        pipe_in.read_exact(&mut request_body)?;
+        let mut body_ref: &[u8] = request_body.as_slice();
+        let val = Value::from_msgpack(&mut body_ref)?;
+        Ok(val)
+    }
+
+    fn handle_find_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in find request, actual: {}", value))),
+        };
+
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
+
+        let query_opt = match doc.get("query") {
+            Some(Value::Document(doc)) => Some(doc),
+            _ => None,
+        };
+
+        let mut collection = self.collection(collection_name)?;
+
+        let result = if let Some(query) = query_opt {
+            collection.find(query)?
+        } else {
+            collection.find_all()?
+        };
+
+        let mut value_arr = polodb_bson::Array::new();
+
+        for item in result {
+            value_arr.push(Value::Document(item));
+        }
+
+        let result_value = Value::Array(Rc::new(value_arr));
+        result_value.to_msgpack(pipe_out)?;
+
+        Ok(())
+    }
+
+    fn handle_insert_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in insert request, actual: {}", value))),
+        };
+
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
+
+        let mut insert_data = match doc.get("data") {
+            Some(Value::Document(doc)) => doc.clone(),
+            _ => return Err(DbErr::ParseError("query not found in insert request".into())),
+        };
+
+        let mut_doc = Rc::make_mut(&mut insert_data);
+
+        let mut collection = self.collection(collection_name)?;
+        let id_changed = collection.insert(mut_doc)?;
+
+        let ret_value = if id_changed {
+            mut_doc.get("_id").unwrap().clone()
+        } else {
+            Value::Null
+        };
+
+        ret_value.to_msgpack(pipe_out)?;
+
+        Ok(())
+    }
+
+    fn handle_update_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in update request, actual: {}", value))),
+        };
+
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in update request".into());
+
+        let query = match doc.get("query") {
+            Some(Value::Document(doc)) => Some(doc.as_ref()),
+            Some(_) => return Err(DbErr::ParseError("query is not a document in update request".into())),
+            None => None
+        };
+
+        let update_data = match doc.get("update") {
+            Some(Value::Document(doc)) => doc.clone(),
+            _ => return Err(DbErr::ParseError("'update' not found in update request".into())),
+        };
+
+        let mut collection = self.collection(collection_name)?;
+        let size = collection.update(query, update_data.as_ref())?;
+
+        let ret_val = Value::Int(size as i64);
+        ret_val.to_msgpack(pipe_out)?;
+
+        Ok(())
+    }
+
+    fn handle_delete_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in delete request, actual: {}", value))),
+        };
+
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in delete request".into());
+
+        let query = match doc.get("query") {
+            Some(Value::Document(doc)) => Some(doc.as_ref()),
+            Some(_) => return Err(DbErr::ParseError("query is not a document in delete request".into())),
+            None => None
+        };
+
+        let mut collection = self.collection(collection_name)?;
+        let size = collection.delete(query)?;
+
+        let ret_val = Value::Int(size as i64);
+        ret_val.to_msgpack(pipe_out)?;
+
+        Ok(())
+    }
+
+    fn handle_create_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+        let doc: Rc<Document> = match value {
+            Value::Document(d) => d,
+            _ => return Err(DbErr::ParseError(format!("create document expect a document, actual: {}", value))),
+        };
+        let name: String = match doc.get("name") {
+            Some(Value::String(s)) => s.as_str().into(),
+            _ => return Err(DbErr::ParseError(format!("should give the name of the collection to create"))),
+        };
+        let ret = match self.create_collection(&name) {
+            Ok(_) => Value::Boolean(true),
+            Err(DbErr::CollectionAlreadyExits(_)) => Value::Boolean(false),
+            Err(err) => return Err(err),
+        };
+        ret.to_msgpack(pipe_out)?;
+        Ok(())
+    }
+
+    fn handle_drop_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+        let cl_name: String = match value {
+            Value::String(s) => s.as_str().into(),
+            _ => return Err(DbErr::ParseError(format!("should give the name of the collection to drop, actual: {}", value))),
+        };
+        let info = match self.ctx.get_collection_meta_by_name(&cl_name) {
+            Ok(meta) => meta,
+            Err(DbErr::CollectionNotFound(_)) => self.ctx.create_collection(&cl_name)?,
+            Err(err) => return Err(err),
+        };
+        self.ctx.drop_collection(info.id, info.meta_version)?;
+        Ok(())
+    }
+
+    fn handle_count_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+        let value = self.receive_request_body(pipe_in)?;
+
+        let doc = match value {
+            Value::Document(doc) => doc,
+            _ => return Err(DbErr::ParseError(format!("value is not a doc in count request, actual: {}", value))),
+        };
+
+        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in count request".into());
+
+        let mut collection = self.collection(collection_name)?;
+
+        let count = collection.count()?;
+
+        let ret_val = Value::Int(count as i64);
+        ret_val.to_msgpack(pipe_out)?;
+
+        Ok(())
     }
 
 }
@@ -659,6 +1034,7 @@ mod tests {
     fn test_db_occupied() {
         const DB_NAME: &'static str = "test-db-lock";
         let db_path = mk_db_path(DB_NAME);
+        let _ = std::fs::remove_file(&db_path);
         {
             let config = Config::default();
             let _db1 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();

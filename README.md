@@ -12,12 +12,19 @@ PoloDB is an embedded JSON-based database.
 
 # Features
 
-- Simple/Lightweight/Easy to learn and use
+- Simple and Lightweight
+  - Only cost ~500kb memory to serve a database
+  - The database server binary is less than 2Mb 
+- Easy to learn and use
+  - NoSQL
+  - MongoDB-like API
 - Various language bindings
-- Embedded (No standalone processes, no cross-process calls)
-- No runtime dependency
-- NoSQL
-- MongoDB-like API
+- Can be embedded or standalone
+  - Embedded Mode
+    - No standalone processes
+    - No cross-process calls
+    - No runtime dependency
+  - Standalone: Run as a process, communicate with IPC
 - Cross-Platform
 - Multiple backends
   - Filesystem(WAL)
@@ -28,7 +35,10 @@ PoloDB is an embedded JSON-based database.
 With the filesystem backend, PoloDB stores data in ONE file.
 All the data are saved persistently on the disk.
 
-PoloDB uses WAL(write-ahead logging) to implement transactional writing and protect your data from program crashes. Your data is SAFE.
+It's designed to be flexible, universal, and easy to be searched.
+All the data are encoded in [msgpack](https://msgpack.org/) format and stored in the PoloDB's btree format.
+
+PoloDB uses WAL(write-ahead logging) to implement transactional writing and protect your data from program crashes.
 
 ## Memory Backend
 
@@ -86,6 +96,24 @@ The features will be implemented one by one in order.
   - [ ] Data Encryption
   - [ ] JavaScript Engine
 - [ ] Visualization Tools
+
+# V1 to V2
+
+PoloDB V2 uses [msgpack](https://msgpack.org/) to encode data.
+
+PoloDB V1 uses custom format.
+
+## Migration
+
+### Rust
+
+`Database::v1_to_v2` can be used to migrate from v1 to v2.
+
+### Tool
+
+```sh
+polodb migrate --target v2 ./mydb
+```
 
 # Contribute
 

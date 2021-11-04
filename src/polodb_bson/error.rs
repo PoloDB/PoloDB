@@ -3,6 +3,8 @@ use std::num;
 use std::io;
 use std::str::Utf8Error;
 use std::string::FromUtf8Error;
+use rmp::decode::{DecodeStringError, ValueReadError, MarkerReadError};
+use rmp::encode::ValueWriteError;
 
 #[derive(Debug)]
 pub enum BsonErr {
@@ -13,6 +15,10 @@ pub enum BsonErr {
     UTF8Error(Box<Utf8Error>),
     FromUTF8Error(Box<FromUtf8Error>),
     TypeNotComparable(String, String),
+    RmpWriteError(Box<ValueWriteError>),
+    RmpReadError(Box<ValueReadError>),
+    RmpMarkerReadError(Box<MarkerReadError>),
+    DecodeStringErr(String),
 }
 
 pub mod parse_error_reason {
@@ -39,6 +45,10 @@ impl fmt::Display for BsonErr {
             BsonErr::TypeNotComparable(expected, actual) =>
                 write!(f, "TypeNotComparable(expected: {}, actual: {})", expected, actual),
             BsonErr::FromUTF8Error(err) => write!(f, "{}", err),
+            BsonErr::RmpWriteError(err) => write!(f, "{}", err),
+            BsonErr::RmpReadError(err) => write!(f, "{}", err),
+            BsonErr::DecodeStringErr(err) => write!(f, "{}", err),
+            BsonErr::RmpMarkerReadError(_err) => write!(f, "RmpMarkerReadError"),
         }
     }
 
@@ -74,4 +84,36 @@ impl From<FromUtf8Error> for BsonErr {
         BsonErr::FromUTF8Error(Box::new(error))
     }
 
+}
+
+impl From<ValueWriteError> for BsonErr {
+
+    fn from(error: ValueWriteError) -> Self {
+        BsonErr::RmpWriteError(Box::new(error))
+    }
+
+}
+
+impl From<ValueReadError> for BsonErr {
+
+    fn from(error: ValueReadError) -> Self {
+        BsonErr::RmpReadError(Box::new(error))
+    }
+
+}
+
+impl<'a> From<DecodeStringError<'a>> for BsonErr {
+    fn from(err: DecodeStringError<'a>) -> Self {
+        BsonErr::DecodeStringErr(err.to_string())
+    }
+}
+
+impl From<MarkerReadError> for BsonErr {
+    fn from(err: MarkerReadError) -> Self {
+        BsonErr::RmpMarkerReadError(Box::new(err))
+    }
+}
+
+impl std::error::Error for BsonErr {
+    
 }

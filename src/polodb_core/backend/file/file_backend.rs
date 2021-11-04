@@ -1,22 +1,23 @@
 use std::fs::File;
 use std::num::{NonZeroU32, NonZeroU64};
 use std::cell::RefCell;
-use std::io::{SeekFrom, Seek};
+use std::io::{SeekFrom, Seek, Read};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::Arc;
 use super::journal_manager::JournalManager;
 use crate::file_lock::{exclusive_lock_file, unlock_file};
 use crate::backend::Backend;
-use crate::{DbResult, DbErr, Config};
+use crate::{DbResult, DbErr, Config, SerializeType};
 use crate::page::RawPage;
-use crate::page::header_page_wrapper::HeaderPageWrapper;
+use crate::page::header_page_wrapper::{HeaderPageWrapper, DATABASE_VERSION};
 use crate::transaction::TransactionType;
+use crate::error::VersionMismatchError;
 
 pub(crate) struct FileBackend {
     file:            RefCell<File>,
     page_size:       NonZeroU32,
     journal_manager: JournalManager,
-    config:          Rc<Config>,
+    config:          Arc<Config>,
 }
 
 struct InitDbResult {
@@ -33,7 +34,7 @@ impl FileBackend {
         buf
     }
 
-    pub(crate) fn open(path: &Path, page_size: NonZeroU32, config: Rc<Config>) -> DbResult<FileBackend> {
+    pub(crate) fn open(path: &Path, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<FileBackend> {
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -50,7 +51,12 @@ impl FileBackend {
             _ => (),
         };
 
-        let init_result = FileBackend::init_db(&mut file, page_size, config.init_block_count)?;
+        let init_result = FileBackend::init_db(
+            &mut file,
+            page_size,
+            config.init_block_count,
+            config.serialize_type == SerializeType::Default,
+        )?;
 
         let journal_file_path: PathBuf = FileBackend::mk_journal_path(path);
         let journal_manager = JournalManager::open(
@@ -71,7 +77,7 @@ impl FileBackend {
         Ok(wrapper.0)
     }
 
-    fn init_db(file: &mut File, page_size: NonZeroU32, init_block_count: NonZeroU64) -> DbResult<InitDbResult> {
+    fn init_db(file: &mut File, page_size: NonZeroU32, init_block_count: NonZeroU64, check_db_version: bool) -> DbResult<InitDbResult> {
         let meta = file.metadata()?;
         let file_len = meta.len();
         if file_len == 0 {
@@ -80,10 +86,29 @@ impl FileBackend {
             FileBackend::force_write_first_block(file, page_size)?;
             Ok(InitDbResult { db_file_size: expected_file_size })
         } else if file_len % page_size.get() as u64 == 0 {
+            if check_db_version {
+                FileBackend::check_db_version(file)?;
+            }
             Ok(InitDbResult { db_file_size: file_len })
         } else {
             Err(DbErr::NotAValidDatabase)
         }
+    }
+
+    fn check_db_version(file: &mut File) -> DbResult<()> {
+        let mut version = [0u8; 4];
+        file.seek(SeekFrom::Start(32))?;
+        file.read_exact(&mut version)?;
+
+        if version != DATABASE_VERSION {
+            let err = VersionMismatchError {
+                expect_version: DATABASE_VERSION,
+                actual_version: version,
+            };
+            return Err(DbErr::VersionMismatch(Box::new(err)))
+        }
+
+        Ok(())
     }
 
     #[inline]

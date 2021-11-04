@@ -1,6 +1,8 @@
 use std::rc::Rc;
 use std::fmt;
 use std::cmp::Ordering;
+use std::io::{Read, Write};
+use rmp::Marker;
 use super::ObjectId;
 use super::document::Document;
 use super::array::Array;
@@ -8,6 +10,7 @@ use super::hex;
 use crate::BsonResult;
 use crate::error::BsonErr;
 use crate::datetime::UTCDateTime;
+use byteorder::{self, ReadBytesExt, BigEndian, WriteBytesExt};
 
 const BINARY_MAX_DISPLAY_LEN: usize = 64;
 
@@ -77,6 +80,297 @@ impl Value {
             Value::Binary(_)      => ty_int::BINARY,
             Value::UTCDateTime(_) => ty_int::UTC_DATETIME,
 
+        }
+    }
+
+    pub fn to_msgpack<W: Write>(&self, buf: &mut W) -> BsonResult<()> {
+        match self {
+            Value::Null => rmp::encode::write_nil(buf)?,
+            Value::Double(fv) => {
+                if *fv <= (f32::MAX as f64) && *fv >= (f32::MIN as f64) {
+                    rmp::encode::write_f32(buf, *fv as f32)?;
+                } else {
+                    rmp::encode::write_f64(buf, *fv)?;
+                }
+            },
+            Value::Boolean(bv) => rmp::encode::write_bool(buf, *bv)?,
+            Value::Int(iv) => {
+                let v = *iv;
+                if v <= (i8::MAX as i64) && v >= (i8::MIN as i64) {
+                    rmp::encode::write_i8(buf, v as i8)?
+                } else if v <= (i16::MAX as i64) && v >= (i16::MIN as i64) {
+                    rmp::encode::write_i16(buf, v as i16)?;
+                } else if v <= (i32::MAX as i64) && v >= (i32::MIN as i64) {
+                    rmp::encode::write_i32(buf, v as i32)?;
+                } else {
+                    rmp::encode::write_i64(buf, v)?;
+                }
+            }
+            Value::String(str) => {
+                rmp::encode::write_str(buf, str)?;
+            },
+            Value::ObjectId(oid) => {
+                rmp::encode::write_ext_meta(buf, 16, ty_int::OBJECT_ID as i8)?;
+                oid.serialize(buf)?;
+                buf.write(&[0u8, 0u8, 0u8, 0u8])?;
+            },
+            Value::Array(arr) => {
+                arr.to_msgpack(buf)?;
+            },
+            Value::Document(doc) => {
+                doc.to_msgpack(buf)?;
+            },
+            Value::Binary(bin) => {
+                rmp::encode::write_bin(buf, bin)?;
+            },
+            Value::UTCDateTime(datetime) => {
+                let ms = datetime.timestamp();
+                let secs = ms / 1000;
+                let nanos = (ms % 1000) * 1000000;
+                let data = (nanos << 34) | (secs & 0x3FFFFFFFF);
+                rmp::encode::write_ext_meta(buf, 8, -1)?;
+                buf.write_u64::<BigEndian>(data)?;
+            },
+        }
+        Ok(())
+    }
+
+    pub fn from_msgpack<R: Read>(bytes: &mut R) -> BsonResult<Value> {
+        let marker = rmp::decode::read_marker(bytes)?;
+        match marker {
+            Marker::Null => {
+                Ok(Value::Null)
+            }
+            Marker::True => {
+                Ok(Value::Boolean(true))
+            }
+            Marker::False => {
+                Ok(Value::Boolean(false))
+            }
+            Marker::FixPos(int) => {
+                Ok(Value::Int(int as i64))
+            }
+            Marker::U8 => {
+                let b = bytes.read_u8()?;
+                Ok(Value::Int(b as i64))
+            }
+            Marker::U16 => {
+                let v = bytes.read_u16::<BigEndian>()?;
+                Ok(Value::Int(v as i64))
+            }
+            Marker::U32 => {
+                let v = bytes.read_u32::<BigEndian>()?;
+                Ok(Value::Int(v as i64))
+            }
+            Marker::U64 => {
+                let v = bytes.read_u64::<BigEndian>()?;
+                Ok(Value::Int(v as i64))
+            }
+            Marker::I8 => {
+                let v = bytes.read_i8()?;
+                Ok(Value::Int(v as i64))
+            }
+            Marker::I16 => {
+                let v = bytes.read_i16::<BigEndian>()?;
+                Ok(Value::Int(v as i64))
+            }
+            Marker::I32 => {
+                let v = bytes.read_i32::<BigEndian>()?;
+                Ok(Value::Int(v as i64))
+            }
+            Marker::I64 => {
+                let v = bytes.read_i64::<BigEndian>()?;
+                Ok(Value::Int(v))
+            }
+            Marker::F32 => {
+                let v = bytes.read_f32::<BigEndian>()?;
+                Ok(Value::Double(v as f64))
+            }
+            Marker::F64 => {
+                let v = bytes.read_f64::<BigEndian>()?;
+                Ok(Value::Double(v))
+            }
+            Marker::FixStr(size) => {
+                let len = size as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                let str = String::from_utf8(buf)?;
+                Ok(str.into())
+            }
+            Marker::Str8 => {
+                let len = bytes.read_u8()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                let str = String::from_utf8(buf)?;
+                Ok(str.into())
+            }
+            Marker::Str16 => {
+                let len = bytes.read_u16::<BigEndian>()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                let str = String::from_utf8(buf)?;
+                Ok(str.into())
+            }
+            Marker::Str32 => {
+                let len = bytes.read_u32::<BigEndian>()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                let str = String::from_utf8(buf)?;
+                Ok(str.into())
+            }
+            Marker::Bin8 => {
+                let len = bytes.read_u8()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                Ok(buf.into())
+            }
+            Marker::Bin16 => {
+                let len = bytes.read_u16::<BigEndian>()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                Ok(buf.into())
+            }
+            Marker::Bin32 => {
+                let len = bytes.read_u32::<BigEndian>()? as usize;
+
+                let mut buf = vec![0u8; len];
+                let _ = bytes.read(&mut buf)?;
+
+                Ok(buf.into())
+            }
+            Marker::FixArray(size) => {
+                let len = size as usize;
+                let arr = Array::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Array(Rc::new(arr)))
+            }
+            Marker::Array16 => {
+                let len = bytes.read_u16::<BigEndian>()? as usize;
+                let arr = Array::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Array(Rc::new(arr)))
+            }
+            Marker::Array32 => {
+                let len = bytes.read_u32::<BigEndian>()? as usize;
+                let arr = Array::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Array(Rc::new(arr)))
+            }
+            Marker::FixMap(size) => {
+                let len = size as usize;
+                let doc = Document::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Document(Rc::new(doc)))
+            }
+            Marker::Map16 => {
+                let len = bytes.read_u16::<BigEndian>()? as usize;
+                let doc = Document::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Document(Rc::new(doc)))
+            }
+            Marker::Map32 => {
+                let len = bytes.read_u32::<BigEndian>()? as usize;
+                let doc = Document::from_msgpack_with_len(bytes, len)?;
+                Ok(Value::Document(Rc::new(doc)))
+            }
+            Marker::FixExt4 => {
+                let ty = bytes.read_i8()?;
+                if ty == -1 as i8 {
+                    let seconds = bytes.read_u32::<BigEndian>()? as u64;
+                    Ok(Value::UTCDateTime(Rc::new(UTCDateTime::new(seconds * 1000))))
+                } else {
+                    Err(BsonErr::ParseError(format!("unknown ext type: {}", ty)))
+                }
+            }
+            Marker::FixExt8 => {
+                let ty = bytes.read_i8()?;
+                if ty == -1 {
+                    let origin = bytes.read_u64::<BigEndian>()?;
+                    let nano_secs = origin >> 34;
+                    let secs = origin & 0x3FFFFFFFF;
+                    let ms = secs * 1000 + (nano_secs / 1000000);
+                    Ok(Value::UTCDateTime(Rc::new(UTCDateTime::new(ms))))
+                } else {
+                    Err(BsonErr::ParseError(format!("unknown ext 8: {}", ty)))
+                }
+            }
+            Marker::FixExt16 => {
+                let ty = bytes.read_i8()?;
+                if ty == ty_int::OBJECT_ID as i8 {
+                    let mut buf = [0; 12];
+                    bytes.read(&mut buf)?;
+                    let oid = ObjectId::deserialize(&buf)?;
+                    Ok(Value::ObjectId(Rc::new(oid)))
+                } else {
+                    Err(BsonErr::ParseError(format!("unexpected ext 16: {}", ty)))
+                }
+            }
+            _ => {
+                Err(BsonErr::ParseError(format!("unexpected meta: {}", marker.to_u8())))
+            }
+        }
+    }
+
+    #[inline]
+    pub fn try_document(&self) -> Option<&Rc<Document>> {
+        match self {
+            Value::Document(doc) => Some(doc),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_array(&self) -> Option<&Rc<Array>> {
+        match self {
+            Value::Array(arr) => Some(arr),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_document_mut(&mut self) -> Option<&mut Rc<Document>> {
+        match self {
+            Value::Document(doc) => Some(doc),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_boolean(&self) -> Option<bool> {
+        match self {
+            Value::Boolean(bl) => Some(*bl),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_int(&self) -> Option<i64> {
+        match self {
+            Value::Int(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_string(&self) -> Option<&str> {
+        match self {
+            Value::String(str) => Some(str),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn try_binary(&self) -> Option<&Rc<Vec<u8>>> {
+        match self {
+            Value::Binary(bin) => Some(bin),
+            _ => None,
         }
     }
 

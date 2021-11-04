@@ -1,7 +1,8 @@
-use std::rc::Rc;
 use std::borrow::Borrow;
 use std::path::Path;
 use std::num::NonZeroU32;
+use std::sync::Arc;
+use std::rc::Rc;
 use polodb_bson::{Document, Value, ObjectIdMaker, doc};
 use super::page::header_page_wrapper;
 use super::error::DbErr;
@@ -59,9 +60,10 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
  * API for all platforms
  */
 pub struct DbContext {
-    page_handler:        Box<PageHandler>,
-    obj_id_maker:        ObjectIdMaker,
-    meta_version:        u32,
+    page_handler: Box<PageHandler>,
+    obj_id_maker: ObjectIdMaker,
+    pub(crate)meta_version: u32,
+    config:       Arc<Config>,
 
 }
 
@@ -83,20 +85,20 @@ impl DbContext {
     pub fn open_file(path: &Path, config: Config) -> DbResult<DbContext> {
         let page_size = NonZeroU32::new(4096).unwrap();
 
-        let config = Rc::new(config);
+        let config = Arc::new(config);
         let backend = Box::new(FileBackend::open(path, page_size, config.clone())?);
         DbContext::open_with_backend(backend, page_size, config)
     }
 
     pub fn open_memory(config: Config) -> DbResult<DbContext> {
         let page_size = NonZeroU32::new(4096).unwrap();
-        let config = Rc::new(config);
-        let backend = Box::new(MemoryBackend::new(page_size, config.clone()));
+        let config = Arc::new(config);
+        let backend = Box::new(MemoryBackend::new(page_size, config.init_block_count));
         DbContext::open_with_backend(backend, page_size, config)
     }
 
-    fn open_with_backend(backend: Box<dyn Backend>, page_size: NonZeroU32, config: Rc<Config>) -> DbResult<DbContext> {
-        let page_handler = PageHandler::new(backend, page_size, config)?;
+    fn open_with_backend(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<DbContext> {
+        let page_handler = PageHandler::new(backend, page_size, config.clone())?;
 
         let obj_id_maker = ObjectIdMaker::new();
 
@@ -105,6 +107,7 @@ impl DbContext {
             // first_page,
             obj_id_maker,
             meta_version: 0,
+            config,
         };
 
         let meta_source = ctx.get_meta_source()?;
@@ -264,6 +267,10 @@ impl DbContext {
 
         let insert_result = btree_wrapper.insert_item(&doc, false)?;
 
+        // if a backward item returns, it's saying that the btree has been "rotated".
+        // the center node of the btree has been changed.
+        // So you have to distribute a new page to store the "central node",
+        // and the newer page is the center of the btree.
         if let Some(backward_item) = insert_result.backward_item {
             let new_root_id = self.page_handler.alloc_page_id()?;
 
@@ -432,7 +439,8 @@ impl DbContext {
         let mut is_meta_changed = false;
 
         // insert index begin
-        let mut index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
+        let serialize_type = self.config.serialize_type;
+        let mut index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref(), serialize_type);
         if let Some(index_ctx) = &mut index_ctx_opt {
             let mut is_ctx_changed = false;
 
@@ -526,7 +534,7 @@ impl DbContext {
         Ok(vm.r2 as usize)
     }
 
-    pub fn drop(&mut self, col_id: u32, meta_version: u32) -> DbResult<()> {
+    pub fn drop_collection(&mut self, col_id: u32, meta_version: u32) -> DbResult<()> {
         self.check_meta_version(meta_version)?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
@@ -542,8 +550,9 @@ impl DbContext {
             0, meta_source.meta_pid, col_id)?;
         delete_all_helper::delete_all(&mut self.page_handler, collection_meta)?;
 
+        let serialize_type = self.config.serialize_type;
         let mut btree_wrapper = BTreePageDeleteWrapper::new(
-            &mut self.page_handler, meta_source.meta_pid);
+            &mut self.page_handler, meta_source.meta_pid, serialize_type);
 
         let pkey = Value::from(col_id);
         btree_wrapper.delete_item(&pkey)?;
@@ -663,15 +672,17 @@ impl DbContext {
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
+        let serialize_type = self.config.serialize_type;
         let mut delete_wrapper = BTreePageDeleteWrapper::new(
             &mut self.page_handler,
-            collection_meta.root_pid() as u32
+            collection_meta.root_pid() as u32,
+            serialize_type
         );
         let result = delete_wrapper.delete_item(key)?;
         delete_wrapper.flush_pages()?;
 
         if let Some(deleted_item) = &result {
-            let index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
+            let index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref(), serialize_type);
             if let Some(index_ctx) = &index_ctx_opt {
                 index_ctx.delete_index_by_content(deleted_item.borrow(), &mut self.page_handler)?;
             }
@@ -690,22 +701,29 @@ impl DbContext {
         counter_helper::count(&mut self.page_handler, collection_meta)
     }
 
-    pub fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
-        // let meta_page_id = self.get_meta_page_id()?;
-        //
-        // let mut result = vec![];
-        // let mut cursor = Cursor::new(&mut self.page_handler, meta_page_id)?;
-        //
-        // while cursor.has_next() {
-        //     let ticket = cursor.peek().unwrap();
-        //     let doc = cursor.get_doc_from_ticket(&ticket)?;
-        //     result.push(doc);
-        //
-        //     let _ = cursor.next()?;
-        // }
-        //
-        // Ok(result)
-        unimplemented!()
+    pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
+        let meta_src = self.get_meta_source()?;
+
+        let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
+
+        let subprogram = SubProgram::compile_query_all(
+            &collection_meta,
+            true)?;
+
+        let mut handle = self.make_handle(subprogram);
+        handle.step()?;
+
+        let mut result = vec![];
+
+        while handle.state() == (VmState::HasRow as i8) {
+            let doc = handle.get().unwrap_document();
+
+            result.push(doc.clone());
+
+            handle.step()?;
+        }
+
+        Ok(result)
     }
 
     pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
