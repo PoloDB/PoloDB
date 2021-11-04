@@ -11,6 +11,7 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 use std::thread;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicI32, Ordering};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use error_chain::error_chain;
 #[cfg(unix)]
@@ -18,6 +19,8 @@ use signal_hook::{iterator::Signals};
 #[cfg(unix)]
 use signal_hook::consts::TERM_SIGNALS;
 use std::path::{Path, PathBuf};
+
+static CONN_COUNT: AtomicI32 = AtomicI32::new(0);
 
 error_chain! {
 
@@ -148,6 +151,7 @@ fn start_app_async(app: AppContext, socket_addr: &str) {
             let stream = stream.unwrap();
 
             eprintln!("Connection established!");
+            CONN_COUNT.fetch_add(1, Ordering::SeqCst);
             let app = app.clone();
             thread::spawn(move || {
                 let mut moved_stream = stream;
@@ -166,7 +170,7 @@ fn start_app_async(app: AppContext, socket_addr: &str) {
                             match err.0 {
                                 ErrorKind::Io(_) => {
                                     eprintln!("io error: {}", err);
-                                    return;
+                                    break;
                                 }
                                 _ => {
                                     eprintln!("other error, continue: {}", err);
@@ -174,6 +178,10 @@ fn start_app_async(app: AppContext, socket_addr: &str) {
                             }
                         }
                     }
+                }
+                if CONN_COUNT.fetch_sub(1, Ordering::SeqCst) <= 1 {
+                    eprintln!("no connection, quit");
+                    safely_quit(app.clone());
                 }
             });
         }
