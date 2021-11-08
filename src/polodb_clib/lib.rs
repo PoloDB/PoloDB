@@ -1,13 +1,15 @@
 #![allow(clippy::missing_safety_doc)]
 
-use polodb_core::{DbContext, DbErr, DbHandle, TransactionType, Config};
+use polodb_core::{DbContext, DbErr, DbHandle, TransactionType, Config, Database};
 use polodb_bson::{ObjectId, Document, Array};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::os::raw::{c_char, c_uint, c_int, c_double, c_longlong};
+use std::io::{Read, Write};
+use std::os::raw::{c_char, c_uint, c_int, c_double, c_longlong, c_uchar};
 use std::ptr::{null_mut, write_bytes, null};
-use std::ffi::{CStr, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::borrow::Borrow;
+use std::path::PathBuf;
 
 const DB_ERROR_MSG_SIZE: usize = 512;
 
@@ -180,12 +182,38 @@ pub unsafe extern "C" fn PLDB_get_collection_meta_by_name(db: *mut DbContext, na
     }
 }
 
+struct BytesReader {
+    data: *const u8
+}
+
+impl Read for BytesReader {
+
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let bytes_to_read = buf.len();
+        unsafe {
+            buf.as_mut_ptr().copy_from_nonoverlapping(self.data, bytes_to_read);
+            self.data = self.data.add(bytes_to_read);
+        }
+        Ok(bytes_to_read)
+    }
+
+}
+
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_insert(db: *mut DbContext, col_id: c_uint, meta_version: c_uint, doc: *mut Rc<Document>) -> c_int {
+pub unsafe extern "C" fn PLDB_insert(db: *mut DbContext, col_id: c_uint, meta_version: c_uint, doc: *const c_char) -> c_int {
+    let mut reader = BytesReader {
+        data: doc.cast::<u8>()
+    };
+    let mut mut_doc = match Document::from_msgpack(&mut reader) {
+        Ok(doc) => doc,
+        Err(err) => {
+            set_global_error(err.into());
+            return PLDB_error_code();
+        }
+    };
+
     let local_db = db.as_mut().unwrap();
-    let local_doc = doc.as_mut().unwrap();
-    let mut_doc = Rc::make_mut(local_doc);
-    let insert_result = local_db.insert(col_id, meta_version, mut_doc);
+    let insert_result = local_db.insert(col_id, meta_version, &mut mut_doc);
     if let Err(err) = insert_result {
         set_global_error(err);
         return PLDB_error_code();
@@ -205,13 +233,24 @@ pub unsafe extern "C" fn PLDB_insert(db: *mut DbContext, col_id: c_uint, meta_ve
 pub unsafe extern "C" fn PLDB_find(db: *mut DbContext,
                             col_id: c_uint,
                             meta_version: c_uint,
-                            query: *const Rc<Document>,
+                            query: *const c_char,
                             out_handle: *mut *mut DbHandle) -> c_int {
     let rust_db = db.as_mut().unwrap();
 
-    let handle_result = match query.as_ref() {
-        Some(query_doc) => rust_db.find(col_id, meta_version, Some(query_doc.borrow())),
-        None => rust_db.find(col_id, meta_version, None),
+    let handle_result = if !query.is_null() {
+        let mut reader = BytesReader {
+            data: query.cast::<u8>()
+        };
+        let query_doc = match Document::from_msgpack(&mut reader) {
+            Ok(doc) => doc,
+            Err(err) => {
+                set_global_error(err.into());
+                return PLDB_error_code();
+            }
+        };
+        rust_db.find(col_id, meta_version, Some(query_doc.borrow()))
+    } else {
+        rust_db.find(col_id, meta_version, None)
     };
 
     let handle = match handle_result {
@@ -235,16 +274,36 @@ pub unsafe extern "C" fn PLDB_find(db: *mut DbContext,
 pub unsafe extern "C" fn PLDB_update(db: *mut DbContext,
                               col_id: c_uint,
                               meta_version: c_uint,
-                              query: *const Rc<Document>,
-                              update: *const Rc<Document>) -> c_longlong {
+                              query: *const c_char,
+                              update: *const c_char) -> c_longlong {
     let result = {
         let rust_db = db.as_mut().unwrap();
 
-        let update_doc = update.as_ref().unwrap();
+        let mut update_reader = BytesReader {
+            data: update.cast::<u8>()
+        };
+        let update_doc = match Document::from_msgpack(&mut update_reader) {
+            Ok(doc) => doc,
+            Err(err) => {
+                set_global_error(err.into());
+                return PLDB_error_code() as i64;
+            }
+        };
 
-        match query.as_ref() {
-            Some(query) => rust_db.update(col_id, meta_version, Some(query.as_ref()), update_doc),
-            None => rust_db.update(col_id, meta_version, None, update_doc),
+        if !query.is_null() {
+            let mut query_reader = BytesReader {
+                data: query.cast::<u8>()
+            };
+            let query_doc = match Document::from_msgpack(&mut query_reader) {
+                Ok(doc) => doc,
+                Err(err) => {
+                    set_global_error(err.into());
+                    return PLDB_error_code() as i64;
+                }
+            };
+            rust_db.update(col_id, meta_version, Some(&query_doc), &update_doc)
+        } else {
+            rust_db.update(col_id, meta_version, None, &update_doc)
         }
     };
 
@@ -318,6 +377,108 @@ pub unsafe extern "C" fn PLDB_error_msg() -> *const c_char {
 
         null()
     })
+}
+
+/// Do NOT need to impl a drop
+/// will be manually dropped
+struct CBuffer {
+    data: *mut c_uchar,
+    len: usize,
+    capacity: usize,
+}
+
+impl CBuffer {
+
+    fn new() -> CBuffer {
+        let capacity: usize = 4096;
+        let data = unsafe {
+            libc::malloc(capacity).cast::<c_uchar>()
+        };
+        CBuffer {
+            data,
+            len: 0,
+            capacity,
+        }
+    }
+
+    fn realloc_if_need(&mut self, size: usize) {
+        if size <= self.capacity {
+            return;
+        }
+        let mut need_cap = self.capacity;
+
+        while need_cap < size {
+            need_cap *= 2;
+        }
+
+        let new_data = unsafe {
+            libc::realloc(self.data.cast::<c_void>(), need_cap).cast::<c_uchar>()
+        };
+
+        self.data = new_data;
+        self.capacity = need_cap;
+    }
+    
+}
+
+impl Write for CBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let len = buf.len();
+        let written_len = self.len + buf.len();
+        self.realloc_if_need(written_len);
+
+        unsafe {
+            buf.as_ptr().copy_to_nonoverlapping(self.data.add(self.len), len);
+        }
+
+        self.len = written_len;
+        Ok(len)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_v2_open(path: *const c_char) -> *mut Database {
+    let cstr = CStr::from_ptr(path);
+    let str = try_read_utf8!(cstr.to_str(), null_mut());
+    let path: PathBuf = str.into();
+    let db = match Database::open_file(&path) {
+        Ok(db) => db,
+        Err(err) => {
+            set_global_error(err);
+            return null_mut();
+        }
+    };
+    let ptr = Box::new(db);
+    Box::into_raw(ptr)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_v2_close(db: *mut Database) {
+    let _ptr = Box::from_raw(db);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_v2_request(db: *mut Database, request_buffer: *const c_uchar) -> *mut c_uchar {
+    let db_ref = db.as_mut().unwrap();
+    let mut bytes_reader = BytesReader { data: request_buffer };
+    let mut buf = CBuffer::new();
+    match db_ref.handle_request(&mut bytes_reader, &mut buf) {
+        Ok(_) => (),
+        Err(err) => {
+            set_global_error(err.into());
+            return null_mut();
+        }
+    };
+    buf.data
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_v2_free(buf: *mut c_uchar) {
+    libc::free(buf.cast::<c_void>());
 }
 
 #[no_mangle]
