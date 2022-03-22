@@ -81,7 +81,7 @@ Limited by my time, I have only compiled and tested on the following platforms:
 The features will be implemented one by one in order.
 
 - [x] Basic database API
-  - [x] CURD
+  - [x] CRUD
   - [x] Transactions
   - [ ] Indexes
   - [ ] Aggregation
