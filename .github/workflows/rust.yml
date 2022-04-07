@@ -1,0 +1,32 @@
+name: Rust
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - uses: actions/setup-node@v2
+      with:
+        node-version: '14'
+    
+    - name: Run Rust tests
+      run: |
+        cargo clippy --verbose --workspace
+        cargo test --verbose --workspace
+        cargo build --release --package polodb_clib
+        cd polodb.js
+        npm install
+        npm run compile
+        npm run test
