@@ -1,7 +1,7 @@
 
 # PoloDB
 
-[![Build Status](https://travis-ci.com/vincentdchan/PoloDB.svg?branch=master)](https://travis-ci.com/vincentdchan/PoloDB)
+![GitHub Workflow Status](https://img.shields.io/github/workflow/status/vincentdchan/PoloDB/Rust)
 [![Crates.io](https://img.shields.io/crates/v/polodb_core.svg)](https://crates.io/crates/polodb_core)
 [![PYPI version](https://img.shields.io/pypi/v/polodb.svg)](https://pypi.org/project/polodb/)
 
