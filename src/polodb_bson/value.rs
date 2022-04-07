@@ -112,7 +112,7 @@ impl Value {
             Value::ObjectId(oid) => {
                 rmp::encode::write_ext_meta(buf, 16, ty_int::OBJECT_ID as i8)?;
                 oid.serialize(buf)?;
-                buf.write(&[0u8, 0u8, 0u8, 0u8])?;
+                buf.write_all(&[0u8, 0u8, 0u8, 0u8])?;
             },
             Value::Array(arr) => {
                 arr.to_msgpack(buf)?;
@@ -305,7 +305,7 @@ impl Value {
                 let ty = bytes.read_i8()?;
                 if ty == ty_int::OBJECT_ID as i8 {
                     let mut buf = [0; 12];
-                    bytes.read(&mut buf)?;
+                    bytes.read_exact(&mut buf)?;
                     let oid = ObjectId::deserialize(&buf)?;
                     Ok(Value::ObjectId(Rc::new(oid)))
                 } else {

@@ -24,7 +24,6 @@ jobs:
       
       - name: Run Rust tests
         run: |
-          cargo clippy --verbose --workspace
           cargo test --verbose --workspace
           cargo build --release --package polodb_clib
           cd polodb.js

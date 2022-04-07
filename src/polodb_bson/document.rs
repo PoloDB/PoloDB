@@ -345,7 +345,7 @@ impl Document {
             let key_len = rmp::decode::read_str_len(bytes)? as usize;
             let mut buf = vec![0u8; key_len];
 
-            bytes.read(&mut buf)?;
+            bytes.read_exact(&mut buf)?;
 
             let value = Value::from_msgpack(bytes)?;
 

@@ -25,7 +25,7 @@ const NEG_FLAG:   u8 = 0b11111011;
 
 pub fn encode(writer: &mut dyn Write, num: i64) -> BsonResult<()> {
     if num < 0 {
-        writer.write(&[ NEG_FLAG ])?;
+        writer.write_all(&[ NEG_FLAG ])?;
         return encode_u64(writer, (num * -1) as u64);
     }
     encode_u64(writer, num as u64)
