@@ -3,7 +3,8 @@ use std::rc::Rc;
 use std::path::Path;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use polodb_bson::{Document, ObjectId, Value};
+use bson::{Document,  Bson};
+use bson::oid::ObjectId;
 use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
 use super::error::DbErr;
 use crate::msg_ty::MsgTy;
@@ -14,11 +15,11 @@ use crate::dump::FullDump;
 
 pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 
-fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
+fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Document>) -> DbResult<()> {
     handle.step()?;
 
     while handle.has_row() {
-        let doc = handle.get().unwrap_document();
+        let doc = handle.get().as_document().unwrap();
         result.push(doc.clone());
 
         handle.step()?;
@@ -30,7 +31,7 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
 macro_rules! unwrap_str_or {
     ($expr: expr, $or: expr) => {
         match $expr {
-            Some(Value::String(id)) => id.as_str(),
+            Some(Bson::String(id)) => id.as_str(),
             _ => return Err(DbErr::ParseError($or)),
         }
     }
@@ -96,7 +97,7 @@ impl<'a>  Collection<'a> {
     }
 
     /// all the data in the collection return.
-    pub fn find_all(&mut self) -> DbResult<Vec<Rc<Document>>> {
+    pub fn find_all(&mut self) -> DbResult<Vec<Document>> {
         let mut handle = self.db.ctx.find(self.id, self.meta_version, None)?;
 
         let mut result = Vec::new();
@@ -108,7 +109,7 @@ impl<'a>  Collection<'a> {
 
     /// When query document is passed to the function. The result satisfies
     /// the query document.
-    pub fn find(&mut self, query: &Document) -> DbResult<Vec<Rc<Document>>> {
+    pub fn find(&mut self, query: &Document) -> DbResult<Vec<Document>> {
         let mut handle = self.db.ctx.find(
             self.id, self.meta_version, Some(query)
         )?;
@@ -121,7 +122,7 @@ impl<'a>  Collection<'a> {
     }
 
     /// Return the first element in the collection satisfies the query.
-    pub fn find_one(&mut self, query: &Document) -> DbResult<Option<Rc<Document>>> {
+    pub fn find_one(&mut self, query: &Document) -> DbResult<Option<Document>> {
         let mut handle = self.db.ctx.find(
               self.id, self.meta_version, Some(query)
         )?;
@@ -132,7 +133,7 @@ impl<'a>  Collection<'a> {
             return Ok(None);
         }
 
-        let result = handle.get().unwrap_document().clone();
+        let result = handle.get().as_document().unwrap().clone();
 
         handle.commit_and_close_vm()?;
 
@@ -242,11 +243,6 @@ impl Database {
     #[inline]
     pub fn set_log(v: bool) {
         SHOULD_LOG.store(v, Ordering::SeqCst);
-    }
-
-    #[inline]
-    pub fn mk_object_id(&mut self) -> ObjectId {
-        self.ctx.object_id_maker().mk_object_id()
     }
 
     #[deprecated]
@@ -462,7 +458,7 @@ impl Database {
     fn handle_start_transaction<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
         let value = self.receive_request_body(pipe_in)?;
         let transaction_type = match value {
-            Value::Int(val) => val,
+            Bson::Int64(val) => val,
             _ => {
                 return Err(DbErr::ParseError("transaction needs a type".into()));
             }
@@ -491,41 +487,41 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in find one request, actual: {}", value))),
         };
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
 
         let mut query_opt = match doc.get("query") {
-            Some(Value::Document(doc)) => doc.clone(),
+            Some(Bson::Document(doc)) => doc.clone(),
             _ => return Err(DbErr::ParseError("query not found in find request".into())),
         };
 
-        let mut_doc = Rc::make_mut(&mut query_opt);
         let mut collection = self.collection(collection_name)?;
 
-        let result = collection.find_one(mut_doc)?;
+        let result = collection.find_one(&query_opt)?;
 
         let result_value = match result {
-            Some(doc) => Value::Document(doc),
-            None => Value::Null,
+            Some(doc) => Bson::Document(doc),
+            None => Bson::Null,
         };
 
-        result_value.to_msgpack(pipe_out)?;
+        let bytes = bson::ser::to_vec(&result_value)?;
+        pipe_out.write(bytes.as_ref())?;
 
         Ok(())
     }
 
-    fn receive_request_body<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<Value> {
+    fn receive_request_body<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<Bson> {
         let request_size = pipe_in.read_u32::<BigEndian>()? as usize;
         if request_size == 0 {
-            return Ok(Value::Null);
+            return Ok(Bson::Null);
         }
         let mut request_body = vec![0u8; request_size];
         pipe_in.read_exact(&mut request_body)?;
         let mut body_ref: &[u8] = request_body.as_slice();
-        let val = Value::from_msgpack(&mut body_ref)?;
+        let val = Bson::from_msgpack(&mut body_ref)?;
         Ok(val)
     }
 
@@ -533,14 +529,14 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in find request, actual: {}", value))),
         };
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
 
         let query_opt = match doc.get("query") {
-            Some(Value::Document(doc)) => Some(doc),
+            Some(Bson::Document(doc)) => Some(doc),
             _ => None,
         };
 
@@ -552,13 +548,13 @@ impl Database {
             collection.find_all()?
         };
 
-        let mut value_arr = polodb_bson::Array::new();
+        let mut value_arr = bson::Array::new();
 
         for item in result {
-            value_arr.push(Value::Document(item));
+            value_arr.push(Bson::Document(item));
         }
 
-        let result_value = Value::Array(Rc::new(value_arr));
+        let result_value = Bson::Array(Rc::new(value_arr));
         result_value.to_msgpack(pipe_out)?;
 
         Ok(())
@@ -568,14 +564,14 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in insert request, actual: {}", value))),
         };
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
 
         let mut insert_data = match doc.get("data") {
-            Some(Value::Document(doc)) => doc.clone(),
+            Some(Bson::Document(doc)) => doc.clone(),
             _ => return Err(DbErr::ParseError("query not found in insert request".into())),
         };
 
@@ -587,7 +583,7 @@ impl Database {
         let ret_value = if id_changed {
             mut_doc.get("_id").unwrap().clone()
         } else {
-            Value::Null
+            Bson::Null
         };
 
         ret_value.to_msgpack(pipe_out)?;
@@ -599,27 +595,27 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in update request, actual: {}", value))),
         };
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in update request".into());
 
         let query = match doc.get("query") {
-            Some(Value::Document(doc)) => Some(doc.as_ref()),
+            Some(Bson::Document(doc)) => Some(doc.as_ref()),
             Some(_) => return Err(DbErr::ParseError("query is not a document in update request".into())),
             None => None
         };
 
         let update_data = match doc.get("update") {
-            Some(Value::Document(doc)) => doc.clone(),
+            Some(Bson::Document(doc)) => doc.clone(),
             _ => return Err(DbErr::ParseError("'update' not found in update request".into())),
         };
 
         let mut collection = self.collection(collection_name)?;
         let size = collection.update(query, update_data.as_ref())?;
 
-        let ret_val = Value::Int(size as i64);
+        let ret_val = Bson::Int(size as i64);
         ret_val.to_msgpack(pipe_out)?;
 
         Ok(())
@@ -629,14 +625,14 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in delete request, actual: {}", value))),
         };
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in delete request".into());
 
         let query = match doc.get("query") {
-            Some(Value::Document(doc)) => Some(doc.as_ref()),
+            Some(Bson::Document(doc)) => Some(doc.as_ref()),
             Some(_) => return Err(DbErr::ParseError("query is not a document in delete request".into())),
             None => None
         };
@@ -644,7 +640,7 @@ impl Database {
         let mut collection = self.collection(collection_name)?;
         let size = collection.delete(query)?;
 
-        let ret_val = Value::Int(size as i64);
+        let ret_val = Bson::Int(size as i64);
         ret_val.to_msgpack(pipe_out)?;
 
         Ok(())
@@ -653,16 +649,16 @@ impl Database {
     fn handle_create_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
         let value = self.receive_request_body(pipe_in)?;
         let doc: Rc<Document> = match value {
-            Value::Document(d) => d,
+            Bson::Document(d) => d,
             _ => return Err(DbErr::ParseError(format!("create document expect a document, actual: {}", value))),
         };
         let name: String = match doc.get("name") {
-            Some(Value::String(s)) => s.as_str().into(),
+            Some(Bson::String(s)) => s.as_str().into(),
             _ => return Err(DbErr::ParseError(format!("should give the name of the collection to create"))),
         };
         let ret = match self.create_collection(&name) {
-            Ok(_) => Value::Boolean(true),
-            Err(DbErr::CollectionAlreadyExits(_)) => Value::Boolean(false),
+            Ok(_) => Bson::Boolean(true),
+            Err(DbErr::CollectionAlreadyExits(_)) => Bson::Boolean(false),
             Err(err) => return Err(err),
         };
         ret.to_msgpack(pipe_out)?;
@@ -672,7 +668,7 @@ impl Database {
     fn handle_drop_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
         let value = self.receive_request_body(pipe_in)?;
         let cl_name: String = match value {
-            Value::String(s) => s.as_str().into(),
+            Bson::String(s) => s.as_str().into(),
             _ => return Err(DbErr::ParseError(format!("should give the name of the collection to drop, actual: {}", value))),
         };
         let info = match self.ctx.get_collection_meta_by_name(&cl_name) {
@@ -688,7 +684,7 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in count request, actual: {}", value))),
         };
 
@@ -698,7 +694,7 @@ impl Database {
 
         let count = collection.count()?;
 
-        let ret_val = Value::Int(count as i64);
+        let ret_val = Bson::Int(count as i64);
         ret_val.to_msgpack(pipe_out)?;
 
         Ok(())

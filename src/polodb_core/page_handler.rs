@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::sync::Arc;
 use std::num::NonZeroU32;
 use std::rc::Rc;
-use polodb_bson::Document;
+use bson::Document;
 use crate::backend::file::pagecache::PageCache;
 use crate::transaction::{TransactionType, TransactionState};
 use crate::page::RawPage;
@@ -181,7 +181,7 @@ impl PageHandler {
         Ok(result)
     }
 
-    pub(crate) fn get_doc_from_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Option<Rc<Document>>> {
+    pub(crate) fn get_doc_from_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Option<Document>> {
         if data_ticket.is_large_data() {
             return self.get_doc_from_large_page(data_ticket.pid);
         }
@@ -193,12 +193,12 @@ impl PageHandler {
             let bytes: &mut &[u8] = &mut my_ref;
             let serialize_type = self.config.serialize_type;
             let doc = crate::doc_serializer::deserialize(serialize_type, bytes)?;
-            return Ok(Some(Rc::new(doc)));
+            return Ok(Some(doc));
         }
         Ok(None)
     }
 
-    fn get_doc_from_large_page(&mut self, pid: u32) -> DbResult<Option<Rc<Document>>> {
+    fn get_doc_from_large_page(&mut self, pid: u32) -> DbResult<Option<Document>> {
         let mut bytes: Vec<u8> = Vec::with_capacity(self.page_size.get() as usize);
 
         let mut next_pid = pid;
@@ -213,7 +213,7 @@ impl PageHandler {
         let mut my_ref: &[u8] = bytes.as_ref();
         let serialize_type = self.config.serialize_type;
         let doc = crate::doc_serializer::deserialize(serialize_type, &mut my_ref)?;
-        Ok(Some(Rc::new(doc)))
+        Ok(Some(doc))
     }
 
     pub(crate) fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {

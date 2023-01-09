@@ -1,4 +1,4 @@
-use polodb_bson::{Document, Value, mk_document};
+use bson::{Document, Bson, doc};
 use std::rc::Rc;
 use crate::DbResult;
 use crate::error::DbErr;
@@ -25,7 +25,7 @@ pub(crate) const KEY_TY_FLAG: u32 = 0b11111111;
 impl MetaDocEntry {
 
     pub fn new(id: u32, name: String, root_pid: u32) -> MetaDocEntry {
-        let doc = mk_document! {
+        let doc = doc! {
             "_id": id,
             "name": name.clone(),
             "root_pid": root_pid,
@@ -56,7 +56,7 @@ impl MetaDocEntry {
 
     pub(crate) fn set_root_pid(&mut self, new_root_pid: u32) {
         let doc_mut = Rc::get_mut(&mut self.doc).unwrap();
-        doc_mut.insert(meta_doc_key::ROOT_PID.into(), Value::from(new_root_pid));
+        doc_mut.insert(meta_doc_key::ROOT_PID.into(), Bson::from(new_root_pid));
     }
 
     pub(crate) fn flags(&self) -> u32 {
@@ -65,7 +65,7 @@ impl MetaDocEntry {
 
     pub(crate) fn set_flags(&mut self, flags: u32) {
         let doc_mut = Rc::get_mut(&mut self.doc).unwrap();
-        doc_mut.insert(meta_doc_key::FLAGS.into(), Value::from(flags));
+        doc_mut.insert(meta_doc_key::FLAGS.into(), Bson::from(flags));
     }
 
     #[inline]
@@ -73,7 +73,7 @@ impl MetaDocEntry {
         (self.flags() & KEY_TY_FLAG) as u8
     }
 
-    pub(crate) fn check_pkey_ty(&self, primary_key: &Value, skipped: &mut bool) -> DbResult<()> {
+    pub(crate) fn check_pkey_ty(&self, primary_key: &Bson, skipped: &mut bool) -> DbResult<()> {
         let expected = self.key_ty();
         if expected == 0 {
             *skipped = true;
@@ -101,7 +101,7 @@ impl MetaDocEntry {
 
     pub(crate) fn set_indexes(&mut self, indexes: Document) {
         let doc_mut = Rc::get_mut(&mut self.doc).unwrap();
-        doc_mut.insert(meta_doc_key::INDEXES.into(), Value::from(indexes));
+        doc_mut.insert(meta_doc_key::INDEXES.into(), Bson::from(indexes));
     }
 
 }

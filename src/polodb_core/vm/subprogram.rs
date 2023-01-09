@@ -1,5 +1,5 @@
 use std::fmt;
-use polodb_bson::{Value, Document};
+use bson::{Bson, Document};
 use crate::DbResult;
 use crate::meta_doc_helper::{MetaDocEntry, meta_doc_key};
 use super::op::DbOp;
@@ -7,7 +7,7 @@ use super::label::LabelSlot;
 use crate::vm::codegen::Codegen;
 
 pub(crate) struct SubProgram {
-    pub(super) static_values:    Vec<Value>,
+    pub(super) static_values:    Vec<Bson>,
     pub(super) instructions:     Vec<u8>,
     pub(super) label_slots:      Vec<LabelSlot>,
 }

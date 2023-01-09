@@ -8,7 +8,7 @@ pub(crate) use subprogram::SubProgram;
 use std::rc::Rc;
 use std::vec::Vec;
 use std::cmp::Ordering;
-use polodb_bson::Value;
+use bson::Bson;
 use op::DbOp;
 use crate::cursor::Cursor;
 use crate::page_handler::PageHandler;
@@ -16,6 +16,7 @@ use crate::btree::{HEADER_SIZE, ITEM_SIZE};
 use crate::{TransactionType, DbResult, DbErr};
 use crate::error::{mk_field_name_type_unexpected, mk_unexpected_type_for_op};
 use std::cell::Cell;
+use std::fmt::format;
 
 const STACK_SIZE: usize = 256;
 
@@ -48,13 +49,13 @@ pub struct VM<'a> {
     pub(crate) r2:       i64,  // usually the counter
     r3:                  usize,
     page_handler:        &'a mut PageHandler,
-    stack:               Vec<Value>,
+    stack:               Vec<Bson>,
     pub(crate) program:  Box<SubProgram>,
     rollback_on_drop:    bool,
 }
 
-fn generic_cmp(op: DbOp, val1: &Value, val2: &Value) -> DbResult<bool> {
-    let ord = val1.value_cmp(val2)?;
+fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> DbResult<bool> {
+    let ord = crate::bson_utils::value_cmp(val1, val2)?;
     let result = matches!((op, ord),
         (DbOp::Equal, Ordering::Equal) |
         (DbOp::Greater, Ordering::Greater) |
@@ -117,7 +118,7 @@ impl<'a> VM<'a> {
         if cursor.has_next() {
             let item = cursor.peek().unwrap();
             let doc = self.page_handler.get_doc_from_ticket(&item)?.unwrap();
-            self.stack.push(Value::Document(doc));
+            self.stack.push(Bson::Document(doc));
             is_empty.set(false);
         } else {
             is_empty.set(true);
@@ -139,7 +140,7 @@ impl<'a> VM<'a> {
         let ticket = cursor.peek().unwrap();
         let doc = self.page_handler.get_doc_from_ticket(&ticket)?;
         if let Some(doc) = doc {
-            self.stack.push(Value::Document(doc));
+            self.stack.push(Bson::Document(doc));
             Ok(true)
         } else {
             panic!("unexpected: item with key '{}' has been deleted, pid: {}, index: {}", op, ticket.pid, ticket.index);
@@ -152,7 +153,7 @@ impl<'a> VM<'a> {
         match cursor.peek() {
             Some(ticket) => {
                 let doc = self.page_handler.get_doc_from_ticket(&ticket)?.unwrap();
-                self.stack.push(Value::Document(doc));
+                self.stack.push(Bson::Document(doc));
 
                 debug_assert!(self.stack.len() <= 64, "stack too large: {}", self.stack.len());
 
@@ -166,7 +167,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    pub(crate) fn stack_top(&self) -> &Value {
+    pub(crate) fn stack_top(&self) -> &Bson {
         &self.stack[self.stack.len() - 1]
     }
 
@@ -177,72 +178,74 @@ impl<'a> VM<'a> {
         }
     }
 
-    fn borrow_static(&self, index: usize) -> &Value {
+    fn borrow_static(&self, index: usize) -> &Bson {
         &self.program.static_values[index]
     }
 
     fn inc_field(&mut self, field_id: usize) -> DbResult<()> {
-        let key = self.program.static_values[field_id].unwrap_string();
+        let key = self.program.static_values[field_id].as_str().unwrap();
 
         let value_index = self.stack.len() - 1;
         let doc_index = self.stack.len() - 2;
 
         let value = self.stack[value_index].clone();
 
-        let doc = self.stack[doc_index].unwrap_document_mut();
-        let mut_doc = Rc::make_mut(doc);
+        let mut_doc = self.stack[doc_index].as_document_mut().unwrap();
 
 
         match mut_doc.get(key) {
-            Some(Value::Null) => {
+            Some(Bson::Null) => {
                 return Err(DbErr::IncrementNullField);
             }
 
-            Some(Value::Int(original_int_value)) => {
+            Some(Bson::Int64(original_int_value)) => {
                 let new_value = match value {
-                    Value::Int(inc_int_value) => {
+                    Bson::Int64(inc_int_value) => {
                         let new_value = *original_int_value + inc_int_value;
-                        Value::Int(new_value)
+                        Bson::Int64(new_value)
                     }
 
-                    Value::Double(inc_double_value) => {
+                    Bson::Double(inc_double_value) => {
                         let new_value = *original_int_value as f64 + inc_double_value;
-                        Value::Double(new_value)
+                        Bson::Double(new_value)
                     }
 
                     _ => {
-                        return Err(mk_field_name_type_unexpected(key, "number", value.ty_name()));
+                        let name = format!("{}", value);
+                        return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
                     }
                 };
-                mut_doc.insert(key.into(), new_value);
+                mut_doc.insert::<String, Bson>(key.into(), new_value);
             }
 
-            Some(Value::Double(original_float_value)) => {
+            Some(Bson::Double(original_float_value)) => {
                 let new_value = match value {
-                    Value::Int(inc_int_value) => {
+                    Bson::Int64(inc_int_value) => {
                         let new_value = *original_float_value + inc_int_value as f64;
-                        Value::Double(new_value)
+                        Bson::Double(new_value)
                     }
 
-                    Value::Double(inc_float_value) => {
+                    Bson::Double(inc_float_value) => {
                         let new_value = *original_float_value + inc_float_value;
-                        Value::Double(new_value)
+                        Bson::Double(new_value)
                     }
 
                     _ => {
-                        return Err(mk_field_name_type_unexpected(key, "number", value.ty_name()));
+                        let name = format!("{}", value);
+                        return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
                     }
 
                 };
-                mut_doc.insert(key.into(), new_value);
+                mut_doc.insert::<String, Bson>(key.into(), new_value);
             }
 
             Some(ty) => {
-                return Err(mk_field_name_type_unexpected(key, "number", ty.ty_name()));
+                let name = format!("{}", value);
+                return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
             }
 
             None => {
-                mut_doc.insert(key.into(), value);
+                mut_doc.insert::<String, Bson>(key.into(), value);
             }
 
         }
@@ -250,62 +253,64 @@ impl<'a> VM<'a> {
     }
 
     fn mul_field(&mut self, field_id: usize) -> DbResult<()> {
-        let key = self.program.static_values[field_id].unwrap_string();
+        let key = self.program.static_values[field_id].as_str().unwrap();
 
         let value_index = self.stack.len() - 1;
         let doc_index = self.stack.len() - 2;
 
         let value = self.stack[value_index].clone();
 
-        let doc = self.stack[doc_index].unwrap_document_mut();
-        let mut_doc = Rc::make_mut(doc);
+        let mut_doc = self.stack[doc_index].as_document_mut().unwrap();
 
         match mut_doc.get(key) {
-            Some(Value::Int(original_int_value)) => {
+            Some(Bson::Int64(original_int_value)) => {
                 let new_value = match value {
-                    Value::Int(inc_int_value) => {
+                    Bson::Int64(inc_int_value) => {
                         let new_value = *original_int_value * inc_int_value;
-                        Value::Int(new_value)
+                        Bson::Int64(new_value)
                     }
 
-                    Value::Double(inc_double_value) => {
+                    Bson::Double(inc_double_value) => {
                         let new_value = *original_int_value as f64 * inc_double_value;
-                        Value::Double(new_value)
+                        Bson::Double(new_value)
                     }
 
                     _ => {
-                        return Err(mk_field_name_type_unexpected(key, "number", value.ty_name()));
+                        let name = format!("{}", value);
+                        return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
                     }
                 };
-                mut_doc.insert(key.into(), new_value);
+                mut_doc.insert::<String, Bson>(key.into(), new_value);
             }
 
-            Some(Value::Double(original_float_value)) => {
+            Some(Bson::Double(original_float_value)) => {
                 let new_value = match value {
-                    Value::Int(inc_int_value) => {
+                    Bson::Int64(inc_int_value) => {
                         let new_value = *original_float_value * inc_int_value as f64;
-                        Value::Double(new_value)
+                        Bson::Double(new_value)
                     }
 
-                    Value::Double(inc_float_value) => {
+                    Bson::Double(inc_float_value) => {
                         let new_value = *original_float_value * inc_float_value;
-                        Value::Double(new_value)
+                        Bson::Double(new_value)
                     }
 
                     _ => {
-                        return Err(mk_field_name_type_unexpected(key, "number", value.ty_name()));
+                        let name = format!("{}", value);
+                        return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
                     }
 
                 };
-                mut_doc.insert(key.into(), new_value);
+                mut_doc.insert::<String, Bson>(key.into(), new_value);
             }
 
             Some(ty) => {
-                return Err(mk_field_name_type_unexpected(key, "number", ty.ty_name()));
+                let name = format!("{}", value);
+                return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
             }
 
             None => {
-                mut_doc.insert(key.into(), value);
+                mut_doc.insert::<String, Bson>(key.into(), value);
             }
 
         }
@@ -313,18 +318,17 @@ impl<'a> VM<'a> {
     }
 
     fn unset_field(&mut self, field_id: u32) -> DbResult<()> {
-        let key = self.program.static_values[field_id as usize].unwrap_string();
+        let key = self.program.static_values[field_id as usize].as_str().unwrap();
 
         let doc_index = self.stack.len() - 1;
-        let doc = self.stack[doc_index].unwrap_document_mut();
-        let mut_doc = Rc::make_mut(doc);
+        let mut_doc = self.stack[doc_index].as_document_mut().unwrap();
 
         let _ = mut_doc.remove(key);
 
         Ok(())
     }
 
-    fn array_size(&mut self) -> DbResult<u32> {
+    fn array_size(&mut self) -> DbResult<usize> {
         let top = self.stack.len() - 1;
         let doc = crate::try_unwrap_array!("ArraySize", &self.stack[top]);
         Ok(doc.len())
@@ -334,26 +338,30 @@ impl<'a> VM<'a> {
         let st = self.stack.len();
         let val = self.stack[st - 1].clone();
         let array_value = match &mut self.stack[st - 2] {
-            Value::Array(arr) => arr,
-            _ => return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                "$push", "Array", self.stack[st - 2].ty_name()
-            )))
+            Bson::Array(arr) => arr,
+            _ => {
+                let name = format!("{}", self.stack[st-  2]);
+                return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
+                    "$push", "Array", name.as_str()
+                )))
+            }
         };
-        let arr = Rc::make_mut(array_value);
-        arr.push(val);
+        array_value.push(val);
         Ok(())
     }
 
     fn array_pop_first(&mut self) -> DbResult<()> {
         let st = self.stack.len();
         let array_value = match &mut self.stack[st - 1] {
-            Value::Array(arr) => arr,
-            _ => return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                "$pop", "Array", self.stack[st - 1].ty_name()
-            )))
+            Bson::Array(arr) => arr,
+            _ => {
+                let name = format!("{}", self.stack[st - 1]);
+                return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
+                    "$pop", "Array", name.as_str()
+                )))
+            }
         };
-        let arr = Rc::make_mut(array_value);
-        arr.drain(0..1);
+        array_value.drain(0..1);
 
         Ok(())
     }
@@ -361,13 +369,15 @@ impl<'a> VM<'a> {
     fn array_pop_last(&mut self) -> DbResult<()> {
         let st = self.stack.len();
         let array_value = match &mut self.stack[st - 1] {
-            Value::Array(arr) => arr,
-            _ => return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                "$pop", "Array", self.stack[st - 1].ty_name()
-            )))
+            Bson::Array(arr) => arr,
+            _ => {
+                let name = format!("{}", self.stack[st - 1]);
+                return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
+                    "$pop", "Array", name.as_str()
+                )))
+            }
         };
-        let arr = Rc::make_mut(array_value);
-        arr.pop();
+        array_value.pop();
 
         Ok(())
     }
@@ -451,12 +461,12 @@ impl<'a> VM<'a> {
                     }
 
                     DbOp::PushR0 => {
-                        self.stack.push(Value::from(self.r0));
+                        self.stack.push(Bson::from(self.r0));
                         self.pc = self.pc.add(1);
                     }
 
                     DbOp::StoreR0 => {
-                        let top = self.stack_top().unwrap_int();
+                        let top = self.stack_top().as_i64().unwrap();
                         self.r0 = top as i32;
                         self.pc = self.pc.add(1);
                     }
@@ -466,12 +476,13 @@ impl<'a> VM<'a> {
                         let location = self.pc.add(5).cast::<u32>().read();
 
                         let key = self.borrow_static(key_stat_id as usize);
-                        let key_name = key.unwrap_string();
+                        let key_name = key.as_str().unwrap();
                         let top = self.stack[self.stack.len() - 1].clone();
                         let doc = match top {
-                            Value::Document(doc) => doc,
+                            Bson::Document(doc) => doc,
                             _ => {
-                                let err = mk_field_name_type_unexpected(key_name, "Document", top.ty_name());
+                                let name = format!("{}", top);
+                                let err = mk_field_name_type_unexpected(key_name, "Document", name.as_str());
                                 self.state = VmState::Halt;
                                 return Err(err)
                             }
@@ -518,17 +529,16 @@ impl<'a> VM<'a> {
                     DbOp::SetField => {
                         let filed_id = self.pc.add(1).cast::<u32>().read();
 
-                        let key = self.program.static_values[filed_id as usize].unwrap_string();
+                        let key = self.program.static_values[filed_id as usize].as_str().unwrap();
 
                         let value_index = self.stack.len() - 1;
                         let doc_index = self.stack.len() - 2;
 
                         let value = self.stack[value_index].clone();
 
-                        let doc_ref = self.stack[doc_index].unwrap_document_mut();
-                        let mut_doc = Rc::make_mut(doc_ref);
+                        let mut_doc = self.stack[doc_index].as_document_mut().unwrap();
 
-                        mut_doc.insert(key.into(), value);
+                        mut_doc.insert::<String, Bson>(key.into(), value);
 
                         self.pc = self.pc.add(5);
                     }
@@ -536,7 +546,7 @@ impl<'a> VM<'a> {
                     DbOp::ArraySize => {
                         let size = try_vm!(self, self.array_size());
 
-                        self.stack.push(Value::from(size));
+                        self.stack.push(Bson::from(size as i64));
 
                         self.pc = self.pc.add(1);
                     }
@@ -563,9 +573,9 @@ impl<'a> VM<'a> {
                         let top_index = self.stack.len() - 1;
                         let top_value = &self.stack[top_index];
 
-                        let doc = top_value.unwrap_document();
+                        let doc = top_value.as_document().unwrap();
 
-                        self.r1.as_mut().unwrap().update_current(self.page_handler, doc.as_ref())?;
+                        self.r1.as_mut().unwrap().update_current(self.page_handler, doc)?;
 
                         self.pc = self.pc.add(1);
                     }
@@ -610,8 +620,8 @@ impl<'a> VM<'a> {
 
                         self.r0 = 0;
 
-                        for item in top1.unwrap_array().iter() {
-                            let cmp_result = top2.value_cmp(item);
+                        for item in top1.as_array().unwrap().iter() {
+                            let cmp_result = crate::bson_utils::value_cmp(top2, item);
                             if let Ok(Ordering::Equal) = cmp_result {
                                 self.r0 = 1;
                                 break;
@@ -659,7 +669,7 @@ impl<'a> VM<'a> {
                     }
 
                     DbOp::RecoverStackPos => {
-                        self.stack.resize(self.r3, Value::Null);
+                        self.stack.resize(self.r3, Bson::Null);
                         self.pc = self.pc.add(1);
                     }
 

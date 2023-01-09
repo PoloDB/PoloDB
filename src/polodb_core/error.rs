@@ -1,7 +1,7 @@
 use std::io;
 use std::fmt;
-use polodb_bson::ty_int;
-use polodb_bson::error::BsonErr;
+use bson::ser::Error as BsonErr;
+use crate::btree::ty_int;
 use crate::msg_ty::MsgTy;
 
 #[derive(Debug)]

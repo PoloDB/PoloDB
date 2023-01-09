@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::borrow::BorrowMut;
 use std::collections::BTreeSet;
 use hashbrown::HashMap;
-use polodb_bson::{Value, Document};
+use bson::{Bson, Document};
 use super::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;
 use crate::DbResult;
@@ -67,7 +67,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
     // case 2: NOT on leaf
     //         - replace it with item on leaf
     //         - delete item on leaf
-    pub fn delete_item(&mut self, id: &Value) -> DbResult<Option<Rc<Document>>> {
+    pub fn delete_item(&mut self, id: &Bson) -> DbResult<Option<Rc<Document>>> {
         let backward_item_opt = self.delete_item_on_subtree(0, self.base.root_page_id, id)?;
         match backward_item_opt {
             Some(backward_item) => {
@@ -90,7 +90,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
         }
     }
 
-    fn delete_item_on_subtree(&mut self, parent_pid: u32, pid: u32, id: &Value) -> DbResult<Option<DeleteBackwardItem>> {
+    fn delete_item_on_subtree(&mut self, parent_pid: u32, pid: u32, id: &Bson) -> DbResult<Option<DeleteBackwardItem>> {
         let mut current_btree_node: Box<BTreeNode> = self.get_btree_by_pid(pid, parent_pid)?;
 
         if current_btree_node.is_empty() {

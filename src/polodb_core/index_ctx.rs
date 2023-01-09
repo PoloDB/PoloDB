@@ -1,7 +1,7 @@
 use std::rc::Rc;
 use std::borrow::Borrow;
 use hashbrown::HashMap;
-use polodb_bson::{Document, Value, mk_document, mk_array};
+use bson::{Document, Bson, doc};
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::{DbResult, SerializeType};
 use crate::error::{DbErr, mk_field_name_type_unexpected};
@@ -47,13 +47,13 @@ impl IndexCtx {
         let mut new_back_doc = Document::new_without_id();
         for (key, entry) in &self.key_to_entry {
             let index_meta_doc = Rc::new(entry.to_doc());
-            new_back_doc.insert(key.clone(), Value::Document(index_meta_doc));
+            new_back_doc.insert(key.clone(), Bson::Document(index_meta_doc));
         }
 
         collection_meta.set_indexes(new_back_doc);
     }
 
-    pub fn insert_index_by_content(&mut self, doc: &Document, primary_key: &Value, is_ctx_changed: &mut bool, page_handler: &mut PageHandler) -> DbResult<()> {
+    pub fn insert_index_by_content(&mut self, doc: &Document, primary_key: &Bson, is_ctx_changed: &mut bool, page_handler: &mut PageHandler) -> DbResult<()> {
         for (key, entry) in &mut self.key_to_entry {
             if let Some(value) = doc.get(key) {
                 // index exist, and value exist
@@ -101,16 +101,16 @@ impl IndexEntry {
     fn to_doc(&self) -> Document {
         let mut result = Document::new_without_id();
         if let Some(name_val) = &self.name {
-            result.insert(meta_doc_key::index::NAME.into(), Value::String(Rc::new(name_val.clone())));
+            result.insert(meta_doc_key::index::NAME.into(), Bson::String(Rc::new(name_val.clone())));
         }
-        result.insert(meta_doc_key::index::UNIQUE.into(), Value::Boolean(self.unique));
-        result.insert(meta_doc_key::index::ROOT_PID.into(), Value::Int(self.root_pid as i64));
+        result.insert(meta_doc_key::index::UNIQUE.into(), Bson::Boolean(self.unique));
+        result.insert(meta_doc_key::index::ROOT_PID.into(), Bson::Int(self.root_pid as i64));
         result
     }
 
     // store (data_value -> primary_key)
     fn insert_index(
-        &mut self, data_value: &Value, primary_key: Value,
+        &mut self, data_value: &Bson, primary_key: Bson,
         is_changed: &mut bool,
         page_handler: &mut PageHandler) -> DbResult<()> {
 
@@ -139,21 +139,21 @@ impl IndexEntry {
 
         let new_root_page = backward_item.write_to_page(page_handler, new_root_id, self.root_pid)?;
 
-        meta_doc.insert(meta_doc_key::index::ROOT_PID.into(), Value::Int(new_root_id as i64));
+        meta_doc.insert(meta_doc_key::index::ROOT_PID.into(), Bson::Int64(new_root_id as i64));
 
         self.root_pid = new_root_id;
 
         page_handler.pipeline_write_page(&new_root_page)
     }
 
-    fn mk_index_entry_doc(data_value: &Value, primary_key: Value) -> Document {
-        mk_document! {
+    fn mk_index_entry_doc(data_value: &Bson, primary_key: Bson) -> Document {
+        doc! {
             "_id": data_value.clone(),
-            "keys": mk_array! [ primary_key ],
+            "keys": [ primary_key ],
         }
     }
 
-    fn remove_index(&self, data_value: &Value, page_handler: &mut PageHandler, serialize_type: SerializeType) -> DbResult<()> {
+    fn remove_index(&self, data_value: &Bson, page_handler: &mut PageHandler, serialize_type: SerializeType) -> DbResult<()> {
         let mut delete_wrapper = BTreePageDeleteWrapper::new(page_handler, self.root_pid, serialize_type);
         let _result = delete_wrapper.delete_item(data_value)?;
         Ok(())
@@ -164,8 +164,8 @@ impl IndexEntry {
 macro_rules! match_and_merge_option {
     ($options:expr, $key_name:expr, $target: expr, $val_ty: tt) => {
         match $options.get($key_name) {
-            Some(Value::$val_ty(val)) => {
-                $target.insert($key_name.into(), Value::$val_ty(val.clone()));
+            Some(Bson::$val_ty(val)) => {
+                $target.insert($key_name.into(), Bson::$val_ty(val.clone()));
             }
 
             Some(val) => {
@@ -183,8 +183,8 @@ macro_rules! match_and_merge_option {
 fn mk_default_index_options() -> Document {
     let mut result = Document::new_without_id();
 
-    result.insert(meta_doc_key::index::UNIQUE.into(), Value::Boolean(false));
-    result.insert(meta_doc_key::index::V.into(), Value::Int(1));
+    result.insert(meta_doc_key::index::UNIQUE.into(), Bson::Boolean(false));
+    result.insert(meta_doc_key::index::V.into(), Bson::Int(1));
 
     result
 }
@@ -192,7 +192,7 @@ fn mk_default_index_options() -> Document {
 pub(crate) fn merge_options_into_default(root_pid: u32, options: Option<&Document>) -> DbResult<Document> {
     let mut doc = mk_default_index_options();
 
-    doc.insert(meta_doc_key::index::ROOT_PID.into(), Value::Int(root_pid as i64));
+    doc.insert(meta_doc_key::index::ROOT_PID.into(), Bson::Int64(root_pid as i64));
 
     if let Some(options) = options {
         match_and_merge_option!(options, meta_doc_key::index::NAME, doc, String);

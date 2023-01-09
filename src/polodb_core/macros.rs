@@ -12,9 +12,10 @@ macro_rules! polo_log (
 macro_rules! try_unwrap_document {
     ($op_name:tt, $doc:expr) => {
         match $doc {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             t => {
-                let err = mk_field_name_type_unexpected($op_name, "Document".into(), t.ty_name());
+                let name = format!("{}", t);
+                let err = mk_field_name_type_unexpected($op_name, "Document".into(), name.as_str());
                 return Err(err);
             },
         }
@@ -25,9 +26,10 @@ macro_rules! try_unwrap_document {
 macro_rules! try_unwrap_array {
     ($op_name:tt, $arr:expr) => {
         match $arr {
-            Value::Array(arr) => arr,
+            Bson::Array(arr) => arr,
             t => {
-                let err = mk_field_name_type_unexpected($op_name, "Array".into(), t.ty_name());
+                let name = format!("{}", t);
+                let err = mk_field_name_type_unexpected($op_name, "Array".into(), name.as_str());
                 return Err(err);
             },
         }

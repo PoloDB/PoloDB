@@ -3,7 +3,7 @@ use std::path::Path;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::rc::Rc;
-use polodb_bson::{Document, Value, ObjectIdMaker, doc};
+use bson::{Document, Bson, doc};
 use super::page::header_page_wrapper;
 use super::error::DbErr;
 use super::TransactionType;
@@ -61,7 +61,6 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
  */
 pub struct DbContext {
     page_handler: Box<PageHandler>,
-    obj_id_maker: ObjectIdMaker,
     pub(crate)meta_version: u32,
     config:       Arc<Config>,
 
@@ -100,12 +99,9 @@ impl DbContext {
     fn open_with_backend(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<DbContext> {
         let page_handler = PageHandler::new(backend, page_size, config.clone())?;
 
-        let obj_id_maker = ObjectIdMaker::new();
-
         let mut ctx = DbContext {
             page_handler: Box::new(page_handler),
             // first_page,
-            obj_id_maker,
             meta_version: 0,
             config,
         };
@@ -258,9 +254,9 @@ impl DbContext {
         doc.insert(meta_doc_key::NAME.into(), name.into());
 
         let root_pid = self.page_handler.alloc_page_id()?;
-        doc.insert(meta_doc_key::ROOT_PID.into(), Value::Int(root_pid as i64));
+        doc.insert(meta_doc_key::ROOT_PID.into(), Bson::Int(root_pid as i64));
 
-        doc.insert(meta_doc_key::FLAGS.into(), Value::Int(0));
+        doc.insert(meta_doc_key::FLAGS.into(), Bson::Int(0));
 
         let mut btree_wrapper = BTreePageInsertWrapper::new(
             &mut self.page_handler, meta_source.meta_pid);
@@ -316,7 +312,7 @@ impl DbContext {
         let raw_page = self.page_handler.pipeline_read_page(root_pid)?;
         let item_size = self.item_size();
         let btree_node = BTreeNode::from_raw(&raw_page, parent_pid, item_size, &mut self.page_handler)?;
-        let key = Value::from(id);
+        let key = Bson::from(id);
         if btree_node.is_empty() {
             return Err(DbErr::CollectionIdNotFound(id));
         }
@@ -355,7 +351,7 @@ impl DbContext {
             0, meta_source.meta_pid, col_id)?;
 
         for (key_name, value_of_key) in keys.iter() {
-            if let Value::Int(1) = value_of_key {
+            if let Bson::Int(1) = value_of_key {
                 // nothing
             } else {
                 return Err(DbErr::InvalidOrderOfIndex(key_name.clone()));
@@ -363,7 +359,7 @@ impl DbContext {
 
             match meta_doc.doc_ref().get(meta_doc_key::INDEXES) {
                 Some(indexes_obj) => match indexes_obj {
-                    Value::Document(index_doc) => {
+                    Bson::Document(index_doc) => {
                         if index_already_exists(index_doc.borrow(), key_name) {
                             return Err(DbErr::IndexAlreadyExists(key_name.clone()));
                         }
@@ -383,7 +379,7 @@ impl DbContext {
 
                     let root_pid = self.page_handler.alloc_page_id()?;
                     let options_doc = merge_options_into_default(root_pid, options)?;
-                    doc.insert(key_name.clone(), Value::Document(Rc::new(options_doc)));
+                    doc.insert(key_name.clone(), Bson::Document(Rc::new(options_doc)));
 
                     meta_doc.set_indexes(doc);
                 }
@@ -391,7 +387,7 @@ impl DbContext {
             }
         }
 
-        let key_col = Value::from(col_id);
+        let key_col = Bson::from(col_id);
 
         let meta_source = self.get_meta_source()?;
         let inserted = self.update_by_root_pid(
@@ -476,7 +472,7 @@ impl DbContext {
 
         // update meta begin
         if is_meta_changed {
-            let key = Value::from(col_id);
+            let key = Bson::from(col_id);
             let updated= self.update_by_root_pid(
                 0, meta_source.meta_pid, &key, collection_meta.doc_ref())?;
             if !updated {
@@ -554,7 +550,7 @@ impl DbContext {
         let mut btree_wrapper = BTreePageDeleteWrapper::new(
             &mut self.page_handler, meta_source.meta_pid, serialize_type);
 
-        let pkey = Value::from(col_id);
+        let pkey = Bson::from(col_id);
         btree_wrapper.delete_item(&pkey)?;
 
         meta_source.meta_version += 1;
@@ -571,7 +567,7 @@ impl DbContext {
         Ok(result)
     }
 
-    fn internal_delete(&mut self, col_id: u32, primary_keys: &[Value]) -> DbResult<usize> {
+    fn internal_delete(&mut self, col_id: u32, primary_keys: &[Bson]) -> DbResult<usize> {
         for pkey in primary_keys {
             let _ = self.internal_delete_by_pkey(col_id, pkey)?;
         }
@@ -589,7 +585,7 @@ impl DbContext {
         Ok(result)
     }
 
-    fn get_primary_keys_by_query(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>) -> DbResult<Vec<Value>> {
+    fn get_primary_keys_by_query(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>) -> DbResult<Vec<Bson>> {
         let mut handle = self.find(col_id, meta_version, query)?;
         let mut buffer = vec![];
 
@@ -606,7 +602,7 @@ impl DbContext {
         Ok(buffer)
     }
 
-    fn update_by_root_pid(&mut self, parent_pid: u32, root_pid: u32, key: &Value, doc: &Document) -> DbResult<bool> {
+    fn update_by_root_pid(&mut self, parent_pid: u32, root_pid: u32, key: &Bson, doc: &Document) -> DbResult<bool> {
         let page = self.page_handler.pipeline_read_page(root_pid)?;
         let btree_node = BTreeNode::from_raw(&page, parent_pid, self.item_size(), &mut self.page_handler)?;
 
@@ -659,7 +655,7 @@ impl DbContext {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn delete_by_pkey(&mut self, col_id: u32, key: &Value) -> DbResult<Option<Rc<Document>>> {
+    pub(crate) fn delete_by_pkey(&mut self, col_id: u32, key: &Bson) -> DbResult<Option<Rc<Document>>> {
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
         let result = try_db_op!(self, self.internal_delete_by_pkey(col_id, key));
@@ -667,7 +663,7 @@ impl DbContext {
         Ok(result)
     }
 
-    fn internal_delete_by_pkey(&mut self, col_id: u32, key: &Value) -> DbResult<Option<Rc<Document>>> {
+    fn internal_delete_by_pkey(&mut self, col_id: u32, key: &Bson) -> DbResult<Option<Rc<Document>>> {
         let meta_source = self.get_meta_source()?;
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
@@ -752,11 +748,6 @@ impl DbContext {
         self.page_handler.rollback()?;
         self.page_handler.set_transaction_state(TransactionState::NoTrans);
         Ok(())
-    }
-
-    #[inline]
-    pub fn object_id_maker(&mut self) -> &mut ObjectIdMaker {
-        &mut self.obj_id_maker
     }
 
     pub fn dump(&mut self) -> DbResult<FullDump> {

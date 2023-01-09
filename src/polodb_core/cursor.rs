@@ -1,6 +1,6 @@
 use std::rc::Rc;
 use std::collections::LinkedList;
-use polodb_bson::{Document, Value};
+use bson::{Document, Bson};
 use crate::page_handler::PageHandler;
 use crate::page::RawPage;
 use crate::btree::*;
@@ -29,7 +29,7 @@ pub(crate) struct Cursor {
     root_pid:           u32,
     item_size:          u32,
     btree_stack:        LinkedList<CursorItem>,
-    current:            Option<Rc<Document>>,
+    current:            Option<Document>,
 }
 
 impl Cursor {
@@ -55,7 +55,7 @@ impl Cursor {
         Ok(())
     }
 
-    pub fn reset_by_pkey(&mut self, page_handler: &mut PageHandler, pkey: &Value) -> DbResult<bool> {
+    pub fn reset_by_pkey(&mut self, page_handler: &mut PageHandler, pkey: &Bson) -> DbResult<bool> {
         self.btree_stack.clear();
 
         let mut current_pid = self.root_pid;
@@ -169,12 +169,12 @@ impl Cursor {
         let top = self.btree_stack.pop_back().unwrap();
 
         page_handler.free_data_ticket(&top.node.content[top.index].data_ticket)?;
-        let key = doc.pkey_id().unwrap();
+        let key = doc.get("_id").unwrap();
         let new_ticket = page_handler.store_doc(doc)?;
         let new_btree_node: BTreeNode = top.node.clone_with_content(
             top.index,
             BTreeNodeDataItem {
-                key,
+                key: key.into(),
                 data_ticket: new_ticket,
             });
 
@@ -198,7 +198,7 @@ impl Cursor {
         !self.btree_stack.is_empty()
     }
 
-    pub fn next(&mut self, page_handler: &mut PageHandler) -> DbResult<Option<Rc<Document>>> {
+    pub fn next(&mut self, page_handler: &mut PageHandler) -> DbResult<Option<Document>> {
         if self.btree_stack.is_empty() {
             return Ok(None);
         }

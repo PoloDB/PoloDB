@@ -44,6 +44,7 @@ mod page_handler;
 mod migration;
 mod doc_serializer;
 pub mod msg_ty;
+mod bson_utils;
 
 pub use db::{Database, DbResult};
 pub use config::Config;
