@@ -3,7 +3,7 @@ use std::path::Path;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::rc::Rc;
-use bson::{Document, Bson, doc};
+use bson::{Document, Bson, doc, bson};
 use super::page::header_page_wrapper;
 use super::error::DbErr;
 use super::TransactionType;
@@ -249,14 +249,14 @@ impl DbContext {
         let mut doc = doc!();
 
         let collection_id = meta_source.meta_id_counter;
-        doc.insert::<String, Bson>(meta_doc_key::ID.into(), collection_id.into());
+        doc.insert::<String, Bson>(meta_doc_key::ID.into(), Bson::Int64(collection_id as i64));
 
         doc.insert::<String, Bson>(meta_doc_key::NAME.into(), name.into());
 
         let root_pid = self.page_handler.alloc_page_id()?;
         doc.insert::<String, Bson>(meta_doc_key::ROOT_PID.into(), Bson::Int64(root_pid as i64));
 
-        doc.insert::<String, Bson>(meta_doc_key::FLAGS.into(), Bson::Int64(0));
+        doc.insert::<String, Bson>(meta_doc_key::FLAGS.into(), bson!(0));
 
         let mut btree_wrapper = BTreePageInsertWrapper::new(
             &mut self.page_handler, meta_source.meta_pid);
@@ -351,7 +351,9 @@ impl DbContext {
             0, meta_source.meta_pid, col_id)?;
 
         for (key_name, value_of_key) in keys.iter() {
-            if let Bson::Int64(1) = value_of_key {
+            if let Bson::Int32(1) = value_of_key {
+                // nothing
+            } else if let Bson::Int64(1) = value_of_key {
                 // nothing
             } else {
                 return Err(DbErr::InvalidOrderOfIndex(key_name.clone()));

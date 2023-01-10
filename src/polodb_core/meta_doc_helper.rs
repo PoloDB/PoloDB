@@ -1,4 +1,4 @@
-use bson::{Document, Bson, doc};
+use bson::{Document, Bson, doc, bson};
 use crate::DbResult;
 use crate::error::DbErr;
 
@@ -27,7 +27,7 @@ impl MetaDocEntry {
         let doc = doc! {
             "_id": id,
             "name": name.clone(),
-            "root_pid": root_pid,
+            "root_pid": root_pid as i64,
             "flags": 0,
         };
         MetaDocEntry {
@@ -54,15 +54,15 @@ impl MetaDocEntry {
     }
 
     pub(crate) fn set_root_pid(&mut self, new_root_pid: u32) {
-        self.doc.insert::<String, Bson>(meta_doc_key::ROOT_PID.into(), Bson::from(new_root_pid));
+        self.doc.insert::<String, Bson>(meta_doc_key::ROOT_PID.into(), Bson::Int64(new_root_pid as i64));
     }
 
     pub(crate) fn flags(&self) -> u32 {
-        self.doc.get(meta_doc_key::FLAGS).unwrap().as_i64().unwrap() as u32
+        self.doc.get(meta_doc_key::FLAGS).unwrap().as_i32().unwrap() as u32
     }
 
     pub(crate) fn set_flags(&mut self, flags: u32) {
-        self.doc.insert::<String, Bson>(meta_doc_key::FLAGS.into(), Bson::from(flags));
+        self.doc.insert::<String, Bson>(meta_doc_key::FLAGS.into(), bson!(flags as i32));
     }
 
     #[inline]

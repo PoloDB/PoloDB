@@ -301,7 +301,7 @@ impl fmt::Display for SubProgram {
 
 #[cfg(test)]
 mod tests {
-    use polodb_bson::{mk_document, mk_array};
+    use bson::doc;
     use polodb_line_diff::assert_eq;
     use crate::vm::SubProgram;
     use crate::meta_doc_helper::MetaDocEntry;
@@ -336,8 +336,8 @@ mod tests {
 
     #[test]
     fn print_query() {
-        let meta_doc = mk_document! {};
-        let test_doc = mk_document! {
+        let meta_doc = doc! {};
+        let test_doc = doc! {
             "name": "Vincent Chan",
             "age": 32,
         };
@@ -394,8 +394,8 @@ mod tests {
 
     #[test]
     fn print_query_by_primary_key() {
-        let meta_doc = mk_document! {};
-        let test_doc = mk_document! {
+        let meta_doc = doc! {};
+        let test_doc = doc! {
             "_id": 6,
             "age": 32,
         };
@@ -431,13 +431,13 @@ mod tests {
 
     #[test]
     fn query_by_logic_and() {
-        let meta_doc = mk_document! {};
-        let test_doc = mk_document! {
-            "$and": mk_array! [
-                mk_document! {
+        let meta_doc = doc! {};
+        let test_doc = doc! {
+            "$and": [
+                doc! {
                     "_id": 6,
                 },
-                mk_document! {
+                doc! {
                     "age": 32,
                 },
             ],
@@ -495,13 +495,13 @@ mod tests {
 
     #[test]
     fn print_logic_or() {
-        let meta_doc = mk_document! {};
-        let test_doc = mk_document! {
-            "$or": mk_array! [
-                mk_document! {
+        let meta_doc = doc!();
+        let test_doc = doc! {
+            "$or": [
+                doc! {
                     "age": 11,
                 },
-                mk_document! {
+                doc! {
                     "age": 12,
                 },
             ],
@@ -569,13 +569,13 @@ mod tests {
 
     #[test]
     fn print_complex_print() {
-        let meta_doc = mk_document! {};
-        let test_doc = mk_document! {
-            "age": mk_document! {
+        let meta_doc = doc! {};
+        let test_doc = doc! {
+            "age": doc! {
                 "$gt": 3,
             },
-            "child.age": mk_document! {
-                "$in": mk_array! [ 1, 2 ],
+            "child.age": doc! {
+                "$in": [ 1, 2 ],
             },
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
@@ -631,28 +631,28 @@ mod tests {
     #[test]
     fn print_update() {
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let query_doc = mk_document! {
-            "_id": mk_document! {
+        let query_doc = doc! {
+            "_id": doc! {
                 "$gt": 3
             },
         };
-        let update_doc = mk_document! {
-            "$set": mk_document! {
+        let update_doc = doc! {
+            "$set": doc! {
                 "name": "Alan Chan",
             },
-            "$inc": mk_document! {
+            "$inc": doc! {
                 "age": 1,
             },
-            "$mul": mk_document! {
+            "$mul": doc! {
                 "age": 3,
             },
-            "$min": mk_document! {
+            "$min": doc! {
                 "age": 100,
             },
-            "$unset": mk_document! {
+            "$unset": doc! {
                 "age": "",
             },
-            "$rename": mk_document! {
+            "$rename": doc! {
                 "hello1": "hello2",
             },
         };

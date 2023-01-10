@@ -1,7 +1,6 @@
 use std::io;
 use std::fmt;
 use bson::ser::Error as BsonErr;
-use crate::btree::ty_int;
 use crate::msg_ty::MsgTy;
 
 #[derive(Debug)]
@@ -172,10 +171,7 @@ impl fmt::Display for DbErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             DbErr::UnexpectedIdType(expected_ty, actual_ty) => {
-                let expected = ty_int::to_str(*expected_ty);
-                let actual = ty_int::to_str(*actual_ty);
-
-                write!(f, "UnexpectedIdType(expected: {}, actual: {})", expected, actual)
+                write!(f, "UnexpectedIdType(expected: {}, actual: {})", expected_ty, actual_ty)
             }
 
             DbErr::NotAValidKeyType(ty_name) => write!(f, "type {} is not a valid key type", ty_name),

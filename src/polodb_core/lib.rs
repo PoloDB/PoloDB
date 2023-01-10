@@ -22,6 +22,8 @@
 //! The [Database] structure provides all the API to get access to the DB file.
 //!
 
+extern crate core;
+
 mod btree;
 mod page;
 mod vm;

@@ -12,6 +12,7 @@ pub(crate) use insert_wrapper::{BTreePageInsertWrapper, InsertBackwardItem, Inse
 use std::cmp::Ordering;
 use bson::Bson;
 use bson::oid::ObjectId;
+use bson::spec::ElementType;
 use crate::db::DbResult;
 use crate::page_handler::PageHandler;
 use crate::page::{RawPage, PageType};
@@ -29,36 +30,6 @@ const BTREE_ENTRY_KEY_CONTENT_SIZE: usize = 12;
 pub enum SearchKeyResult {
     Node(usize),
     Index(usize),
-}
-
-pub mod ty_int {
-    pub const NULL: u8         = 0x0A;
-    pub const DOUBLE: u8       = 0x01;
-    pub const BOOLEAN: u8      = 0x08;
-    pub const INT: u8          = 0x16;
-    pub const STRING: u8       = 0x02;
-    pub const OBJECT_ID: u8    = 0x07;
-    pub const ARRAY: u8        = 0x17;
-    pub const DOCUMENT: u8     = 0x13;
-    pub const BINARY: u8       = 0x05;
-    pub const UTC_DATETIME: u8 = 0x09;
-
-    pub fn to_str(i: u8) -> &'static str {
-        match i {
-            NULL => "Null",
-            BOOLEAN => "Boolean",
-            INT => "Int",
-            STRING => "String",
-            OBJECT_ID => "ObjectId",
-            ARRAY => "Array",
-            DOCUMENT => "Document",
-            BINARY => "Binary",
-            UTC_DATETIME => "UTCDateTime",
-
-            _ => "<unknown>"
-        }
-    }
-
 }
 
 #[derive(Clone)]
@@ -204,10 +175,9 @@ impl BTreeNode {
 
         let key_ty_int = page.get_u8(begin_offset + 4 + 1);  // use to parse data
 
-        let key: Bson = match key_ty_int {
-            0 => return Err(DbErr::KeyTypeOfBtreeShouldNotBeZero),
-
-            ty_int::OBJECT_ID => {
+        let element_type = ElementType::from(key_ty_int);
+        let key: Bson = match element_type {
+            Some(ElementType::ObjectId) => {
                 let oid_bytes_begin = (begin_offset + 6) as usize;
                 let mut oid_bytes = [0; 12];
                 oid_bytes.copy_from_slice(&page.data[oid_bytes_begin..(oid_bytes_begin + 12)]);
@@ -216,7 +186,7 @@ impl BTreeNode {
                 oid.into()
             }
 
-            ty_int::BOOLEAN => {
+            Some(ElementType::Boolean) => {
                 let value_begin_offset = (begin_offset + 6) as usize;
                 let value = page.data[value_begin_offset];
 
@@ -225,7 +195,15 @@ impl BTreeNode {
                 Bson::Boolean(bl_value)
             }
 
-            ty_int::INT => {
+            Some(ElementType::Int32) => {
+                let value_begin_offset = (begin_offset + 6) as usize;
+
+                let (int_value, _) = vli::decode_u64(&page.data[value_begin_offset..])?;
+
+                Bson::Int32(int_value as i32)
+            }
+
+            Some(ElementType::Int64) => {
                 let value_begin_offset = (begin_offset + 6) as usize;
 
                 let (int_value, _) = vli::decode_u64(&page.data[value_begin_offset..])?;
@@ -233,7 +211,7 @@ impl BTreeNode {
                 Bson::Int64(int_value as i64)
             }
 
-            ty_int::STRING => {
+            Some(ElementType::String) => {
                 let value_begin_offset = (begin_offset + 6) as usize;
 
                 let mut buffer = Vec::new();
@@ -370,6 +348,19 @@ impl BTreeNode {
                 Ok(())
             }
 
+            Bson::Int32(int) => {
+                BTreeNode::put_standard_content_key(page, key);
+
+                let mut buffer = Vec::with_capacity(BTREE_ENTRY_KEY_CONTENT_SIZE);
+                vli::encode(&mut buffer, *int as i64)?;
+
+                buffer.resize(BTREE_ENTRY_KEY_CONTENT_SIZE, 0);
+
+                page.put(&buffer);
+
+                Ok(())
+            }
+
             Bson::Int64(int) => {
                 BTreeNode::put_standard_content_key(page, key);
 
@@ -401,7 +392,7 @@ impl BTreeNode {
             }
 
             _ => {
-                let name = format!("{}", key);
+                let name = format!("{:?}", key);
                 Err(DbErr::NotAValidKeyType(name))
             }
         }

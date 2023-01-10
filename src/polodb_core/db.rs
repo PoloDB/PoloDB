@@ -707,9 +707,8 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
     use std::env;
-    use polodb_bson::{Document, Value, doc};
+    use bson::{Bson, doc};
     use crate::{Database, Config, DbResult, DbErr};
     use std::io::Read;
     use std::path::PathBuf;
@@ -774,7 +773,7 @@ mod tests {
         let second = test_collection.find_one(&doc! {
             "content": "1",
         }).unwrap().unwrap();
-        assert_eq!(second.get("content").unwrap().unwrap_string(), "1");
+        assert_eq!(second.get("content").unwrap().as_str().unwrap(), "1");
         assert!(second.get("content").is_some());
 
         assert_eq!(TEST_SIZE, all.len())
@@ -882,14 +881,14 @@ mod tests {
             "_id": "c1",
         }).unwrap().unwrap();
 
-        assert_eq!(doc1.get("value").unwrap().unwrap_string(), "c1");
+        assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c1");
 
         let mut collection = db.collection("config").unwrap();
         let doc1 = collection.find_one(&doc! {
             "_id": "c2",
         }).unwrap().unwrap();
 
-        assert_eq!(doc1.get("value").unwrap().unwrap_string(), "c22");
+        assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c22");
     }
 
     #[test]
@@ -909,10 +908,10 @@ mod tests {
             for i in 0..10 {
                 let content = i.to_string();
                 let mut new_doc = doc! {
-                "_id": i,
-                "content": content,
-            };
-                collection.insert(new_doc.as_mut()).unwrap();
+                    "_id": i,
+                    "content": content,
+                };
+                collection.insert(&mut new_doc).unwrap();
             }
             assert_eq!(collection.count().unwrap(), 10);
 
@@ -932,10 +931,10 @@ mod tests {
             for i in 0..TEST_SIZE {
                 let content = i.to_string();
                 let mut new_doc = doc! {
-                    "_id": i,
+                    "_id": i as i64,
                     "content": content,
                 };
-                collection.insert(new_doc.as_mut()).unwrap();
+                collection.insert(&mut new_doc).unwrap();
             }
 
             db
@@ -965,7 +964,7 @@ mod tests {
         assert_eq!(result.len(), 1);
 
         let one = result[0].clone();
-        assert_eq!(one.get("content").unwrap().unwrap_string(), "3");
+        assert_eq!(one.get("content").unwrap().as_str().unwrap(), "3");
     }
 
     #[test]
@@ -977,7 +976,7 @@ mod tests {
 
         assert_eq!(all.len(), 10);
 
-        let first_key = &all[0].pkey_id().unwrap();
+        let first_key = &all[0].get("_id").unwrap();
 
         let result = collection.find(&doc! {
             "_id": first_key.clone(),
@@ -1009,7 +1008,7 @@ mod tests {
         };
 
         let mut collection = db.collection("test").unwrap();
-        collection.insert(doc.as_mut()).expect_err("should not success");
+        collection.insert(&mut doc).expect_err("should not success");
     }
 
     #[test]
@@ -1017,16 +1016,16 @@ mod tests {
         let mut db = prepare_db("test-insert-bigger-key").unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
-        let mut doc = Document::new_without_id();
+        let mut doc = doc! {};
 
         let mut new_str: String = String::new();
         for _i in 0..32 {
             new_str.push('0');
         }
 
-        doc.insert("_id".into(), Value::String(Rc::new(new_str.clone())));
+        doc.insert::<String, Bson>("_id".into(), Bson::String(new_str.clone()));
 
-        let _ = collection.insert(doc.as_mut()).unwrap();
+        let _ = collection.insert(&mut doc).unwrap();
     }
 
     #[test]
@@ -1060,19 +1059,19 @@ mod tests {
         collection.create_index(&keys, None).unwrap();
 
         for i in 0..10 {
-            let str = Rc::new(i.to_string());
+            let str = i.to_string();
             let mut data = doc! {
                 "name": str.clone(),
                 "user_id": str.clone(),
             };
-            collection.insert(data.as_mut()).unwrap();
+            collection.insert(&mut data).unwrap();
         }
 
         let mut data = doc! {
             "name": "what",
             "user_id": 3,
         };
-        collection.insert(data.as_mut()).expect_err("not comparable");
+        collection.insert(&mut data).expect_err("not comparable");
     }
 
     #[test]
@@ -1089,7 +1088,7 @@ mod tests {
                 "content": content,
             };
 
-            collection.insert(new_doc.as_mut()).unwrap();
+            collection.insert(&mut new_doc).unwrap();
             doc_collection.push(new_doc);
         }
 
@@ -1115,7 +1114,7 @@ mod tests {
                 "_id": i,
                 "content": content,
             };
-            collection.insert(new_doc.as_mut()).unwrap();
+            collection.insert(&mut new_doc).unwrap();
             doc_collection.push(new_doc);
         }
 
@@ -1149,19 +1148,29 @@ mod tests {
         let mut db = prepare_db("test-very-large-data").unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
-        let mut doc = Document::new_without_id();
+        let mut doc = doc! {};
         let origin_data = data.clone();
-        doc.insert("content".into(), Value::from(data));
+        doc.insert::<String, Bson>("content".into(), Bson::Binary(bson::Binary {
+            subtype: bson::spec::BinarySubtype::Generic,
+            bytes: origin_data.clone(),
+        }));
 
         assert!(collection.insert(&mut doc).unwrap());
 
-        let new_id = doc.pkey_id().unwrap();
+        let new_id = doc.get("_id").unwrap();
         let back = collection.find_one(&doc! {
             "_id": new_id,
         }).unwrap().unwrap();
 
         let back_bin = back.get("content").unwrap();
-        assert_eq!(back_bin.unwrap_binary().as_ref(), &origin_data);
+
+        let binary = match back_bin {
+            bson::Bson::Binary(bin) => {
+                bin
+            }
+            _ => panic!("type unmatched"),
+        };
+        assert_eq!(&binary.bytes, &origin_data);
     }
 
 }

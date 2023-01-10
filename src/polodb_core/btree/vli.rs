@@ -172,7 +172,7 @@ pub fn decode_u64(bytes: &[u8]) -> BsonResult<(u64, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use crate::vli::{encode_u64, decode_u64, encode, decode};
+    use crate::btree::vli::{encode_u64, decode_u64, encode, decode};
 
     #[test]
     fn test_legacy_negative() {
