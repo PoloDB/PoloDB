@@ -22,6 +22,7 @@ hashbrown = "0.11.2"
 getrandom = "0.2.3"
 byteorder = "1.4.3"
 num_enum = "0.5.4"
+serde = { version = "*", features = ["rc"] }
 
 [dev-dependencies]
 polodb_line_diff = { path = "../polodb_line_diff" }

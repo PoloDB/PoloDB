@@ -1,8 +1,10 @@
+use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::path::Path;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use bson::{Document, Bson};
+use serde::Serialize;
 use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
 use super::error::DbErr;
 use crate::msg_ty::MsgTy;
@@ -76,21 +78,26 @@ macro_rules! unwrap_str_or {
 ///     "score": 99.99,
 /// });
 /// ```
-pub struct Collection<'a> {
+pub struct Collection<'a, T> {
     db: &'a mut Database,
     id: u32,
     meta_version: u32,
     name: String,
+    _phantom: std::marker::PhantomData<T>,
 }
 
-impl<'a>  Collection<'a> {
+impl<'a, T>  Collection<'a, T>
+where
+    T: Serialize,
+{
 
-    fn new(db: &'a mut Database, id: u32, meta_version: u32, name: &str) -> Collection<'a> {
+    fn new(db: &'a mut Database, id: u32, meta_version: u32, name: &str) -> Collection<'a, T> {
         Collection {
             db,
             id,
             meta_version,
             name: name.into(),
+            _phantom: std::default::Default::default(),
         }
     }
 
@@ -172,6 +179,37 @@ impl<'a>  Collection<'a> {
     #[inline]
     pub fn insert(&mut self, doc: &mut Document) -> DbResult<bool> {
         self.db.ctx.insert(self.id, self.meta_version, doc)
+    }
+
+    /// Inserts `doc` into the collection.
+    pub fn insert_one(&mut self, doc: impl Borrow<T>) -> DbResult<bool> {
+        let mut doc = bson::to_document(doc.borrow())?;
+        self.insert(&mut doc)
+    }
+
+    /// Inserts the data in `docs` into the collection.
+    pub fn insert_many(&mut self, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<()> {
+        self.db.start_transaction(Some(TransactionType::Write))?;
+
+        for item in docs {
+            let mut doc = match bson::to_document(item.borrow()) {
+                Ok(doc) => doc,
+                Err(err) => {
+                    self.db.rollback().unwrap();
+                    return Err(DbErr::from(err));
+                }
+            };
+            match self.insert(&mut doc) {
+                Ok(_) => (),
+                Err(err) => {
+                    self.db.rollback().unwrap();
+                    return Err(err);
+                }
+            }
+        }
+
+        self.db.commit()?;
+        Ok(())
     }
 
     /// When query is `None`, all the data in the collection will be deleted.
@@ -279,7 +317,7 @@ impl Database {
         })
     }
 
-    pub fn create_collection(&mut self, name: &str) -> DbResult<Collection> {
+    pub fn create_collection<T: Serialize>(&mut self, name: &str) -> DbResult<Collection<T>> {
         let collection_meta = self.ctx.create_collection(name)?;
         Ok(Collection::new(self,
                            collection_meta.id,
@@ -300,7 +338,7 @@ impl Database {
     /// Return an exist collection. If the collection is not exists,
     /// a new collection will be created.
     ///
-    pub fn collection(&mut self, col_name: &str) -> DbResult<Collection> {
+    pub fn collection<T: Serialize>(&mut self, col_name: &str) -> DbResult<Collection<T>> {
         let info = match self.ctx.get_collection_meta_by_name(col_name) {
             Ok(meta) => meta,
             Err(DbErr::CollectionNotFound(_)) => self.ctx.create_collection(col_name)?,
@@ -490,7 +528,7 @@ impl Database {
             _ => return Err(DbErr::ParseError("query not found in find request".into())),
         };
 
-        let mut collection = self.collection(collection_name)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
 
         let result = collection.find_one(&query_opt)?;
 
@@ -532,7 +570,7 @@ impl Database {
             _ => None,
         };
 
-        let mut collection = self.collection(collection_name)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
 
         let result = if let Some(query) = query_opt {
             collection.find(query)?
@@ -569,7 +607,7 @@ impl Database {
             _ => return Err(DbErr::ParseError("query not found in insert request".into())),
         };
 
-        let mut collection = self.collection(collection_name)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
         let id_changed = collection.insert(&mut insert_data)?;
 
         let ret_value = if id_changed {
@@ -605,7 +643,7 @@ impl Database {
             _ => return Err(DbErr::ParseError("'update' not found in update request".into())),
         };
 
-        let mut collection = self.collection(collection_name)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
         let size = collection.update(query, &update_data)?;
 
         let ret_val = Bson::Int64(size as i64);
@@ -631,7 +669,7 @@ impl Database {
             None => None
         };
 
-        let mut collection = self.collection(collection_name)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
         let size = collection.delete(query)?;
 
         let ret_val = Bson::Int64(size as i64);
@@ -651,7 +689,7 @@ impl Database {
             Some(Bson::String(s)) => s.as_str().into(),
             _ => return Err(DbErr::ParseError(format!("should give the name of the collection to create"))),
         };
-        let ret = match self.create_collection(&name) {
+        let ret = match self.create_collection::<Bson>(&name) {
             Ok(_) => Bson::Boolean(true),
             Err(DbErr::CollectionAlreadyExits(_)) => Bson::Boolean(false),
             Err(err) => return Err(err),
@@ -686,7 +724,7 @@ impl Database {
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in count request".into());
 
-        let mut collection = self.collection(collection_name)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
 
         let count = collection.count()?;
 
