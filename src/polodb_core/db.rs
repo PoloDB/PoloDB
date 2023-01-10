@@ -6,12 +6,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use bson::{Document, Bson};
 use serde::Serialize;
 use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
+use std::collections::HashMap;
 use super::error::DbErr;
 use crate::msg_ty::MsgTy;
 use crate::Config;
 use crate::context::DbContext;
 use crate::{DbHandle, TransactionType};
 use crate::dump::FullDump;
+use crate::results::{InsertOneResult, InsertManyResult};
 
 pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 
@@ -182,14 +184,20 @@ where
     }
 
     /// Inserts `doc` into the collection.
-    pub fn insert_one(&mut self, doc: impl Borrow<T>) -> DbResult<bool> {
+    pub fn insert_one(&mut self, doc: impl Borrow<T>) -> DbResult<InsertOneResult> {
         let mut doc = bson::to_document(doc.borrow())?;
-        self.insert(&mut doc)
+        let _ = self.insert(&mut doc)?;
+        let pkey = doc.get("_id").unwrap();
+        Ok(InsertOneResult {
+            inserted_id: pkey.clone(),
+        })
     }
 
     /// Inserts the data in `docs` into the collection.
-    pub fn insert_many(&mut self, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<()> {
+    pub fn insert_many(&mut self, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
         self.db.start_transaction(Some(TransactionType::Write))?;
+        let mut inserted_ids: HashMap<usize, Bson> = HashMap::new();
+        let mut counter: usize = 0;
 
         for item in docs {
             let mut doc = match bson::to_document(item.borrow()) {
@@ -206,10 +214,16 @@ where
                     return Err(err);
                 }
             }
+            let pkey = doc.get("_id").unwrap();
+            inserted_ids.insert(counter, pkey.clone());
+
+            counter += 1;
         }
 
         self.db.commit()?;
-        Ok(())
+        Ok(InsertManyResult {
+            inserted_ids,
+        })
     }
 
     /// When query is `None`, all the data in the collection will be deleted.
