@@ -1,4 +1,4 @@
-use polodb_bson::{Document, Value};
+use bson::{Document, Bson};
 use crate::DbResult;
 use crate::page::RawPage;
 use crate::page_handler::PageHandler;
@@ -14,7 +14,7 @@ pub(crate) struct InsertBackwardItem {
 
 pub(crate) struct InsertResult {
     pub backward_item: Option<InsertBackwardItem>,
-    pub _primary_key: Value,
+    pub _primary_key: Bson,
 }
 
 impl InsertBackwardItem {
@@ -40,7 +40,7 @@ impl InsertBackwardItem {
 }
 
 mod doc_validation {
-    use polodb_bson::Document;
+    use bson::Document;
     use crate::{DbResult, DbErr};
 
     fn validate_key(key: &str) -> DbResult<()> {
@@ -100,11 +100,11 @@ impl<'a> BTreePageInsertWrapper<'a> {
     }
 
     fn doc_to_node_data_item(&mut self, doc: &Document) -> DbResult<BTreeNodeDataItem> {
-        let pkey = doc.pkey_id().unwrap();
+        let pkey = doc.get("_id").unwrap();
         let data_ticket = self.store_doc(doc)?;
 
         Ok(BTreeNodeDataItem {
-            key: pkey,
+            key: pkey.into(),
             data_ticket,
         })
     }
@@ -122,12 +122,12 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
             return Ok(InsertResult {
                 backward_item: None,
-                _primary_key: doc.pkey_id().unwrap(),
+                _primary_key: doc.get("_id").unwrap().into(),
             });
         }
 
         // let mut index: usize = 0;
-        let doc_pkey = &doc.pkey_id().expect("primary key not found in document");
+        let doc_pkey = &doc.get("_id").expect("primary key not found in document").into();
 
         let search_result = btree_node.search(doc_pkey)?;
         match search_result {
@@ -179,7 +179,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
         })
     }
 
-    fn divide_and_return_backward(&mut self, btree_node: BTreeNode, primary_key: Value) -> DbResult<InsertResult> {
+    fn divide_and_return_backward(&mut self, btree_node: BTreeNode, primary_key: Bson) -> DbResult<InsertResult> {
         let middle_index = btree_node.content.len() / 2;
 
         // use current page block to store left

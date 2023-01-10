@@ -1,9 +1,8 @@
 use std::convert::TryFrom;
-use std::rc::Rc;
 use std::path::Path;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use polodb_bson::{Document, ObjectId, Value};
+use bson::{Document, Bson};
 use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
 use super::error::DbErr;
 use crate::msg_ty::MsgTy;
@@ -14,11 +13,11 @@ use crate::dump::FullDump;
 
 pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 
-fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) -> DbResult<()> {
+fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Document>) -> DbResult<()> {
     handle.step()?;
 
     while handle.has_row() {
-        let doc = handle.get().unwrap_document();
+        let doc = handle.get().as_document().unwrap();
         result.push(doc.clone());
 
         handle.step()?;
@@ -30,7 +29,7 @@ fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Rc<Document>>) 
 macro_rules! unwrap_str_or {
     ($expr: expr, $or: expr) => {
         match $expr {
-            Some(Value::String(id)) => id.as_str(),
+            Some(Bson::String(id)) => id.as_str(),
             _ => return Err(DbErr::ParseError($or)),
         }
     }
@@ -67,15 +66,15 @@ macro_rules! unwrap_str_or {
 /// ```rust
 /// use std::rc::Rc;
 /// use polodb_core::Database;
-/// use polodb_bson::doc;
+/// use polodb_core::bson::doc;
 ///
 /// let mut db = Database::open_file("/tmp/test-collection").unwrap();
 /// let mut collection = db.collection("test").unwrap();
-/// collection.insert(doc! {
+/// collection.insert(&mut doc! {
 ///     "_id": 0,
 ///     "name": "Vincent Chan",
 ///     "score": 99.99,
-/// }.as_mut());
+/// });
 /// ```
 pub struct Collection<'a> {
     db: &'a mut Database,
@@ -96,7 +95,7 @@ impl<'a>  Collection<'a> {
     }
 
     /// all the data in the collection return.
-    pub fn find_all(&mut self) -> DbResult<Vec<Rc<Document>>> {
+    pub fn find_all(&mut self) -> DbResult<Vec<Document>> {
         let mut handle = self.db.ctx.find(self.id, self.meta_version, None)?;
 
         let mut result = Vec::new();
@@ -108,7 +107,7 @@ impl<'a>  Collection<'a> {
 
     /// When query document is passed to the function. The result satisfies
     /// the query document.
-    pub fn find(&mut self, query: &Document) -> DbResult<Vec<Rc<Document>>> {
+    pub fn find(&mut self, query: &Document) -> DbResult<Vec<Document>> {
         let mut handle = self.db.ctx.find(
             self.id, self.meta_version, Some(query)
         )?;
@@ -121,7 +120,7 @@ impl<'a>  Collection<'a> {
     }
 
     /// Return the first element in the collection satisfies the query.
-    pub fn find_one(&mut self, query: &Document) -> DbResult<Option<Rc<Document>>> {
+    pub fn find_one(&mut self, query: &Document) -> DbResult<Option<Document>> {
         let mut handle = self.db.ctx.find(
               self.id, self.meta_version, Some(query)
         )?;
@@ -132,7 +131,7 @@ impl<'a>  Collection<'a> {
             return Ok(None);
         }
 
-        let result = handle.get().unwrap_document().clone();
+        let result = handle.get().as_document().unwrap().clone();
 
         handle.commit_and_close_vm()?;
 
@@ -244,11 +243,6 @@ impl Database {
         SHOULD_LOG.store(v, Ordering::SeqCst);
     }
 
-    #[inline]
-    pub fn mk_object_id(&mut self) -> ObjectId {
-        self.ctx.object_id_maker().mk_object_id()
-    }
-
     #[deprecated]
     pub fn open<P: AsRef<Path>>(path: P) -> DbResult<Database>  {
         Database::open_file(path)
@@ -346,14 +340,8 @@ impl Database {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
+    pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Document>> {
         self.ctx.query_all_meta()
-    }
-
-    /// Upgrade DB from v1 to v2
-    /// The older file will be renamed as (name).old
-    pub fn v1_to_v2(path: &Path) -> DbResult<()> {
-        crate::migration::v1_to_v2(path)
     }
 
     /// handle request for database
@@ -462,7 +450,7 @@ impl Database {
     fn handle_start_transaction<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
         let value = self.receive_request_body(pipe_in)?;
         let transaction_type = match value {
-            Value::Int(val) => val,
+            Bson::Int64(val) => val,
             _ => {
                 return Err(DbErr::ParseError("transaction needs a type".into()));
             }
@@ -491,41 +479,41 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in find one request, actual: {}", value))),
         };
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
 
-        let mut query_opt = match doc.get("query") {
-            Some(Value::Document(doc)) => doc.clone(),
+        let query_opt = match doc.get("query") {
+            Some(Bson::Document(doc)) => doc.clone(),
             _ => return Err(DbErr::ParseError("query not found in find request".into())),
         };
 
-        let mut_doc = Rc::make_mut(&mut query_opt);
         let mut collection = self.collection(collection_name)?;
 
-        let result = collection.find_one(mut_doc)?;
+        let result = collection.find_one(&query_opt)?;
 
         let result_value = match result {
-            Some(doc) => Value::Document(doc),
-            None => Value::Null,
+            Some(doc) => Bson::Document(doc),
+            None => Bson::Null,
         };
 
-        result_value.to_msgpack(pipe_out)?;
+        let bytes = bson::ser::to_vec(&result_value)?;
+        pipe_out.write(bytes.as_ref())?;
 
         Ok(())
     }
 
-    fn receive_request_body<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<Value> {
+    fn receive_request_body<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<Bson> {
         let request_size = pipe_in.read_u32::<BigEndian>()? as usize;
         if request_size == 0 {
-            return Ok(Value::Null);
+            return Ok(Bson::Null);
         }
         let mut request_body = vec![0u8; request_size];
         pipe_in.read_exact(&mut request_body)?;
-        let mut body_ref: &[u8] = request_body.as_slice();
-        let val = Value::from_msgpack(&mut body_ref)?;
+        let body_ref: &[u8] = request_body.as_slice();
+        let val = bson::from_slice(body_ref)?;
         Ok(val)
     }
 
@@ -533,14 +521,14 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in find request, actual: {}", value))),
         };
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
 
         let query_opt = match doc.get("query") {
-            Some(Value::Document(doc)) => Some(doc),
+            Some(Bson::Document(doc)) => Some(doc),
             _ => None,
         };
 
@@ -552,14 +540,16 @@ impl Database {
             collection.find_all()?
         };
 
-        let mut value_arr = polodb_bson::Array::new();
+        let mut value_arr = bson::Array::new();
 
         for item in result {
-            value_arr.push(Value::Document(item));
+            value_arr.push(Bson::Document(item));
         }
 
-        let result_value = Value::Array(Rc::new(value_arr));
-        result_value.to_msgpack(pipe_out)?;
+        let result_value = Bson::Array(value_arr);
+
+        let bytes = bson::ser::to_vec(&result_value)?;
+        pipe_out.write(bytes.as_ref())?;
 
         Ok(())
     }
@@ -568,29 +558,28 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in insert request, actual: {}", value))),
         };
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
 
         let mut insert_data = match doc.get("data") {
-            Some(Value::Document(doc)) => doc.clone(),
+            Some(Bson::Document(doc)) => doc.clone(),
             _ => return Err(DbErr::ParseError("query not found in insert request".into())),
         };
 
-        let mut_doc = Rc::make_mut(&mut insert_data);
-
         let mut collection = self.collection(collection_name)?;
-        let id_changed = collection.insert(mut_doc)?;
+        let id_changed = collection.insert(&mut insert_data)?;
 
         let ret_value = if id_changed {
-            mut_doc.get("_id").unwrap().clone()
+            doc.get("_id").unwrap().clone()
         } else {
-            Value::Null
+            Bson::Null
         };
 
-        ret_value.to_msgpack(pipe_out)?;
+        let bytes = bson::ser::to_vec(&ret_value)?;
+        pipe_out.write(bytes.as_ref())?;
 
         Ok(())
     }
@@ -599,28 +588,29 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in update request, actual: {}", value))),
         };
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in update request".into());
 
         let query = match doc.get("query") {
-            Some(Value::Document(doc)) => Some(doc.as_ref()),
+            Some(Bson::Document(doc)) => Some(doc),
             Some(_) => return Err(DbErr::ParseError("query is not a document in update request".into())),
             None => None
         };
 
         let update_data = match doc.get("update") {
-            Some(Value::Document(doc)) => doc.clone(),
+            Some(Bson::Document(doc)) => doc.clone(),
             _ => return Err(DbErr::ParseError("'update' not found in update request".into())),
         };
 
         let mut collection = self.collection(collection_name)?;
-        let size = collection.update(query, update_data.as_ref())?;
+        let size = collection.update(query, &update_data)?;
 
-        let ret_val = Value::Int(size as i64);
-        ret_val.to_msgpack(pipe_out)?;
+        let ret_val = Bson::Int64(size as i64);
+        let bytes = bson::ser::to_vec(&ret_val)?;
+        pipe_out.write(bytes.as_ref())?;
 
         Ok(())
     }
@@ -629,14 +619,14 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in delete request, actual: {}", value))),
         };
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in delete request".into());
 
         let query = match doc.get("query") {
-            Some(Value::Document(doc)) => Some(doc.as_ref()),
+            Some(Bson::Document(doc)) => Some(doc),
             Some(_) => return Err(DbErr::ParseError("query is not a document in delete request".into())),
             None => None
         };
@@ -644,35 +634,37 @@ impl Database {
         let mut collection = self.collection(collection_name)?;
         let size = collection.delete(query)?;
 
-        let ret_val = Value::Int(size as i64);
-        ret_val.to_msgpack(pipe_out)?;
+        let ret_val = Bson::Int64(size as i64);
+        let bytes = bson::ser::to_vec(&ret_val)?;
+        pipe_out.write(bytes.as_ref())?;
 
         Ok(())
     }
 
     fn handle_create_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
         let value = self.receive_request_body(pipe_in)?;
-        let doc: Rc<Document> = match value {
-            Value::Document(d) => d,
+        let doc: Document = match value {
+            Bson::Document(d) => d,
             _ => return Err(DbErr::ParseError(format!("create document expect a document, actual: {}", value))),
         };
         let name: String = match doc.get("name") {
-            Some(Value::String(s)) => s.as_str().into(),
+            Some(Bson::String(s)) => s.as_str().into(),
             _ => return Err(DbErr::ParseError(format!("should give the name of the collection to create"))),
         };
         let ret = match self.create_collection(&name) {
-            Ok(_) => Value::Boolean(true),
-            Err(DbErr::CollectionAlreadyExits(_)) => Value::Boolean(false),
+            Ok(_) => Bson::Boolean(true),
+            Err(DbErr::CollectionAlreadyExits(_)) => Bson::Boolean(false),
             Err(err) => return Err(err),
         };
-        ret.to_msgpack(pipe_out)?;
+        let bytes = bson::ser::to_vec(&ret)?;
+        pipe_out.write(bytes.as_ref())?;
         Ok(())
     }
 
     fn handle_drop_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
         let value = self.receive_request_body(pipe_in)?;
         let cl_name: String = match value {
-            Value::String(s) => s.as_str().into(),
+            Bson::String(s) => s.as_str().into(),
             _ => return Err(DbErr::ParseError(format!("should give the name of the collection to drop, actual: {}", value))),
         };
         let info = match self.ctx.get_collection_meta_by_name(&cl_name) {
@@ -688,7 +680,7 @@ impl Database {
         let value = self.receive_request_body(pipe_in)?;
 
         let doc = match value {
-            Value::Document(doc) => doc,
+            Bson::Document(doc) => doc,
             _ => return Err(DbErr::ParseError(format!("value is not a doc in count request, actual: {}", value))),
         };
 
@@ -698,8 +690,9 @@ impl Database {
 
         let count = collection.count()?;
 
-        let ret_val = Value::Int(count as i64);
-        ret_val.to_msgpack(pipe_out)?;
+        let ret_val = Bson::Int64(count as i64);
+        let bytes = bson::ser::to_vec(&ret_val)?;
+        pipe_out.write(bytes.as_ref())?;
 
         Ok(())
     }
@@ -708,9 +701,8 @@ impl Database {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
     use std::env;
-    use polodb_bson::{Document, Value, doc};
+    use bson::{Bson, doc};
     use crate::{Database, Config, DbResult, DbErr};
     use std::io::Read;
     use std::path::PathBuf;
@@ -775,7 +767,7 @@ mod tests {
         let second = test_collection.find_one(&doc! {
             "content": "1",
         }).unwrap().unwrap();
-        assert_eq!(second.get("content").unwrap().unwrap_string(), "1");
+        assert_eq!(second.get("content").unwrap().as_str().unwrap(), "1");
         assert!(second.get("content").is_some());
 
         assert_eq!(TEST_SIZE, all.len())
@@ -883,14 +875,14 @@ mod tests {
             "_id": "c1",
         }).unwrap().unwrap();
 
-        assert_eq!(doc1.get("value").unwrap().unwrap_string(), "c1");
+        assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c1");
 
         let mut collection = db.collection("config").unwrap();
         let doc1 = collection.find_one(&doc! {
             "_id": "c2",
         }).unwrap().unwrap();
 
-        assert_eq!(doc1.get("value").unwrap().unwrap_string(), "c22");
+        assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c22");
     }
 
     #[test]
@@ -910,10 +902,10 @@ mod tests {
             for i in 0..10 {
                 let content = i.to_string();
                 let mut new_doc = doc! {
-                "_id": i,
-                "content": content,
-            };
-                collection.insert(new_doc.as_mut()).unwrap();
+                    "_id": i,
+                    "content": content,
+                };
+                collection.insert(&mut new_doc).unwrap();
             }
             assert_eq!(collection.count().unwrap(), 10);
 
@@ -933,10 +925,10 @@ mod tests {
             for i in 0..TEST_SIZE {
                 let content = i.to_string();
                 let mut new_doc = doc! {
-                    "_id": i,
+                    "_id": i as i64,
                     "content": content,
                 };
-                collection.insert(new_doc.as_mut()).unwrap();
+                collection.insert(&mut new_doc).unwrap();
             }
 
             db
@@ -966,7 +958,7 @@ mod tests {
         assert_eq!(result.len(), 1);
 
         let one = result[0].clone();
-        assert_eq!(one.get("content").unwrap().unwrap_string(), "3");
+        assert_eq!(one.get("content").unwrap().as_str().unwrap(), "3");
     }
 
     #[test]
@@ -978,7 +970,7 @@ mod tests {
 
         assert_eq!(all.len(), 10);
 
-        let first_key = &all[0].pkey_id().unwrap();
+        let first_key = &all[0].get("_id").unwrap();
 
         let result = collection.find(&doc! {
             "_id": first_key.clone(),
@@ -1010,7 +1002,7 @@ mod tests {
         };
 
         let mut collection = db.collection("test").unwrap();
-        collection.insert(doc.as_mut()).expect_err("should not success");
+        collection.insert(&mut doc).expect_err("should not success");
     }
 
     #[test]
@@ -1018,16 +1010,16 @@ mod tests {
         let mut db = prepare_db("test-insert-bigger-key").unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
-        let mut doc = Document::new_without_id();
+        let mut doc = doc! {};
 
         let mut new_str: String = String::new();
         for _i in 0..32 {
             new_str.push('0');
         }
 
-        doc.insert("_id".into(), Value::String(Rc::new(new_str.clone())));
+        doc.insert::<String, Bson>("_id".into(), Bson::String(new_str.clone()));
 
-        let _ = collection.insert(doc.as_mut()).unwrap();
+        let _ = collection.insert(&mut doc).unwrap();
     }
 
     #[test]
@@ -1061,19 +1053,19 @@ mod tests {
         collection.create_index(&keys, None).unwrap();
 
         for i in 0..10 {
-            let str = Rc::new(i.to_string());
+            let str = i.to_string();
             let mut data = doc! {
                 "name": str.clone(),
                 "user_id": str.clone(),
             };
-            collection.insert(data.as_mut()).unwrap();
+            collection.insert(&mut data).unwrap();
         }
 
         let mut data = doc! {
             "name": "what",
             "user_id": 3,
         };
-        collection.insert(data.as_mut()).expect_err("not comparable");
+        collection.insert(&mut data).expect_err("not comparable");
     }
 
     #[test]
@@ -1090,7 +1082,7 @@ mod tests {
                 "content": content,
             };
 
-            collection.insert(new_doc.as_mut()).unwrap();
+            collection.insert(&mut new_doc).unwrap();
             doc_collection.push(new_doc);
         }
 
@@ -1116,10 +1108,9 @@ mod tests {
                 "_id": i,
                 "content": content,
             };
-            collection.insert(new_doc.as_mut()).unwrap();
+            collection.insert(&mut new_doc).unwrap();
             doc_collection.push(new_doc);
         }
-
         for doc in &doc_collection {
             let key = doc.get("_id").unwrap();
             let deleted = collection.delete(Some(&doc!{
@@ -1150,19 +1141,29 @@ mod tests {
         let mut db = prepare_db("test-very-large-data").unwrap();
         let mut collection = db.create_collection("test").unwrap();
 
-        let mut doc = Document::new_without_id();
+        let mut doc = doc! {};
         let origin_data = data.clone();
-        doc.insert("content".into(), Value::from(data));
+        doc.insert::<String, Bson>("content".into(), Bson::Binary(bson::Binary {
+            subtype: bson::spec::BinarySubtype::Generic,
+            bytes: origin_data.clone(),
+        }));
 
         assert!(collection.insert(&mut doc).unwrap());
 
-        let new_id = doc.pkey_id().unwrap();
+        let new_id = doc.get("_id").unwrap();
         let back = collection.find_one(&doc! {
             "_id": new_id,
         }).unwrap().unwrap();
 
         let back_bin = back.get("content").unwrap();
-        assert_eq!(back_bin.unwrap_binary().as_ref(), &origin_data);
+
+        let binary = match back_bin {
+            bson::Bson::Binary(bin) => {
+                bin
+            }
+            _ => panic!("type unmatched"),
+        };
+        assert_eq!(&binary.bytes, &origin_data);
     }
 
 }

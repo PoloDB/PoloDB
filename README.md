@@ -6,7 +6,7 @@
 
 PoloDB is an embedded JSON-based database.
 
-[中文版](README_CN.md)
+| [Documentations](https://www.polodb.org/docs) | [中文版](README_CN.md) |
 
 # Features
 
@@ -71,11 +71,10 @@ Limited by my time, I have only compiled and tested on the following platforms:
 
 # Manual
 
+- [Documentations](https://www.polodb.org/docs)
 - [Rust](https://docs.rs/polodb_core)
-- [Node.js](https://github.com/vincentdchan/polodb.js)
-- [Python](./docs/en-US/Python/READEME.md)
 
-# Developing Plan
+# Roadmap
 
 The features will be implemented one by one in order.
 
@@ -94,31 +93,3 @@ The features will be implemented one by one in order.
   - [ ] Data Encryption
   - [ ] JavaScript Engine
 - [ ] Visualization Tools
-
-# V1 to V2
-
-PoloDB V2 uses [msgpack](https://msgpack.org/) to encode data.
-
-PoloDB V1 uses custom format.
-
-## Migration
-
-### Rust
-
-`Database::v1_to_v2` can be used to migrate from v1 to v2.
-
-### Tool
-
-```sh
-polodb migrate --target v2 ./mydb
-```
-
-# Contribute
-
-| Module | Path | Description |
-| -------| ---- | ----------- |
-| Core | `src/polodb_core`  | The core implementation of the Database |
-| C Library | `src/polodb_clib` | The C FFI implementation of PoloDB |
-| CLI tool | `src/polodb` | The command line tool of PoloDB |
-| [Node.js](https://github.com/vincentdchan/polodb.js) | `polodb.js` | The Node.js binding using N-API |
-| Python bindings | `pypolodb` | The CPython binding using Extension API |

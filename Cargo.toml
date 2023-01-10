@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "src/polodb_bson",
     "src/polodb_core",
     "src/polodb",
     "src/polodb_clib",

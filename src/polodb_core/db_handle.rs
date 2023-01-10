@@ -1,5 +1,5 @@
 use std::fmt;
-use polodb_bson::Value;
+use bson::Bson;
 use crate::vm::{VM, VmState};
 use crate::DbResult;
 
@@ -26,7 +26,7 @@ impl<'a> DbHandle<'a> {
     }
 
     #[inline]
-    pub fn get(&self) -> &Value {
+    pub fn get(&self) -> &Bson {
         self.0.stack_top()
     }
 

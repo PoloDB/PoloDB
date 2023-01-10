@@ -1,5 +1,5 @@
 use std::fmt;
-use polodb_bson::{Value, Document};
+use bson::{Bson, Document};
 use crate::DbResult;
 use crate::meta_doc_helper::{MetaDocEntry, meta_doc_key};
 use super::op::DbOp;
@@ -7,7 +7,7 @@ use super::label::LabelSlot;
 use crate::vm::codegen::Codegen;
 
 pub(crate) struct SubProgram {
-    pub(super) static_values:    Vec<Value>,
+    pub(super) static_values:    Vec<Bson>,
     pub(super) instructions:     Vec<u8>,
     pub(super) label_slots:      Vec<LabelSlot>,
 }
@@ -301,7 +301,7 @@ impl fmt::Display for SubProgram {
 
 #[cfg(test)]
 mod tests {
-    use polodb_bson::{mk_document, mk_array};
+    use bson::doc;
     use polodb_line_diff::assert_eq;
     use crate::vm::SubProgram;
     use crate::meta_doc_helper::MetaDocEntry;
@@ -336,8 +336,8 @@ mod tests {
 
     #[test]
     fn print_query() {
-        let meta_doc = mk_document! {};
-        let test_doc = mk_document! {
+        let meta_doc = doc! {};
+        let test_doc = doc! {
             "name": "Vincent Chan",
             "age": 32,
         };
@@ -394,8 +394,8 @@ mod tests {
 
     #[test]
     fn print_query_by_primary_key() {
-        let meta_doc = mk_document! {};
-        let test_doc = mk_document! {
+        let meta_doc = doc! {};
+        let test_doc = doc! {
             "_id": 6,
             "age": 32,
         };
@@ -406,38 +406,59 @@ mod tests {
         let expect = r#"Program:
 
 0: OpenRead(100)
-5: PushValue(6)
-10: FindByPrimaryKey(25)
-15: Goto(33)
+5: Rewind(30)
+10: Goto(73)
 
-20: Label(0)
-25: Pop
-26: Close
-27: Halt
+15: Label(1)
+20: Next(73)
 
-28: Label(1)
-33: GetField("age", 25)
-42: PushValue(32)
-47: Equal
-48: FalseJump(25)
-53: Pop
-54: Pop
-55: ResultRow
-56: Pop
-57: Goto(25)
+25: Label(5, "Close")
+30: Close
+31: Halt
+
+32: Label(4, "Not this item")
+37: RecoverStackPos
+38: Pop
+39: Goto(20)
+
+44: Label(3, "Get field failed")
+49: RecoverStackPos
+50: Pop
+51: Goto(20)
+
+56: Label(2, "Result")
+61: ResultRow
+62: Pop
+63: Goto(20)
+
+68: Label(0, "Compare")
+73: SaveStackPos
+74: GetField("_id", 49)
+83: PushValue(6)
+88: Equal
+89: FalseJump(37)
+94: Pop
+95: Pop
+96: GetField("age", 49)
+105: PushValue(32)
+110: Equal
+111: FalseJump(37)
+116: Pop
+117: Pop
+118: Goto(61)
 "#;
         assert_eq!(expect, actual)
     }
 
     #[test]
     fn query_by_logic_and() {
-        let meta_doc = mk_document! {};
-        let test_doc = mk_document! {
-            "$and": mk_array! [
-                mk_document! {
+        let meta_doc = doc! {};
+        let test_doc = doc! {
+            "$and": [
+                doc! {
                     "_id": 6,
                 },
-                mk_document! {
+                doc! {
                     "age": 32,
                 },
             ],
@@ -495,13 +516,13 @@ mod tests {
 
     #[test]
     fn print_logic_or() {
-        let meta_doc = mk_document! {};
-        let test_doc = mk_document! {
-            "$or": mk_array! [
-                mk_document! {
+        let meta_doc = doc!();
+        let test_doc = doc! {
+            "$or": [
+                doc! {
                     "age": 11,
                 },
-                mk_document! {
+                doc! {
                     "age": 12,
                 },
             ],
@@ -569,13 +590,13 @@ mod tests {
 
     #[test]
     fn print_complex_print() {
-        let meta_doc = mk_document! {};
-        let test_doc = mk_document! {
-            "age": mk_document! {
+        let meta_doc = doc! {};
+        let test_doc = doc! {
+            "age": doc! {
                 "$gt": 3,
             },
-            "child.age": mk_document! {
-                "$in": mk_array! [ 1, 2 ],
+            "child.age": doc! {
+                "$in": [ 1, 2 ],
             },
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
@@ -619,7 +640,7 @@ mod tests {
 94: Pop2(2)
 99: GetField("child", 49)
 108: GetField("age", 49)
-117: PushValue(Array(len=2))
+117: PushValue([1, 2])
 122: In
 123: FalseJump(37)
 128: Pop2(3)
@@ -631,28 +652,28 @@ mod tests {
     #[test]
     fn print_update() {
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let query_doc = mk_document! {
-            "_id": mk_document! {
+        let query_doc = doc! {
+            "_id": doc! {
                 "$gt": 3
             },
         };
-        let update_doc = mk_document! {
-            "$set": mk_document! {
+        let update_doc = doc! {
+            "$set": doc! {
                 "name": "Alan Chan",
             },
-            "$inc": mk_document! {
+            "$inc": doc! {
                 "age": 1,
             },
-            "$mul": mk_document! {
+            "$mul": doc! {
                 "age": 3,
             },
-            "$min": mk_document! {
+            "$min": doc! {
                 "age": 100,
             },
-            "$unset": mk_document! {
+            "$unset": doc! {
                 "age": "",
             },
-            "$rename": mk_document! {
+            "$rename": doc! {
                 "hello1": "hello2",
             },
         };

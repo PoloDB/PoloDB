@@ -1,4 +1,4 @@
-use polodb_bson::Document;
+use bson::Document;
 use crate::DbResult;
 use std::io::Write;
 
@@ -11,11 +11,12 @@ pub enum SerializeType {
 pub(crate) fn serialize(ty: SerializeType, doc: &Document, buf: &mut Vec<u8>) -> DbResult<()> {
     match ty {
         SerializeType::Default => {
-            doc.to_msgpack(buf)?;
+            let bytes = bson::ser::to_vec(&doc)?;
+            buf.write(&bytes)?;
         },
         SerializeType::Legacy => {
-            let tmp = doc.to_bytes()?;
-            buf.write(&tmp)?;
+            let bytes = bson::ser::to_vec(&doc)?;
+            buf.write(&bytes)?;
         }
     }
     Ok(())
@@ -24,11 +25,11 @@ pub(crate) fn serialize(ty: SerializeType, doc: &Document, buf: &mut Vec<u8>) ->
 pub(crate) fn deserialize(ty: SerializeType, buf: &mut &[u8]) -> DbResult<Document> {
     match ty {
         SerializeType::Default => {
-            let doc = Document::from_msgpack(buf)?;
+            let doc = bson::from_slice(buf)?;
             Ok(doc)
         },
         SerializeType::Legacy => {
-            let doc = Document::from_bytes(buf)?;
+            let doc = bson::from_slice(buf)?;
             Ok(doc)
         },
     }

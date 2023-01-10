@@ -4,12 +4,15 @@ mod insert_wrapper;
 mod delete_wrapper;
 pub mod counter_helper;
 pub(crate) mod delete_all_helper;
+mod vli;
 
 pub(crate) use delete_wrapper::BTreePageDeleteWrapper;
 pub(crate) use insert_wrapper::{BTreePageInsertWrapper, InsertBackwardItem, InsertResult};
 
 use std::cmp::Ordering;
-use polodb_bson::{vli, Value, ObjectId, ty_int};
+use bson::Bson;
+use bson::oid::ObjectId;
+use bson::spec::ElementType;
 use crate::db::DbResult;
 use crate::page_handler::PageHandler;
 use crate::page::{RawPage, PageType};
@@ -37,6 +40,7 @@ pub struct BTreeNode {
     pub indexes:     Vec<u32>,
 }
 
+
 impl BTreeNode {
 
     #[inline]
@@ -51,7 +55,7 @@ impl BTreeNode {
 
     // binary search the content
     // find the content or index
-    pub(crate) fn search(&self, key: &Value) -> DbResult<SearchKeyResult> {
+    pub(crate) fn search(&self, key: &Bson) -> DbResult<SearchKeyResult> {
         let mut low: i32 = 0;
         let mut high: i32 = (self.content.len() - 1) as i32;
 
@@ -59,7 +63,7 @@ impl BTreeNode {
             let middle = (low + high) / 2;
             let target_key = &self.content[middle as usize].key;
 
-            let cmp_result = key.value_cmp(target_key)?;
+            let cmp_result = crate::bson_utils::value_cmp(key, target_key)?;
 
             match cmp_result {
                 Ordering::Equal =>
@@ -171,35 +175,43 @@ impl BTreeNode {
 
         let key_ty_int = page.get_u8(begin_offset + 4 + 1);  // use to parse data
 
-        let key: Value = match key_ty_int {
-            0 => return Err(DbErr::KeyTypeOfBtreeShouldNotBeZero),
-
-            ty_int::OBJECT_ID => {
+        let element_type = ElementType::from(key_ty_int);
+        let key: Bson = match element_type {
+            Some(ElementType::ObjectId) => {
                 let oid_bytes_begin = (begin_offset + 6) as usize;
-                let oid_bytes = &page.data[oid_bytes_begin..(oid_bytes_begin + 12)];
-                let oid = ObjectId::deserialize(oid_bytes)?;
+                let mut oid_bytes = [0; 12];
+                oid_bytes.copy_from_slice(&page.data[oid_bytes_begin..(oid_bytes_begin + 12)]);
+                let oid = ObjectId::from(oid_bytes);
 
                 oid.into()
             }
 
-            ty_int::BOOLEAN => {
+            Some(ElementType::Boolean) => {
                 let value_begin_offset = (begin_offset + 6) as usize;
                 let value = page.data[value_begin_offset];
 
                 let bl_value = value != 0;
 
-                Value::Boolean(bl_value)
+                Bson::Boolean(bl_value)
             }
 
-            ty_int::INT => {
+            Some(ElementType::Int32) => {
                 let value_begin_offset = (begin_offset + 6) as usize;
 
                 let (int_value, _) = vli::decode_u64(&page.data[value_begin_offset..])?;
 
-                Value::Int(int_value as i64)
+                Bson::Int32(int_value as i32)
             }
 
-            ty_int::STRING => {
+            Some(ElementType::Int64) => {
+                let value_begin_offset = (begin_offset + 6) as usize;
+
+                let (int_value, _) = vli::decode_u64(&page.data[value_begin_offset..])?;
+
+                Bson::Int64(int_value as i64)
+            }
+
+            Some(ElementType::String) => {
                 let value_begin_offset = (begin_offset + 6) as usize;
 
                 let mut buffer = Vec::new();
@@ -246,7 +258,7 @@ impl BTreeNode {
     fn parse_complex_data_item(page: &RawPage, begin_offset: u32, page_handler: &mut PageHandler) -> DbResult<BTreeNodeDataItem> {
         let data_ticket = BTreeNode::parse_data_item_ticket(page, begin_offset);
         let doc = page_handler.get_doc_from_ticket(&data_ticket)?.unwrap();
-        let pkey = doc.pkey_id().unwrap();
+        let pkey = doc.get("_id").unwrap().into();
         Ok(BTreeNodeDataItem {
             key: pkey,
             data_ticket,
@@ -308,21 +320,20 @@ impl BTreeNode {
     //
     // if the length of key_content is greater than 12
     // then the flag should be 1, and the key_content should be zero
-    fn entry_key_to_bytes(page: &mut RawPage, key: &Value) -> DbResult<()> {
+    fn entry_key_to_bytes(page: &mut RawPage, key: &Bson) -> DbResult<()> {
         match key {
-            Value::ObjectId(oid) => {
+            Bson::ObjectId(oid) => {
                 BTreeNode::put_standard_content_key(page, key);
 
                 // 12 bytes for key content
-                let mut buffer = Vec::with_capacity(BTREE_ENTRY_KEY_CONTENT_SIZE);
-                oid.serialize(&mut buffer)?;
+                let bytes = oid.bytes();
 
-                page.put(&buffer);
+                page.put(&bytes);
 
                 Ok(())
             }
 
-            Value::Boolean(bl) => {
+            Bson::Boolean(bl) => {
                 BTreeNode::put_standard_content_key(page, key);
 
                 let mut buffer: [u8; BTREE_ENTRY_KEY_CONTENT_SIZE] = [0; BTREE_ENTRY_KEY_CONTENT_SIZE];
@@ -337,7 +348,20 @@ impl BTreeNode {
                 Ok(())
             }
 
-            Value::Int(int) => {
+            Bson::Int32(int) => {
+                BTreeNode::put_standard_content_key(page, key);
+
+                let mut buffer = Vec::with_capacity(BTREE_ENTRY_KEY_CONTENT_SIZE);
+                vli::encode(&mut buffer, *int as i64)?;
+
+                buffer.resize(BTREE_ENTRY_KEY_CONTENT_SIZE, 0);
+
+                page.put(&buffer);
+
+                Ok(())
+            }
+
+            Bson::Int64(int) => {
                 BTreeNode::put_standard_content_key(page, key);
 
                 let mut buffer = Vec::with_capacity(BTREE_ENTRY_KEY_CONTENT_SIZE);
@@ -350,7 +374,7 @@ impl BTreeNode {
                 Ok(())
             }
 
-            Value::String(str) => {
+            Bson::String(str) => {
                 let str_len = str.len();
 
                 if str_len > BTREE_ENTRY_KEY_CONTENT_SIZE {
@@ -367,14 +391,17 @@ impl BTreeNode {
                 Ok(())
             }
 
-            _ => Err(DbErr::NotAValidKeyType(key.ty_name().into()))
+            _ => {
+                let name = format!("{:?}", key);
+                Err(DbErr::NotAValidKeyType(name))
+            }
         }
     }
 
     // | 1      | ty_int |
     // | 1 byte | 1 byte |
-    fn put_string_complex_key(page: &mut RawPage, key: &Value) -> DbResult<()> {
-        let key_ty_int = key.ty_int();
+    fn put_string_complex_key(page: &mut RawPage, key: &Bson) -> DbResult<()> {
+        let key_ty_int = key.element_type() as u8;
 
         page.put_u8(1);
         page.put_u8(key_ty_int);
@@ -387,8 +414,8 @@ impl BTreeNode {
 
     // | 0      | ty_int |
     // | 1 byte | 1 byte |
-    fn put_standard_content_key(page: &mut RawPage, key: &Value) {
-        let key_ty_int = key.ty_int();
+    fn put_standard_content_key(page: &mut RawPage, key: &Bson) {
+        let key_ty_int = key.element_type() as u8;
 
         // 2 bytes for key ty_int
         page.put_u8(0);
@@ -444,6 +471,6 @@ impl BTreeNode {
 
 #[derive(Clone)]
 pub struct BTreeNodeDataItem {
-    pub(crate) key:          Value,
+    pub(crate) key:          Bson,
     pub(crate) data_ticket:  DataTicket,
 }

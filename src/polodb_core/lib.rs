@@ -22,6 +22,8 @@
 //! The [Database] structure provides all the API to get access to the DB file.
 //!
 
+extern crate core;
+
 mod btree;
 mod page;
 mod vm;
@@ -41,9 +43,9 @@ mod file_lock;
 mod backend;
 mod transaction;
 mod page_handler;
-mod migration;
 mod doc_serializer;
 pub mod msg_ty;
+mod bson_utils;
 
 pub use db::{Database, DbResult};
 pub use config::Config;
@@ -52,3 +54,5 @@ pub use transaction::TransactionType;
 pub use context::DbContext;
 pub use db_handle::DbHandle;
 pub use error::DbErr;
+
+pub extern crate bson;

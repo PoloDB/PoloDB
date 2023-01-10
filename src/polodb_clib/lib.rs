@@ -1,7 +1,8 @@
 #![allow(clippy::missing_safety_doc)]
 
 use polodb_core::{DbContext, DbErr, DbHandle, TransactionType, Config};
-use polodb_bson::{ObjectId, Document, Array};
+use polodb_core::bson::{Document, Array};
+use polodb_core::bson::oid::ObjectId;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::os::raw::{c_char, c_uint, c_int, c_double, c_longlong};
@@ -386,5 +387,6 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::Multiple(_) => 48,
         DbErr::VersionMismatch(_) => 49,
         DbErr::EnumError(_) => 50,
+        DbErr::BsonDeErr(_) => 51,
     }
 }

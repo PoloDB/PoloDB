@@ -1,5 +1,4 @@
-use polodb_bson::{Document, Value, mk_document};
-use std::rc::Rc;
+use bson::{Document, Bson, doc, bson};
 use crate::DbResult;
 use crate::error::DbErr;
 
@@ -17,7 +16,7 @@ use crate::error::DbErr;
 ///
 pub(crate) struct MetaDocEntry {
     name: String,
-    doc: Rc<Document>,
+    doc: Document,
 }
 
 pub(crate) const KEY_TY_FLAG: u32 = 0b11111111;
@@ -25,20 +24,20 @@ pub(crate) const KEY_TY_FLAG: u32 = 0b11111111;
 impl MetaDocEntry {
 
     pub fn new(id: u32, name: String, root_pid: u32) -> MetaDocEntry {
-        let doc = mk_document! {
+        let doc = doc! {
             "_id": id,
             "name": name.clone(),
-            "root_pid": root_pid,
+            "root_pid": root_pid as i64,
             "flags": 0,
         };
         MetaDocEntry {
             name,
-            doc: Rc::new(doc),
+            doc,
         }
     }
 
-    pub(crate) fn from_doc(doc: Rc<Document>) -> MetaDocEntry {
-        let name = doc.get(meta_doc_key::NAME).unwrap().unwrap_string();
+    pub(crate) fn from_doc(doc: Document) -> MetaDocEntry {
+        let name = doc.get(meta_doc_key::NAME).unwrap().as_str().unwrap();
         MetaDocEntry {
             name: name.into(),
             doc,
@@ -51,21 +50,19 @@ impl MetaDocEntry {
     }
 
     pub(crate) fn root_pid(&self) -> u32 {
-        self.doc.get(meta_doc_key::ROOT_PID).unwrap().unwrap_int() as u32
+        self.doc.get(meta_doc_key::ROOT_PID).unwrap().as_i64().unwrap() as u32
     }
 
     pub(crate) fn set_root_pid(&mut self, new_root_pid: u32) {
-        let doc_mut = Rc::get_mut(&mut self.doc).unwrap();
-        doc_mut.insert(meta_doc_key::ROOT_PID.into(), Value::from(new_root_pid));
+        self.doc.insert::<String, Bson>(meta_doc_key::ROOT_PID.into(), Bson::Int64(new_root_pid as i64));
     }
 
     pub(crate) fn flags(&self) -> u32 {
-        self.doc.get(meta_doc_key::FLAGS).unwrap().unwrap_int() as u32
+        self.doc.get(meta_doc_key::FLAGS).unwrap().as_i32().unwrap() as u32
     }
 
     pub(crate) fn set_flags(&mut self, flags: u32) {
-        let doc_mut = Rc::get_mut(&mut self.doc).unwrap();
-        doc_mut.insert(meta_doc_key::FLAGS.into(), Value::from(flags));
+        self.doc.insert::<String, Bson>(meta_doc_key::FLAGS.into(), bson!(flags as i32));
     }
 
     #[inline]
@@ -73,14 +70,14 @@ impl MetaDocEntry {
         (self.flags() & KEY_TY_FLAG) as u8
     }
 
-    pub(crate) fn check_pkey_ty(&self, primary_key: &Value, skipped: &mut bool) -> DbResult<()> {
+    pub(crate) fn check_pkey_ty(&self, primary_key: &Bson, skipped: &mut bool) -> DbResult<()> {
         let expected = self.key_ty();
         if expected == 0 {
             *skipped = true;
             return Ok(())
         }
 
-        let actual_ty = primary_key.ty_int();
+        let actual_ty = primary_key.element_type() as u8;
 
         if expected != actual_ty {
             return Err(DbErr::UnexpectedIdType(expected, actual_ty))
@@ -90,18 +87,17 @@ impl MetaDocEntry {
     }
 
     pub(crate) fn merge_pkey_ty_to_meta(&mut self, value_doc: &Document) {
-        let pkey_ty = value_doc.pkey_id().unwrap().ty_int();
+        let pkey_ty = value_doc.get("_id").unwrap().element_type();
         self.set_flags(self.flags() | ((pkey_ty as u32) & KEY_TY_FLAG));
     }
 
     #[inline]
     pub(crate) fn doc_ref(&self) -> &Document {
-        self.doc.as_ref()
+        &self.doc
     }
 
     pub(crate) fn set_indexes(&mut self, indexes: Document) {
-        let doc_mut = Rc::get_mut(&mut self.doc).unwrap();
-        doc_mut.insert(meta_doc_key::INDEXES.into(), Value::from(indexes));
+        self.doc.insert::<String, Bson>(meta_doc_key::INDEXES.into(), Bson::from(indexes));
     }
 
 }

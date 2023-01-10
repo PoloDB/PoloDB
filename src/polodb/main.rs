@@ -18,7 +18,6 @@ use error_chain::error_chain;
 use signal_hook::{iterator::Signals};
 #[cfg(unix)]
 use signal_hook::consts::TERM_SIGNALS;
-use std::path::{Path, PathBuf};
 
 static CONN_COUNT: AtomicI32 = AtomicI32::new(0);
 
@@ -199,14 +198,6 @@ fn safely_quit(app: AppContext) {
     exit(0);
 }
 
-fn migrate_v1_to_v2(path: &Path) {
-    let result = Database::v1_to_v2(path);
-    if let Err(err) = result {
-        println!("{}", err);
-        exit(8);
-    }
-}
-
 fn main() {
     let version = Database::get_version();
     let app = App::new("PoloDB")
@@ -289,18 +280,6 @@ fn main() {
         let path = sub.value_of("path").expect("no input path");
         let detail = sub.is_present("detail");
         dump(path, detail);
-        return;
-    }
-
-    if let Some(sub) = matches.subcommand_matches("migrate") {
-        let target = sub.value_of("target").expect("target version not found");
-        if target != "v2" {
-            println!("only v2 format is supported, but {} got", target);
-            exit(7);
-        }
-        let path_str = sub.value_of("path").expect("path not found");
-        let path = PathBuf::from(path_str);
-        migrate_v1_to_v2(&path);
         return;
     }
 

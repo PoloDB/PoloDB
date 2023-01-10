@@ -1,5 +1,5 @@
-use crate::BsonResult;
-use crate::error::BsonErr;
+use bson::ser::Result as BsonResult;
+use bson::ser::Error as BsonErr;
 use std::io::Write;
 
 // Extended from http://www.dlugosz.com/ZIP2/VLI.html
@@ -72,6 +72,7 @@ macro_rules! read_byte_plus {
     }
 }
 
+#[allow(dead_code)]
 pub fn decode(bytes: &[u8]) -> BsonResult<(i64, usize)> {
     let mut ptr: usize = 0;
     let first_byte = read_byte_plus!(bytes, ptr);
@@ -167,12 +168,12 @@ pub fn decode_u64(bytes: &[u8]) -> BsonResult<(u64, usize)> {
         return Ok((u64::from_be_bytes(tmp), ptr));
     }
 
-    Err(BsonErr::DecodeIntUnknownByte)
+    Err(BsonErr::InvalidCString("DecodeIntUnknownByte".to_string()))
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::vli::{encode_u64, decode_u64, encode, decode};
+    use crate::btree::vli::{encode_u64, decode_u64, encode, decode};
 
     #[test]
     fn test_legacy_negative() {

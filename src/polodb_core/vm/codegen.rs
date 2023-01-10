@@ -1,5 +1,4 @@
-use std::rc::Rc;
-use polodb_bson::{Value, Document, Array};
+use bson::{Bson, Document, Array};
 use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
@@ -10,13 +9,13 @@ const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
 
 mod update_op {
-    use polodb_bson::Value;
+    use bson::Bson;
     use crate::vm::codegen::Codegen;
     use crate::DbResult;
     use crate::vm::op::DbOp;
     use crate::error::mk_field_name_type_unexpected;
 
-    pub(super) fn update_op_min_max(codegen: &mut Codegen, doc: &Value, min: bool) -> DbResult<()> {
+    pub(super) fn update_op_min_max(codegen: &mut Codegen, doc: &Bson, min: bool) -> DbResult<()> {
         let doc = crate::try_unwrap_document!("$min", doc);
 
         for (key, value) in doc.iter() {
@@ -24,8 +23,8 @@ mod update_op {
             let next_element_label = codegen.new_label();
             let set_field_label = codegen.new_label();
 
-            let key_id_1 = codegen.push_static(Value::from(key.clone()));
-            let key_id_2 = codegen.push_static(Value::from(key.clone()));
+            let key_id_1 = codegen.push_static(Bson::from(key.clone()));
+            let key_id_2 = codegen.push_static(Bson::from(key.clone()));
             let value_id = codegen.push_static(value.clone());
 
             codegen.emit_goto2(DbOp::GetField, key_id_1, next_element_label);  // stack +1
@@ -142,7 +141,7 @@ impl Codegen {
     }
 
     fn emit_query_layout_has_pkey<F>(
-        &mut self, pkey: Value, query: &Document, result_callback: F
+        &mut self, pkey: Bson, query: &Document, result_callback: F
     ) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
         let close_label = self.new_label();
@@ -166,7 +165,7 @@ impl Codegen {
                 continue;
             }
 
-            let key_static_id = self.push_static(Value::String(Rc::new(key.clone())));
+            let key_static_id = self.push_static(Bson::String(key.clone()));
             let value_static_id = self.push_static(value.clone());
 
             self.emit_goto2(DbOp::GetField, key_static_id, close_label); // push a value1
@@ -192,9 +191,9 @@ impl Codegen {
     ) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
 
-        if let Some(id_value) = query.pkey_id() {
-            if id_value.is_valid_key_type() {
-                return self.emit_query_layout_has_pkey(id_value, query, result_callback);
+        if let Some(id_value) = query.get("_id") {
+            if crate::bson_utils::is_valid_key_type(id_value) {
+                return self.emit_query_layout_has_pkey(id_value.clone(), query, result_callback);
             }
         }
 
@@ -358,7 +357,7 @@ impl Codegen {
     // case3: "_id" -> Document
     fn emit_query_tuple(&mut self,
                         key: &str,
-                        value: &Value,
+                        value: &Bson,
                         result_label: Label,
                         get_field_failed_label: Label,
                         not_found_label: Label
@@ -402,14 +401,14 @@ impl Codegen {
             }
         } else {
             match value {
-                Value::Document(doc) => {
+                Bson::Document(doc) => {
                     return self.emit_query_tuple_document(
-                        key, doc.as_ref(),
+                        key, doc,
                         get_field_failed_label, not_found_label
                     );
                 }
 
-                Value::Array(_) =>
+                Bson::Array(_) =>
                     return Err(DbErr::InvalidField(mk_invalid_query_field(
                         self.last_key().into(), self.gen_path())
                     )),
@@ -447,7 +446,7 @@ impl Codegen {
                                     key: &str,
                                     get_field_failed_label: Label,
                                     not_found_label: Label, sub_key: &str,
-                                    sub_value: &Value
+                                    sub_value: &Bson
     ) -> DbResult<()> {
         match sub_key {
             "$eq" => {
@@ -493,7 +492,7 @@ impl Codegen {
             // check the value is array
             "$in" => {
                 match sub_value {
-                    Value::Array(_) => (),
+                    Bson::Array(_) => (),
                     _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
                         self.last_key().into(), self.gen_path())
                     )),
@@ -554,7 +553,7 @@ impl Codegen {
 
             "$nin" => {
                 match sub_value {
-                    Value::Array(_) => (),
+                    Bson::Array(_) => (),
                     _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
                         self.last_key().into(), self.gen_path())
                     )),
@@ -574,7 +573,7 @@ impl Codegen {
 
             "$size" => {
                 let expected_size = match sub_value {
-                    Value::Int(i) => *i,
+                    Bson::Int64(i) => *i,
                     _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
                         self.last_key().into(), self.gen_path()
                     ))),
@@ -583,7 +582,7 @@ impl Codegen {
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
                 self.emit(DbOp::ArraySize);
 
-                let expect_size_stat_id = self.push_static(Value::from(expected_size));
+                let expect_size_stat_id = self.push_static(Bson::from(expected_size));
                 self.emit_push_value(expect_size_stat_id);
 
                 self.emit(DbOp::Equal);
@@ -631,18 +630,18 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_update_operation_kv(&mut self, key: &str, value: &Value) -> DbResult<()> {
+    fn emit_update_operation_kv(&mut self, key: &str, value: &Bson) -> DbResult<()> {
         match key.as_ref() {
             "$inc" => {
                 let doc = crate::try_unwrap_document!("$inc", value);
 
-                self.iterate_add_op(DbOp::IncField, doc.as_ref())?;
+                self.iterate_add_op(DbOp::IncField, doc)?;
             }
 
             "$set" => {
                 let doc = crate::try_unwrap_document!("$set", value);
 
-                self.iterate_add_op(DbOp::SetField, doc.as_ref())?;
+                self.iterate_add_op(DbOp::SetField, doc)?;
             }
 
             "$max" => {
@@ -656,7 +655,7 @@ impl Codegen {
             "$mul" => {
                 let doc = crate::try_unwrap_document!("$mul", value);
 
-                self.iterate_add_op(DbOp::MulField, doc.as_ref())?;
+                self.iterate_add_op(DbOp::MulField, doc)?;
             }
 
             "$rename" => {
@@ -664,12 +663,13 @@ impl Codegen {
 
                 for (key, value) in doc.iter() {
                     let new_name = match value {
-                        Value::String(new_name) => new_name.as_str(),
+                        Bson::String(new_name) => new_name.as_str(),
                         t => {
+                            let name = format!("{}", t);
                             let err = mk_field_name_type_unexpected(
-                                key,
-                                "String",
-                                t.ty_name()
+                                key.into(),
+                                "String".into(),
+                                name
                             );
                             return Err(err);
                         }
@@ -700,7 +700,7 @@ impl Codegen {
 
                 for (key, value) in doc.iter() {
                     let num = match value {
-                        Value::Int(i) => *i,
+                        Bson::Int64(i) => *i,
                         _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
                             self.last_key().into(),
                             self.gen_path()
@@ -733,7 +733,7 @@ impl Codegen {
             let value_id = self.push_static(value.clone());
             self.emit_push_value(value_id);
 
-            let key_id = self.push_static(Value::from(key.clone()));
+            let key_id = self.push_static(Bson::from(key.clone()));
             self.emit(op);
             self.emit_u32(key_id);
 
@@ -770,7 +770,7 @@ impl Codegen {
         self.program.instructions.len() as u32
     }
 
-    pub(super) fn push_static(&mut self, value: Value) -> u32 {
+    pub(super) fn push_static(&mut self, value: Bson) -> u32 {
         let pos = self.program.static_values.len() as u32;
         self.program.static_values.push(value);
         pos
@@ -784,8 +784,8 @@ impl Codegen {
 
     pub(super) fn emit_rename_field(&mut self, old_name: &str, new_name: &str) {
         let get_field_failed_label = self.new_label();
-        let old_name_id = self.push_static(Value::String(Rc::new(old_name.into())));
-        let new_name_id = self.push_static(Value::String(Rc::new(new_name.into())));
+        let old_name_id = self.push_static(Bson::String(old_name.into()));
+        let new_name_id = self.push_static(Bson::String(new_name.into()));
         self.emit_goto2(DbOp::GetField, old_name_id, get_field_failed_label);
 
         self.emit(DbOp::SetField);
@@ -800,12 +800,12 @@ impl Codegen {
     }
 
     pub(super) fn emit_unset_field(&mut self, name: &str) {
-        let value_id = self.push_static(Value::String(Rc::new(name.into())));
+        let value_id = self.push_static(Bson::String(name.into()));
         self.emit(DbOp::UnsetField);
         self.emit_u32(value_id);
     }
 
-    pub(super) fn emit_push_field(&mut self, field_name: &str, value: &Value) {
+    pub(super) fn emit_push_field(&mut self, field_name: &str, value: &Bson) {
         let get_field_failed_label = self.new_label();
         let name_id = self.push_static(field_name.into());
         self.emit_goto2(DbOp::GetField, name_id, get_field_failed_label);

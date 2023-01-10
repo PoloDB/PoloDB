@@ -1,14 +1,13 @@
 use std::io;
 use std::fmt;
-use polodb_bson::ty_int;
-use polodb_bson::error::BsonErr;
+use bson::ser::Error as BsonErr;
 use crate::msg_ty::MsgTy;
 
 #[derive(Debug)]
 pub struct FieldTypeUnexpectedStruct {
-    pub field_name: Box<str>,
-    pub expected_ty: &'static str,
-    pub actual_ty: &'static str,
+    pub field_name: String,
+    pub expected_ty: String,
+    pub actual_ty: String,
 }
 
 impl fmt::Display for FieldTypeUnexpectedStruct {
@@ -21,7 +20,7 @@ impl fmt::Display for FieldTypeUnexpectedStruct {
 }
 
 pub(crate) fn mk_field_name_type_unexpected(
-    option_name: &str, expected_ty: &'static str, actual_ty: &'static str
+    option_name: String, expected_ty: String, actual_ty: String
 ) -> DbErr {
     DbErr::FieldTypeUnexpected(Box::new(FieldTypeUnexpectedStruct {
         field_name: option_name.into(),
@@ -80,10 +79,10 @@ pub fn mk_invalid_query_field(name: String, path: String) -> Box<InvalidFieldStr
 pub struct UnexpectedTypeForOpStruct {
     pub operation: &'static str,
     pub expected_ty: &'static str,
-    pub actual_ty: &'static str,
+    pub actual_ty: String,
 }
 
-pub fn mk_unexpected_type_for_op(op: &'static str, expected_ty: &'static str, actual_ty: &'static str) -> Box<UnexpectedTypeForOpStruct> {
+pub fn mk_unexpected_type_for_op(op: &'static str, expected_ty: &'static str, actual_ty: String) -> Box<UnexpectedTypeForOpStruct> {
     Box::new(UnexpectedTypeForOpStruct {
         operation: op,
         expected_ty,
@@ -111,6 +110,7 @@ pub enum DbErr {
     IOErr(Box<io::Error>),
     UTF8Err(Box<std::str::Utf8Error>),
     BsonErr(Box<BsonErr>),
+    BsonDeErr(Box<bson::de::Error>),
     DataSizeTooLarge(u32, u32),
     DecodeEOF,
     DataOverflow,
@@ -171,10 +171,7 @@ impl fmt::Display for DbErr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             DbErr::UnexpectedIdType(expected_ty, actual_ty) => {
-                let expected = ty_int::to_str(*expected_ty);
-                let actual = ty_int::to_str(*actual_ty);
-
-                write!(f, "UnexpectedIdType(expected: {}, actual: {})", expected, actual)
+                write!(f, "UnexpectedIdType(expected: {}, actual: {})", expected_ty, actual_ty)
             }
 
             DbErr::NotAValidKeyType(ty_name) => write!(f, "type {} is not a valid key type", ty_name),
@@ -191,6 +188,7 @@ impl fmt::Display for DbErr {
             DbErr::IOErr(io_err) => write!(f, "IOErr: {}", io_err),
             DbErr::UTF8Err(utf8_err) => utf8_err.fmt(f),
             DbErr::BsonErr(bson_err) => write!(f, "bson error: {}", bson_err),
+            DbErr::BsonDeErr(bson_de_err) => write!(f, "bson de error: {}", bson_de_err),
             DbErr::DataSizeTooLarge(expected, actual) =>
                 write!(f, "DataSizeTooLarge(expected: {}, actual: {})", expected, actual),
             DbErr::DecodeEOF => write!(f, "DecodeEOF"),
@@ -244,6 +242,14 @@ impl fmt::Display for DbErr {
 
             DbErr::EnumError(err) => err.as_ref().fmt(f),
         }
+    }
+
+}
+
+impl From<bson::de::Error> for DbErr {
+
+    fn from(error: bson::de::Error) -> Self {
+        DbErr::BsonDeErr(Box::new(error))
     }
 
 }
