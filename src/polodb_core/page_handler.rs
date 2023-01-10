@@ -1,7 +1,6 @@
 use std::cell::Cell;
 use std::sync::Arc;
 use std::num::NonZeroU32;
-use std::rc::Rc;
 use bson::Document;
 use crate::backend::file::pagecache::PageCache;
 use crate::transaction::{TransactionType, TransactionState};

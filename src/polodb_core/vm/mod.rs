@@ -5,7 +5,6 @@ mod label;
 
 pub(crate) use subprogram::SubProgram;
 
-use std::rc::Rc;
 use std::vec::Vec;
 use std::cmp::Ordering;
 use bson::Bson;
@@ -16,7 +15,6 @@ use crate::btree::{HEADER_SIZE, ITEM_SIZE};
 use crate::{TransactionType, DbResult, DbErr};
 use crate::error::{mk_field_name_type_unexpected, mk_unexpected_type_for_op};
 use std::cell::Cell;
-use std::fmt::format;
 
 const STACK_SIZE: usize = 256;
 
@@ -245,7 +243,7 @@ impl<'a> VM<'a> {
                 mut_doc.insert::<String, Bson>(key.into(), new_value);
             }
 
-            Some(ty) => {
+            Some(_ty) => {
                 let name = format!("{}", value);
                 return Err(mk_field_name_type_unexpected(
                     key.into(),
@@ -319,7 +317,7 @@ impl<'a> VM<'a> {
                 mut_doc.insert::<String, Bson>(key.into(), new_value);
             }
 
-            Some(ty) => {
+            Some(_ty) => {
                 let name = format!("{}", value);
                 return Err(mk_field_name_type_unexpected(
                     key.into(),

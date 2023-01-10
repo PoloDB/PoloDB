@@ -1,5 +1,4 @@
 use bson::{Document, Bson, doc};
-use std::rc::Rc;
 use crate::DbResult;
 use crate::error::DbErr;
 

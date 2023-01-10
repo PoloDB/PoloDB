@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use bson::Document;
 use crate::context::DbContext;
 use crate::{DbResult, Config, SerializeType, TransactionType, Database};

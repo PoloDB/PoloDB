@@ -12,8 +12,6 @@ pub(crate) use insert_wrapper::{BTreePageInsertWrapper, InsertBackwardItem, Inse
 use std::cmp::Ordering;
 use bson::Bson;
 use bson::oid::ObjectId;
-use bson::ser::Error as BsonErr;
-use bson::ser::Result as BsonResult;
 use crate::db::DbResult;
 use crate::page_handler::PageHandler;
 use crate::page::{RawPage, PageType};

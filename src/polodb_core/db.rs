@@ -1,5 +1,4 @@
 use std::convert::TryFrom;
-use std::rc::Rc;
 use std::path::Path;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -492,7 +491,7 @@ impl Database {
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
 
-        let mut query_opt = match doc.get("query") {
+        let query_opt = match doc.get("query") {
             Some(Bson::Document(doc)) => doc.clone(),
             _ => return Err(DbErr::ParseError("query not found in find request".into())),
         };
@@ -519,7 +518,7 @@ impl Database {
         }
         let mut request_body = vec![0u8; request_size];
         pipe_in.read_exact(&mut request_body)?;
-        let mut body_ref: &[u8] = request_body.as_slice();
+        let body_ref: &[u8] = request_body.as_slice();
         let val = bson::from_slice(body_ref)?;
         Ok(val)
     }
