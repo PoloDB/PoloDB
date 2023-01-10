@@ -83,13 +83,6 @@ macro_rules! path_hint {
     }
 }
 
-fn is_valid_key_type(value: &Bson) -> bool {
-    matches!(value, Bson::String(_) |
-                       Bson::Int64(_) |
-                       Bson::ObjectId(_) |
-                       Bson::Boolean(_))
-}
-
 impl Codegen {
 
     pub(super) fn new(skip_annotation: bool) -> Codegen {
@@ -200,7 +193,7 @@ impl Codegen {
         F: FnOnce(&mut Codegen) -> DbResult<()> {
 
         if let Some(id_value) = query.get("_id") {
-            if is_valid_key_type(id_value) {
+            if crate::bson_utils::is_valid_key_type(id_value) {
                 return self.emit_query_layout_has_pkey(id_value.clone(), query, result_callback);
             }
         }
@@ -675,9 +668,9 @@ impl Codegen {
                         t => {
                             let name = format!("{}", t);
                             let err = mk_field_name_type_unexpected(
-                                key,
-                                "String",
-                                name.as_str()
+                                key.into(),
+                                "String".into(),
+                                name
                             );
                             return Err(err);
                         }

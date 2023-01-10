@@ -15,7 +15,7 @@ macro_rules! try_unwrap_document {
             Bson::Document(doc) => doc,
             t => {
                 let name = format!("{}", t);
-                let err = mk_field_name_type_unexpected($op_name, "Document".into(), name.as_str());
+                let err = mk_field_name_type_unexpected($op_name.into(), "Document".into(), name);
                 return Err(err);
             },
         }
@@ -29,7 +29,7 @@ macro_rules! try_unwrap_array {
             Bson::Array(arr) => arr,
             t => {
                 let name = format!("{}", t);
-                let err = mk_field_name_type_unexpected($op_name, "Array".into(), name.as_str());
+                let err = mk_field_name_type_unexpected($op_name.into(), "Array".into(), name);
                 return Err(err);
             },
         }

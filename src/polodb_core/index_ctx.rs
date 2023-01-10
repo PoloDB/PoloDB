@@ -27,7 +27,7 @@ impl IndexCtx {
     pub fn from_meta_doc(doc: &Document, serialize_type: SerializeType) -> Option<IndexCtx> {
         let indexes = doc.get(meta_doc_key::INDEXES)?;
 
-        let meta_doc: &Rc<Document> = indexes.unwrap_document();
+        let meta_doc: &Document = indexes.as_document().unwrap();
         if meta_doc.is_empty() {
             return None;
         }
@@ -35,7 +35,7 @@ impl IndexCtx {
         let mut result = IndexCtx::new(serialize_type);
 
         for (key, options) in meta_doc.iter() {
-            let options_doc = options.unwrap_document();
+            let options_doc = options.as_document().unwrap();
             let entry = IndexEntry::from_option_doc(options_doc.borrow());
             result.key_to_entry.insert(key.clone(), entry);
         }
@@ -44,9 +44,9 @@ impl IndexCtx {
     }
 
     pub fn merge_to_meta_doc(&self, collection_meta: &mut MetaDocEntry) {
-        let mut new_back_doc = Document::new_without_id();
+        let mut new_back_doc = doc!();
         for (key, entry) in &self.key_to_entry {
-            let index_meta_doc = Rc::new(entry.to_doc());
+            let index_meta_doc = entry.to_doc();
             new_back_doc.insert(key.clone(), Bson::Document(index_meta_doc));
         }
 
@@ -86,10 +86,10 @@ impl IndexEntry {
 
     fn from_option_doc(doc: &Document) -> IndexEntry {
         let name = doc.get(meta_doc_key::index::NAME).map(|val| {
-            val.unwrap_string().to_string()
+            val.as_str().unwrap().to_string()
         });
-        let unique = doc.get(meta_doc_key::index::UNIQUE).unwrap().unwrap_boolean();
-        let root_pid = doc.get(meta_doc_key::index::ROOT_PID).unwrap().unwrap_int();
+        let unique = doc.get(meta_doc_key::index::UNIQUE).unwrap().as_bool().unwrap();
+        let root_pid = doc.get(meta_doc_key::index::ROOT_PID).unwrap().as_i64().unwrap();
 
         IndexEntry {
             name,
@@ -99,12 +99,12 @@ impl IndexEntry {
     }
 
     fn to_doc(&self) -> Document {
-        let mut result = Document::new_without_id();
+        let mut result = doc!();
         if let Some(name_val) = &self.name {
-            result.insert(meta_doc_key::index::NAME.into(), Bson::String(Rc::new(name_val.clone())));
+            result.insert::<String, Bson>(meta_doc_key::index::NAME.into(), Bson::String(name_val.clone()));
         }
-        result.insert(meta_doc_key::index::UNIQUE.into(), Bson::Boolean(self.unique));
-        result.insert(meta_doc_key::index::ROOT_PID.into(), Bson::Int(self.root_pid as i64));
+        result.insert::<String, Bson>(meta_doc_key::index::UNIQUE.into(), Bson::Boolean(self.unique));
+        result.insert::<String, Bson>(meta_doc_key::index::ROOT_PID.into(), Bson::Int64(self.root_pid as i64));
         result
     }
 
@@ -114,8 +114,9 @@ impl IndexEntry {
         is_changed: &mut bool,
         page_handler: &mut PageHandler) -> DbResult<()> {
 
-        if !data_value.is_valid_key_type() {
-            return Err(DbErr::NotAValidKeyType(data_value.ty_name().into()));
+        if !crate::bson_utils::is_valid_key_type(data_value) {
+            let name = format!("{}", data_value);
+            return Err(DbErr::NotAValidKeyType(name));
         }
 
         let mut insert_wrapper = BTreePageInsertWrapper::new(page_handler, self.root_pid);
@@ -139,7 +140,7 @@ impl IndexEntry {
 
         let new_root_page = backward_item.write_to_page(page_handler, new_root_id, self.root_pid)?;
 
-        meta_doc.insert(meta_doc_key::index::ROOT_PID.into(), Bson::Int64(new_root_id as i64));
+        meta_doc.insert::<String, Bson>(meta_doc_key::index::ROOT_PID.into(), Bson::Int64(new_root_id as i64));
 
         self.root_pid = new_root_id;
 
@@ -165,11 +166,12 @@ macro_rules! match_and_merge_option {
     ($options:expr, $key_name:expr, $target: expr, $val_ty: tt) => {
         match $options.get($key_name) {
             Some(Bson::$val_ty(val)) => {
-                $target.insert($key_name.into(), Bson::$val_ty(val.clone()));
+                $target.insert::<String, Bson>($key_name.into(), Bson::$val_ty(val.clone()));
             }
 
             Some(val) => {
-                let err = mk_field_name_type_unexpected($key_name, stringify!($val_ty), val.ty_name());
+                let name = format!("{}", val);
+                let err = mk_field_name_type_unexpected($key_name.into(), stringify!($val_ty).into(), name);
                 return Err(err)
             }
 
@@ -181,10 +183,10 @@ macro_rules! match_and_merge_option {
 
 #[inline]
 fn mk_default_index_options() -> Document {
-    let mut result = Document::new_without_id();
+    let mut result = doc!();
 
-    result.insert(meta_doc_key::index::UNIQUE.into(), Bson::Boolean(false));
-    result.insert(meta_doc_key::index::V.into(), Bson::Int(1));
+    result.insert::<String, Bson>(meta_doc_key::index::UNIQUE.into(), Bson::Boolean(false));
+    result.insert::<String, Bson>(meta_doc_key::index::V.into(), Bson::Int64(1));
 
     result
 }
@@ -192,11 +194,11 @@ fn mk_default_index_options() -> Document {
 pub(crate) fn merge_options_into_default(root_pid: u32, options: Option<&Document>) -> DbResult<Document> {
     let mut doc = mk_default_index_options();
 
-    doc.insert(meta_doc_key::index::ROOT_PID.into(), Bson::Int64(root_pid as i64));
+    doc.insert::<String, Bson>(meta_doc_key::index::ROOT_PID.into(), Bson::Int64(root_pid as i64));
 
     if let Some(options) = options {
         match_and_merge_option!(options, meta_doc_key::index::NAME, doc, String);
-        match_and_merge_option!(options, meta_doc_key::index::V, doc, Int);
+        match_and_merge_option!(options, meta_doc_key::index::V, doc, Int64);
         match_and_merge_option!(options, meta_doc_key::index::UNIQUE, doc, Boolean);
     }
 

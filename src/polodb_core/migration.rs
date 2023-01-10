@@ -20,7 +20,7 @@ fn mk_new_db_path(db_path: &Path) -> PathBuf {
     buf
 }
 
-fn find_all(db_ctx: &mut DbContext, col_id: u32, meta_version: u32) -> DbResult<Vec<Rc<Document>>> {
+fn find_all(db_ctx: &mut DbContext, col_id: u32, meta_version: u32) -> DbResult<Vec<Document>> {
     let mut result = vec![];
 
     let mut handle = db_ctx.find(col_id, meta_version, None)?;
@@ -28,7 +28,7 @@ fn find_all(db_ctx: &mut DbContext, col_id: u32, meta_version: u32) -> DbResult<
     handle.step()?;
 
     while handle.has_row() {
-        let doc = handle.get().unwrap_document();
+        let doc = handle.get().as_document().unwrap();
         result.push(doc.clone());
 
         handle.step()?;
@@ -44,15 +44,15 @@ fn do_transfer(db_ctx: &mut DbContext, new_db: &mut Database) -> DbResult<()> {
 
     for item in vec {
         println!("hello: {}", item);
-        let id = item.get("_id").unwrap().unwrap_int() as u32;
-        let name = item.get("name").expect("not a valid db").unwrap_string();
+        let id = item.get("_id").unwrap().as_i64().unwrap() as u32;
+        let name = item.get("name").expect("not a valid db").as_str().unwrap();
 
-        let data = find_all(db_ctx, id, db_ctx.meta_version).unwrap();
+        let data: Vec<Document> = find_all(db_ctx, id, db_ctx.meta_version).unwrap();
 
         let mut new_collection = new_db.create_collection(name).unwrap();
 
         for item in data {
-            let mut doc = item.as_ref().clone();
+            let mut doc = item.clone();
             new_collection.insert(&mut doc).unwrap();
         }
     }

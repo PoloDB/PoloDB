@@ -12,3 +12,11 @@ pub fn value_cmp(a: &Bson, b: &Bson) -> BsonResult<Ordering> {
         _ => Err(BsonErr::InvalidCString("Unsupported types".to_string())),
     }
 }
+
+pub fn is_valid_key_type(value: &Bson) -> bool {
+    matches!(value, Bson::String(_) |
+                    Bson::Int64(_) |
+                    Bson::ObjectId(_) |
+                    Bson::Boolean(_))
+}
+

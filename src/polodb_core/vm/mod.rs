@@ -212,7 +212,10 @@ impl<'a> VM<'a> {
 
                     _ => {
                         let name = format!("{}", value);
-                        return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
+                        return Err(mk_field_name_type_unexpected(
+                            key.into(),
+                            "number".into(),
+                            name));
                     }
                 };
                 mut_doc.insert::<String, Bson>(key.into(), new_value);
@@ -232,7 +235,10 @@ impl<'a> VM<'a> {
 
                     _ => {
                         let name = format!("{}", value);
-                        return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
+                        return Err(mk_field_name_type_unexpected(
+                            key.into(),
+                            "number".into(),
+                            name));
                     }
 
                 };
@@ -241,7 +247,10 @@ impl<'a> VM<'a> {
 
             Some(ty) => {
                 let name = format!("{}", value);
-                return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
+                return Err(mk_field_name_type_unexpected(
+                    key.into(),
+                    "number".into(),
+                    name));
             }
 
             None => {
@@ -277,7 +286,10 @@ impl<'a> VM<'a> {
 
                     _ => {
                         let name = format!("{}", value);
-                        return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
+                        return Err(mk_field_name_type_unexpected(
+                            key.into(),
+                            "number".into(),
+                            name));
                     }
                 };
                 mut_doc.insert::<String, Bson>(key.into(), new_value);
@@ -297,7 +309,10 @@ impl<'a> VM<'a> {
 
                     _ => {
                         let name = format!("{}", value);
-                        return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
+                        return Err(mk_field_name_type_unexpected(
+                            key.into(),
+                            "number".into(),
+                            name));
                     }
 
                 };
@@ -306,7 +321,10 @@ impl<'a> VM<'a> {
 
             Some(ty) => {
                 let name = format!("{}", value);
-                return Err(mk_field_name_type_unexpected(key, "number", name.as_str()));
+                return Err(mk_field_name_type_unexpected(
+                    key.into(),
+                    "number".into(),
+                    name));
             }
 
             None => {
@@ -342,7 +360,7 @@ impl<'a> VM<'a> {
             _ => {
                 let name = format!("{}", self.stack[st-  2]);
                 return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                    "$push", "Array", name.as_str()
+                    "$push", "Array", name
                 )))
             }
         };
@@ -357,7 +375,7 @@ impl<'a> VM<'a> {
             _ => {
                 let name = format!("{}", self.stack[st - 1]);
                 return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                    "$pop", "Array", name.as_str()
+                    "$pop", "Array", name
                 )))
             }
         };
@@ -373,7 +391,7 @@ impl<'a> VM<'a> {
             _ => {
                 let name = format!("{}", self.stack[st - 1]);
                 return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                    "$pop", "Array", name.as_str()
+                    "$pop", "Array", name
                 )))
             }
         };
@@ -482,7 +500,10 @@ impl<'a> VM<'a> {
                             Bson::Document(doc) => doc,
                             _ => {
                                 let name = format!("{}", top);
-                                let err = mk_field_name_type_unexpected(key_name, "Document", name.as_str());
+                                let err = mk_field_name_type_unexpected(
+                                    key_name.into(),
+                                    "Document".into(),
+                                    name);
                                 self.state = VmState::Halt;
                                 return Err(err)
                             }

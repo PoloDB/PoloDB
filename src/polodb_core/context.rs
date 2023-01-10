@@ -158,8 +158,8 @@ impl DbContext {
         handle.step()?;
 
         if handle.state() == (VmState::HasRow as i8) {
-            let doc = handle.get().unwrap_document();
-            let int_raw = doc.pkey_id().unwrap().unwrap_int();
+            let doc = handle.get().as_document().unwrap();
+            let int_raw = doc.get("_id").unwrap().as_i64().unwrap();
 
             handle.commit_and_close_vm()?;
             return Ok(CollectionMeta {
@@ -246,17 +246,17 @@ impl DbContext {
             return Err(DbErr::CollectionAlreadyExits(name.into()));
         }
 
-        let mut doc = Document::new_without_id();
+        let mut doc = doc!();
 
         let collection_id = meta_source.meta_id_counter;
-        doc.insert(meta_doc_key::ID.into(), collection_id.into());
+        doc.insert::<String, Bson>(meta_doc_key::ID.into(), collection_id.into());
 
-        doc.insert(meta_doc_key::NAME.into(), name.into());
+        doc.insert::<String, Bson>(meta_doc_key::NAME.into(), name.into());
 
         let root_pid = self.page_handler.alloc_page_id()?;
-        doc.insert(meta_doc_key::ROOT_PID.into(), Bson::Int(root_pid as i64));
+        doc.insert::<String, Bson>(meta_doc_key::ROOT_PID.into(), Bson::Int64(root_pid as i64));
 
-        doc.insert(meta_doc_key::FLAGS.into(), Bson::Int(0));
+        doc.insert::<String, Bson>(meta_doc_key::FLAGS.into(), Bson::Int64(0));
 
         let mut btree_wrapper = BTreePageInsertWrapper::new(
             &mut self.page_handler, meta_source.meta_pid);
@@ -351,7 +351,7 @@ impl DbContext {
             0, meta_source.meta_pid, col_id)?;
 
         for (key_name, value_of_key) in keys.iter() {
-            if let Bson::Int(1) = value_of_key {
+            if let Bson::Int64(1) = value_of_key {
                 // nothing
             } else {
                 return Err(DbErr::InvalidOrderOfIndex(key_name.clone()));
@@ -375,11 +375,11 @@ impl DbContext {
 
                 None => {
                     // create indexes
-                    let mut doc = Document::new_without_id();
+                    let mut doc = doc!();
 
                     let root_pid = self.page_handler.alloc_page_id()?;
                     let options_doc = merge_options_into_default(root_pid, options)?;
-                    doc.insert(key_name.clone(), Bson::Document(Rc::new(options_doc)));
+                    doc.insert(key_name.clone(), Bson::Document(options_doc));
 
                     meta_doc.set_indexes(doc);
                 }
@@ -405,8 +405,8 @@ impl DbContext {
             return false;
         }
 
-        let new_oid = self.obj_id_maker.mk_object_id();
-        doc.insert(meta_doc_key::ID.into(), new_oid.into());
+        let new_oid = bson::oid::ObjectId::new();
+        doc.insert::<String, Bson>(meta_doc_key::ID.into(), new_oid.into());
         true
     }
 
@@ -427,7 +427,7 @@ impl DbContext {
         let mut collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
-        let pkey = doc.pkey_id().unwrap();
+        let pkey = doc.get("_id").unwrap();
 
         let mut is_pkey_check_skipped = false;
         collection_meta.check_pkey_ty(&pkey, &mut is_pkey_check_skipped)?;
@@ -587,14 +587,14 @@ impl DbContext {
 
     fn get_primary_keys_by_query(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>) -> DbResult<Vec<Bson>> {
         let mut handle = self.find(col_id, meta_version, query)?;
-        let mut buffer = vec![];
+        let mut buffer: Vec<Bson> = vec![];
 
         handle.step()?;
 
         while handle.has_row() {
-            let doc = handle.get().unwrap_document();
-            let pkey = doc.pkey_id().unwrap();
-            buffer.push(pkey);
+            let doc = handle.get().as_document().unwrap();
+            let pkey = doc.get("_id").unwrap();
+            buffer.push(pkey.clone());
 
             handle.step()?;
         }
@@ -697,7 +697,7 @@ impl DbContext {
         counter_helper::count(&mut self.page_handler, collection_meta)
     }
 
-    pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Rc<Document>>> {
+    pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Document>> {
         let meta_src = self.get_meta_source()?;
 
         let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
@@ -709,10 +709,10 @@ impl DbContext {
         let mut handle = self.make_handle(subprogram);
         handle.step()?;
 
-        let mut result = vec![];
+        let mut result: Vec<Document> = vec![];
 
         while handle.state() == (VmState::HasRow as i8) {
-            let doc = handle.get().unwrap_document();
+            let doc = handle.get().as_document().unwrap();
 
             result.push(doc.clone());
 
