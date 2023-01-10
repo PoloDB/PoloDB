@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, NonZeroUsize};
 use lru::LruCache;
 use std::alloc::{alloc, dealloc, Layout};
 use crate::page::RawPage;
@@ -30,7 +30,7 @@ impl PageCache {
             page_size,
             layout,
             data,
-            lru_map: LruCache::new(page_count),
+            lru_map: LruCache::new(NonZeroUsize::new(page_count).unwrap()),
         }
     }
 

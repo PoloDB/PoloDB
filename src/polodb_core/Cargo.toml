@@ -15,10 +15,10 @@ path="lib.rs"
 
 [dependencies]
 libc = "0.2"
-lru = "0.7.0"
+lru = "0.9.0"
 bson = "2.3.0"
 crc64fast = "1.0"
-hashbrown = "0.11.2"
+hashbrown = "0.13.1"
 getrandom = "0.2.3"
 byteorder = "1.4.3"
 num_enum = "0.5.4"
