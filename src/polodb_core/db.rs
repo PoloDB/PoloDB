@@ -66,15 +66,15 @@ macro_rules! unwrap_str_or {
 /// ```rust
 /// use std::rc::Rc;
 /// use polodb_core::Database;
-/// use polodb_bson::doc;
+/// use polodb_core::bson::doc;
 ///
 /// let mut db = Database::open_file("/tmp/test-collection").unwrap();
 /// let mut collection = db.collection("test").unwrap();
-/// collection.insert(doc! {
+/// collection.insert(&mut doc! {
 ///     "_id": 0,
 ///     "name": "Vincent Chan",
 ///     "score": 99.99,
-/// }.as_mut());
+/// });
 /// ```
 pub struct Collection<'a> {
     db: &'a mut Database,
