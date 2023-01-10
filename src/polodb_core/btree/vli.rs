@@ -72,6 +72,7 @@ macro_rules! read_byte_plus {
     }
 }
 
+#[allow(dead_code)]
 pub fn decode(bytes: &[u8]) -> BsonResult<(i64, usize)> {
     let mut ptr: usize = 0;
     let first_byte = read_byte_plus!(bytes, ptr);

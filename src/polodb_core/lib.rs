@@ -43,7 +43,6 @@ mod file_lock;
 mod backend;
 mod transaction;
 mod page_handler;
-mod migration;
 mod doc_serializer;
 pub mod msg_ty;
 mod bson_utils;

@@ -344,12 +344,6 @@ impl Database {
         self.ctx.query_all_meta()
     }
 
-    /// Upgrade DB from v1 to v2
-    /// The older file will be renamed as (name).old
-    pub fn v1_to_v2(path: &Path) -> DbResult<()> {
-        crate::migration::v1_to_v2(path)
-    }
-
     /// handle request for database
     /// See [MsgTy] for message detail
     pub fn handle_request<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> std::io::Result<MsgTy> {
