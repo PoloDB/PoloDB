@@ -1117,7 +1117,6 @@ mod tests {
             collection.insert(&mut new_doc).unwrap();
             doc_collection.push(new_doc);
         }
-
         for doc in &doc_collection {
             let key = doc.get("_id").unwrap();
             let deleted = collection.delete(Some(&doc!{

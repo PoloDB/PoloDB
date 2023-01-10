@@ -55,3 +55,5 @@ pub use transaction::TransactionType;
 pub use context::DbContext;
 pub use db_handle::DbHandle;
 pub use error::DbErr;
+
+pub extern crate bson;
