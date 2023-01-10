@@ -406,25 +406,46 @@ mod tests {
         let expect = r#"Program:
 
 0: OpenRead(100)
-5: PushValue(6)
-10: FindByPrimaryKey(25)
-15: Goto(33)
+5: Rewind(30)
+10: Goto(73)
 
-20: Label(0)
-25: Pop
-26: Close
-27: Halt
+15: Label(1)
+20: Next(73)
 
-28: Label(1)
-33: GetField("age", 25)
-42: PushValue(32)
-47: Equal
-48: FalseJump(25)
-53: Pop
-54: Pop
-55: ResultRow
-56: Pop
-57: Goto(25)
+25: Label(5, "Close")
+30: Close
+31: Halt
+
+32: Label(4, "Not this item")
+37: RecoverStackPos
+38: Pop
+39: Goto(20)
+
+44: Label(3, "Get field failed")
+49: RecoverStackPos
+50: Pop
+51: Goto(20)
+
+56: Label(2, "Result")
+61: ResultRow
+62: Pop
+63: Goto(20)
+
+68: Label(0, "Compare")
+73: SaveStackPos
+74: GetField("_id", 49)
+83: PushValue(6)
+88: Equal
+89: FalseJump(37)
+94: Pop
+95: Pop
+96: GetField("age", 49)
+105: PushValue(32)
+110: Equal
+111: FalseJump(37)
+116: Pop
+117: Pop
+118: Goto(61)
 "#;
         assert_eq!(expect, actual)
     }
@@ -619,7 +640,7 @@ mod tests {
 94: Pop2(2)
 99: GetField("child", 49)
 108: GetField("age", 49)
-117: PushValue(Array(len=2))
+117: PushValue([1, 2])
 122: In
 123: FalseJump(37)
 128: Pop2(3)
