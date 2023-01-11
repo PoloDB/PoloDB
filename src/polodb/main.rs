@@ -24,7 +24,6 @@ static CONN_COUNT: AtomicI32 = AtomicI32::new(0);
 error_chain! {
 
     foreign_links {
-        Bson( polodb_bson::BsonErr);
         Db( polodb_core::DbErr);
         Fmt(::std::fmt::Error);
         Io(::std::io::Error);
