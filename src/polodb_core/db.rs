@@ -14,7 +14,7 @@ use crate::Config;
 use crate::context::DbContext;
 use crate::{DbHandle, TransactionType};
 use crate::dump::FullDump;
-use crate::results::{InsertOneResult, InsertManyResult, UpdateResult};
+use crate::results::{InsertOneResult, InsertManyResult, UpdateResult, DeleteResult};
 
 pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 
@@ -171,13 +171,15 @@ where
     ///
     /// The size of data deleted returns.
     #[inline]
-    pub fn delete(&mut self, query: Option<Document>) -> DbResult<usize> {
-        match query {
-            Some(query) =>
-                self.db.ctx.delete(self.id, self.meta_version, query),
-            None =>
-                self.db.ctx.delete_all(self.id, self.meta_version),
-        }
+    pub fn delete_many(&mut self, query: Document) -> DbResult<DeleteResult> {
+        let count = if query.len() == 0 {
+            self.db.ctx.delete_all(self.id, self.meta_version)?
+        } else {
+            self.db.ctx.delete(self.id, self.meta_version, query)?
+        };
+        Ok(DeleteResult {
+            deleted_count: count as u64
+        })
     }
 
     /// release in 0.12
@@ -659,15 +661,15 @@ impl Database {
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in delete request".into());
 
         let query = match doc.get("query") {
-            Some(Bson::Document(doc)) => Some(doc.clone()),
+            Some(Bson::Document(doc)) => doc.clone(),
             Some(_) => return Err(DbErr::ParseError("query is not a document in delete request".into())),
-            None => None
+            None => doc! {},
         };
 
         let mut collection: Collection<Document> = self.collection(collection_name)?;
-        let size = collection.delete(query)?;
+        let result = collection.delete_many(query)?;
 
-        let ret_val = Bson::Int64(size as i64);
+        let ret_val = Bson::Int64(result.deleted_count as i64);
         let bytes = bson::ser::to_vec(&ret_val)?;
         pipe_out.write(bytes.as_ref())?;
 
@@ -1126,8 +1128,8 @@ mod tests {
         let delete_doc = doc! {
             "_id": third_key.clone(),
         };
-        assert!(collection.delete(Some(delete_doc.clone())).unwrap() > 0);
-        assert_eq!(collection.delete(Some(delete_doc)).unwrap(), 0);
+        assert!(collection.delete_many(delete_doc.clone()).unwrap().deleted_count > 0);
+        assert_eq!(collection.delete_many(delete_doc).unwrap().deleted_count, 0);
     }
 
     #[test]
@@ -1149,10 +1151,10 @@ mod tests {
 
         for doc in &doc_collection {
             let key = doc.get("_id").unwrap();
-            let deleted = collection.delete(Some(doc!{
+            let deleted_result = collection.delete_many(doc!{
                 "_id": key.clone(),
-            })).unwrap();
-            assert!(deleted > 0, "delete nothing with key: {}", key);
+            }).unwrap();
+            assert!(deleted_result.deleted_count > 0, "delete nothing with key: {}", key);
             let find_doc = doc! {
                 "_id": key.clone(),
             };
