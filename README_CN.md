@@ -2,7 +2,8 @@
 # PoloDB
 
 [![Crates.io](https://img.shields.io/crates/v/polodb_core.svg)](https://crates.io/crates/polodb_core)
-[![npm version](https://img.shields.io/npm/v/polodb.svg)](https://www.npmjs.com/package/polodb)
+[![docs.rs](https://docs.rs/polodb_core/badge.svg)](https://docs.rs/polodb_core)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 PoloDB 是一个嵌入式 NoSQL 数据库。
 
