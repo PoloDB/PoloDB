@@ -1,4 +1,9 @@
 
+# 3.0.0
+
+- Uses `bson` crate as data format
+- MongoDB-like API
+
 # 0.10.0
 
 - feat(core): support storing very large documents
