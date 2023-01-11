@@ -175,11 +175,10 @@ where
     /// release in 0.12
     #[allow(dead_code)]
     fn create_index(&mut self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        let meta_opt = self.db.get_collection_meta_by_name(&self.name, false)?;
-        if let Some(col_meta) = meta_opt {
-            self.db.ctx.create_index(col_meta.id, keys, options)?;
-        }
-        Ok(())
+        let col_meta = self.db
+            .get_collection_meta_by_name(&self.name, true)?
+            .unwrap();
+        self.db.ctx.create_index(col_meta.id, keys, options)
     }
 
 }
