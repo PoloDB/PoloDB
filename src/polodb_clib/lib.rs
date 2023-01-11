@@ -8,7 +8,6 @@ use std::rc::Rc;
 use std::os::raw::{c_char, c_uint, c_int, c_double, c_longlong};
 use std::ptr::{null_mut, write_bytes, null};
 use std::ffi::{CStr, CString};
-use std::borrow::Borrow;
 
 const DB_ERROR_MSG_SIZE: usize = 512;
 
@@ -211,7 +210,14 @@ pub unsafe extern "C" fn PLDB_find(db: *mut DbContext,
     let rust_db = db.as_mut().unwrap();
 
     let handle_result = match query.as_ref() {
-        Some(query_doc) => rust_db.find(col_id, meta_version, Some(query_doc.borrow())),
+        Some(query_doc) => {
+            let doc = query_doc.as_ref().clone();
+            rust_db.find(
+                col_id,
+                meta_version,
+                Some(doc)
+            )
+        },
         None => rust_db.find(col_id, meta_version, None),
     };
 
@@ -263,7 +269,8 @@ pub unsafe extern "C" fn PLDB_update(db: *mut DbContext,
 pub unsafe extern "C" fn PLDB_delete(db: *mut DbContext, col_id: c_uint, meta_version: c_uint, query: *const Rc<Document>) -> c_longlong {
     let rust_db = db.as_mut().unwrap();
     let query_doc = query.as_ref().unwrap();
-    let result = rust_db.delete(col_id, meta_version, query_doc.as_ref());
+    let doc = query_doc.as_ref().clone();
+    let result = rust_db.delete(col_id, meta_version, doc);
 
     match result {
         Ok(size) => size as c_longlong,

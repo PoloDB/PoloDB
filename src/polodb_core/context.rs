@@ -487,7 +487,7 @@ impl DbContext {
     }
 
     /// query: None for findAll
-    pub fn find(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>) -> DbResult<DbHandle> {
+    pub fn find(&mut self, col_id: u32, meta_version: u32, query: Option<Document>) -> DbResult<DbHandle> {
         self.check_meta_version(meta_version)?;
 
         let meta_source = self.get_meta_source()?;
@@ -498,7 +498,7 @@ impl DbContext {
             Some(query) => SubProgram::compile_query(
                 &collection_meta,
                 collection_meta.doc_ref(),
-                query,
+                &query,
                 true
             ),
             None => SubProgram::compile_query_all(&collection_meta, true),
@@ -559,7 +559,7 @@ impl DbContext {
         self.update_meta_source(&meta_source)
     }
 
-    pub fn delete(&mut self, col_id: u32, meta_version: u32, query: &Document) -> DbResult<usize> {
+    pub fn delete(&mut self, col_id: u32, meta_version: u32, query: Document) -> DbResult<usize> {
         let primary_keys = self.get_primary_keys_by_query(col_id, meta_version, Some(query))?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
@@ -587,7 +587,7 @@ impl DbContext {
         Ok(result)
     }
 
-    fn get_primary_keys_by_query(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>) -> DbResult<Vec<Bson>> {
+    fn get_primary_keys_by_query(&mut self, col_id: u32, meta_version: u32, query: Option<Document>) -> DbResult<Vec<Bson>> {
         let mut handle = self.find(col_id, meta_version, query)?;
         let mut buffer: Vec<Bson> = vec![];
 

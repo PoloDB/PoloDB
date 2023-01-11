@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use bson::{Document, Bson, doc};
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
 use std::collections::HashMap;
 use super::error::DbErr;
@@ -17,12 +18,13 @@ use crate::results::{InsertOneResult, InsertManyResult, UpdateResult};
 
 pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 
-fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Document>) -> DbResult<()> {
+fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, result: &mut Vec<T>) -> DbResult<()> {
     handle.step()?;
 
     while handle.has_row() {
-        let doc = handle.get().as_document().unwrap();
-        result.push(doc.clone());
+        let doc_result = handle.get().as_document().unwrap();
+        let item: T = bson::from_document(doc_result.clone())?;
+        result.push(item);
 
         handle.step()?;
     }
@@ -74,11 +76,11 @@ macro_rules! unwrap_str_or {
 ///
 /// let mut db = Database::open_file("/tmp/test-collection").unwrap();
 /// let mut collection = db.collection("test").unwrap();
-/// collection.insert(&mut doc! {
+/// collection.insert_one(doc! {
 ///     "_id": 0,
 ///     "name": "Vincent Chan",
 ///     "score": 99.99,
-/// });
+/// }).unwrap();
 /// ```
 pub struct Collection<'a, T> {
     db: &'a mut Database,
@@ -101,50 +103,6 @@ where
             name: name.into(),
             _phantom: std::default::Default::default(),
         }
-    }
-
-    /// all the data in the collection return.
-    pub fn find_all(&mut self) -> DbResult<Vec<Document>> {
-        let mut handle = self.db.ctx.find(self.id, self.meta_version, None)?;
-
-        let mut result = Vec::new();
-
-        consume_handle_to_vec(&mut handle, &mut result)?;
-
-        Ok(result)
-    }
-
-    /// When query document is passed to the function. The result satisfies
-    /// the query document.
-    pub fn find(&mut self, query: &Document) -> DbResult<Vec<Document>> {
-        let mut handle = self.db.ctx.find(
-            self.id, self.meta_version, Some(query)
-        )?;
-
-        let mut result = Vec::new();
-
-        consume_handle_to_vec(&mut handle, &mut result)?;
-
-        Ok(result)
-    }
-
-    /// Return the first element in the collection satisfies the query.
-    pub fn find_one(&mut self, query: &Document) -> DbResult<Option<Document>> {
-        let mut handle = self.db.ctx.find(
-              self.id, self.meta_version, Some(query)
-        )?;
-        handle.step()?;
-
-        if !handle.has_row() {
-            handle.commit_and_close_vm()?;
-            return Ok(None);
-        }
-
-        let result = handle.get().as_document().unwrap().clone();
-
-        handle.commit_and_close_vm()?;
-
-        Ok(Some(result))
     }
 
     pub fn name(&self) -> &str {
@@ -213,7 +171,7 @@ where
     ///
     /// The size of data deleted returns.
     #[inline]
-    pub fn delete(&mut self, query: Option<&Document>) -> DbResult<usize> {
+    pub fn delete(&mut self, query: Option<Document>) -> DbResult<usize> {
         match query {
             Some(query) =>
                 self.db.ctx.delete(self.id, self.meta_version, query),
@@ -226,6 +184,51 @@ where
     #[allow(dead_code)]
     fn create_index(&mut self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         self.db.ctx.create_index(self.id, keys, options)
+    }
+
+}
+
+impl<'a, T>  Collection<'a, T>
+    where
+        T: DeserializeOwned,
+{
+    /// When query document is passed to the function. The result satisfies
+    /// the query document.
+    pub fn find_many(&mut self, filter: impl Into<Option<Document>>) -> DbResult<Vec<T>> {
+        let filter_query = filter.into();
+        let mut handle = self.db.ctx.find(
+            self.id, self.meta_version, filter_query
+        )?;
+
+        let mut result: Vec<T> = Vec::new();
+
+        consume_handle_to_vec::<T>(&mut handle, &mut result)?;
+
+        Ok(result)
+    }
+
+    /// Return the first element in the collection satisfies the query.
+    pub fn find_one(&mut self, filter: impl Into<Option<Document>>) -> DbResult<Option<T>> {
+        let filter_query = filter.into();
+
+        let mut handle = self.db.ctx.find(
+            self.id,
+            self.meta_version,
+            filter_query
+        )?;
+        handle.step()?;
+
+        if !handle.has_row() {
+            handle.commit_and_close_vm()?;
+            return Ok(None);
+        }
+
+        let result_doc = handle.get().as_document().unwrap().clone();
+
+        handle.commit_and_close_vm()?;
+
+        let result: T = bson::from_document(result_doc)?;
+        Ok(Some(result))
     }
 
 }
@@ -261,9 +264,10 @@ where
 ///
 /// ```rust
 /// use polodb_core::Database;
+/// use polodb_core::bson::Document;
 ///
 /// let mut db = Database::open_file("/tmp/test-polo.db").unwrap();
-/// let test_collection = db.collection("test").unwrap();
+/// let test_collection = db.collection::<Document>("test").unwrap();
 /// ```
 pub struct Database {
     ctx: Box<DbContext>,
@@ -527,7 +531,7 @@ impl Database {
 
         let mut collection: Collection<Document> = self.collection(collection_name)?;
 
-        let result = collection.find_one(&query_opt)?;
+        let result = collection.find_one(query_opt)?;
 
         let result_value = match result {
             Some(doc) => Bson::Document(doc),
@@ -570,9 +574,9 @@ impl Database {
         let mut collection: Collection<Document> = self.collection(collection_name)?;
 
         let result = if let Some(query) = query_opt {
-            collection.find(query)?
+            collection.find_many(query.clone())?
         } else {
-            collection.find_all()?
+            collection.find_many(None)?
         };
 
         let mut value_arr = bson::Array::new();
@@ -655,7 +659,7 @@ impl Database {
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in delete request".into());
 
         let query = match doc.get("query") {
-            Some(Bson::Document(doc)) => Some(doc),
+            Some(Bson::Document(doc)) => Some(doc.clone()),
             Some(_) => return Err(DbErr::ParseError("query is not a document in delete request".into())),
             None => None
         };
@@ -794,9 +798,9 @@ mod tests {
         let mut db = create_and_return_db_with_items("test-collection", TEST_SIZE);
 
         let mut test_collection: Collection<Document> = db.collection("test").unwrap();
-        let all = test_collection.find_all( ).unwrap();
+        let all = test_collection.find_many(None).unwrap();
 
-        let second = test_collection.find_one(&doc! {
+        let second = test_collection.find_one(doc! {
             "content": "1",
         }).unwrap().unwrap();
         assert_eq!(second.get("content").unwrap().as_str().unwrap(), "1");
@@ -903,14 +907,14 @@ mod tests {
         }
 
         let mut collection: Collection<Document> = db.collection("config").unwrap();
-        let doc1 = collection.find_one(&doc! {
+        let doc1 = collection.find_one(doc! {
             "_id": "c1",
         }).unwrap().unwrap();
 
         assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c1");
 
         let mut collection : Collection<Document> = db.collection("config").unwrap();
-        let doc1 = collection.find_one(&doc! {
+        let doc1 = collection.find_one(doc! {
             "_id": "c2",
         }).unwrap().unwrap();
 
@@ -971,7 +975,7 @@ mod tests {
         let count = collection.count().unwrap();
         assert_eq!(TEST_SIZE, count as usize);
 
-        let all = collection.find_all( ).unwrap();
+        let all = collection.find_many(None).unwrap();
 
         assert_eq!(TEST_SIZE, all.len())
     }
@@ -981,8 +985,8 @@ mod tests {
         let mut db = create_and_return_db_with_items("test-find", TEST_SIZE);
         let mut collection: Collection<Document> = db.collection("test").unwrap();
 
-        let result = collection.find(
-            &doc! {
+        let result = collection.find_many(
+            doc! {
                 "content": "3",
             }
         ).unwrap();
@@ -998,13 +1002,13 @@ mod tests {
         let mut db = create_and_return_db_with_items("test-find-pkey", 10);
         let mut collection: Collection<Document> = db.collection("test").unwrap();
 
-        let all = collection.find_all().unwrap();
+        let all = collection.find_many(None).unwrap();
 
         assert_eq!(all.len(), 10);
 
         let first_key = &all[0].get("_id").unwrap();
 
-        let result = collection.find(&doc! {
+        let result = collection.find_many(doc! {
             "_id": first_key.clone(),
         }).unwrap();
 
@@ -1122,8 +1126,8 @@ mod tests {
         let delete_doc = doc! {
             "_id": third_key.clone(),
         };
-        assert!(collection.delete(Some(&delete_doc)).unwrap() > 0);
-        assert_eq!(collection.delete(Some(&delete_doc)).unwrap(), 0);
+        assert!(collection.delete(Some(delete_doc.clone())).unwrap() > 0);
+        assert_eq!(collection.delete(Some(delete_doc)).unwrap(), 0);
     }
 
     #[test]
@@ -1145,14 +1149,14 @@ mod tests {
 
         for doc in &doc_collection {
             let key = doc.get("_id").unwrap();
-            let deleted = collection.delete(Some(&doc!{
+            let deleted = collection.delete(Some(doc!{
                 "_id": key.clone(),
             })).unwrap();
             assert!(deleted > 0, "delete nothing with key: {}", key);
             let find_doc = doc! {
                 "_id": key.clone(),
             };
-            let result = collection.find(&find_doc).unwrap();
+            let result = collection.find_many(find_doc).unwrap();
             assert_eq!(result.len(), 0, "item with key: {}", key);
         }
     }
@@ -1183,7 +1187,7 @@ mod tests {
         let result = collection.insert_one(doc).unwrap();
 
         let new_id = result.inserted_id;
-        let back = collection.find_one(&doc! {
+        let back = collection.find_one(doc! {
             "_id": new_id,
         }).unwrap().unwrap();
 
