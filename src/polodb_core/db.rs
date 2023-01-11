@@ -808,6 +808,24 @@ mod tests {
 
         // Insert the books into "mydb.books" collection, no manual conversion to BSON necessary.
         typed_collection.insert_many(books).unwrap();
+
+        let result = typed_collection.find_one(doc! {
+            "title": "The Grapes of Wrath",
+        }).unwrap();
+        let book = result.unwrap();
+        assert_eq!(book.author, "John Steinbeck");
+
+        let result = typed_collection.find_many(doc! {
+            "$or": [
+                {
+                    "title": "The Grapes of Wrath",
+                },
+                {
+                    "title": "To Kill a Mockingbird",
+                }
+            ]
+        }).unwrap();
+        assert_eq!(result.len(), 2);
     }
 
     #[test]
