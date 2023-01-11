@@ -16,6 +16,38 @@
 //!
 //! The [Database] structure provides all the API to get access to the DB file.
 //!
+//! # Example
+//!
+//!  ```rust
+//! use std::rc::Rc;
+//! use polodb_core::Database;
+//! use polodb_core::bson::doc;
+//!
+//! let mut db = Database::open_file("/tmp/test-collection").unwrap();
+//! let mut collection = db.collection("test").unwrap();
+//! collection.insert_one(doc! {
+//!     "_id": 0,
+//!     "name": "Vincent Chan",
+//!     "score": 99.99,
+//! }).unwrap();
+//! ```
+//!
+//! ## Inserting documents into a collection
+//!
+//! ```rust
+//! use polodb_core::Database;
+//! use polodb_core::bson::{Document, doc};
+//!
+//! let mut db = Database::open_memory().unwrap();
+//! let mut collection = db.collection::<Document>("books").unwrap();
+//!
+//! let docs = vec![
+//!     doc! { "title": "1984", "author": "George Orwell" },
+//!     doc! { "title": "Animal Farm", "author": "George Orwell" },
+//!     doc! { "title": "The Great Gatsby", "author": "F. Scott Fitzgerald" },
+//! ];
+//! collection.insert_many(docs).unwrap();
+//! ```
 
 extern crate core;
 

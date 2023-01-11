@@ -45,43 +45,7 @@ macro_rules! unwrap_str_or {
 ///
 /// All CURD methods can be done through this structure.
 ///
-/// Find/Update/Delete operations need a query object.
-///
-/// ## Query operation:
-///
-/// | Name | Description |
-/// | ----------| ----------- |
-/// | $eq | Matches values that are equal to a specified value. |
-/// | $gt | Matches values that are greater than a specified value. |
-/// | $gte | Matches values that are greater than or equal to a specified value. |
-/// | $in | Matches any of the values specified in an array. |
-/// | $lt | Matches values that are less than a specified value. |
-/// | $lte | Matches values that are less than or equal to a specified value. |
-/// | $ne | Matches all values that are not equal to a specified value. |
-/// | $nin | Matches none of the values specified in an array. |
-///
-/// ## Logical operation:
-///
-/// | Name | Description |
-/// | ---- | ----------- |
-/// | $and | Joins query clauses with a logical AND returns all documents that match the conditions of both clauses. |
-/// | $or | Joins query clauses with a logical OR returns all documents that match the conditions of either clause. |
-///
-/// ## Example:
-///
-/// ```rust
-/// use std::rc::Rc;
-/// use polodb_core::Database;
-/// use polodb_core::bson::doc;
-///
-/// let mut db = Database::open_file("/tmp/test-collection").unwrap();
-/// let mut collection = db.collection("test").unwrap();
-/// collection.insert_one(doc! {
-///     "_id": 0,
-///     "name": "Vincent Chan",
-///     "score": 99.99,
-/// }).unwrap();
-/// ```
+/// It can be used to perform collection-level operations such as CRUD operations.
 pub struct Collection<'a, T> {
     db: &'a mut Database,
     id: u32,
