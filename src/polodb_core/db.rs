@@ -1,24 +1,30 @@
+use std::borrow::Borrow;
 use std::convert::TryFrom;
 use std::path::Path;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use bson::{Document, Bson};
+use bson::{Document, Bson, doc};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
+use std::collections::HashMap;
 use super::error::DbErr;
 use crate::msg_ty::MsgTy;
 use crate::Config;
 use crate::context::DbContext;
 use crate::{DbHandle, TransactionType};
 use crate::dump::FullDump;
+use crate::results::{InsertOneResult, InsertManyResult, UpdateResult, DeleteResult};
 
 pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 
-fn consume_handle_to_vec(handle: &mut DbHandle, result: &mut Vec<Document>) -> DbResult<()> {
+fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, result: &mut Vec<T>) -> DbResult<()> {
     handle.step()?;
 
     while handle.has_row() {
-        let doc = handle.get().as_document().unwrap();
-        result.push(doc.clone());
+        let doc_result = handle.get().as_document().unwrap();
+        let item: T = bson::from_document(doc_result.clone())?;
+        result.push(item);
 
         handle.step()?;
     }
@@ -70,72 +76,33 @@ macro_rules! unwrap_str_or {
 ///
 /// let mut db = Database::open_file("/tmp/test-collection").unwrap();
 /// let mut collection = db.collection("test").unwrap();
-/// collection.insert(&mut doc! {
+/// collection.insert_one(doc! {
 ///     "_id": 0,
 ///     "name": "Vincent Chan",
 ///     "score": 99.99,
-/// });
+/// }).unwrap();
 /// ```
-pub struct Collection<'a> {
+pub struct Collection<'a, T> {
     db: &'a mut Database,
     id: u32,
     meta_version: u32,
     name: String,
+    _phantom: std::marker::PhantomData<T>,
 }
 
-impl<'a>  Collection<'a> {
+impl<'a, T>  Collection<'a, T>
+where
+    T: Serialize,
+{
 
-    fn new(db: &'a mut Database, id: u32, meta_version: u32, name: &str) -> Collection<'a> {
+    fn new(db: &'a mut Database, id: u32, meta_version: u32, name: &str) -> Collection<'a, T> {
         Collection {
             db,
             id,
             meta_version,
             name: name.into(),
+            _phantom: std::default::Default::default(),
         }
-    }
-
-    /// all the data in the collection return.
-    pub fn find_all(&mut self) -> DbResult<Vec<Document>> {
-        let mut handle = self.db.ctx.find(self.id, self.meta_version, None)?;
-
-        let mut result = Vec::new();
-
-        consume_handle_to_vec(&mut handle, &mut result)?;
-
-        Ok(result)
-    }
-
-    /// When query document is passed to the function. The result satisfies
-    /// the query document.
-    pub fn find(&mut self, query: &Document) -> DbResult<Vec<Document>> {
-        let mut handle = self.db.ctx.find(
-            self.id, self.meta_version, Some(query)
-        )?;
-
-        let mut result = Vec::new();
-
-        consume_handle_to_vec(&mut handle, &mut result)?;
-
-        Ok(result)
-    }
-
-    /// Return the first element in the collection satisfies the query.
-    pub fn find_one(&mut self, query: &Document) -> DbResult<Option<Document>> {
-        let mut handle = self.db.ctx.find(
-              self.id, self.meta_version, Some(query)
-        )?;
-        handle.step()?;
-
-        if !handle.has_row() {
-            handle.commit_and_close_vm()?;
-            return Ok(None);
-        }
-
-        let result = handle.get().as_document().unwrap().clone();
-
-        handle.commit_and_close_vm()?;
-
-        Ok(Some(result))
     }
 
     pub fn name(&self) -> &str {
@@ -148,49 +115,122 @@ impl<'a>  Collection<'a> {
         self.db.ctx.count(self.id, self.meta_version)
     }
 
-    /// When query is `None`, all the data in the collection will be updated.
-    /// Basically the same as [MongoDB](https://docs.mongodb.com/manual/reference/operator/update-field/).
-    ///
-    /// ## Field Update Operators:
-    ///
-    /// | Name | Description |
-    /// | ---- | ----------- |
-    /// | $inc | Increments the value of the field by the specified amount. |
-    /// | $min | Only updates the field if the specified value is less than the existing field value. |
-    /// | $max | Only updates the field if the specified value is greater than the existing field value. |
-    /// | $mul | Multiplies the value of the field by the specified amount. |
-    /// | $rename | Renames a field. |
-    /// | $set | Sets the value of a field in a document. |
-    /// | $unset | Removes the specified field from a document. |
-    #[inline]
-    pub fn update(&mut self, query: Option<&Document>, update: &Document) -> DbResult<usize> {
-        self.db.ctx.update(self.id, self.meta_version, query, update)
+    /// Updates all documents matching `query` in the collection.
+    /// [documentation](https://www.polodb.org/docs/curd/update) for more information on specifying updates.
+    pub fn update_many(&mut self, query: Document, update: Document) -> DbResult<UpdateResult> {
+        let size = self.db.ctx.update(self.id, self.meta_version, Some(&query), &update)?;
+        Ok(UpdateResult {
+            modified_count: size as u64,
+        })
     }
 
-    /// Insert a document into the database.
-    /// The returning boolean value represents if the DB inserted a "_id" for you.
-    #[inline]
-    pub fn insert(&mut self, doc: &mut Document) -> DbResult<bool> {
-        self.db.ctx.insert(self.id, self.meta_version, doc)
+    /// Inserts `doc` into the collection.
+    pub fn insert_one(&mut self, doc: impl Borrow<T>) -> DbResult<InsertOneResult> {
+        let mut doc = bson::to_document(doc.borrow())?;
+        let _ = self.db.ctx.insert(self.id, self.meta_version, &mut doc)?;
+        let pkey = doc.get("_id").unwrap();
+        Ok(InsertOneResult {
+            inserted_id: pkey.clone(),
+        })
+    }
+
+    /// Inserts the data in `docs` into the collection.
+    pub fn insert_many(&mut self, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
+        self.db.start_transaction(Some(TransactionType::Write))?;
+        let mut inserted_ids: HashMap<usize, Bson> = HashMap::new();
+        let mut counter: usize = 0;
+
+        for item in docs {
+            let mut doc = match bson::to_document(item.borrow()) {
+                Ok(doc) => doc,
+                Err(err) => {
+                    self.db.rollback().unwrap();
+                    return Err(DbErr::from(err));
+                }
+            };
+            match self.db.ctx.insert(self.id, self.meta_version, &mut doc) {
+                Ok(_) => (),
+                Err(err) => {
+                    self.db.rollback().unwrap();
+                    return Err(err);
+                }
+            }
+            let pkey = doc.get("_id").unwrap();
+            inserted_ids.insert(counter, pkey.clone());
+
+            counter += 1;
+        }
+
+        self.db.commit()?;
+        Ok(InsertManyResult {
+            inserted_ids,
+        })
     }
 
     /// When query is `None`, all the data in the collection will be deleted.
     ///
     /// The size of data deleted returns.
     #[inline]
-    pub fn delete(&mut self, query: Option<&Document>) -> DbResult<usize> {
-        match query {
-            Some(query) =>
-                self.db.ctx.delete(self.id, self.meta_version, query),
-            None =>
-                self.db.ctx.delete_all(self.id, self.meta_version),
-        }
+    pub fn delete_many(&mut self, query: Document) -> DbResult<DeleteResult> {
+        let count = if query.len() == 0 {
+            self.db.ctx.delete_all(self.id, self.meta_version)?
+        } else {
+            self.db.ctx.delete(self.id, self.meta_version, query)?
+        };
+        Ok(DeleteResult {
+            deleted_count: count as u64
+        })
     }
 
     /// release in 0.12
     #[allow(dead_code)]
     fn create_index(&mut self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         self.db.ctx.create_index(self.id, keys, options)
+    }
+
+}
+
+impl<'a, T>  Collection<'a, T>
+    where
+        T: DeserializeOwned,
+{
+    /// When query document is passed to the function. The result satisfies
+    /// the query document.
+    pub fn find_many(&mut self, filter: impl Into<Option<Document>>) -> DbResult<Vec<T>> {
+        let filter_query = filter.into();
+        let mut handle = self.db.ctx.find(
+            self.id, self.meta_version, filter_query
+        )?;
+
+        let mut result: Vec<T> = Vec::new();
+
+        consume_handle_to_vec::<T>(&mut handle, &mut result)?;
+
+        Ok(result)
+    }
+
+    /// Return the first element in the collection satisfies the query.
+    pub fn find_one(&mut self, filter: impl Into<Option<Document>>) -> DbResult<Option<T>> {
+        let filter_query = filter.into();
+
+        let mut handle = self.db.ctx.find(
+            self.id,
+            self.meta_version,
+            filter_query
+        )?;
+        handle.step()?;
+
+        if !handle.has_row() {
+            handle.commit_and_close_vm()?;
+            return Ok(None);
+        }
+
+        let result_doc = handle.get().as_document().unwrap().clone();
+
+        handle.commit_and_close_vm()?;
+
+        let result: T = bson::from_document(result_doc)?;
+        Ok(Some(result))
     }
 
 }
@@ -226,9 +266,10 @@ impl<'a>  Collection<'a> {
 ///
 /// ```rust
 /// use polodb_core::Database;
+/// use polodb_core::bson::Document;
 ///
 /// let mut db = Database::open_file("/tmp/test-polo.db").unwrap();
-/// let test_collection = db.collection("test").unwrap();
+/// let test_collection = db.collection::<Document>("test").unwrap();
 /// ```
 pub struct Database {
     ctx: Box<DbContext>,
@@ -279,7 +320,7 @@ impl Database {
         })
     }
 
-    pub fn create_collection(&mut self, name: &str) -> DbResult<Collection> {
+    pub fn create_collection<T: Serialize>(&mut self, name: &str) -> DbResult<Collection<T>> {
         let collection_meta = self.ctx.create_collection(name)?;
         Ok(Collection::new(self,
                            collection_meta.id,
@@ -300,7 +341,7 @@ impl Database {
     /// Return an exist collection. If the collection is not exists,
     /// a new collection will be created.
     ///
-    pub fn collection(&mut self, col_name: &str) -> DbResult<Collection> {
+    pub fn collection<T: Serialize>(&mut self, col_name: &str) -> DbResult<Collection<T>> {
         let info = match self.ctx.get_collection_meta_by_name(col_name) {
             Ok(meta) => meta,
             Err(DbErr::CollectionNotFound(_)) => self.ctx.create_collection(col_name)?,
@@ -490,9 +531,9 @@ impl Database {
             _ => return Err(DbErr::ParseError("query not found in find request".into())),
         };
 
-        let mut collection = self.collection(collection_name)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
 
-        let result = collection.find_one(&query_opt)?;
+        let result = collection.find_one(query_opt)?;
 
         let result_value = match result {
             Some(doc) => Bson::Document(doc),
@@ -532,12 +573,12 @@ impl Database {
             _ => None,
         };
 
-        let mut collection = self.collection(collection_name)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
 
         let result = if let Some(query) = query_opt {
-            collection.find(query)?
+            collection.find_many(query.clone())?
         } else {
-            collection.find_all()?
+            collection.find_many(None)?
         };
 
         let mut value_arr = bson::Array::new();
@@ -564,21 +605,15 @@ impl Database {
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
 
-        let mut insert_data = match doc.get("data") {
+        let insert_data = match doc.get("data") {
             Some(Bson::Document(doc)) => doc.clone(),
             _ => return Err(DbErr::ParseError("query not found in insert request".into())),
         };
 
-        let mut collection = self.collection(collection_name)?;
-        let id_changed = collection.insert(&mut insert_data)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
+        let id_changed = collection.insert_one(insert_data)?;
 
-        let ret_value = if id_changed {
-            doc.get("_id").unwrap().clone()
-        } else {
-            Bson::Null
-        };
-
-        let bytes = bson::ser::to_vec(&ret_value)?;
+        let bytes = bson::ser::to_vec(&id_changed.inserted_id)?;
         pipe_out.write(bytes.as_ref())?;
 
         Ok(())
@@ -595,9 +630,9 @@ impl Database {
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in update request".into());
 
         let query = match doc.get("query") {
-            Some(Bson::Document(doc)) => Some(doc),
+            Some(Bson::Document(doc)) => doc.clone(),
             Some(_) => return Err(DbErr::ParseError("query is not a document in update request".into())),
-            None => None
+            None => doc! {}
         };
 
         let update_data = match doc.get("update") {
@@ -605,10 +640,10 @@ impl Database {
             _ => return Err(DbErr::ParseError("'update' not found in update request".into())),
         };
 
-        let mut collection = self.collection(collection_name)?;
-        let size = collection.update(query, &update_data)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
+        let result = collection.update_many(query, update_data)?;
 
-        let ret_val = Bson::Int64(size as i64);
+        let ret_val = Bson::Int64(result.modified_count as i64);
         let bytes = bson::ser::to_vec(&ret_val)?;
         pipe_out.write(bytes.as_ref())?;
 
@@ -626,15 +661,15 @@ impl Database {
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in delete request".into());
 
         let query = match doc.get("query") {
-            Some(Bson::Document(doc)) => Some(doc),
+            Some(Bson::Document(doc)) => doc.clone(),
             Some(_) => return Err(DbErr::ParseError("query is not a document in delete request".into())),
-            None => None
+            None => doc! {},
         };
 
-        let mut collection = self.collection(collection_name)?;
-        let size = collection.delete(query)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
+        let result = collection.delete_many(query)?;
 
-        let ret_val = Bson::Int64(size as i64);
+        let ret_val = Bson::Int64(result.deleted_count as i64);
         let bytes = bson::ser::to_vec(&ret_val)?;
         pipe_out.write(bytes.as_ref())?;
 
@@ -651,7 +686,7 @@ impl Database {
             Some(Bson::String(s)) => s.as_str().into(),
             _ => return Err(DbErr::ParseError(format!("should give the name of the collection to create"))),
         };
-        let ret = match self.create_collection(&name) {
+        let ret = match self.create_collection::<Bson>(&name) {
             Ok(_) => Bson::Boolean(true),
             Err(DbErr::CollectionAlreadyExits(_)) => Bson::Boolean(false),
             Err(err) => return Err(err),
@@ -686,7 +721,7 @@ impl Database {
 
         let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in count request".into());
 
-        let mut collection = self.collection(collection_name)?;
+        let mut collection: Collection<Document> = self.collection(collection_name)?;
 
         let count = collection.count()?;
 
@@ -702,11 +737,12 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use std::env;
-    use bson::{Bson, doc};
+    use bson::{Bson, doc, Document};
     use crate::{Database, Config, DbResult, DbErr};
     use std::io::Read;
     use std::path::PathBuf;
     use std::fs::File;
+    use crate::db::Collection;
 
     static TEST_SIZE: usize = 1000;
 
@@ -742,17 +778,19 @@ mod tests {
 
     fn create_and_return_db_with_items(db_name: &str, size: usize) -> Database {
         let mut db = prepare_db(db_name).unwrap();
-        let mut collection = db.create_collection("test").unwrap();
+        let mut collection: Collection<Document> = db.create_collection("test").unwrap();
 
-        // let meta = db.query_all_meta().unwrap();
+        let mut data: Vec<Document> = vec![];
 
         for i in 0..size {
             let content = i.to_string();
-            let mut new_doc = doc! {
+            let new_doc = doc! {
                 "content": content,
             };
-            collection.insert(&mut new_doc).unwrap();
+            data.push(new_doc);
         }
+
+        collection.insert_many(&data).unwrap();
 
         db
     }
@@ -761,10 +799,10 @@ mod tests {
     fn test_create_collection_and_find_all() {
         let mut db = create_and_return_db_with_items("test-collection", TEST_SIZE);
 
-        let mut test_collection = db.collection("test").unwrap();
-        let all = test_collection.find_all( ).unwrap();
+        let mut test_collection: Collection<Document> = db.collection("test").unwrap();
+        let all = test_collection.find_many(None).unwrap();
 
-        let second = test_collection.find_one(&doc! {
+        let second = test_collection.find_one(doc! {
             "content": "1",
         }).unwrap().unwrap();
         assert_eq!(second.get("content").unwrap().as_str().unwrap(), "1");
@@ -781,7 +819,7 @@ mod tests {
                 None => Database::open_memory().unwrap()
             };
             db.start_transaction(None).unwrap();
-            let mut collection = db.create_collection("test").unwrap();
+            let mut collection: Collection<Document> = db.create_collection("test").unwrap();
 
             for i in 0..10{
                 let content = i.to_string();
@@ -789,7 +827,7 @@ mod tests {
                     "_id": i,
                     "content": content,
                 };
-                collection.insert(&mut new_doc).unwrap();
+                collection.insert_one(&mut new_doc).unwrap();
             }
             db.commit().unwrap()
         });
@@ -805,11 +843,11 @@ mod tests {
 
         for i in 0..1000 {
             let content = i.to_string();
-            let mut new_doc = doc! {
+            let new_doc = doc! {
                 "_id": i,
                 "content": content,
             };
-            collection.insert(&mut new_doc).unwrap();
+            collection.insert_one(new_doc).unwrap();
         }
         db.commit().unwrap();
 
@@ -817,11 +855,11 @@ mod tests {
         let mut collection2 = db.create_collection("test-2").unwrap();
         for i in 0..10{
             let content = i.to_string();
-            let mut new_doc = doc! {
+            let new_doc = doc! {
                 "_id": i,
                 "content": content,
             };
-            collection2.insert(&mut new_doc).expect(&*format!("insert failed: {}", i));
+            collection2.insert_one(new_doc).expect(&*format!("insert failed: {}", i));
         }
         db.commit().unwrap();
     }
@@ -831,54 +869,54 @@ mod tests {
         let mut db = prepare_db("test-multiple-find-one").unwrap();
         {
             let mut collection = db.collection("config").unwrap();
-            let mut doc1 = doc! {
+            let doc1 = doc! {
                 "_id": "c1",
                 "value": "c1",
             };
-            collection.insert(&mut doc1).unwrap();
+            collection.insert_one(doc1).unwrap();
 
-            let mut doc2 = doc! {
+            let doc2 = doc! {
                 "_id": "c2",
                 "value": "c2",
             };
-            collection.insert(&mut doc2).unwrap();
+            collection.insert_one(doc2).unwrap();
 
-            let mut doc2 = doc! {
+            let doc2 = doc! {
                 "_id": "c3",
                 "value": "c3",
             };
-            collection.insert(&mut doc2).unwrap();
+            collection.insert_one(doc2).unwrap();
 
             assert_eq!(collection.count().unwrap(), 3);
         }
 
         {
-            let mut collection = db.collection("config").unwrap();
-            collection.update(Some(&doc! {
-                "_id": "c2",
-            }), &doc! {
+            let mut collection: Collection<Document> = db.collection("config").unwrap();
+            collection.update_many(doc! {
+                "_id": "c2"
+            }, doc! {
                 "$set": doc! {
                     "value": "c33",
                 },
             }).unwrap();
-            collection.update(Some(&doc! {
+            collection.update_many(doc! {
                 "_id": "c2",
-            }), &doc! {
+            }, doc! {
                 "$set": doc! {
                     "value": "c22",
                 },
             }).unwrap();
         }
 
-        let mut collection = db.collection("config").unwrap();
-        let doc1 = collection.find_one(&doc! {
+        let mut collection: Collection<Document> = db.collection("config").unwrap();
+        let doc1 = collection.find_one(doc! {
             "_id": "c1",
         }).unwrap().unwrap();
 
         assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c1");
 
-        let mut collection = db.collection("config").unwrap();
-        let doc1 = collection.find_one(&doc! {
+        let mut collection : Collection<Document> = db.collection("config").unwrap();
+        let doc1 = collection.find_one(doc! {
             "_id": "c2",
         }).unwrap().unwrap();
 
@@ -892,26 +930,26 @@ mod tests {
                 Some(name) => prepare_db(name).unwrap(),
                 None => Database::open_memory().unwrap()
             };
-            let mut collection = db.create_collection("test").unwrap();
+            let mut collection: Collection<Document> = db.create_collection("test").unwrap();
 
             assert_eq!(collection.count().unwrap(), 0);
 
             db.start_transaction(None).unwrap();
 
-            let mut collection = db.collection("test").unwrap();
+            let mut collection: Collection<Document> = db.collection("test").unwrap();
             for i in 0..10 {
                 let content = i.to_string();
-                let mut new_doc = doc! {
+                let new_doc = doc! {
                     "_id": i,
                     "content": content,
                 };
-                collection.insert(&mut new_doc).unwrap();
+                collection.insert_one(new_doc).unwrap();
             }
             assert_eq!(collection.count().unwrap(), 10);
 
             db.rollback().unwrap();
 
-            let mut collection = db.collection("test").unwrap();
+            let mut collection: Collection<Document> = db.collection("test").unwrap();
             assert_eq!(collection.count().unwrap(), 0);
         });
     }
@@ -924,22 +962,22 @@ mod tests {
 
             for i in 0..TEST_SIZE {
                 let content = i.to_string();
-                let mut new_doc = doc! {
+                let new_doc = doc! {
                     "_id": i as i64,
                     "content": content,
                 };
-                collection.insert(&mut new_doc).unwrap();
+                collection.insert_one(new_doc).unwrap();
             }
 
             db
         };
 
-        let mut collection = db.collection("test").unwrap();
+        let mut collection: Collection<Document> = db.collection("test").unwrap();
 
         let count = collection.count().unwrap();
         assert_eq!(TEST_SIZE, count as usize);
 
-        let all = collection.find_all( ).unwrap();
+        let all = collection.find_many(None).unwrap();
 
         assert_eq!(TEST_SIZE, all.len())
     }
@@ -947,10 +985,10 @@ mod tests {
     #[test]
     fn test_find() {
         let mut db = create_and_return_db_with_items("test-find", TEST_SIZE);
-        let mut collection = db.collection("test").unwrap();
+        let mut collection: Collection<Document> = db.collection("test").unwrap();
 
-        let result = collection.find(
-            &doc! {
+        let result = collection.find_many(
+            doc! {
                 "content": "3",
             }
         ).unwrap();
@@ -964,15 +1002,15 @@ mod tests {
     #[test]
     fn test_create_collection_and_find_by_pkey() {
         let mut db = create_and_return_db_with_items("test-find-pkey", 10);
-        let mut collection = db.collection("test").unwrap();
+        let mut collection: Collection<Document> = db.collection("test").unwrap();
 
-        let all = collection.find_all().unwrap();
+        let all = collection.find_many(None).unwrap();
 
         assert_eq!(all.len(), 10);
 
         let first_key = &all[0].get("_id").unwrap();
 
-        let result = collection.find(&doc! {
+        let result = collection.find_many(doc! {
             "_id": first_key.clone(),
         }).unwrap();
 
@@ -996,13 +1034,13 @@ mod tests {
     fn test_pkey_type_check() {
         let mut db = create_and_return_db_with_items("test-type-check", TEST_SIZE);
 
-        let mut doc = doc! {
+        let doc = doc! {
             "_id": 10,
             "value": "something",
         };
 
-        let mut collection = db.collection("test").unwrap();
-        collection.insert(&mut doc).expect_err("should not success");
+        let mut collection: Collection<Document> = db.collection("test").unwrap();
+        collection.insert_one(doc).expect_err("should not success");
     }
 
     #[test]
@@ -1019,7 +1057,7 @@ mod tests {
 
         doc.insert::<String, Bson>("_id".into(), Bson::String(new_str.clone()));
 
-        let _ = collection.insert(&mut doc).unwrap();
+        let _ = collection.insert_one(doc).unwrap();
     }
 
     #[test]
@@ -1044,7 +1082,7 @@ mod tests {
     #[test]
     fn test_create_index() {
         let mut db = prepare_db("test-create-index").unwrap();
-        let mut collection = db.create_collection("test").unwrap();
+        let mut collection: Collection<Document> = db.create_collection("test").unwrap();
 
         let keys = doc! {
             "user_id": 1,
@@ -1054,73 +1092,73 @@ mod tests {
 
         for i in 0..10 {
             let str = i.to_string();
-            let mut data = doc! {
+            let data = doc! {
                 "name": str.clone(),
                 "user_id": str.clone(),
             };
-            collection.insert(&mut data).unwrap();
+            collection.insert_one(data).unwrap();
         }
 
-        let mut data = doc! {
+        let data = doc! {
             "name": "what",
             "user_id": 3,
         };
-        collection.insert(&mut data).expect_err("not comparable");
+        collection.insert_one(data).expect_err("not comparable");
     }
 
     #[test]
     fn test_one_delete_item() {
         let mut db = prepare_db("test-delete-item").unwrap();
-        let mut collection = db.create_collection("test").unwrap();
+        let mut collection: Collection<Document> = db.create_collection("test").unwrap();
 
         let mut doc_collection  = vec![];
 
         for i in 0..100 {
             let content = i.to_string();
 
-            let mut new_doc = doc! {
+            let new_doc = doc! {
                 "content": content,
             };
 
-            collection.insert(&mut new_doc).unwrap();
             doc_collection.push(new_doc);
         }
+        let result = collection.insert_many(&doc_collection).unwrap();
 
-        let third = &doc_collection[3];
-        let third_key = third.get("_id").unwrap();
+        let third_key = result.inserted_ids.get(&3).unwrap();
         let delete_doc = doc! {
             "_id": third_key.clone(),
         };
-        assert!(collection.delete(Some(&delete_doc)).unwrap() > 0);
-        assert_eq!(collection.delete(Some(&delete_doc)).unwrap(), 0);
+        assert!(collection.delete_many(delete_doc.clone()).unwrap().deleted_count > 0);
+        assert_eq!(collection.delete_many(delete_doc).unwrap().deleted_count, 0);
     }
 
     #[test]
     fn test_delete_all_items() {
         let mut db = prepare_db("test-delete-all-items").unwrap();
-        let mut collection = db.create_collection("test").unwrap();
+        let mut collection: Collection<Document> = db.create_collection("test").unwrap();
 
         let mut doc_collection  = vec![];
 
         for i in 0..1000 {
             let content = i.to_string();
-            let mut new_doc = doc! {
+            let new_doc = doc! {
                 "_id": i,
                 "content": content,
             };
-            collection.insert(&mut new_doc).unwrap();
             doc_collection.push(new_doc);
         }
+        collection.insert_many(&doc_collection).unwrap();
+
         for doc in &doc_collection {
             let key = doc.get("_id").unwrap();
-            let deleted = collection.delete(Some(&doc!{
+            let deleted_result = collection.delete_many(doc!{
                 "_id": key.clone(),
-            })).unwrap();
-            assert!(deleted > 0, "delete nothing with key: {}", key);
+            }).unwrap();
+            assert!(deleted_result.deleted_count > 0, "delete nothing with key: {}", key);
             let find_doc = doc! {
                 "_id": key.clone(),
             };
-            let result = collection.find(&find_doc).unwrap();
+            let result = collection.find_many(find_doc).unwrap();
             assert_eq!(result.len(), 0, "item with key: {}", key);
         }
     }
@@ -1148,10 +1186,10 @@ mod tests {
             bytes: origin_data.clone(),
         }));
 
-        assert!(collection.insert(&mut doc).unwrap());
+        let result = collection.insert_one(doc).unwrap();
 
-        let new_id = doc.get("_id").unwrap();
-        let back = collection.find_one(&doc! {
+        let new_id = result.inserted_id;
+        let back = collection.find_one(doc! {
             "_id": new_id,
         }).unwrap().unwrap();
 
