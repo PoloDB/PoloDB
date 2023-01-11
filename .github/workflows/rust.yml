@@ -21,9 +21,9 @@ jobs:
           node-version: '14'
       
       - name: Run Rust tests
-        run: |
-          cargo test --release --verbose --workspace
-          cargo build --release --package polodb_clib
+        run: cargo test --release --verbose --workspace
+      - name: Build Clib
+        run: cargo build --release --package polodb_clib
 
   Windows:
     name: Test on Windows
@@ -35,6 +35,6 @@ jobs:
           node-version: '14'
 
       - name: Run Rust tests
-        run: |
-          cargo test --release --verbose --workspace
-          cargo build --release --package polodb_clib
+        run: cargo test --release --verbose --workspace
+      - name: Build Clib
+        run: cargo build --release --package polodb_clib
