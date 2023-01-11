@@ -266,10 +266,17 @@ impl<'a, T>  Collection<'a, T>
 ///
 /// ```rust
 /// use polodb_core::Database;
-/// use polodb_core::bson::Document;
+/// use polodb_core::bson::{Document, doc};
 ///
 /// let mut db = Database::open_file("/tmp/test-polo.db").unwrap();
-/// let test_collection = db.collection::<Document>("test").unwrap();
+/// let mut collection = db.collection::<Document>("books").unwrap();
+///
+/// let docs = vec![
+///     doc! { "title": "1984", "author": "George Orwell" },
+///     doc! { "title": "Animal Farm", "author": "George Orwell" },
+///     doc! { "title": "The Great Gatsby", "author": "F. Scott Fitzgerald" },
+/// ];
+/// collection.insert_many(docs).unwrap();
 /// ```
 pub struct Database {
     ctx: Box<DbContext>,
@@ -742,6 +749,7 @@ mod tests {
     use std::io::Read;
     use std::path::PathBuf;
     use std::fs::File;
+    use serde::{Deserialize, Serialize};
     use crate::db::Collection;
 
     static TEST_SIZE: usize = 1000;
@@ -809,6 +817,33 @@ mod tests {
         assert!(second.get("content").is_some());
 
         assert_eq!(TEST_SIZE, all.len())
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct Book {
+        title: String,
+        author: String,
+    }
+
+    #[test]
+    fn test_insert_struct() {
+        let mut db = prepare_db("test-insert-struct").unwrap();
+        // Get a handle to a collection of `Book`.
+        let mut typed_collection = db.collection::<Book>("books").unwrap();
+
+        let books = vec![
+            Book {
+                title: "The Grapes of Wrath".to_string(),
+                author: "John Steinbeck".to_string(),
+            },
+            Book {
+                title: "To Kill a Mockingbird".to_string(),
+                author: "Harper Lee".to_string(),
+            },
+        ];
+
+        // Insert the books into "mydb.books" collection, no manual conversion to BSON necessary.
+        typed_collection.insert_many(books).unwrap();
     }
 
     #[test]
