@@ -24,7 +24,7 @@
 //! use polodb_core::bson::doc;
 //!
 //! let mut db = Database::open_file("/tmp/test-collection").unwrap();
-//! let mut collection = db.collection("test").unwrap();
+//! let mut collection = db.collection("test");
 //! collection.insert_one(doc! {
 //!     "_id": 0,
 //!     "name": "Vincent Chan",
@@ -39,7 +39,7 @@
 //! use polodb_core::bson::{Document, doc};
 //!
 //! let mut db = Database::open_memory().unwrap();
-//! let mut collection = db.collection::<Document>("books").unwrap();
+//! let mut collection = db.collection::<Document>("books");
 //!
 //! let docs = vec![
 //!     doc! { "title": "1984", "author": "George Orwell" },

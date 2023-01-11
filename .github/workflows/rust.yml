@@ -11,17 +11,29 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  Ubuntu:
+    name: Test on Ubuntu
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
-      
       - uses: actions/setup-node@v2
         with:
           node-version: '14'
       
+      - name: Run Rust tests
+        run: |
+          cargo test --release --verbose --workspace
+          cargo build --release --package polodb_clib
+
+  Windows:
+    name: Test on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '14'
+
       - name: Run Rust tests
         run: |
           cargo test --release --verbose --workspace
