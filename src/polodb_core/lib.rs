@@ -8,12 +8,7 @@
 //! The data of PoloDB is stored in a file. The file format is stable, cross-platform, and backwards compaitible.
 //! The API of PoloDB is very similar to MongoDB. It's very easy to learn and use.
 //!
-//! # Installation
-//! ```toml
-//! [dependencies]
-//! polodb_core = "0.10.2"
-//! polodb_bson = "0.10.2"
-//! ```
+//! [Tutorials](https://www.polodb.org/docs)
 //!
 //! # Usage
 //!
