@@ -250,8 +250,8 @@ pub unsafe extern "C" fn PLDB_update(db: *mut DbContext,
         let update_doc = update.as_ref().unwrap();
 
         match query.as_ref() {
-            Some(query) => rust_db.update(col_id, meta_version, Some(query.as_ref()), update_doc),
-            None => rust_db.update(col_id, meta_version, None, update_doc),
+            Some(query) => rust_db.update_many(col_id, meta_version, Some(query.as_ref()), update_doc),
+            None => rust_db.update_many(col_id, meta_version, None, update_doc),
         }
     };
 

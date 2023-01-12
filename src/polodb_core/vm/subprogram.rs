@@ -22,7 +22,8 @@ impl SubProgram {
         }
     }
 
-    pub(crate) fn compile_query(entry: &MetaDocEntry, meta_doc: &Document, query: &Document, skip_annotation: bool) -> DbResult<SubProgram> {
+    pub(crate) fn compile_query(entry: &MetaDocEntry, meta_doc: &Document, query: &Document,
+                                skip_annotation: bool) -> DbResult<SubProgram> {
         let _indexes = meta_doc.get(meta_doc_key::INDEXES);
         // let _tuples = doc_to_tuples(doc);
 
@@ -30,25 +31,35 @@ impl SubProgram {
 
         codegen.emit_open_read(entry.root_pid());
 
-        codegen.emit_query_layout(query, |codegen| -> DbResult<()> {
-            codegen.emit(DbOp::ResultRow);
-            codegen.emit(DbOp::Pop);
-            Ok(())
-        })?;
+        codegen.emit_query_layout(
+            query,
+            |codegen| -> DbResult<()> {
+                codegen.emit(DbOp::ResultRow);
+                codegen.emit(DbOp::Pop);
+                Ok(())
+            },
+            true
+        )?;
 
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, update: &Document, skip_annotation: bool) -> DbResult<SubProgram> {
+    pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, update: &Document,
+                                 skip_annotation: bool, is_many: bool) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation);
 
         codegen.emit_open_write(entry.root_pid());
 
-        codegen.emit_query_layout(query.unwrap(), |codegen| -> DbResult<()> {
-            codegen.emit_update_operation(update)?;
-            codegen.emit(DbOp::Pop);
-            Ok(())
-        })?;
+        codegen.emit_query_layout(
+            query.unwrap(),
+            |codegen| -> DbResult<()> {
+                codegen.emit_update_operation(update)?;
+                codegen.emit(DbOp::Pop);
+                codegen.emit(DbOp::IncR2);
+                Ok(())
+            },
+            is_many
+        )?;
 
         Ok(codegen.take())
     }
@@ -677,7 +688,9 @@ mod tests {
                 "hello1": "hello2",
             },
         };
-        let program = SubProgram::compile_update(&meta_entry, Some(&query_doc), &update_doc, false).unwrap();
+        let program = SubProgram::compile_update(&meta_entry,
+                                                 Some(&query_doc), &update_doc,
+                                                 false, true).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:

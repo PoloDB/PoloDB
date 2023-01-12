@@ -80,13 +80,34 @@ where
         })
     }
 
+    /// Updates up to one document matching `query` in the collection.
+    /// [documentation](https://www.polodb.org/docs/curd/update) for more information on specifying updates.
+    pub fn update_one(&mut self, query: Document, update: Document) -> DbResult<UpdateResult> {
+        let meta_opt = self.db.get_collection_meta_by_name(&self.name, false)?;
+        let modified_count: u64 = match meta_opt {
+            Some(col_meta) => {
+                let size = self.db.ctx.update_one(
+                    col_meta.id,
+                    col_meta.meta_version,
+                    Some(&query),
+                    &update
+                )?;
+                size as u64
+            }
+            None => 0,
+        };
+        Ok(UpdateResult {
+            modified_count,
+        })
+    }
+
     /// Updates all documents matching `query` in the collection.
     /// [documentation](https://www.polodb.org/docs/curd/update) for more information on specifying updates.
     pub fn update_many(&mut self, query: Document, update: Document) -> DbResult<UpdateResult> {
         let meta_opt = self.db.get_collection_meta_by_name(&self.name, false)?;
         let modified_count: u64 = match meta_opt {
             Some(col_meta) => {
-                let size = self.db.ctx.update(
+                let size = self.db.ctx.update_many(
                     col_meta.id,
                     col_meta.meta_version,
                     Some(&query),
@@ -1167,6 +1188,35 @@ mod tests {
             "user_id": 3,
         };
         collection.insert_one(data).expect_err("not comparable");
+    }
+
+    #[test]
+    fn test_update_one() {
+        let mut db = prepare_db("test-update-one").unwrap();
+        let mut collection = db.collection::<Document>("test");
+
+        let result = collection.insert_many(vec![
+            doc! {
+                "name": "Vincent",
+                "age": 17,
+            },
+            doc! {
+                "name": "Vincent",
+                "age": 18,
+            },
+        ]).unwrap();
+
+        assert_eq!(result.inserted_ids.len(), 2);
+
+        let result = collection.update_one(doc! {
+            "name": "Vincent",
+        }, doc! {
+            "$set": {
+                "name": "Steve",
+            }
+        }).unwrap();
+
+        assert_eq!(result.modified_count, 1);
     }
 
     #[test]

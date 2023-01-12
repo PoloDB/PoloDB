@@ -509,22 +509,33 @@ impl DbContext {
         Ok(handle)
     }
 
-    pub fn update(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+    pub fn update_many(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         self.check_meta_version(meta_version)?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(self, self.internal_update(col_id, query, update));
+        let result = try_db_op!(self, self.internal_update(col_id, query, update, true));
 
         Ok(result)
     }
 
-    fn internal_update(&mut self, col_id: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+    pub fn update_one(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+        self.check_meta_version(meta_version)?;
+
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+
+        let result = try_db_op!(self, self.internal_update(col_id, query, update, false));
+
+        Ok(result)
+    }
+
+    fn internal_update(&mut self, col_id: u32, query: Option<&Document>, update: &Document, is_many: bool) -> DbResult<usize> {
         let meta_source = self.get_meta_source()?;
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
-        let subprogram = SubProgram::compile_update(&collection_meta, query, update, true)?;
+        let subprogram = SubProgram::compile_update(&collection_meta, query, update,
+                                                    true, is_many)?;
 
         let mut vm = VM::new(&mut self.page_handler, Box::new(subprogram));
         vm.execute()?;
