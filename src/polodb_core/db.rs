@@ -276,7 +276,8 @@ impl<'a, T>  Collection<'a, T>
 /// use polodb_core::Database;
 /// use polodb_core::bson::{Document, doc};
 ///
-/// let mut db = Database::open_file("/tmp/test-polo.db").unwrap();
+/// # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db");
+/// let mut db = Database::open_file(db_path).unwrap();
 /// let mut collection = db.collection::<Document>("books");
 ///
 /// let docs = vec![
@@ -768,24 +769,9 @@ mod tests {
     use std::fs::File;
     use serde::{Deserialize, Serialize};
     use crate::db::Collection;
+    use crate::test_utils::{mk_db_path, mk_journal_path};
 
     static TEST_SIZE: usize = 1000;
-
-    fn mk_db_path(db_name: &str) -> PathBuf {
-        let mut db_path = env::temp_dir();
-        let db_filename = String::from(db_name) + ".db";
-        db_path.push(db_filename);
-        db_path
-    }
-
-    fn mk_journal_path(db_name: &str) -> PathBuf {
-        let mut journal_path = env::temp_dir();
-
-        let journal_filename = String::from(db_name) + ".db.journal";
-        journal_path.push(journal_filename);
-
-        journal_path
-    }
 
     fn prepare_db_with_config(db_name: &str, config: Config) -> DbResult<Database> {
         let db_path = mk_db_path(db_name);

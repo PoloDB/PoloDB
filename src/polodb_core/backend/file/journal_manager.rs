@@ -634,6 +634,7 @@ mod tests {
     use crate::page::RawPage;
     use crate::TransactionType;
     use crate::backend::file::journal_manager::JournalManager;
+    use crate::test_utils::mk_journal_path;
 
     static TEST_PAGE_LEN: u32 = 100;
 
@@ -648,15 +649,6 @@ mod tests {
         }
 
         page
-    }
-
-    fn mk_journal_path(db_name: &str) -> PathBuf {
-        let mut journal_path = env::temp_dir();
-
-        let journal_filename = String::from(db_name) + ".db.journal";
-        journal_path.push(journal_filename);
-
-        journal_path
     }
 
     fn prepare_journal_path(db_name: &str) -> String {
