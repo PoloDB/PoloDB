@@ -1,7 +1,13 @@
 
+# 3.1.0
+
+- Enrich the documentations
+- Refactor the API of collection.
+- Fix: locking issue on Windows
+
 # 3.0.0
 
-- Uses `bson` crate as data format
+- **Breaking change**: Uses `bson` crate as data format
 - MongoDB-like API
 
 # 0.10.0
