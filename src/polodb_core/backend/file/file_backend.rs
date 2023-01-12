@@ -5,7 +5,6 @@ use std::io::{SeekFrom, Seek, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use super::journal_manager::JournalManager;
-use crate::file_lock::{exclusive_lock_file, unlock_file};
 use crate::backend::Backend;
 use crate::{DbResult, DbErr, Config, SerializeType};
 use crate::page::RawPage;
@@ -24,6 +23,58 @@ struct InitDbResult {
     db_file_size: u64,
 }
 
+#[cfg(target_os = "windows")]
+mod winerror {
+    pub const ERROR_SHARING_VIOLATION: i32 = 32;
+}
+
+#[cfg(target_os = "windows")]
+fn open_file_native(path: &Path) -> DbResult<File> {
+    use std::os::windows::prelude::OpenOptionsExt;
+
+    let file_result = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .read(true)
+        .share_mode(0)
+        .open(path);
+
+    match file_result {
+        Ok(file) => Ok(file),
+        Err(err) => {
+            let os_error = err.raw_os_error();
+            if let Some(error_code) = os_error {
+                if error_code == winerror::ERROR_SHARING_VIOLATION {
+                    return Err(DbErr::DatabaseOccupied);
+                }
+            }
+            Err(err.into())
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn open_file_native(path: &Path) -> DbResult<File> {
+    use crate::file_lock::exclusive_lock_file;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .read(true)
+        .open(path)?;
+
+    match exclusive_lock_file(&file) {
+        Err(DbErr::Busy) => {
+            return Err(DbErr::DatabaseOccupied);
+        }
+        Err(err) => {
+            return Err(err);
+        },
+        _ => (),
+    };
+
+    Ok(file)
+}
+
 impl FileBackend {
 
     fn mk_journal_path(db_path: &Path) -> PathBuf {
@@ -35,21 +86,7 @@ impl FileBackend {
     }
 
     pub(crate) fn open(path: &Path, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<FileBackend> {
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .read(true)
-            .open(path)?;
-
-        match exclusive_lock_file(&file) {
-            Err(DbErr::Busy) => {
-                return Err(DbErr::DatabaseOccupied);
-            }
-            Err(err) => {
-                return Err(err);
-            },
-            _ => (),
-        };
+        let mut file = open_file_native(path)?;
 
         let init_result = FileBackend::init_db(
             &mut file,
@@ -182,7 +219,8 @@ impl Drop for FileBackend {
 
     fn drop(&mut self) {
         let mut main_db = self.file.borrow_mut();
-        let _ = unlock_file(&main_db);
+        #[cfg(not(target_os = "windows"))]
+        let _ = crate::file_lock::unlock_file(&main_db);
         let result = self.journal_manager.checkpoint_journal(&mut main_db);
         if result.is_ok() {
             let path = self.journal_manager.path();

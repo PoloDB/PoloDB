@@ -628,10 +628,13 @@ impl JournalManager {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
     use std::num::NonZeroU32;
+    use std::path::PathBuf;
     use crate::page::RawPage;
     use crate::TransactionType;
     use crate::backend::file::journal_manager::JournalManager;
+    use crate::test_utils::mk_journal_path;
 
     static TEST_PAGE_LEN: u32 = 100;
 
@@ -648,11 +651,17 @@ mod tests {
         page
     }
 
+    fn prepare_journal_path(db_name: &str) -> String {
+        let journal_path = mk_journal_path(db_name);
+        let _ = std::fs::remove_file(journal_path.clone());
+        journal_path.as_path().to_str().unwrap().into()
+    }
+
     #[test]
     fn test_journal() {
-        let _ = std::fs::remove_file("/tmp/test-journal");
+        let journal_path = prepare_journal_path("test-journal");
         let mut journal_manager = JournalManager::open(
-            "/tmp/test-journal".as_ref(), NonZeroU32::new(4096).unwrap(), 4096
+            journal_path.as_ref(), NonZeroU32::new(4096).unwrap(), 4096
         ).unwrap();
 
         journal_manager.start_transaction(TransactionType::Write).unwrap();
@@ -681,13 +690,12 @@ mod tests {
     #[test]
     fn test_commit() {
         const TEST_PAGE_LEN: u32 = 10;
-        const TEST_FILE: &str = "/tmp/test-journal-commit";
+        let journal_path = prepare_journal_path("test-journal-commit");
 
-        let _ = std::fs::remove_file(TEST_FILE);
         let mem_count;
         {
             let mut journal_manager = JournalManager::open(
-                TEST_FILE.as_ref(), NonZeroU32::new(4096).unwrap(), 4096
+                journal_path.as_ref(), NonZeroU32::new(4096).unwrap(), 4096
             ).unwrap();
 
             journal_manager.start_transaction(TransactionType::Write).unwrap();
@@ -707,7 +715,7 @@ mod tests {
         }
 
         let journal_manager = JournalManager::open(
-            TEST_FILE.as_ref(), NonZeroU32::new(4096).unwrap(), 4096
+            journal_path.as_ref(), NonZeroU32::new(4096).unwrap(), 4096
         ).unwrap();
         assert_eq!(mem_count, journal_manager.count);
     }

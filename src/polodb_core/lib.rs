@@ -23,7 +23,8 @@
 //! use polodb_core::Database;
 //! use polodb_core::bson::doc;
 //!
-//! let mut db = Database::open_file("/tmp/test-collection").unwrap();
+//! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-lib");
+//! let mut db = Database::open_file(db_path).unwrap();
 //! let mut collection = db.collection("test");
 //! collection.insert_one(doc! {
 //!     "_id": 0,
@@ -74,6 +75,7 @@ mod doc_serializer;
 pub mod msg_ty;
 mod bson_utils;
 pub mod results;
+pub mod test_utils;
 
 pub use db::{Database, DbResult};
 pub use config::Config;
