@@ -1145,6 +1145,10 @@ mod tests {
             let db2 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config);
             match db2 {
                 Err(DbErr::DatabaseOccupied) => assert!(true),
+                Err(other_error) => {
+                    println!("{:?}", other_error);
+                    assert!(false);
+                }
                 _ => assert!(false),
             }
         }
