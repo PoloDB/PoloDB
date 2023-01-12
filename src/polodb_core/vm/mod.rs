@@ -416,6 +416,11 @@ impl<'a> VM<'a> {
                         self.pc = self.pc.add(5);
                     }
 
+                    DbOp::IncR2 => {
+                        self.r2 += 1;
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::IfTrue => {
                         let location = self.pc.add(1).cast::<u32>().read();
                         if self.r0 != 0 {  // true

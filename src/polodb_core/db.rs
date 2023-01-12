@@ -80,13 +80,34 @@ where
         })
     }
 
+    /// Updates up to one document matching `query` in the collection.
+    /// [documentation](https://www.polodb.org/docs/curd/update) for more information on specifying updates.
+    pub fn update_one(&mut self, query: Document, update: Document) -> DbResult<UpdateResult> {
+        let meta_opt = self.db.get_collection_meta_by_name(&self.name, false)?;
+        let modified_count: u64 = match meta_opt {
+            Some(col_meta) => {
+                let size = self.db.ctx.update_one(
+                    col_meta.id,
+                    col_meta.meta_version,
+                    Some(&query),
+                    &update
+                )?;
+                size as u64
+            }
+            None => 0,
+        };
+        Ok(UpdateResult {
+            modified_count,
+        })
+    }
+
     /// Updates all documents matching `query` in the collection.
     /// [documentation](https://www.polodb.org/docs/curd/update) for more information on specifying updates.
     pub fn update_many(&mut self, query: Document, update: Document) -> DbResult<UpdateResult> {
         let meta_opt = self.db.get_collection_meta_by_name(&self.name, false)?;
         let modified_count: u64 = match meta_opt {
             Some(col_meta) => {
-                let size = self.db.ctx.update(
+                let size = self.db.ctx.update_many(
                     col_meta.id,
                     col_meta.meta_version,
                     Some(&query),
@@ -150,10 +171,25 @@ where
         })
     }
 
+    /// Deletes up to one document found matching `query`.
+    pub fn delete_one(&mut self, query: Document) -> DbResult<DeleteResult> {
+        let meta_opt = self.db.get_collection_meta_by_name(&self.name, false)?;
+        let deleted_count = match meta_opt {
+            Some(col_meta) => {
+                let count = self.db.ctx.delete(col_meta.id, col_meta.meta_version,
+                                               query, false)?;
+                count as u64
+            }
+            None => 0
+        };
+        Ok(DeleteResult {
+            deleted_count,
+        })
+    }
+
     /// When query is `None`, all the data in the collection will be deleted.
     ///
     /// The size of data deleted returns.
-    #[inline]
     pub fn delete_many(&mut self, query: Document) -> DbResult<DeleteResult> {
         let meta_opt = self.db.get_collection_meta_by_name(&self.name, false)?;
         let deleted_count = match meta_opt {
@@ -161,7 +197,7 @@ where
                 let count = if query.len() == 0 {
                     self.db.ctx.delete_all(col_meta.id, col_meta.meta_version)?
                 } else {
-                    self.db.ctx.delete(col_meta.id, col_meta.meta_version, query)?
+                    self.db.ctx.delete(col_meta.id, col_meta.meta_version, query, true)?
                 };
                 count as u64
             }
@@ -1170,6 +1206,63 @@ mod tests {
     }
 
     #[test]
+    fn test_update_one() {
+        let mut db = prepare_db("test-update-one").unwrap();
+        let mut collection = db.collection::<Document>("test");
+
+        let result = collection.insert_many(vec![
+            doc! {
+                "name": "Vincent",
+                "age": 17,
+            },
+            doc! {
+                "name": "Vincent",
+                "age": 18,
+            },
+        ]).unwrap();
+
+        assert_eq!(result.inserted_ids.len(), 2);
+
+        let result = collection.update_one(doc! {
+            "name": "Vincent",
+        }, doc! {
+            "$set": {
+                "name": "Steve",
+            }
+        }).unwrap();
+
+        assert_eq!(result.modified_count, 1);
+    }
+
+    #[test]
+    fn test_delete_one() {
+        let mut db = prepare_db("test-update-one").unwrap();
+        let mut collection = db.collection::<Document>("test");
+
+        let result = collection.insert_many(vec![
+            doc! {
+                "name": "Vincent",
+                "age": 17,
+            },
+            doc! {
+                "name": "Vincent",
+                "age": 18,
+            },
+        ]).unwrap();
+
+        assert_eq!(result.inserted_ids.len(), 2);
+
+        let result = collection.delete_one(doc! {
+            "name": "Vincent",
+        }).unwrap();
+
+        assert_eq!(result.deleted_count, 1);
+
+        let remain = collection.count_documents().unwrap();
+        assert_eq!(remain, 1);
+    }
+
+    #[test]
     fn test_one_delete_item() {
         let mut db = prepare_db("test-delete-item").unwrap();
         let mut collection = db.collection::<Document>("test");
@@ -1191,7 +1284,7 @@ mod tests {
         let delete_doc = doc! {
             "_id": third_key.clone(),
         };
-        assert!(collection.delete_many(delete_doc.clone()).unwrap().deleted_count > 0);
+        assert_eq!(collection.delete_many(delete_doc.clone()).unwrap().deleted_count, 1);
         assert_eq!(collection.delete_many(delete_doc).unwrap().deleted_count, 0);
     }
 

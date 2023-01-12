@@ -1,4 +1,10 @@
 
+# 3.2.0
+
+- Add `update_one()` API
+- Fix: `modified_count` is always `0` after updating
+- Add `delete_one()` API
+
 # 3.1.0
 
 - Enrich the documentations

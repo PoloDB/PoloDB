@@ -250,8 +250,8 @@ pub unsafe extern "C" fn PLDB_update(db: *mut DbContext,
         let update_doc = update.as_ref().unwrap();
 
         match query.as_ref() {
-            Some(query) => rust_db.update(col_id, meta_version, Some(query.as_ref()), update_doc),
-            None => rust_db.update(col_id, meta_version, None, update_doc),
+            Some(query) => rust_db.update_many(col_id, meta_version, Some(query.as_ref()), update_doc),
+            None => rust_db.update_many(col_id, meta_version, None, update_doc),
         }
     };
 
@@ -270,7 +270,7 @@ pub unsafe extern "C" fn PLDB_delete(db: *mut DbContext, col_id: c_uint, meta_ve
     let rust_db = db.as_mut().unwrap();
     let query_doc = query.as_ref().unwrap();
     let doc = query_doc.as_ref().clone();
-    let result = rust_db.delete(col_id, meta_version, doc);
+    let result = rust_db.delete(col_id, meta_version, doc, true);
 
     match result {
         Ok(size) => size as c_longlong,

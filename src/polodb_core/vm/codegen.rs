@@ -187,7 +187,8 @@ impl Codegen {
     }
 
     pub(super) fn emit_query_layout<F>(
-        &mut self, query: &Document, result_callback: F
+        &mut self, query: &Document,
+        result_callback: F, is_many: bool
     ) -> DbResult<()> where
         F: FnOnce(&mut Codegen) -> DbResult<()> {
 
@@ -233,7 +234,12 @@ impl Codegen {
         // give out the result, or update the item
         self.emit_label_with_name(result_label, "Result");
         result_callback(self)?;
-        self.emit_goto(DbOp::Goto, next_label);
+
+        if is_many {
+            self.emit_goto(DbOp::Goto, next_label);
+        } else {
+            self.emit_goto(DbOp::Goto, close_label);
+        }
 
         // <==== begin to compare the top of the stack
         //
@@ -245,7 +251,11 @@ impl Codegen {
         self.emit(DbOp::SaveStackPos);
 
         self.emit_standard_query_doc(
-            query, result_label,get_field_failed_label, not_found_label)?;
+            query,
+            result_label,
+            get_field_failed_label,
+            not_found_label
+        )?;
 
         self.emit_goto(DbOp::Goto, result_label);
 

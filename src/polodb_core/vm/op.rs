@@ -11,6 +11,8 @@ pub enum DbOp {
     // op1. label id
     Label = 1,
 
+    IncR2,
+
     // reset the pc to the position of op0
     //
     // 5 bytes

@@ -509,22 +509,33 @@ impl DbContext {
         Ok(handle)
     }
 
-    pub fn update(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+    pub fn update_many(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         self.check_meta_version(meta_version)?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(self, self.internal_update(col_id, query, update));
+        let result = try_db_op!(self, self.internal_update(col_id, query, update, true));
 
         Ok(result)
     }
 
-    fn internal_update(&mut self, col_id: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+    pub fn update_one(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
+        self.check_meta_version(meta_version)?;
+
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+
+        let result = try_db_op!(self, self.internal_update(col_id, query, update, false));
+
+        Ok(result)
+    }
+
+    fn internal_update(&mut self, col_id: u32, query: Option<&Document>, update: &Document, is_many: bool) -> DbResult<usize> {
         let meta_source = self.get_meta_source()?;
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
-        let subprogram = SubProgram::compile_update(&collection_meta, query, update, true)?;
+        let subprogram = SubProgram::compile_update(&collection_meta, query, update,
+                                                    true, is_many)?;
 
         let mut vm = VM::new(&mut self.page_handler, Box::new(subprogram));
         vm.execute()?;
@@ -559,10 +570,12 @@ impl DbContext {
         self.update_meta_source(&meta_source)
     }
 
-    pub fn delete(&mut self, col_id: u32, meta_version: u32, query: Document) -> DbResult<usize> {
-        let primary_keys = self.get_primary_keys_by_query(col_id, meta_version, Some(query))?;
-
+    pub fn delete(&mut self, col_id: u32, meta_version: u32, query: Document, is_many: bool) -> DbResult<usize> {
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
+
+        let primary_keys = self.get_primary_keys_by_query(col_id, meta_version,
+                                                          Some(query), is_many)?;
+
 
         let result = try_db_op!(self, self.internal_delete(col_id, &primary_keys));
 
@@ -578,7 +591,8 @@ impl DbContext {
     }
 
     pub fn delete_all(&mut self, col_id: u32, meta_version: u32) -> DbResult<usize> {
-        let primary_keys = self.get_primary_keys_by_query(col_id, meta_version, None)?;
+        let primary_keys = self.get_primary_keys_by_query(col_id, meta_version,
+                                                          None, true)?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
@@ -587,7 +601,8 @@ impl DbContext {
         Ok(result)
     }
 
-    fn get_primary_keys_by_query(&mut self, col_id: u32, meta_version: u32, query: Option<Document>) -> DbResult<Vec<Bson>> {
+    fn get_primary_keys_by_query(&mut self, col_id: u32, meta_version: u32,
+                                 query: Option<Document>, is_many: bool) -> DbResult<Vec<Bson>> {
         let mut handle = self.find(col_id, meta_version, query)?;
         let mut buffer: Vec<Bson> = vec![];
 
@@ -597,6 +612,10 @@ impl DbContext {
             let doc = handle.get().as_document().unwrap();
             let pkey = doc.get("_id").unwrap();
             buffer.push(pkey.clone());
+
+            if !is_many {
+                return Ok(buffer);
+            }
 
             handle.step()?;
         }

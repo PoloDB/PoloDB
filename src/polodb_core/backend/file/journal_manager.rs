@@ -628,9 +628,7 @@ impl JournalManager {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
     use std::num::NonZeroU32;
-    use std::path::PathBuf;
     use crate::page::RawPage;
     use crate::TransactionType;
     use crate::backend::file::journal_manager::JournalManager;
