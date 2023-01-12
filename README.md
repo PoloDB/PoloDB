@@ -43,6 +43,28 @@ It's very easy to learn and use.
   - Filesystem(WAL)
   - Memory
 
+# Quick start
+
+PoloDB is easy to learn and use:
+
+```rust
+use polodb_core::Database;
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Book {
+    title: String,
+    author: String,
+}
+
+let mut db = Database::open_file(db_path)?;
+let mut collection = db.collection::<Book>("books");
+collection.insert_one(Book {
+    title: "The Three-Body Problem".to_string(),
+    author: "Liu Cixin".to_string(),
+})?;
+```
+
 # Backends
 
 ![](./images/backend.png)
