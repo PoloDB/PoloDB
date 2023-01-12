@@ -16,20 +16,40 @@
 //!
 //! The [Database] structure provides all the API to get access to the DB file.
 //!
+//! ## Open a local file
+//!
+//! ```rust
+//! use polodb_core::Database;
+//! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-file");
+//! let mut db = Database::open_file(db_path).unwrap();
+//! ```
+//!
+//! ## Open a memory database
+//!
+//! ```rust
+//! use polodb_core::Database;
+//!
+//! let mut db = Database::open_memory().unwrap();
+//! ```
+//!
 //! # Example
 //!
 //!  ```rust
-//! use std::rc::Rc;
 //! use polodb_core::Database;
-//! use polodb_core::bson::doc;
+//! use serde::{Serialize, Deserialize};
+//!
+//! #[derive(Debug, Serialize, Deserialize)]
+//! struct Book {
+//!     title: String,
+//!     author: String,
+//! }
 //!
 //! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-lib");
 //! let mut db = Database::open_file(db_path).unwrap();
-//! let mut collection = db.collection("test");
-//! collection.insert_one(doc! {
-//!     "_id": 0,
-//!     "name": "Vincent Chan",
-//!     "score": 99.99,
+//! let mut collection = db.collection("books");
+//! collection.insert_one(Book {
+//!     title: "The Three-Body Problem".to_string(),
+//!     author: "Liu Cixin".to_string(),
 //! }).unwrap();
 //! ```
 //!
