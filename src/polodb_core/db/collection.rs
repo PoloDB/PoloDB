@@ -17,8 +17,6 @@ pub struct Collection<'a, T> {
 }
 
 impl<'a, T>  Collection<'a, T>
-where
-    T: Serialize,
 {
 
     pub(super) fn new(db: &'a Database, name: &str) -> Collection<'a, T> {
@@ -50,16 +48,6 @@ where
         self.db.update_many(&self.name, query, update)
     }
 
-    /// Inserts `doc` into the collection.
-    pub fn insert_one(&self, doc: impl Borrow<T>) -> DbResult<InsertOneResult> {
-        self.db.insert_one(&self.name, doc)
-    }
-
-    /// Inserts the data in `docs` into the collection.
-    pub fn insert_many(&self, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
-        self.db.insert_many(&self.name, docs)
-    }
-
     /// Deletes up to one document found matching `query`.
     pub fn delete_one(&self, query: Document) -> DbResult<DeleteResult> {
         self.db.delete_one(&self.name, query)
@@ -76,6 +64,21 @@ where
     #[allow(dead_code)]
     fn create_index(&self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         self.db.create_index(&self.name, keys, options)
+    }
+}
+
+impl<'a, T>  Collection<'a, T>
+where
+    T: Serialize,
+{
+    /// Inserts `doc` into the collection.
+    pub fn insert_one(&self, doc: impl Borrow<T>) -> DbResult<InsertOneResult> {
+        self.db.insert_one(&self.name, doc)
+    }
+
+    /// Inserts the data in `docs` into the collection.
+    pub fn insert_many(&self, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
+        self.db.insert_many(&self.name, docs)
     }
 }
 
