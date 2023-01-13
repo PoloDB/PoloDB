@@ -95,6 +95,7 @@ pub mod msg_ty;
 mod bson_utils;
 pub mod results;
 pub mod test_utils;
+pub mod commands;
 
 pub use db::{Database, DbContext, DbResult};
 pub use config::Config;
