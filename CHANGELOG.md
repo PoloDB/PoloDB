@@ -4,6 +4,7 @@
 - Add `update_one()` API
 - Fix: `modified_count` is always `0` after updating
 - Add `delete_one()` API
+- Don't need `mut` for `Database` anymore
 
 # 3.1.0
 
