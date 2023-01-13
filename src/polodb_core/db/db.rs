@@ -566,9 +566,9 @@ impl DatabaseInner {
         Ok(val)
     }
 
-    fn handle_start_transaction<W: Write>(&mut self, start_transaction: StartTransactionCommand, _pipe_out: &mut W) -> DbResult<()> {
+    fn handle_start_transaction(&mut self, start_transaction: StartTransactionCommand) -> DbResult<Bson> {
         self.start_transaction(start_transaction.ty)?;
-        Ok(())
+        Ok(Bson::Null)
     }
 
     fn handle_request_with_result<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<HandleRequestResult> {
@@ -582,48 +582,53 @@ impl DatabaseInner {
             false
         };
 
-        let temp = match command_message {
+        let result_value: Bson = match command_message {
             CommandMessage::Find(find) => {
-                self.handle_find_operation(find, pipe_out)
+                self.handle_find_operation(find)?
             }
             CommandMessage::Insert(insert) => {
-                self.handle_insert_operation(insert, pipe_out)
+                self.handle_insert_operation(insert)?
             }
             CommandMessage::Update(update) => {
-                self.handle_update_operation(update, pipe_out)
+                self.handle_update_operation(update)?
             }
             CommandMessage::Delete(delete) => {
-                self.handle_delete_operation(delete, pipe_out)
+                self.handle_delete_operation(delete)?
             }
             CommandMessage::CreateCollection(create_collection) => {
-                self.handle_create_collection(create_collection, pipe_out)
+                self.handle_create_collection(create_collection)?
             }
             CommandMessage::DropCollection(drop_collection) => {
-                self.handle_drop_collection(drop_collection, pipe_out)
+                self.handle_drop_collection(drop_collection)?
             }
             CommandMessage::StartTransaction(start_transaction) => {
-                self.handle_start_transaction(start_transaction, pipe_out)
+                self.handle_start_transaction(start_transaction)?
             }
             CommandMessage::Commit => {
-                self.commit()
+                self.commit()?;
+                Bson::Null
             }
             CommandMessage::Rollback => {
-                self.rollback()
+                self.rollback()?;
+                Bson::Null
             }
             CommandMessage::SafelyQuit => {
-                Ok(())
+                Bson::Null
             }
             CommandMessage::CountDocuments(count_documents) => {
-                self.handle_count_operation(count_documents, pipe_out)
+                self.handle_count_operation(count_documents)?
             }
         };
+
+        let bytes = bson::ser::to_vec(&result_value)?;
+        pipe_out.write(bytes.as_ref())?;
 
         Ok(HandleRequestResult {
             is_quit
         })
     }
 
-    fn handle_find_operation<W: Write>(&mut self, find: FindCommand, pipe_out: &mut W) -> DbResult<()> {
+    fn handle_find_operation(&mut self, find: FindCommand) -> DbResult<Bson> {
         let col_name = find.ns.as_str();
         let result = if find.multi {
             self.find_many(col_name, find.filter)?
@@ -643,23 +648,17 @@ impl DatabaseInner {
 
         let result_value = Bson::Array(value_arr);
 
-        let bytes = bson::ser::to_vec(&result_value)?;
-        pipe_out.write(bytes.as_ref())?;
-
-        Ok(())
+        Ok(result_value)
     }
 
-    fn handle_insert_operation<W: Write>(&mut self, insert: InsertCommand, pipe_out: &mut W) -> DbResult<()> {
+    fn handle_insert_operation(&mut self, insert: InsertCommand) -> DbResult<Bson> {
         let col_name = &insert.ns;
         let insert_result = self.insert_many(col_name, insert.documents)?;
-
-        let bytes = bson::to_vec(&insert_result)?;
-        pipe_out.write(bytes.as_ref())?;
-
-        Ok(())
+        let bson_val = bson::to_bson(&insert_result)?;
+        Ok(bson_val)
     }
 
-    fn handle_update_operation<W: Write>(&mut self, update: UpdateCommand, pipe_out: &mut W) -> DbResult<()> {
+    fn handle_update_operation(&mut self, update: UpdateCommand) -> DbResult<Bson> {
         let col_name: &str = &update.ns;
 
         let result = if update.multi {
@@ -668,13 +667,11 @@ impl DatabaseInner {
             self.update_one(col_name, update.filter, update.update)?
         };
 
-        let bytes = bson::to_vec(&result)?;
-        pipe_out.write(bytes.as_ref())?;
-
-        Ok(())
+        let bson_val = bson::to_bson(&result)?;
+        Ok(bson_val)
     }
 
-    fn handle_delete_operation<W: Write>(&mut self, delete: DeleteCommand, pipe_out: &mut W) -> DbResult<()> {
+    fn handle_delete_operation(&mut self, delete: DeleteCommand) -> DbResult<Bson> {
         let col_name: &str = &delete.ns;
 
         let result = if delete.multi {
@@ -683,24 +680,20 @@ impl DatabaseInner {
             self.delete_one(col_name, delete.filter)?
         };
 
-        let bytes = bson::to_vec(&result)?;
-        pipe_out.write(bytes.as_ref())?;
-
-        Ok(())
+        let bson_val = bson::to_bson(&result)?;
+        Ok(bson_val)
     }
 
-    fn handle_create_collection<W: Write>(&mut self, create_collection: CreateCollectionCommand, pipe_out: &mut W) -> DbResult<()> {
+    fn handle_create_collection(&mut self, create_collection: CreateCollectionCommand) -> DbResult<Bson> {
         let ret = match self.create_collection::<Bson>(&create_collection.ns) {
-            Ok(_) => Bson::Boolean(true),
-            Err(DbErr::CollectionAlreadyExits(_)) => Bson::Boolean(false),
+            Ok(_) => true,
+            Err(DbErr::CollectionAlreadyExits(_)) => false,
             Err(err) => return Err(err),
         };
-        let bytes = bson::ser::to_vec(&ret)?;
-        pipe_out.write(bytes.as_ref())?;
-        Ok(())
+        Ok(Bson::Boolean(ret))
     }
 
-    fn handle_drop_collection<W: Write>(&mut self, drop: DropCollectionCommand, pipe_out: &mut W) -> DbResult<()> {
+    fn handle_drop_collection(&mut self, drop: DropCollectionCommand) -> DbResult<Bson> {
         let col_name = &drop.ns;
         let info = match self.ctx.get_collection_meta_by_name(col_name) {
             Ok(meta) => meta,
@@ -709,20 +702,12 @@ impl DatabaseInner {
         };
         self.ctx.drop_collection(info.id, info.meta_version)?;
 
-        let bytes = bson::ser::to_vec(&Bson::Null)?;
-        pipe_out.write(bytes.as_ref())?;
-
-        Ok(())
+        Ok(Bson::Null)
     }
 
-    fn handle_count_operation<W: Write>(&mut self, count_documents: CountDocumentsCommand, pipe_out: &mut W) -> DbResult<()> {
+    fn handle_count_operation(&mut self, count_documents: CountDocumentsCommand) -> DbResult<Bson> {
         let count = self.count_documents(&count_documents.ns)?;
-
-        let ret_val = Bson::Int64(count as i64);
-        let bytes = bson::ser::to_vec(&ret_val)?;
-        pipe_out.write(bytes.as_ref())?;
-
-        Ok(())
+        Ok(Bson::Int64(count as i64))
     }
 }
 
