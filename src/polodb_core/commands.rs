@@ -4,49 +4,50 @@ use crate::TransactionType;
 
 #[derive(Serialize, Deserialize)]
 pub struct FindCommand {
-    ns: String,
-    multi: bool,
-    filter: Option<Document>,
+    pub ns: String,
+    pub multi: bool,
+    pub filter: Option<Document>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct InsertCommand {
-    ns: String,
-    documents: Vec<Document>,
+    pub ns: String,
+    pub documents: Vec<Document>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct UpdateCommand {
-    ns: String,
-    filter: Document,
-    update: Document,
+    pub ns: String,
+    pub filter: Document,
+    pub update: Document,
+    pub multi: bool,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct DeleteCommand {
-    ns: String,
-    filter: Document,
-    multi: bool,
+    pub ns: String,
+    pub filter: Document,
+    pub multi: bool,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateCollectionCommand {
-    ns: String,
+    pub ns: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct DropCollectionCommand {
-    ns: String,
+    pub ns: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct CountDocumentsCommand {
-    ns: String,
+    pub ns: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct StartTransactionCommand {
-    ty: Option<TransactionType>,
+    pub ty: Option<TransactionType>,
 }
 
 #[derive(Serialize, Deserialize)]

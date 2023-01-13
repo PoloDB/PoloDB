@@ -1,22 +1,21 @@
 use std::borrow::Borrow;
 use std::cell::RefCell;
-use std::convert::TryFrom;
 use std::path::Path;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::HashMap;
-use bson::{Bson, doc, Document};
+use bson::{Bson, Document};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
 use crate::error::DbErr;
-use crate::msg_ty::MsgTy;
 use crate::Config;
 use super::context::{CollectionMeta, DbContext};
 use crate::{DbHandle, TransactionType};
 use crate::db::collection::Collection;
 use crate::dump::FullDump;
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
+use crate::commands::{CommandMessage, CountDocumentsCommand, CreateCollectionCommand, DeleteCommand, DropCollectionCommand, FindCommand, InsertCommand, StartTransactionCommand, UpdateCommand};
 
 pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 
@@ -32,15 +31,6 @@ pub(super) fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, 
     }
 
     Ok(())
-}
-
-macro_rules! unwrap_str_or {
-    ($expr: expr, $or: expr) => {
-        match $expr {
-            Some(Bson::String(id)) => id.as_str(),
-            _ => return Err(DbErr::ParseError($or)),
-        }
-    }
 }
 
 ///
@@ -96,6 +86,11 @@ pub(super) struct DatabaseInner {
 }
 
 pub type DbResult<T> = Result<T, DbErr>;
+
+#[derive(Clone)]
+pub struct HandleRequestResult {
+    pub is_quit: bool,
+}
 
 impl Database {
     pub fn set_log(v: bool) {
@@ -178,7 +173,7 @@ impl Database {
         inner.dump()
     }
 
-    pub fn handle_request<R: Read, W: Write>(&self, pipe_in: &mut R, pipe_out: &mut W) -> std::io::Result<MsgTy> {
+    pub fn handle_request<R: Read, W: Write>(&self, pipe_in: &mut R, pipe_out: &mut W) -> std::io::Result<HandleRequestResult> {
         let mut inner = self.inner.borrow_mut();
         inner.handle_request(pipe_in, pipe_out)
     }
@@ -317,13 +312,17 @@ impl DatabaseInner {
 
     /// handle request for database
     /// See [MsgTy] for message detail
-    pub fn handle_request<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> std::io::Result<MsgTy> {
+    pub fn handle_request<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> std::io::Result<HandleRequestResult> {
         let mut buffer: Vec<u8> = Vec::new();
         let result = self.handle_request_with_result(pipe_in, &mut buffer);
-        let ret = match &result {
-            Ok(t) => t.clone(),
-            Err(_) => MsgTy::Undefined,
+
+        let final_result = match &result {
+            Ok(r) => Ok(r.clone()),
+            Err(_) => Ok(HandleRequestResult {
+                is_quit: false,
+            })
         };
+
         if let Err(DbErr::IOErr(io_err)) = result {
             return Err(*io_err);
         }
@@ -334,7 +333,8 @@ impl DatabaseInner {
         if let Err(err) = resp_result {
             eprintln!("resp error: {}", err);
         }
-        Ok(ret)
+
+        final_result
     }
 
     fn count_documents(&mut self, name: &str) -> DbResult<u64> {
@@ -347,11 +347,9 @@ impl DatabaseInner {
         })
     }
 
-    fn send_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<MsgTy>, body: Vec<u8>) -> DbResult<()> {
-        match result {
-            Ok(msg_ty) => {
-                let val = msg_ty as i32;
-                pipe_out.write_i32::<BigEndian>(val)?;
+    fn send_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<HandleRequestResult>, body: Vec<u8>) -> DbResult<HandleRequestResult> {
+        match &result {
+            Ok(_) => {
                 pipe_out.write_u32::<BigEndian>(body.len() as u32)?;
                 pipe_out.write(&body)?;
             }
@@ -364,7 +362,7 @@ impl DatabaseInner {
                 pipe_out.write(str_buf)?;
             }
         }
-        Ok(())
+        result
     }
 
     fn find_one<T: DeserializeOwned>(&mut self, col_name: &str, filter: impl Into<Option<Document>>) -> DbResult<Option<T>> {
@@ -568,130 +566,73 @@ impl DatabaseInner {
         Ok(val)
     }
 
-    fn handle_start_transaction<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
-        let value = self.receive_request_body(pipe_in)?;
-        let transaction_type = match value {
-            Bson::Int64(val) => val,
-            _ => {
-                return Err(DbErr::ParseError("transaction needs a type".into()));
-            }
-        };
-        match transaction_type {
-            0 => self.start_transaction(None),
-            1 => self.start_transaction(Some(TransactionType::Read)),
-            2 => self.start_transaction(Some(TransactionType::Write)),
-            _ => return Err(DbErr::ParseError("invalid transaction type".into())),
-        }
-    }
-
-    fn handle_request_with_result<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<MsgTy> {
-        let msg_ty_int = pipe_in.read_i32::<BigEndian>()?;
-
-        let msg_ty = MsgTy::try_from(msg_ty_int)?;
-
-        match msg_ty {
-            MsgTy::Find => {
-                self.handle_find_operation(pipe_in, pipe_out)?;
-            },
-
-            MsgTy::FindOne => {
-                self.handle_find_one_operation(pipe_in, pipe_out)?;
-            },
-
-            MsgTy::Insert => {
-                self.handle_insert_operation(pipe_in, pipe_out)?;
-            }
-
-            MsgTy::Update => {
-                self.handle_update_operation(pipe_in, pipe_out)?;
-            }
-
-            MsgTy::Delete => {
-                self.handle_delete_operation(pipe_in, pipe_out)?;
-            }
-
-            MsgTy::CreateCollection => {
-                self.handle_create_collection(pipe_in, pipe_out)?;
-            }
-
-            MsgTy::Drop =>{
-                self.handle_drop_collection(pipe_in, pipe_out)?;
-            }
-
-            MsgTy::StartTransaction => {
-                self.handle_start_transaction(pipe_in, pipe_out)?;
-            }
-
-            MsgTy::Commit => {
-                self.handle_commit(pipe_in, pipe_out)?;
-            }
-
-            MsgTy::Rollback => {
-                self.handle_rollback(pipe_in, pipe_out)?;
-            }
-
-            MsgTy::Count => {
-                self.handle_count_operation(pipe_in, pipe_out)?;
-            }
-
-            MsgTy::SafelyQuit => (),
-
-            _ => {
-                return Err(DbErr::ParseError("unknown msg type".into()));
-            }
-
-        };
-
-        Ok(msg_ty)
-    }
-
-    fn handle_find_one_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = self.receive_request_body(pipe_in)?;
-
-        let doc = match value {
-            Bson::Document(doc) => doc,
-            _ => return Err(DbErr::ParseError(format!("value is not a doc in find one request, actual: {}", value))),
-        };
-
-        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
-
-        let query_opt = match doc.get("query") {
-            Some(Bson::Document(doc)) => doc.clone(),
-            _ => return Err(DbErr::ParseError("query not found in find request".into())),
-        };
-
-        let result = self.find_one(collection_name, query_opt)?;
-
-        let result_value = match result {
-            Some(doc) => Bson::Document(doc),
-            None => Bson::Null,
-        };
-
-        let bytes = bson::ser::to_vec(&result_value)?;
-        pipe_out.write(bytes.as_ref())?;
-
+    fn handle_start_transaction<W: Write>(&mut self, start_transaction: StartTransactionCommand, _pipe_out: &mut W) -> DbResult<()> {
+        self.start_transaction(start_transaction.ty)?;
         Ok(())
     }
 
-    fn handle_find_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
+    fn handle_request_with_result<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<HandleRequestResult> {
         let value = self.receive_request_body(pipe_in)?;
 
-        let doc = match value {
-            Bson::Document(doc) => doc,
-            _ => return Err(DbErr::ParseError(format!("value is not a doc in find request, actual: {}", value))),
-        };
+        let command_message = bson::from_bson::<CommandMessage>(value)?;
 
-        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
-
-        let query_opt = match doc.get("query") {
-            Some(Bson::Document(doc)) => Some(doc),
-            _ => None,
-        };
-
-        let result = if let Some(query) = query_opt {
-            self.find_many(collection_name, query.clone())?
+        let is_quit = if let CommandMessage::SafelyQuit = command_message {
+            true
         } else {
-            self.find_many(collection_name, None)?
+            false
+        };
+
+        let temp = match command_message {
+            CommandMessage::Find(find) => {
+                self.handle_find_operation(find, pipe_out)
+            }
+            CommandMessage::Insert(insert) => {
+                self.handle_insert_operation(insert, pipe_out)
+            }
+            CommandMessage::Update(update) => {
+                self.handle_update_operation(update, pipe_out)
+            }
+            CommandMessage::Delete(delete) => {
+                self.handle_delete_operation(delete, pipe_out)
+            }
+            CommandMessage::CreateCollection(create_collection) => {
+                self.handle_create_collection(create_collection, pipe_out)
+            }
+            CommandMessage::DropCollection(drop_collection) => {
+                self.handle_drop_collection(drop_collection, pipe_out)
+            }
+            CommandMessage::StartTransaction(start_transaction) => {
+                self.handle_start_transaction(start_transaction, pipe_out)
+            }
+            CommandMessage::Commit => {
+                self.commit()
+            }
+            CommandMessage::Rollback => {
+                self.rollback()
+            }
+            CommandMessage::SafelyQuit => {
+                Ok(())
+            }
+            CommandMessage::CountDocuments(count_documents) => {
+                self.handle_count_operation(count_documents, pipe_out)
+            }
+        };
+
+        Ok(HandleRequestResult {
+            is_quit
+        })
+    }
+
+    fn handle_find_operation<W: Write>(&mut self, find: FindCommand, pipe_out: &mut W) -> DbResult<()> {
+        let col_name = find.ns.as_str();
+        let result = if find.multi {
+            self.find_many(col_name, find.filter)?
+        } else {
+            let result = self.find_one(col_name, find.filter)?;
+            match result {
+                Some(doc) => vec![doc],
+                None => vec![],
+            }
         };
 
         let mut value_arr = bson::Array::new();
@@ -708,95 +649,48 @@ impl DatabaseInner {
         Ok(())
     }
 
-    fn handle_insert_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = self.receive_request_body(pipe_in)?;
+    fn handle_insert_operation<W: Write>(&mut self, insert: InsertCommand, pipe_out: &mut W) -> DbResult<()> {
+        let col_name = &insert.ns;
+        let insert_result = self.insert_many(col_name, insert.documents)?;
 
-        let doc = match value {
-            Bson::Document(doc) => doc,
-            _ => return Err(DbErr::ParseError(format!("value is not a doc in insert request, actual: {}", value))),
-        };
-
-        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in find request".into());
-
-        let insert_data = match doc.get("data") {
-            Some(Bson::Document(doc)) => doc.clone(),
-            _ => return Err(DbErr::ParseError("query not found in insert request".into())),
-        };
-
-        let id_changed = self.insert_one(collection_name, insert_data)?;
-
-        let bytes = bson::ser::to_vec(&id_changed.inserted_id)?;
+        let bytes = bson::to_vec(&insert_result)?;
         pipe_out.write(bytes.as_ref())?;
 
         Ok(())
     }
 
-    fn handle_update_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = self.receive_request_body(pipe_in)?;
+    fn handle_update_operation<W: Write>(&mut self, update: UpdateCommand, pipe_out: &mut W) -> DbResult<()> {
+        let col_name: &str = &update.ns;
 
-        let doc = match value {
-            Bson::Document(doc) => doc,
-            _ => return Err(DbErr::ParseError(format!("value is not a doc in update request, actual: {}", value))),
+        let result = if update.multi {
+            self.update_many(col_name, update.filter, update.update)?
+        } else {
+            self.update_one(col_name, update.filter, update.update)?
         };
 
-        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in update request".into());
-
-        let query = match doc.get("query") {
-            Some(Bson::Document(doc)) => doc.clone(),
-            Some(_) => return Err(DbErr::ParseError("query is not a document in update request".into())),
-            None => doc! {}
-        };
-
-        let update_data = match doc.get("update") {
-            Some(Bson::Document(doc)) => doc.clone(),
-            _ => return Err(DbErr::ParseError("'update' not found in update request".into())),
-        };
-
-        let result = self.update_many(collection_name, query, update_data)?;
-
-        let ret_val = Bson::Int64(result.modified_count as i64);
-        let bytes = bson::ser::to_vec(&ret_val)?;
+        let bytes = bson::to_vec(&result)?;
         pipe_out.write(bytes.as_ref())?;
 
         Ok(())
     }
 
-    fn handle_delete_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = self.receive_request_body(pipe_in)?;
+    fn handle_delete_operation<W: Write>(&mut self, delete: DeleteCommand, pipe_out: &mut W) -> DbResult<()> {
+        let col_name: &str = &delete.ns;
 
-        let doc = match value {
-            Bson::Document(doc) => doc,
-            _ => return Err(DbErr::ParseError(format!("value is not a doc in delete request, actual: {}", value))),
+        let result = if delete.multi {
+            self.delete_many(col_name, delete.filter)?
+        } else {
+            self.delete_one(col_name, delete.filter)?
         };
 
-        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in delete request".into());
-
-        let query = match doc.get("query") {
-            Some(Bson::Document(doc)) => doc.clone(),
-            Some(_) => return Err(DbErr::ParseError("query is not a document in delete request".into())),
-            None => doc! {},
-        };
-
-        let result = self.delete_many(collection_name, query)?;
-
-        let ret_val = Bson::Int64(result.deleted_count as i64);
-        let bytes = bson::ser::to_vec(&ret_val)?;
+        let bytes = bson::to_vec(&result)?;
         pipe_out.write(bytes.as_ref())?;
 
         Ok(())
     }
 
-    fn handle_create_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = self.receive_request_body(pipe_in)?;
-        let doc: Document = match value {
-            Bson::Document(d) => d,
-            _ => return Err(DbErr::ParseError(format!("create document expect a document, actual: {}", value))),
-        };
-        let name: String = match doc.get("name") {
-            Some(Bson::String(s)) => s.as_str().into(),
-            _ => return Err(DbErr::ParseError(format!("should give the name of the collection to create"))),
-        };
-        let ret = match self.create_collection::<Bson>(&name) {
+    fn handle_create_collection<W: Write>(&mut self, create_collection: CreateCollectionCommand, pipe_out: &mut W) -> DbResult<()> {
+        let ret = match self.create_collection::<Bson>(&create_collection.ns) {
             Ok(_) => Bson::Boolean(true),
             Err(DbErr::CollectionAlreadyExits(_)) => Bson::Boolean(false),
             Err(err) => return Err(err),
@@ -806,49 +700,28 @@ impl DatabaseInner {
         Ok(())
     }
 
-    fn handle_drop_collection<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
-        let value = self.receive_request_body(pipe_in)?;
-        let cl_name: String = match value {
-            Bson::String(s) => s.as_str().into(),
-            _ => return Err(DbErr::ParseError(format!("should give the name of the collection to drop, actual: {}", value))),
-        };
-        let info = match self.ctx.get_collection_meta_by_name(&cl_name) {
+    fn handle_drop_collection<W: Write>(&mut self, drop: DropCollectionCommand, pipe_out: &mut W) -> DbResult<()> {
+        let col_name = &drop.ns;
+        let info = match self.ctx.get_collection_meta_by_name(col_name) {
             Ok(meta) => meta,
-            Err(DbErr::CollectionNotFound(_)) => self.ctx.create_collection(&cl_name)?,
+            Err(DbErr::CollectionNotFound(_)) => self.ctx.create_collection(col_name)?,
             Err(err) => return Err(err),
         };
         self.ctx.drop_collection(info.id, info.meta_version)?;
-        Ok(())
-    }
 
-    fn handle_count_operation<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<()> {
-        let value = self.receive_request_body(pipe_in)?;
-
-        let doc = match value {
-            Bson::Document(doc) => doc,
-            _ => return Err(DbErr::ParseError(format!("value is not a doc in count request, actual: {}", value))),
-        };
-
-        let collection_name: &str = unwrap_str_or!(doc.get("cl"), "cl not found in count request".into());
-
-        let count = self.count_documents(collection_name)?;
-
-        let ret_val = Bson::Int64(count as i64);
-        let bytes = bson::ser::to_vec(&ret_val)?;
+        let bytes = bson::ser::to_vec(&Bson::Null)?;
         pipe_out.write(bytes.as_ref())?;
 
         Ok(())
     }
 
-    fn handle_commit<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
-        let _ = self.receive_request_body(pipe_in)?;
-        self.commit()?;
-        Ok(())
-    }
+    fn handle_count_operation<W: Write>(&mut self, count_documents: CountDocumentsCommand, pipe_out: &mut W) -> DbResult<()> {
+        let count = self.count_documents(&count_documents.ns)?;
 
-    fn handle_rollback<R: Read, W: Write>(&mut self, pipe_in: &mut R, _pipe_out: &mut W) -> DbResult<()> {
-        let _ = self.receive_request_body(pipe_in)?;
-        self.rollback()?;
+        let ret_val = Bson::Int64(count as i64);
+        let bytes = bson::ser::to_vec(&ret_val)?;
+        pipe_out.write(bytes.as_ref())?;
+
         Ok(())
     }
 }

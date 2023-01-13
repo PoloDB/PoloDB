@@ -91,7 +91,6 @@ mod backend;
 mod transaction;
 mod page_handler;
 mod doc_serializer;
-pub mod msg_ty;
 mod bson_utils;
 pub mod results;
 pub mod test_utils;
