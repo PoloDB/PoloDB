@@ -393,7 +393,6 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::DatabaseOccupied => 47,
         DbErr::Multiple(_) => 48,
         DbErr::VersionMismatch(_) => 49,
-        DbErr::EnumError(_) => 50,
         DbErr::BsonDeErr(_) => 51,
     }
 }

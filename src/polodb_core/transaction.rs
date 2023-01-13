@@ -1,5 +1,6 @@
+use serde::{Serialize, Deserialize};
 
-#[derive(Eq, PartialEq, Copy, Clone)]
+#[derive(Eq, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum TransactionType {
     Read,
     Write,

@@ -1,7 +1,6 @@
 use std::io;
 use std::fmt;
 use bson::ser::Error as BsonErr;
-use crate::msg_ty::MsgTy;
 
 #[derive(Debug)]
 pub struct FieldTypeUnexpectedStruct {
@@ -146,7 +145,6 @@ pub enum DbErr {
     DatabaseOccupied,
     Multiple(Vec<DbErr>),
     VersionMismatch(Box<VersionMismatchError>),
-    EnumError(Box<num_enum::TryFromPrimitiveError<MsgTy>>),
 }
 
 impl DbErr {
@@ -239,8 +237,6 @@ impl fmt::Display for DbErr {
                 writeln!(f, "expect: {}.{}.{}.{}", expect[0], expect[1], expect[2], expect[3])?;
                 writeln!(f, "actual: {}.{}.{}.{}", actual[0], actual[1], actual[2], actual[3])
             }
-
-            DbErr::EnumError(err) => err.as_ref().fmt(f),
         }
     }
 
@@ -274,14 +270,6 @@ impl From<std::str::Utf8Error> for DbErr {
 
     fn from(error: std::str::Utf8Error) -> Self {
         DbErr::UTF8Err(Box::new(error))
-    }
-
-}
-
-impl From<num_enum::TryFromPrimitiveError<MsgTy>> for DbErr {
-
-    fn from(error: num_enum::TryFromPrimitiveError<MsgTy>) -> Self {
-        DbErr::EnumError(Box::new(error))
     }
 
 }

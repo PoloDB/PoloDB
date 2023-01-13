@@ -4,7 +4,6 @@ mod ipc;
 use crate::dumper::dump;
 use crate::ipc::{IPC, Connection};
 use polodb_core::Database;
-use polodb_core::msg_ty::MsgTy;
 use clap::{Arg, App};
 use std::process::exit;
 use std::io::{Read, Write};
@@ -95,7 +94,7 @@ impl AppContext {
         conn.write(&ret_buffer)?;
         conn.flush()?;
 
-        if msg_ty == MsgTy::SafelyQuit {
+        if msg_ty.is_quit {
             return Ok(false);
         }
 
