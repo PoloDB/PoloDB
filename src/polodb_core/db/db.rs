@@ -77,8 +77,8 @@ macro_rules! unwrap_str_or {
 /// use polodb_core::bson::{Document, doc};
 ///
 /// # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db");
-/// let mut db = Database::open_file(db_path).unwrap();
-/// let mut collection = db.collection::<Document>("books");
+/// let db = Database::open_file(db_path).unwrap();
+/// let collection = db.collection::<Document>("books");
 ///
 /// let docs = vec![
 ///     doc! { "title": "1984", "author": "George Orwell" },
@@ -163,6 +163,16 @@ impl Database {
         inner.start_transaction(ty)
     }
 
+    pub fn commit(&self) -> DbResult<()> {
+        let mut inner = self.inner.borrow_mut();
+        inner.commit()
+    }
+
+    pub fn rollback(&self) -> DbResult<()> {
+        let mut inner = self.inner.borrow_mut();
+        inner.rollback()
+    }
+
     pub fn dump(&self) -> DbResult<FullDump> {
         let mut inner = self.inner.borrow_mut();
         inner.dump()
@@ -227,6 +237,12 @@ impl Database {
     pub(super) fn delete_many(&self, col_name: &str, query: Document) -> DbResult<DeleteResult> {
         let mut inner = self.inner.borrow_mut();
         inner.delete_many(col_name, query)
+    }
+
+    #[inline]
+    pub(super) fn create_index(&self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+        let mut inner = self.inner.borrow_mut();
+        inner.create_index(col_name, keys, options)
     }
 }
 
@@ -510,6 +526,13 @@ impl DatabaseInner {
         Ok(DeleteResult {
             deleted_count,
         })
+    }
+
+    /// release in 0.12
+    fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+        let col_meta = self.get_collection_meta_by_name(col_name, true)?
+            .unwrap();
+        self.ctx.create_index(col_meta.id, keys, options)
     }
 
     fn receive_request_body<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<Bson> {
@@ -813,33 +836,19 @@ impl DatabaseInner {
 mod tests {
     use std::env;
     use bson::{Bson, doc, Document};
-    use crate::{Config, Database, DbErr, DbResult};
+    use crate::{Config, Database, DbErr};
     use std::io::Read;
     use std::path::PathBuf;
     use std::fs::File;
     use serde::{Deserialize, Serialize};
     use crate::db::collection::Collection;
-    use crate::test_utils::{mk_db_path, mk_journal_path};
+    use crate::test_utils::{mk_db_path, prepare_db, prepare_db_with_config};
 
     static TEST_SIZE: usize = 1000;
 
-    fn prepare_db_with_config(db_name: &str, config: Config) -> DbResult<Database> {
-        let db_path = mk_db_path(db_name);
-        let journal_path = mk_journal_path(db_name);
-
-        let _ = std::fs::remove_file(db_path.as_path());
-        let _ = std::fs::remove_file(journal_path);
-
-        Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config)
-    }
-
-    fn prepare_db(db_name: &str) -> DbResult<Database> {
-        prepare_db_with_config(db_name, Config::default())
-    }
-
     fn create_and_return_db_with_items(db_name: &str, size: usize) -> Database {
-        let mut db = prepare_db(db_name).unwrap();
-        let mut collection = db.collection::<Document>("test");
+        let db = prepare_db(db_name).unwrap();
+        let collection = db.collection::<Document>("test");
 
         let mut data: Vec<Document> = vec![];
 
@@ -858,9 +867,9 @@ mod tests {
 
     #[test]
     fn test_create_collection_and_find_all() {
-        let mut db = create_and_return_db_with_items("test-collection", TEST_SIZE);
+        let db = create_and_return_db_with_items("test-collection", TEST_SIZE);
 
-        let mut test_collection = db.collection::<Document>("test");
+        let test_collection = db.collection::<Document>("test");
         let all = test_collection.find_many(None).unwrap();
 
         let second = test_collection.find_one(doc! {
@@ -880,9 +889,9 @@ mod tests {
 
     #[test]
     fn test_insert_struct() {
-        let mut db = prepare_db("test-insert-struct").unwrap();
+        let db = prepare_db("test-insert-struct").unwrap();
         // Get a handle to a collection of `Book`.
-        let mut typed_collection = db.collection::<Book>("books");
+        let typed_collection = db.collection::<Book>("books");
 
         let books = vec![
             Book {
@@ -920,12 +929,12 @@ mod tests {
     #[test]
     fn test_transaction_commit() {
         vec![Some("test-transaction-commit"), None].iter().for_each(|value| {
-            let mut db = match value {
+            let db = match value {
                 Some(name) => prepare_db(name).unwrap(),
                 None => Database::open_memory().unwrap()
             };
             db.start_transaction(None).unwrap();
-            let mut collection = db.collection::<Document>("test");
+            let collection = db.collection::<Document>("test");
 
             for i in 0..10{
                 let content = i.to_string();
@@ -943,9 +952,9 @@ mod tests {
     fn test_commit_after_commit() {
         let mut config = Config::default();
         config.journal_full_size = 1;
-        let mut db = prepare_db_with_config("test-commit-2", config).unwrap();
+        let db = prepare_db_with_config("test-commit-2", config).unwrap();
         db.start_transaction(None).unwrap();
-        let mut collection = db.collection::<Document>("test");
+        let collection = db.collection::<Document>("test");
 
         for i in 0..1000 {
             let content = i.to_string();
@@ -958,7 +967,7 @@ mod tests {
         db.commit().unwrap();
 
         db.start_transaction(None).unwrap();
-        let mut collection2 = db.collection::<Document>("test-2");
+        let collection2 = db.collection::<Document>("test-2");
         for i in 0..10{
             let content = i.to_string();
             let new_doc = doc! {
@@ -972,9 +981,9 @@ mod tests {
 
     #[test]
     fn test_multiple_find_one() {
-        let mut db = prepare_db("test-multiple-find-one").unwrap();
+        let db = prepare_db("test-multiple-find-one").unwrap();
         {
-            let mut collection = db.collection("config");
+            let collection = db.collection("config");
             let doc1 = doc! {
                 "_id": "c1",
                 "value": "c1",
@@ -997,7 +1006,7 @@ mod tests {
         }
 
         {
-            let mut collection = db.collection::<Document>("config");
+            let collection = db.collection::<Document>("config");
             collection.update_many(doc! {
                 "_id": "c2"
             }, doc! {
@@ -1014,14 +1023,14 @@ mod tests {
             }).unwrap();
         }
 
-        let mut collection = db.collection::<Document>("config");
+        let collection = db.collection::<Document>("config");
         let doc1 = collection.find_one(doc! {
             "_id": "c1",
         }).unwrap().unwrap();
 
         assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c1");
 
-        let mut collection = db.collection::<Document>("config");
+        let collection = db.collection::<Document>("config");
         let doc1 = collection.find_one(doc! {
             "_id": "c2",
         }).unwrap().unwrap();
@@ -1032,17 +1041,17 @@ mod tests {
     #[test]
     fn test_rollback() {
         vec![Some("test-collection"), None].iter().for_each(|value| {
-            let mut db = match value {
+            let db = match value {
                 Some(name) => prepare_db(name).unwrap(),
                 None => Database::open_memory().unwrap()
             };
-            let mut collection: Collection<Document> = db.collection("test");
+            let collection: Collection<Document> = db.collection("test");
 
             assert_eq!(collection.count_documents().unwrap(), 0);
 
             db.start_transaction(None).unwrap();
 
-            let mut collection: Collection<Document> = db.collection("test");
+            let collection: Collection<Document> = db.collection("test");
             for i in 0..10 {
                 let content = i.to_string();
                 let new_doc = doc! {
@@ -1055,16 +1064,16 @@ mod tests {
 
             db.rollback().unwrap();
 
-            let mut collection = db.collection::<Document>("test");
+            let collection = db.collection::<Document>("test");
             assert_eq!(collection.count_documents().unwrap(), 0);
         });
     }
 
     #[test]
     fn test_create_collection_with_number_pkey() {
-        let mut db = {
-            let mut db = prepare_db("test-number-pkey").unwrap();
-            let mut collection = db.collection::<Document>("test");
+        let db = {
+            let db = prepare_db("test-number-pkey").unwrap();
+            let collection = db.collection::<Document>("test");
             let mut data: Vec<Document> = vec![];
 
             for i in 0..TEST_SIZE {
@@ -1081,7 +1090,7 @@ mod tests {
             db
         };
 
-        let mut collection: Collection<Document> = db.collection::<Document>("test");
+        let collection: Collection<Document> = db.collection::<Document>("test");
 
         let count = collection.count_documents().unwrap();
         assert_eq!(TEST_SIZE, count as usize);
@@ -1093,8 +1102,8 @@ mod tests {
 
     #[test]
     fn test_find() {
-        let mut db = create_and_return_db_with_items("test-find", TEST_SIZE);
-        let mut collection = db.collection::<Document>("test");
+        let db = create_and_return_db_with_items("test-find", TEST_SIZE);
+        let collection = db.collection::<Document>("test");
 
         let result = collection.find_many(
             doc! {
@@ -1110,8 +1119,8 @@ mod tests {
 
     #[test]
     fn test_create_collection_and_find_by_pkey() {
-        let mut db = create_and_return_db_with_items("test-find-pkey", 10);
-        let mut collection = db.collection::<Document>("test");
+        let db = create_and_return_db_with_items("test-find-pkey", 10);
+        let collection = db.collection::<Document>("test");
 
         let all = collection.find_many(None).unwrap();
 
@@ -1141,21 +1150,21 @@ mod tests {
 
     #[test]
     fn test_pkey_type_check() {
-        let mut db = create_and_return_db_with_items("test-type-check", TEST_SIZE);
+        let db = create_and_return_db_with_items("test-type-check", TEST_SIZE);
 
         let doc = doc! {
             "_id": 10,
             "value": "something",
         };
 
-        let mut collection = db.collection::<Document>("test");
+        let collection = db.collection::<Document>("test");
         collection.insert_one(doc).expect_err("should not success");
     }
 
     #[test]
     fn test_insert_bigger_key() {
-        let mut db = prepare_db("test-insert-bigger-key").unwrap();
-        let mut collection = db.collection("test");
+        let db = prepare_db("test-insert-bigger-key").unwrap();
+        let collection = db.collection("test");
 
         let mut doc = doc! {};
 
@@ -1193,36 +1202,9 @@ mod tests {
     }
 
     #[test]
-    fn test_create_index() {
-        let mut db = prepare_db("test-create-index").unwrap();
-        let mut collection = db.collection::<Document>("test");
-
-        let keys = doc! {
-            "user_id": 1,
-        };
-
-        collection.create_index(&keys, None).unwrap();
-
-        for i in 0..10 {
-            let str = i.to_string();
-            let data = doc! {
-                "name": str.clone(),
-                "user_id": str.clone(),
-            };
-            collection.insert_one(data).unwrap();
-        }
-
-        let data = doc! {
-            "name": "what",
-            "user_id": 3,
-        };
-        collection.insert_one(data).expect_err("not comparable");
-    }
-
-    #[test]
     fn test_update_one() {
-        let mut db = prepare_db("test-update-one").unwrap();
-        let mut collection = db.collection::<Document>("test");
+        let db = prepare_db("test-update-one").unwrap();
+        let collection = db.collection::<Document>("test");
 
         let result = collection.insert_many(vec![
             doc! {
@@ -1250,8 +1232,8 @@ mod tests {
 
     #[test]
     fn test_delete_one() {
-        let mut db = prepare_db("test-update-one").unwrap();
-        let mut collection = db.collection::<Document>("test");
+        let db = prepare_db("test-update-one").unwrap();
+        let collection = db.collection::<Document>("test");
 
         let result = collection.insert_many(vec![
             doc! {
@@ -1278,8 +1260,8 @@ mod tests {
 
     #[test]
     fn test_one_delete_item() {
-        let mut db = prepare_db("test-delete-item").unwrap();
-        let mut collection = db.collection::<Document>("test");
+        let db = prepare_db("test-delete-item").unwrap();
+        let collection = db.collection::<Document>("test");
 
         let mut doc_collection  = vec![];
 
@@ -1304,8 +1286,8 @@ mod tests {
 
     #[test]
     fn test_delete_all_items() {
-        let mut db = prepare_db("test-delete-all-items").unwrap();
-        let mut collection = db.collection::<Document>("test");
+        let db = prepare_db("test-delete-all-items").unwrap();
+        let collection = db.collection::<Document>("test");
 
         let mut doc_collection  = vec![];
 
@@ -1346,8 +1328,8 @@ mod tests {
         file.read_to_end(&mut data).unwrap();
 
         println!("data size: {}", data.len());
-        let mut db = prepare_db("test-very-large-data").unwrap();
-        let mut collection = db.collection("test");
+        let db = prepare_db("test-very-large-data").unwrap();
+        let collection = db.collection("test");
 
         let mut doc = doc! {};
         let origin_data = data.clone();

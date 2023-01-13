@@ -21,7 +21,7 @@
 //! ```rust
 //! use polodb_core::Database;
 //! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-file");
-//! let mut db = Database::open_file(db_path).unwrap();
+//! let db = Database::open_file(db_path).unwrap();
 //! ```
 //!
 //! ## Open a memory database
@@ -29,7 +29,7 @@
 //! ```rust
 //! use polodb_core::Database;
 //!
-//! let mut db = Database::open_memory().unwrap();
+//! let db = Database::open_memory().unwrap();
 //! ```
 //!
 //! # Example
@@ -45,8 +45,8 @@
 //! }
 //!
 //! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-lib");
-//! let mut db = Database::open_file(db_path).unwrap();
-//! let mut collection = db.collection("books");
+//! let db = Database::open_file(db_path).unwrap();
+//! let collection = db.collection("books");
 //! collection.insert_one(Book {
 //!     title: "The Three-Body Problem".to_string(),
 //!     author: "Liu Cixin".to_string(),
@@ -59,8 +59,8 @@
 //! use polodb_core::Database;
 //! use polodb_core::bson::{Document, doc};
 //!
-//! let mut db = Database::open_memory().unwrap();
-//! let mut collection = db.collection::<Document>("books");
+//! let db = Database::open_memory().unwrap();
+//! let collection = db.collection::<Document>("books");
 //!
 //! let docs = vec![
 //!     doc! { "title": "1984", "author": "George Orwell" },

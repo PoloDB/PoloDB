@@ -72,15 +72,11 @@ where
         self.db.delete_many(&self.name, query)
     }
 
-    // /// release in 0.12
-    // #[allow(dead_code)]
-    // fn create_index(&mut self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-    //     let col_meta = self.db
-    //         .get_collection_meta_by_name(&self.name, true)?
-    //         .unwrap();
-    //     self.db.ctx.create_index(col_meta.id, keys, options)
-    // }
-
+    /// release in 0.12
+    #[allow(dead_code)]
+    fn create_index(&self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+        self.db.create_index(&self.name, keys, options)
+    }
 }
 
 impl<'a, T>  Collection<'a, T>
@@ -89,13 +85,46 @@ impl<'a, T>  Collection<'a, T>
 {
     /// When query document is passed to the function. The result satisfies
     /// the query document.
-    pub fn find_many(&mut self, filter: impl Into<Option<Document>>) -> DbResult<Vec<T>> {
+    pub fn find_many(&self, filter: impl Into<Option<Document>>) -> DbResult<Vec<T>> {
         self.db.find_many(&self.name, filter)
     }
 
     /// Return the first element in the collection satisfies the query.
-    pub fn find_one(&mut self, filter: impl Into<Option<Document>>) -> DbResult<Option<T>> {
+    pub fn find_one(&self, filter: impl Into<Option<Document>>) -> DbResult<Option<T>> {
         self.db.find_one(&self.name, filter)
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use bson::{Document, doc};
+    use crate::test_utils::prepare_db;
+
+    #[test]
+    fn test_create_index() {
+        let db = prepare_db("test-create-index").unwrap();
+        let collection = db.collection::<Document>("test");
+
+        let keys = doc! {
+            "user_id": 1,
+        };
+
+        collection.create_index(&keys, None).unwrap();
+
+        for i in 0..10 {
+            let str = i.to_string();
+            let data = doc! {
+                "name": str.clone(),
+                "user_id": str.clone(),
+            };
+            collection.insert_one(data).unwrap();
+        }
+
+        let data = doc! {
+            "name": "what",
+            "user_id": 3,
+        };
+        collection.insert_one(data).expect_err("not comparable");
+    }
 }
