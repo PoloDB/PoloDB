@@ -244,6 +244,12 @@ impl Database {
         let mut inner = self.inner.borrow_mut();
         inner.create_index(col_name, keys, options)
     }
+
+    #[inline]
+    pub(super) fn drop(&self, col_name: &str) -> DbResult<()> {
+        let mut inner = self.inner.borrow_mut();
+        inner.drop(col_name)
+    }
 }
 
 impl DatabaseInner {
@@ -526,6 +532,21 @@ impl DatabaseInner {
         Ok(DeleteResult {
             deleted_count,
         })
+    }
+
+    fn drop(&mut self, col_name: &str) -> DbResult<()> {
+        let info = match self.get_collection_meta_by_name(col_name, false) {
+            Ok(None) => {
+                return Ok(());
+            }
+            Err(DbErr::CollectionNotFound(_)) => {
+                return Ok(());
+            },
+            Ok(Some(meta)) => meta,
+            Err(err) => return Err(err),
+        };
+        self.ctx.drop_collection(info.id, info.meta_version)?;
+        Ok(())
     }
 
     /// release in 0.12

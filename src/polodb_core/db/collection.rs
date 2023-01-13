@@ -65,6 +65,10 @@ impl<'a, T>  Collection<'a, T>
     fn create_index(&self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         self.db.create_index(&self.name, keys, options)
     }
+
+    pub fn drop(&self) -> DbResult<()> {
+        self.db.drop(&self.name)
+    }
 }
 
 impl<'a, T>  Collection<'a, T>
