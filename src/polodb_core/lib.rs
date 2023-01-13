@@ -82,7 +82,6 @@ pub mod db;
 mod data_ticket;
 mod index_ctx;
 mod meta_doc_helper;
-mod context;
 mod db_handle;
 pub mod dump;
 mod config;
@@ -97,11 +96,10 @@ mod bson_utils;
 pub mod results;
 pub mod test_utils;
 
-pub use db::{Database, DbResult};
+pub use db::{Database, DbContext, DbResult};
 pub use config::Config;
 pub use doc_serializer::SerializeType;
 pub use transaction::TransactionType;
-pub use context::DbContext;
 pub use db_handle::DbHandle;
 pub use error::DbErr;
 

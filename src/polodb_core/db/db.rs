@@ -12,7 +12,7 @@ use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
 use crate::error::DbErr;
 use crate::msg_ty::MsgTy;
 use crate::Config;
-use crate::context::{CollectionMeta, DbContext};
+use super::context::{CollectionMeta, DbContext};
 use crate::{DbHandle, TransactionType};
 use crate::db::collection::Collection;
 use crate::dump::FullDump;
