@@ -1,4 +1,9 @@
 
+# 3.3.0
+
+- Add `drop()` to collection
+- Add `list_collection_names()` to Database
+
 # 3.2.0
 
 - Add `update_one()` API

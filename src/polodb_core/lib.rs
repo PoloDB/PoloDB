@@ -98,7 +98,6 @@ pub mod commands;
 
 pub use db::{Database, DbContext, DbResult};
 pub use config::Config;
-pub use doc_serializer::SerializeType;
 pub use transaction::TransactionType;
 pub use db_handle::DbHandle;
 pub use error::DbErr;

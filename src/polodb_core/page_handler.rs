@@ -190,8 +190,7 @@ impl PageHandler {
         if let Some(bytes) = bytes {
             let mut my_ref: &[u8] = bytes;
             let bytes: &mut &[u8] = &mut my_ref;
-            let serialize_type = self.config.serialize_type;
-            let doc = crate::doc_serializer::deserialize(serialize_type, bytes)?;
+            let doc = crate::doc_serializer::deserialize(bytes)?;
             return Ok(Some(doc));
         }
         Ok(None)
@@ -210,15 +209,13 @@ impl PageHandler {
         }
 
         let mut my_ref: &[u8] = bytes.as_ref();
-        let serialize_type = self.config.serialize_type;
-        let doc = crate::doc_serializer::deserialize(serialize_type, &mut my_ref)?;
+        let doc = crate::doc_serializer::deserialize(&mut my_ref)?;
         Ok(Some(doc))
     }
 
     pub(crate) fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
         let mut bytes = Vec::with_capacity(512);
-        let serialize_type = self.config.serialize_type;
-        crate::doc_serializer::serialize(serialize_type, doc, &mut bytes)?;
+        crate::doc_serializer::serialize(doc, &mut bytes)?;
 
         if bytes.len() >= self.page_size.get() as usize / 2 {
             return self.store_large_data(&bytes);
