@@ -82,7 +82,6 @@ pub mod db;
 mod data_ticket;
 mod index_ctx;
 mod meta_doc_helper;
-mod db_handle;
 pub mod dump;
 mod config;
 mod macros;
@@ -99,7 +98,7 @@ pub mod commands;
 pub use db::{Database, DbContext, DbResult};
 pub use config::Config;
 pub use transaction::TransactionType;
-pub use db_handle::DbHandle;
+pub use db::db_handle::DbHandle;
 pub use error::DbErr;
 
 pub extern crate bson;

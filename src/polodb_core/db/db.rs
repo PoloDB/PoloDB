@@ -762,6 +762,26 @@ mod tests {
     }
 
     #[test]
+    fn test_multi_threads() {
+        use std::thread;
+
+        let db = create_and_return_db_with_items("test-collection", TEST_SIZE);
+
+        let t = thread::spawn(|| {
+            let collection = db.collection("test2");
+            collection.insert_one(doc! {
+                "content": "Hello"
+            }).unwrap();
+        });
+
+        t.join().unwrap();
+
+        let collection = db.collection::<Document>("test2");
+        let one = collection.find_one(None).unwrap().unwrap();
+        assert_eq!(one.get("content").unwrap().as_str().unwrap(), "Hello");
+    }
+
+    #[test]
     fn test_create_collection_and_find_all() {
         let db = create_and_return_db_with_items("test-collection", TEST_SIZE);
 
