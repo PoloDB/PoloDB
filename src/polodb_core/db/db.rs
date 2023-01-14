@@ -173,6 +173,12 @@ impl Database {
         inner.dump()
     }
 
+    /// Gets the names of the collections in the database.
+    pub fn list_collection_names(&self) -> DbResult<Vec<String>> {
+        let mut inner = self.inner.borrow_mut();
+        inner.list_collection_names()
+    }
+
     pub fn handle_request<R: Read, W: Write>(&self, pipe_in: &mut R, pipe_out: &mut W) -> std::io::Result<HandleRequestResult> {
         let mut inner = self.inner.borrow_mut();
         inner.handle_request(pipe_in, pipe_out)
@@ -296,18 +302,29 @@ impl DatabaseInner {
     }
 
     #[inline]
-    pub fn commit(&mut self) -> DbResult<()> {
+    fn commit(&mut self) -> DbResult<()> {
         self.ctx.commit()
     }
 
     #[inline]
-    pub fn rollback(&mut self) -> DbResult<()> {
+    fn rollback(&mut self) -> DbResult<()> {
         self.ctx.rollback()
     }
 
-    #[allow(dead_code)]
     pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Document>> {
         self.ctx.query_all_meta()
+    }
+
+    fn list_collection_names(&mut self) -> DbResult<Vec<String>> {
+        let doc_meta = self.query_all_meta()?;
+        let mut names: Vec<String> = Vec::with_capacity(doc_meta.len());
+
+        for doc in &doc_meta {
+            let name = doc.get("name").unwrap().as_str().unwrap().to_string();
+            names.push(name)
+        }
+
+        Ok(names)
     }
 
     /// handle request for database
@@ -758,6 +775,35 @@ mod tests {
         assert!(second.get("content").is_some());
 
         assert_eq!(TEST_SIZE, all.len())
+    }
+
+    #[test]
+    fn test_create_collection_and_drop() {
+        let db = prepare_db("test-create-and-drops").unwrap();
+        let names = db.list_collection_names().unwrap();
+        assert_eq!(names.len(), 0);
+
+        let collection = db.collection::<Document>("test");
+        let insert_result = collection.insert_many(&vec![
+            doc! {
+                "name": "Apple"
+            },
+            doc! {
+                "name": "Banana"
+            },
+        ]).unwrap();
+
+        assert_eq!(insert_result.inserted_ids.len(), 2);
+
+        let names = db.list_collection_names().unwrap();
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0], "test");
+
+        let collection = db.collection::<Document>("test");
+        collection.drop().unwrap();
+
+        let names = db.list_collection_names().unwrap();
+        assert_eq!(names.len(), 0);
     }
 
     #[derive(Debug, Serialize, Deserialize)]
