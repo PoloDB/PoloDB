@@ -62,8 +62,8 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
 pub struct DbContext {
     page_handler: Box<PageHandler>,
     pub(crate)meta_version: u32,
+    #[allow(dead_code)]
     config:       Arc<Config>,
-
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -437,8 +437,7 @@ impl DbContext {
         let mut is_meta_changed = false;
 
         // insert index begin
-        let serialize_type = self.config.serialize_type;
-        let mut index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref(), serialize_type);
+        let mut index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
         if let Some(index_ctx) = &mut index_ctx_opt {
             let mut is_ctx_changed = false;
 
@@ -559,9 +558,8 @@ impl DbContext {
             0, meta_source.meta_pid, col_id)?;
         delete_all_helper::delete_all(&mut self.page_handler, collection_meta)?;
 
-        let serialize_type = self.config.serialize_type;
         let mut btree_wrapper = BTreePageDeleteWrapper::new(
-            &mut self.page_handler, meta_source.meta_pid, serialize_type);
+            &mut self.page_handler, meta_source.meta_pid);
 
         let pkey = Bson::from(col_id);
         btree_wrapper.delete_item(&pkey)?;
@@ -689,17 +687,15 @@ impl DbContext {
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
 
-        let serialize_type = self.config.serialize_type;
         let mut delete_wrapper = BTreePageDeleteWrapper::new(
             &mut self.page_handler,
             collection_meta.root_pid() as u32,
-            serialize_type
         );
         let result = delete_wrapper.delete_item(key)?;
         delete_wrapper.flush_pages()?;
 
         if let Some(deleted_item) = &result {
-            let index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref(), serialize_type);
+            let index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
             if let Some(index_ctx) = &index_ctx_opt {
                 index_ctx.delete_index_by_content(deleted_item.borrow(), &mut self.page_handler)?;
             }

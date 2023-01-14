@@ -2,28 +2,26 @@ use std::borrow::Borrow;
 use hashbrown::HashMap;
 use bson::{Document, Bson, doc};
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
-use crate::{DbResult, SerializeType};
+use crate::DbResult;
 use crate::error::{DbErr, mk_field_name_type_unexpected};
 use crate::page_handler::PageHandler;
 use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
 
 pub(crate) struct IndexCtx {
     key_to_entry:   HashMap<String, IndexEntry>,
-    serialize_type: SerializeType,
 }
 
 impl IndexCtx {
 
-    pub fn new(serialize_type: SerializeType) -> IndexCtx {
+    pub fn new() -> IndexCtx {
         IndexCtx {
             key_to_entry: HashMap::new(),
-            serialize_type,
         }
     }
 
     // indexes:
     //     key -> index_entry
-    pub fn from_meta_doc(doc: &Document, serialize_type: SerializeType) -> Option<IndexCtx> {
+    pub fn from_meta_doc(doc: &Document) -> Option<IndexCtx> {
         let indexes = doc.get(meta_doc_key::INDEXES)?;
 
         let meta_doc: &Document = indexes.as_document().unwrap();
@@ -31,7 +29,7 @@ impl IndexCtx {
             return None;
         }
 
-        let mut result = IndexCtx::new(serialize_type);
+        let mut result = IndexCtx::new();
 
         for (key, options) in meta_doc.iter() {
             let options_doc = options.as_document().unwrap();
@@ -66,7 +64,7 @@ impl IndexCtx {
     pub fn delete_index_by_content(&self, doc: &Document, page_handler: &mut PageHandler) -> DbResult<()> {
         for (key, entry) in &self.key_to_entry {
             if let Some(value) = doc.get(key) {
-                entry.remove_index(value, page_handler, self.serialize_type)?;
+                entry.remove_index(value, page_handler)?;
             }
         }
 
@@ -153,8 +151,8 @@ impl IndexEntry {
         }
     }
 
-    fn remove_index(&self, data_value: &Bson, page_handler: &mut PageHandler, serialize_type: SerializeType) -> DbResult<()> {
-        let mut delete_wrapper = BTreePageDeleteWrapper::new(page_handler, self.root_pid, serialize_type);
+    fn remove_index(&self, data_value: &Bson, page_handler: &mut PageHandler) -> DbResult<()> {
+        let mut delete_wrapper = BTreePageDeleteWrapper::new(page_handler, self.root_pid);
         let _result = delete_wrapper.delete_item(data_value)?;
         Ok(())
     }

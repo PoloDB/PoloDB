@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use super::journal_manager::JournalManager;
 use crate::backend::Backend;
-use crate::{DbResult, DbErr, Config, SerializeType};
+use crate::{DbResult, DbErr, Config};
 use crate::page::RawPage;
 use crate::page::header_page_wrapper::{HeaderPageWrapper, DATABASE_VERSION};
 use crate::transaction::TransactionType;
@@ -92,7 +92,7 @@ impl FileBackend {
             &mut file,
             page_size,
             config.init_block_count,
-            config.serialize_type == SerializeType::Default,
+            true
         )?;
 
         let journal_file_path: PathBuf = FileBackend::mk_journal_path(path);
