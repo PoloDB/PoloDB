@@ -1,5 +1,6 @@
 use std::io;
 use std::fmt;
+use std::sync::PoisonError;
 use bson::ser::Error as BsonErr;
 
 #[derive(Debug)]
@@ -145,6 +146,7 @@ pub enum DbErr {
     DatabaseOccupied,
     Multiple(Vec<DbErr>),
     VersionMismatch(Box<VersionMismatchError>),
+    LockError,
 }
 
 impl DbErr {
@@ -237,6 +239,7 @@ impl fmt::Display for DbErr {
                 writeln!(f, "expect: {}.{}.{}.{}", expect[0], expect[1], expect[2], expect[3])?;
                 writeln!(f, "actual: {}.{}.{}.{}", actual[0], actual[1], actual[2], actual[3])
             }
+            DbErr::LockError => writeln!(f, "the mutex is poisoned"),
         }
     }
 
@@ -272,6 +275,12 @@ impl From<std::str::Utf8Error> for DbErr {
         DbErr::UTF8Err(Box::new(error))
     }
 
+}
+
+impl<T> From<PoisonError<T>> for DbErr {
+    fn from(_: PoisonError<T>) -> Self {
+        DbErr::LockError
+    }
 }
 
 impl std::error::Error for DbErr {}

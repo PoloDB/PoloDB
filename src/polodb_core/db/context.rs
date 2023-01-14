@@ -18,7 +18,7 @@ use crate::transaction::TransactionState;
 use crate::backend::file::FileBackend;
 use crate::backend::memory::MemoryBackend;
 use crate::page::RawPage;
-use crate::db_handle::DbHandle;
+use crate::db::db_handle::DbHandle;
 use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeListPageDump, BTreePageDump};
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::backend::Backend;

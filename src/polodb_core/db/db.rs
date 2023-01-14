@@ -8,6 +8,7 @@ use bson::{Bson, Document};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
+use std::sync::Mutex;
 use crate::error::DbErr;
 use crate::Config;
 use super::context::{CollectionMeta, DbContext};
@@ -78,7 +79,7 @@ pub(super) fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, 
 /// collection.insert_many(docs).unwrap();
 /// ```
 pub struct Database {
-    inner: RefCell<DatabaseInner>,
+    inner: Mutex<RefCell<DatabaseInner>>,
 }
 
 pub(super) struct DatabaseInner {
@@ -105,7 +106,7 @@ impl Database {
         let inner = DatabaseInner::open_memory_with_config(config)?;
 
         Ok(Database {
-            inner: RefCell::new(inner),
+            inner: Mutex::new(RefCell::new(inner)),
         })
     }
 
@@ -117,13 +118,14 @@ impl Database {
         let inner = DatabaseInner::open_file_with_config(path, config)?;
 
         Ok(Database {
-            inner: RefCell::new(inner)
+            inner: Mutex::new(RefCell::new(inner))
         })
     }
 
     /// Creates a new collection in the database with the given `name`.
     pub fn create_collection<T: Serialize>(&self, name: &str) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.create_collection::<T>(name)
     }
 
@@ -154,101 +156,118 @@ impl Database {
     /// execute write operations(insert/update/delete), the DB will turn into
     /// write mode.
     pub fn start_transaction(&self, ty: Option<TransactionType>) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.start_transaction(ty)
     }
 
     pub fn commit(&self) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.commit()
     }
 
     pub fn rollback(&self) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.rollback()
     }
 
     pub fn dump(&self) -> DbResult<FullDump> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.dump()
     }
 
     /// Gets the names of the collections in the database.
     pub fn list_collection_names(&self) -> DbResult<Vec<String>> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.list_collection_names()
     }
 
     pub fn handle_request<R: Read, W: Write>(&self, pipe_in: &mut R, pipe_out: &mut W) -> std::io::Result<HandleRequestResult> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock().unwrap();
+        let mut inner = db_ref.borrow_mut();
         inner.handle_request(pipe_in, pipe_out)
     }
 
     #[inline]
     pub(super) fn count_documents(&self, col_name: &str) -> DbResult<u64> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.count_documents(col_name)
     }
 
     #[inline]
     pub fn find_one<T: DeserializeOwned>(&self, col_name: &str,
                                          filter: impl Into<Option<Document>>) -> DbResult<Option<T>> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.find_one(col_name, filter)
     }
 
     #[inline]
     pub(super) fn find_many<T: DeserializeOwned>(&self, col_name: &str,
                                                  filter: impl Into<Option<Document>>) -> DbResult<Vec<T>> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.find_many(col_name, filter)
     }
 
     #[inline]
     pub(super) fn insert_one<T: Serialize>(&self, col_name: &str, doc: impl Borrow<T>) -> DbResult<InsertOneResult> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.insert_one(col_name, doc)
     }
 
     #[inline]
     pub(super) fn insert_many<T: Serialize>(&self, col_name: &str, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.insert_many(col_name, docs)
     }
 
     #[inline]
     pub(super) fn update_one(&self, col_name: &str, query: Document, update: Document) -> DbResult<UpdateResult> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.update_one(col_name, query, update)
     }
 
     #[inline]
     pub(super) fn update_many(&self, col_name: &str, query: Document, update: Document) -> DbResult<UpdateResult> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.update_many(col_name, query, update)
     }
 
     #[inline]
     pub(super) fn delete_one(&self, col_name: &str, query: Document) -> DbResult<DeleteResult> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.delete_one(col_name, query)
     }
 
     #[inline]
     pub(super) fn delete_many(&self, col_name: &str, query: Document) -> DbResult<DeleteResult> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.delete_many(col_name, query)
     }
 
     #[inline]
     pub(super) fn create_index(&self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.create_index(col_name, keys, options)
     }
 
     #[inline]
     pub(super) fn drop(&self, col_name: &str) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
         inner.drop(col_name)
     }
 }
@@ -759,6 +778,31 @@ mod tests {
         collection.insert_many(&data).unwrap();
 
         db
+    }
+
+    #[test]
+    fn test_multi_threads() {
+        use std::thread;
+        use std::sync::Arc;
+
+        let db = {
+            let raw = create_and_return_db_with_items("test-collection", TEST_SIZE);
+            Arc::new(raw)
+        };
+        let db2 = db.clone();
+
+        let t = thread::spawn(move || {
+            let collection = db2.collection("test2");
+            collection.insert_one(doc! {
+                "content": "Hello"
+            }).unwrap();
+        });
+
+        t.join().unwrap();
+
+        let collection = db.collection::<Document>("test2");
+        let one = collection.find_one(None).unwrap().unwrap();
+        assert_eq!(one.get("content").unwrap().as_str().unwrap(), "Hello");
     }
 
     #[test]

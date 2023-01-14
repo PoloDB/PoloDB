@@ -3,6 +3,7 @@
 
 - Add `drop()` to collection
 - Add `list_collection_names()` to Database
+- Database implements `Send` and `Sync`, allow manipuate in threads
 
 # 3.2.0
 
