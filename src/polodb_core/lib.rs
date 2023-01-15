@@ -95,7 +95,7 @@ pub mod results;
 pub mod test_utils;
 pub mod commands;
 
-pub use db::{Database, DbContext, DbResult};
+pub use db::{Database, DbResult};
 pub use config::Config;
 pub use transaction::TransactionType;
 pub use db::db_handle::DbHandle;

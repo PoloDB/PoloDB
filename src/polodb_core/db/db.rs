@@ -98,6 +98,13 @@ impl Database {
         SHOULD_LOG.store(v, Ordering::SeqCst);
     }
 
+    /// Return the version of package version in string.
+    /// Defined in `Cargo.toml`.
+    pub fn get_version() -> String {
+        const VERSION: &str = env!("CARGO_PKG_VERSION");
+        VERSION.into()
+    }
+
     pub fn open_memory() -> DbResult<Database> {
         Database::open_memory_with_config(Config::default())
     }
@@ -127,12 +134,6 @@ impl Database {
         let db_ref = self.inner.lock()?;
         let mut inner = db_ref.borrow_mut();
         inner.create_collection::<T>(name)
-    }
-
-    /// Return the version of package version in string.
-    /// Defined in `Cargo.toml`.
-    pub fn get_version() -> String {
-        DbContext::get_version()
     }
 
     ///
