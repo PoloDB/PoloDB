@@ -59,7 +59,7 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
 /**
  * API for all platforms
  */
-pub struct DbContext {
+pub(crate) struct DbContext {
     page_handler: Box<PageHandler>,
     pub(crate)meta_version: u32,
     #[allow(dead_code)]
@@ -801,11 +801,6 @@ impl DbContext {
         }
 
         Ok(result)
-    }
-
-    pub fn get_version() -> String {
-        const VERSION: &str = env!("CARGO_PKG_VERSION");
-        VERSION.into()
     }
 
 }
