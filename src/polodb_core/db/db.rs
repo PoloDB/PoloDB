@@ -1,13 +1,13 @@
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::path::Path;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::HashMap;
 use bson::{Bson, Document};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use byteorder::{self, BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{self, BigEndian, ReadBytesExt};
 use std::sync::Mutex;
 use crate::error::DbErr;
 use crate::Config;
@@ -91,6 +91,7 @@ pub type DbResult<T> = Result<T, DbErr>;
 #[derive(Clone)]
 pub struct HandleRequestResult {
     pub is_quit: bool,
+    pub value: Bson,
 }
 
 impl Database {
@@ -187,10 +188,10 @@ impl Database {
         inner.list_collection_names()
     }
 
-    pub fn handle_request<R: Read, W: Write>(&self, pipe_in: &mut R, pipe_out: &mut W) -> std::io::Result<HandleRequestResult> {
+    pub fn handle_request<R: Read>(&self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
         let db_ref = self.inner.lock().unwrap();
         let mut inner = db_ref.borrow_mut();
-        inner.handle_request(pipe_in, pipe_out)
+        inner.handle_request(pipe_in)
     }
 
     #[inline]
@@ -349,29 +350,8 @@ impl DatabaseInner {
 
     /// handle request for database
     /// See [MsgTy] for message detail
-    pub fn handle_request<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> std::io::Result<HandleRequestResult> {
-        let mut buffer: Vec<u8> = Vec::new();
-        let result = self.handle_request_with_result(pipe_in, &mut buffer);
-
-        let final_result = match &result {
-            Ok(r) => Ok(r.clone()),
-            Err(_) => Ok(HandleRequestResult {
-                is_quit: false,
-            })
-        };
-
-        if let Err(DbErr::IOErr(io_err)) = result {
-            return Err(*io_err);
-        }
-        let resp_result = self.send_response_with_result(pipe_out, result, buffer);
-        if let Err(DbErr::IOErr(io_err)) = resp_result {
-            return Err(*io_err);
-        }
-        if let Err(err) = resp_result {
-            eprintln!("resp error: {}", err);
-        }
-
-        final_result
+    pub fn handle_request<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
+        self.handle_request_with_result(pipe_in)
     }
 
     fn count_documents(&mut self, name: &str) -> DbResult<u64> {
@@ -384,23 +364,23 @@ impl DatabaseInner {
         })
     }
 
-    fn send_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<HandleRequestResult>, body: Vec<u8>) -> DbResult<HandleRequestResult> {
-        match &result {
-            Ok(_) => {
-                pipe_out.write_u32::<BigEndian>(body.len() as u32)?;
-                pipe_out.write(&body)?;
-            }
-
-            Err(err) => {
-                pipe_out.write_i32::<BigEndian>(-1)?;
-                let str = format!("resp with error: {}", err);
-                let str_buf = str.as_bytes();
-                pipe_out.write_u32::<BigEndian>(str_buf.len() as u32)?;
-                pipe_out.write(str_buf)?;
-            }
-        }
-        result
-    }
+    // fn send_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<HandleRequestResult>, body: Vec<u8>) -> DbResult<HandleRequestResult> {
+    //     match &result {
+    //         Ok(_) => {
+    //             pipe_out.write_u32::<BigEndian>(body.len() as u32)?;
+    //             pipe_out.write(&body)?;
+    //         }
+    //
+    //         Err(err) => {
+    //             pipe_out.write_i32::<BigEndian>(-1)?;
+    //             let str = format!("resp with error: {}", err);
+    //             let str_buf = str.as_bytes();
+    //             pipe_out.write_u32::<BigEndian>(str_buf.len() as u32)?;
+    //             pipe_out.write(str_buf)?;
+    //         }
+    //     }
+    //     result
+    // }
 
     fn find_one<T: DeserializeOwned>(&mut self, col_name: &str, filter: impl Into<Option<Document>>) -> DbResult<Option<T>> {
         let filter_query = filter.into();
@@ -608,7 +588,7 @@ impl DatabaseInner {
         Ok(Bson::Null)
     }
 
-    fn handle_request_with_result<R: Read, W: Write>(&mut self, pipe_in: &mut R, pipe_out: &mut W) -> DbResult<HandleRequestResult> {
+    fn handle_request_with_result<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
         let value = self.receive_request_body(pipe_in)?;
 
         let command_message = bson::from_bson::<CommandMessage>(value)?;
@@ -657,11 +637,9 @@ impl DatabaseInner {
             }
         };
 
-        let bytes = bson::ser::to_vec(&result_value)?;
-        pipe_out.write(bytes.as_ref())?;
-
         Ok(HandleRequestResult {
-            is_quit
+            is_quit,
+            value: result_value,
         })
     }
 

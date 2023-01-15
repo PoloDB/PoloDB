@@ -1,92 +1,106 @@
 #![allow(clippy::missing_safety_doc)]
 
 use polodb_core::{DbErr, Database};
-use std::cell::RefCell;
-use std::os::raw::{c_char, c_uint, c_int};
-use std::ptr::{null_mut, write_bytes, null};
+use std::os::raw::{c_char, c_uint, c_int, c_uchar};
+use std::ptr::null_mut;
 use std::ffi::{CStr, CString};
-
-const DB_ERROR_MSG_SIZE: usize = 512;
-
-thread_local! {
-    static DB_GLOBAL_ERROR: RefCell<Option<DbErr>> = RefCell::new(None);
-    static DB_GLOBAL_ERROR_MSG: RefCell<[c_char; DB_ERROR_MSG_SIZE]> = RefCell::new([0; DB_ERROR_MSG_SIZE]);
-}
+use std::mem::size_of;
 
 macro_rules! try_read_utf8 {
-    ($action:expr, $ret:expr) => {
+    ($action:expr) => {
         match $action {
             Ok(str) => str,
             Err(err) => {
-                set_global_error(err.into());
-                return $ret;
+                return db_error_to_c(err.into());
             }
         }
     }
 }
 
-fn set_global_error(err: DbErr) {
-    DB_GLOBAL_ERROR.with(|f| {
-        *f.borrow_mut() = Some(err);
-    });
+#[repr(C)]
+pub struct PoloDbError {
+    code:    c_int,
+    message: *mut c_char,
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_open(path: *const c_char) -> *mut Database {
-    let cstr = CStr::from_ptr(path);
-    let str = try_read_utf8!(cstr.to_str(), null_mut());
-    let db = match Database::open_file(str) {
-        Ok(db) => db,
-        Err(err) => {
-            set_global_error(err);
-            return null_mut();
-        }
+unsafe fn db_error_to_c(err: DbErr) -> *mut PoloDbError {
+    let ptr = libc::malloc(size_of::<PoloDbError>()).cast::<PoloDbError>();
+
+    (*ptr).code = error_code_of_db_err(&err);
+    (*ptr).message = {
+        let err_msg = err.to_string();
+        let str_size = err_msg.len();
+        let err_cstring = CString::new(err_msg).unwrap();
+
+        let str_ptr = libc::malloc(str_size + 1).cast::<c_char>();
+        libc::memset(str_ptr.cast(), 0, str_size + 1);
+
+        err_cstring.as_ptr().copy_to(str_ptr, str_size);
+
+        str_ptr
     };
-    let ptr = Box::new(db);
-    Box::into_raw(ptr)
+
+    ptr
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_handle_message(db: *mut Database, msg: *const c_char, msg_size: u64) -> *const c_char {
+pub unsafe extern "C" fn PLDB_free_error(err: *mut PoloDbError) {
+    if err.is_null() {
+        return;
+    }
+
+    libc::free((*err).message.cast());
+    libc::free(err.cast());
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_open(path: *const c_char, result: *mut *mut Database) -> *mut PoloDbError {
+    let cstr = CStr::from_ptr(path);
+    let str = try_read_utf8!(cstr.to_str());
+    match Database::open_file(str) {
+        Ok(db) => {
+            let ptr = Box::new(db);
+            let raw_ptr = Box::into_raw(ptr);
+            result.write(raw_ptr);
+            null_mut()
+        },
+        Err(err) => {
+            db_error_to_c(err)
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_handle_message(db: *mut Database,
+                                             msg: *const c_uchar, msg_size: u64, result: *mut *mut c_uchar) -> *mut PoloDbError {
     let db = db.as_ref().unwrap();
 
     let mut req_buf = std::slice::from_raw_parts(msg.cast::<u8>(), msg_size as usize);
-    let mut resp: Vec<u8> = vec![];
 
-    let _result = db.handle_request::<&[u8], Vec<u8>>(&mut req_buf, &mut resp);
+    let request_result = db.handle_request::<&[u8]>(&mut req_buf);
 
-    null()
+    match request_result {
+        Ok(request_result) => {
+            let bytes = polodb_core::bson::to_vec(&request_result.value).unwrap();
+            let ptr = libc::malloc(bytes.len()).cast::<u8>();
+
+            ptr.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len());
+
+            if !result.is_null() {
+                result.write(ptr.cast::<c_uchar>());
+            }
+
+            null_mut()
+        }
+        Err(err) => {
+            db_error_to_c(err)
+        }
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn PLDB_error_code() -> c_int {
-    DB_GLOBAL_ERROR.with(|f| {
-        if let Some(err) = f.borrow().as_ref() {
-            let code = error_code_of_db_err(err) * -1;
-            return code
-        }
-        0
-    })
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn PLDB_error_msg() -> *const c_char {
-    DB_GLOBAL_ERROR.with(|f| {
-        if let Some(err) = f.borrow_mut().as_ref() {
-            return DB_GLOBAL_ERROR_MSG.with(|msg| {
-                write_bytes(msg.borrow_mut().as_mut_ptr(), 0, DB_ERROR_MSG_SIZE);
-                let err_msg = err.to_string();
-                let str_size = err_msg.len();
-                let err_cstring = CString::new(err_msg).unwrap();
-                let expected_size: usize = std::cmp::min(str_size, DB_ERROR_MSG_SIZE - 1);
-                err_cstring.as_ptr().copy_to(msg.borrow_mut().as_mut_ptr(), expected_size);
-
-                msg.borrow().as_ptr()
-            });
-        }
-
-        null()
-    })
+pub unsafe extern "C" fn PLDB_free_result(msg: *mut c_char) {
+    libc::free(msg.cast());
 }
 
 #[no_mangle]

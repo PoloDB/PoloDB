@@ -79,22 +79,21 @@ impl AppContext {
 
         let req_id = conn.read_u32::<BigEndian>()?;
 
-        let mut ret_buffer = Vec::new();
-
-        let msg_ty_result = db.handle_request(conn, &mut ret_buffer);
+        let msg_ty_result = db.handle_request(conn);
         if let Err(err) = msg_ty_result {
             eprintln!("io error, exit: {}", err);
             return Ok(false);
         }
 
-        let msg_ty = msg_ty_result.unwrap();
+        let result = msg_ty_result.unwrap();
+        let ret_buffer = polodb_core::bson::to_vec(&result.value).unwrap();
 
         conn.write(&HEAD)?;
         conn.write_u32::<BigEndian>(req_id)?;
         conn.write(&ret_buffer)?;
         conn.flush()?;
 
-        if msg_ty.is_quit {
+        if result.is_quit {
             return Ok(false);
         }
 
