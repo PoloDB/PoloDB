@@ -72,7 +72,9 @@ pub unsafe extern "C" fn PLDB_open(path: *const c_char, result: *mut *mut Databa
 
 #[no_mangle]
 pub unsafe extern "C" fn PLDB_handle_message(db: *mut Database,
-                                             msg: *const c_uchar, msg_size: u64, result: *mut *mut c_uchar) -> *mut PoloDbError {
+                                             msg: *const c_uchar, msg_size: u64,
+                                             result: *mut *mut c_uchar,
+                                             result_size: *mut u64) -> *mut PoloDbError {
     let db = db.as_ref().unwrap();
 
     let mut req_buf = std::slice::from_raw_parts(msg.cast::<u8>(), msg_size as usize);
@@ -90,6 +92,10 @@ pub unsafe extern "C" fn PLDB_handle_message(db: *mut Database,
                 result.write(ptr.cast::<c_uchar>());
             }
 
+            if !result_size.is_null() {
+                result_size.write(bytes.len() as u64);
+            }
+
             null_mut()
         }
         Err(err) => {
@@ -99,7 +105,7 @@ pub unsafe extern "C" fn PLDB_handle_message(db: *mut Database,
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_free_result(msg: *mut c_char) {
+pub unsafe extern "C" fn PLDB_free_result(msg: *mut c_uchar) {
     libc::free(msg.cast());
 }
 

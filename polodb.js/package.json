@@ -21,11 +21,13 @@
   "scripts": {
     "install": "node scripts/download-lib.js",
     "build": "rollup -c rollup.config.js",
+    "buildLib": "cmake-js compile",
     "test": "jest ./tests --useStderr"
   },
   "devDependencies": {
     "@rollup/plugin-typescript": "^8.3.0",
     "@types/node": "^18.11.18",
+    "cmake-js": "^7.1.1",
     "jest": "^27.3.1",
     "rollup": "^2.58.3",
     "tslib": "^2.3.1",
