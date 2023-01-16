@@ -1,0 +1,10 @@
+
+/bin
+/src
+/tests
+
+.DS_Store
+
+*.db
+*.log
+*.lock

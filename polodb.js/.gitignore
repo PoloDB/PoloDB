@@ -1,0 +1,10 @@
+
+/node_modules
+/dist
+/bin
+
+*.log
+*.db
+*.journal
+
+.DS_Store
