@@ -4,8 +4,8 @@ version = "3.3.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 license = "MIT"
 edition = "2018"
-repository = "https://github.com/vincentdchan/PoloDB"
-description = "PoloDB is an embedded JSON-based database"
+repository = "https://github.com/PoloDB/PoloDB"
+description = "An embedded document database"
 keywords = ["database", "embedded", "cross-platform"]
 
 [lib]
