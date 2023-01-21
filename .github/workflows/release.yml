@@ -25,5 +25,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           file: "target/release/libpolodb_clib.a,target/release/libpolodb_clib.dylib"
-          tags: true
           draft: true
