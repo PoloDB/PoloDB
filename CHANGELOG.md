@@ -1,4 +1,9 @@
 
+# 3.3.1
+
+- Update package information
+- Test release
+
 # 3.3.0
 
 - Add `drop()` to collection
