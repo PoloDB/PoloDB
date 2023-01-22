@@ -30,6 +30,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           file: "libpolodb_clib-darwin-x64.a;libpolodb_clib-darwin-x64.dylib"
+          update_latest_release: true
           draft: true
 
   Ubuntu:
@@ -55,7 +56,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           file: "libpolodb_clib-linux-x64.a;libpolodb_clib-linux-x64.so"
+          update_latest_release: true
           draft: true
+
   Windows:
     name: Build on Windows
     permissions: write-all
@@ -79,4 +82,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           file: "polodb_clib-win32-x64.lib;polodb_clib-win32-x64.dll"
+          update_latest_release: true
           draft: true
