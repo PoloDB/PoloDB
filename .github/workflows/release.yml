@@ -25,13 +25,13 @@ jobs:
         run: |
           cp target/release/libpolodb_clib.a libpolodb_clib-darwin-x64.a
           cp target/release/libpolodb_clib.dylib libpolodb_clib-darwin-x64.dylib
-      - uses: xresloader/upload-to-github-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          file: "libpolodb_clib-darwin-x64.a;libpolodb_clib-darwin-x64.dylib"
-          update_latest_release: true
-          draft: true
+          files: |
+            libpolodb_clib-darwin-x64.a
+            libpolodb_clib-darwin-x64.dylib
 
   Ubuntu:
     name: Build on Ubuntu
@@ -51,13 +51,13 @@ jobs:
         run: |
           cp target/release/libpolodb_clib.a libpolodb_clib-linux-x64.a
           cp target/release/libpolodb_clib.so libpolodb_clib-linux-x64.so
-      - uses: xresloader/upload-to-github-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          file: "libpolodb_clib-linux-x64.a;libpolodb_clib-linux-x64.so"
-          update_latest_release: true
-          draft: true
+          files: |
+            libpolodb_clib-linux-x64.a
+            libpolodb_clib-linux-x64.so
 
   Windows:
     name: Build on Windows
@@ -77,10 +77,10 @@ jobs:
         run: |
           Copy-Item "target/release/polodb_clib.lib" -Destination "polodb_clib-win32-x64.lib"
           Copy-Item "target/release/polodb_clib.dll" -Destination "polodb_clib-win32-x64.dll"
-      - uses: xresloader/upload-to-github-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          file: "polodb_clib-win32-x64.lib;polodb_clib-win32-x64.dll"
-          update_latest_release: true
-          draft: true
+          files: |
+            polodb_clib-win32-x64.lib
+            polodb_clib-win32-x64.dll
