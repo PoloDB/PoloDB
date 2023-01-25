@@ -3,7 +3,7 @@
 use polodb_core::{DbErr, Database};
 use std::os::raw::{c_char, c_uint, c_int, c_uchar};
 use std::ptr::null_mut;
-use std::ffi::{CStr, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::mem::size_of;
 
 macro_rules! try_read_utf8 {
@@ -71,8 +71,13 @@ pub unsafe extern "C" fn PLDB_open(path: *const c_char, result: *mut *mut Databa
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_handle_message(db: *mut Database,
-                                             msg: *const c_uchar, msg_size: u64, result: *mut *mut c_uchar) -> *mut PoloDbError {
+pub unsafe extern "C" fn PLDB_handle_message(
+    db: *mut Database,
+    msg: *const c_uchar,
+    msg_size: u64,
+    result: *mut *mut c_uchar,
+    result_size: *mut u64
+) -> *mut PoloDbError {
     let db = db.as_ref().unwrap();
 
     let mut req_buf = std::slice::from_raw_parts(msg.cast::<u8>(), msg_size as usize);
@@ -90,12 +95,26 @@ pub unsafe extern "C" fn PLDB_handle_message(db: *mut Database,
                 result.write(ptr.cast::<c_uchar>());
             }
 
+            if !result_size.is_null() {
+                result_size.write(bytes.len() as u64);
+            }
+
             null_mut()
         }
         Err(err) => {
             db_error_to_c(err)
         }
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn PLDB_handle_message_async(
+    db: *mut Database,
+    msg: *const c_uchar,
+    msg_size: u64,
+    func: unsafe extern "C" fn(*mut c_uchar, u64, *mut c_void),
+) -> *mut PoloDbError {
+    null_mut()
 }
 
 #[no_mangle]
