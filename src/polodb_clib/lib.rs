@@ -5,6 +5,13 @@ use std::os::raw::{c_char, c_uint, c_int, c_uchar};
 use std::ptr::null_mut;
 use std::ffi::{c_void, CStr, CString};
 use std::mem::size_of;
+use std::sync::Mutex;
+use lazy_static::lazy_static;
+use threadpool::ThreadPool;
+
+lazy_static! {
+    static ref THREAD_POOL: Mutex<ThreadPool> = Mutex::new(ThreadPool::new(1));
+}
 
 macro_rules! try_read_utf8 {
     ($action:expr) => {
@@ -107,14 +114,51 @@ pub unsafe extern "C" fn PLDB_handle_message(
     }
 }
 
+struct RawBox<T>(*mut T);
+
+unsafe impl<T> Send for RawBox<T> {}
+
+/// Handle message in another thread,
+/// invoke the callback in another thread.
+///
+/// There is a threadpool running in the background
+/// because spawning a thread is expensive.
 #[no_mangle]
 pub unsafe extern "C" fn PLDB_handle_message_async(
     db: *mut Database,
     msg: *const c_uchar,
     msg_size: u64,
-    func: unsafe extern "C" fn(*mut c_uchar, u64, *mut c_void),
-) -> *mut PoloDbError {
-    null_mut()
+    callback: unsafe extern "C" fn(*mut PoloDbError, *mut c_uchar, u64, *mut c_void),
+    raw: *mut c_void,
+) {
+    let db_wrapper = RawBox::<Database>(db);
+    let raw_data_wrapper = RawBox::<c_void>(raw);
+
+    // copy message to a buffer
+    let mut msg_buffer: Vec<c_uchar> = Vec::new();
+    msg_buffer.resize(msg_size as usize, 0);
+    msg.copy_to_nonoverlapping(msg_buffer.as_mut_ptr(), msg_size as usize);
+
+    let thread_pool = THREAD_POOL.lock().unwrap();
+    thread_pool.execute(move || {
+        let db = db_wrapper.0.as_ref().unwrap();
+
+        let mut msg_slice = msg_buffer.as_slice();
+
+        let request_result = db.handle_request::<&[u8]>(&mut msg_slice);
+        match request_result {
+            Ok(request_result) => {
+                let bytes = polodb_core::bson::to_vec(&request_result.value).unwrap();
+                let ptr = libc::malloc(bytes.len()).cast::<u8>();
+                ptr.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len());
+                callback(null_mut(), ptr, bytes.len() as u64, raw_data_wrapper.0);
+            }
+            Err(err) => {
+                let c_error = db_error_to_c(err);
+                callback(c_error, null_mut(), 0, raw_data_wrapper.0);
+            }
+        }
+    });
 }
 
 #[no_mangle]
