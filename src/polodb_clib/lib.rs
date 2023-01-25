@@ -5,13 +5,8 @@ use std::os::raw::{c_char, c_uint, c_int, c_uchar};
 use std::ptr::null_mut;
 use std::ffi::{c_void, CStr, CString};
 use std::mem::size_of;
-use std::sync::Mutex;
-use lazy_static::lazy_static;
+use std::sync::Arc;
 use threadpool::ThreadPool;
-
-lazy_static! {
-    static ref THREAD_POOL: Mutex<ThreadPool> = Mutex::new(ThreadPool::new(1));
-}
 
 macro_rules! try_read_utf8 {
     ($action:expr) => {
@@ -60,13 +55,30 @@ pub unsafe extern "C" fn PLDB_free_error(err: *mut PoloDbError) {
     libc::free(err.cast());
 }
 
+pub struct DatabaseWrapper {
+    db: Arc<Database>,
+    thread_pool: ThreadPool,
+}
+
+impl DatabaseWrapper {
+
+    fn new(db: Database) -> DatabaseWrapper {
+        let thread_pool = ThreadPool::new(1);
+        DatabaseWrapper {
+            db: Arc::new(db),
+            thread_pool
+        }
+    }
+
+}
+
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_open(path: *const c_char, result: *mut *mut Database) -> *mut PoloDbError {
+pub unsafe extern "C" fn PLDB_open(path: *const c_char, result: *mut *mut DatabaseWrapper) -> *mut PoloDbError {
     let cstr = CStr::from_ptr(path);
     let str = try_read_utf8!(cstr.to_str());
     match Database::open_file(str) {
         Ok(db) => {
-            let ptr = Box::new(db);
+            let ptr = Box::new(DatabaseWrapper::new(db));
             let raw_ptr = Box::into_raw(ptr);
             result.write(raw_ptr);
             null_mut()
@@ -79,17 +91,18 @@ pub unsafe extern "C" fn PLDB_open(path: *const c_char, result: *mut *mut Databa
 
 #[no_mangle]
 pub unsafe extern "C" fn PLDB_handle_message(
-    db: *mut Database,
+    db_wrapper: *mut DatabaseWrapper,
     msg: *const c_uchar,
     msg_size: u64,
     result: *mut *mut c_uchar,
     result_size: *mut u64
 ) -> *mut PoloDbError {
-    let db = db.as_ref().unwrap();
+    let db_wrapper_ref = db_wrapper.as_ref().unwrap();
+    let db_arc = db_wrapper_ref.db.clone();
 
     let mut req_buf = std::slice::from_raw_parts(msg.cast::<u8>(), msg_size as usize);
 
-    let request_result = db.handle_request::<&[u8]>(&mut req_buf);
+    let request_result = db_arc.handle_request::<&[u8]>(&mut req_buf);
 
     match request_result {
         Ok(request_result) => {
@@ -125,27 +138,26 @@ unsafe impl<T> Send for RawBox<T> {}
 /// because spawning a thread is expensive.
 #[no_mangle]
 pub unsafe extern "C" fn PLDB_handle_message_async(
-    db: *mut Database,
+    db_wrapper: *mut DatabaseWrapper,
     msg: *const c_uchar,
     msg_size: u64,
     callback: unsafe extern "C" fn(*mut PoloDbError, *mut c_uchar, u64, *mut c_void),
     raw: *mut c_void,
 ) {
-    let db_wrapper = RawBox::<Database>(db);
-    let raw_data_wrapper = RawBox::<c_void>(raw);
+    let db_wrapper_ref = db_wrapper.as_ref().unwrap();
+    let db_arc = db_wrapper_ref.db.clone();
+
+    let raw_data_wrapper = RawBox(raw);
 
     // copy message to a buffer
     let mut msg_buffer: Vec<c_uchar> = Vec::new();
     msg_buffer.resize(msg_size as usize, 0);
     msg.copy_to_nonoverlapping(msg_buffer.as_mut_ptr(), msg_size as usize);
 
-    let thread_pool = THREAD_POOL.lock().unwrap();
-    thread_pool.execute(move || {
-        let db = db_wrapper.0.as_ref().unwrap();
-
+    db_wrapper_ref.thread_pool.execute(move || {
         let mut msg_slice = msg_buffer.as_slice();
 
-        let request_result = db.handle_request::<&[u8]>(&mut msg_slice);
+        let request_result = db_arc.handle_request::<&[u8]>(&mut msg_slice);
         match request_result {
             Ok(request_result) => {
                 let bytes = polodb_core::bson::to_vec(&request_result.value).unwrap();
@@ -178,8 +190,9 @@ pub unsafe extern "C" fn PLDB_version(buffer: *mut c_char, buffer_size: c_uint) 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PLDB_close(db: *mut Database) {
-    let _ptr = Box::from_raw(db);
+pub unsafe extern "C" fn PLDB_close(db: *mut DatabaseWrapper) {
+    let db_wrapper = Box::from_raw(db);
+    db_wrapper.thread_pool.join();
 }
 
 fn error_code_of_db_err(err: &DbErr) -> i32 {

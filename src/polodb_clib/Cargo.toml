@@ -10,7 +10,6 @@ path="lib.rs"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-lazy_static = "1.4.0"
 libc = "0.2"
 polodb_core = { path = "../polodb_core" }
 threadpool = "1.8.1"
