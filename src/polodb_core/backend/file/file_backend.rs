@@ -55,7 +55,7 @@ fn open_file_native(path: &Path) -> DbResult<File> {
 
 #[cfg(not(target_os = "windows"))]
 fn open_file_native(path: &Path) -> DbResult<File> {
-    use crate::file_lock::exclusive_lock_file;
+    use super::file_lock::exclusive_lock_file;
     let file = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
@@ -220,7 +220,7 @@ impl Drop for FileBackend {
     fn drop(&mut self) {
         let mut main_db = self.file.borrow_mut();
         #[cfg(not(target_os = "windows"))]
-        let _ = crate::file_lock::unlock_file(&main_db);
+        let _ = super::file_lock::unlock_file(&main_db);
         let result = self.journal_manager.checkpoint_journal(&mut main_db);
         if result.is_ok() {
             let path = self.journal_manager.path();
