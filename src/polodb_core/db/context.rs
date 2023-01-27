@@ -1,5 +1,4 @@
 use std::borrow::Borrow;
-use std::path::Path;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::rc::Rc;
@@ -15,13 +14,16 @@ use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::index_ctx::{IndexCtx, merge_options_into_default};
 use crate::btree::*;
 use crate::transaction::TransactionState;
-use crate::backend::file::FileBackend;
 use crate::backend::memory::MemoryBackend;
 use crate::page::RawPage;
 use crate::db::db_handle::DbHandle;
 use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeListPageDump, BTreePageDump};
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::backend::Backend;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::backend::file::FileBackend;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::Path;
 
 macro_rules! try_multiple {
     ($err: expr, $action: expr) => {
@@ -81,6 +83,7 @@ pub struct CollectionMeta {
 
 impl DbContext {
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file(path: &Path, config: Config) -> DbResult<DbContext> {
         let page_size = NonZeroU32::new(4096).unwrap();
 

@@ -1,5 +1,6 @@
 use std::borrow::Borrow;
 use std::cell::RefCell;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -118,10 +119,12 @@ impl Database {
         })
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file<P: AsRef<Path>>(path: P) -> DbResult<Database>  {
         Database::open_file_with_config(path, Config::default())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file_with_config<P: AsRef<Path>>(path: P, config: Config) -> DbResult<Database>  {
         let inner = DatabaseInner::open_file_with_config(path, config)?;
 
@@ -276,6 +279,7 @@ impl Database {
 
 impl DatabaseInner {
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn open_file_with_config<P: AsRef<Path>>(path: P, config: Config) -> DbResult<DatabaseInner>  {
         let ctx = DbContext::open_file(path.as_ref(), config)?;
 
