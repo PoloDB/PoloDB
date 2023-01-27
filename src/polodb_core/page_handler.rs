@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::sync::Arc;
 use std::num::NonZeroU32;
 use bson::Document;
-use crate::backend::file::pagecache::PageCache;
+use crate::pagecache::PageCache;
 use crate::transaction::{TransactionType, TransactionState};
 use crate::page::RawPage;
 use crate::backend::{Backend, AutoStartResult};
