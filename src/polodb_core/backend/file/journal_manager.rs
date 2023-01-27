@@ -12,7 +12,7 @@ use crate::transaction::TransactionType;
 use crate::page::RawPage;
 use crate::DbResult;
 use crate::error::DbErr;
-use crate::file_lock::*;
+use super::file_lock::*;
 use crate::dump::{JournalDump, JournalFrameDump};
 
 static HEADER_DESP: &str       = "PoloDB Journal v0.2";
