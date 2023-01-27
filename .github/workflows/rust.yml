@@ -24,6 +24,10 @@ jobs:
         run: cargo test --release --verbose --workspace
       - name: Build Clib
         run: cargo build --release --package polodb_clib
+      - name: Install wasm32
+        run: rustup target add wasm32-unknown-unknown
+      - name: Build wasm
+        run: cargo build --target wasm32-unknown-unknown --package polodb_core --release
 
   Windows:
     name: Test on Windows
