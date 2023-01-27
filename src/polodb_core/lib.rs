@@ -93,6 +93,7 @@ mod bson_utils;
 pub mod results;
 pub mod test_utils;
 pub mod commands;
+mod pagecache;
 
 pub use db::{Database, DbResult};
 pub use config::Config;

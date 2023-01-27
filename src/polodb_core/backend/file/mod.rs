@@ -1,5 +1,4 @@
 mod frame_header;
-pub(crate) mod pagecache;
 mod transaction_state;
 mod journal_manager;
 mod file_backend;
