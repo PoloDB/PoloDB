@@ -95,7 +95,7 @@ impl Drop for PageCache {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
-    use crate::backend::file::pagecache::PageCache;
+    use crate::pagecache::PageCache;
     use crate::page::RawPage;
 
     fn make_raw_page(page_id: u32) -> RawPage {

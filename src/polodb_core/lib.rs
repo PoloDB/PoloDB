@@ -91,6 +91,7 @@ mod page_handler;
 mod doc_serializer;
 mod bson_utils;
 pub mod results;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod test_utils;
 pub mod commands;
 mod pagecache;
