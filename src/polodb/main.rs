@@ -11,16 +11,14 @@ error_chain! {
 
     foreign_links {
         Db( polodb_core::DbErr);
+        BsonDe(polodb_core::bson::de::Error);
         Fmt(::std::fmt::Error);
         Io(::std::io::Error);
     }
 
     errors {
-        UnwrapDocument {
-            display("unwrap db failed")
-        }
-        UnwrapFail(str: String) {
-            display("unwrap value failed: {}", str)
+        RequstBodyNotFound {
+            display("unwrap request body failed")
         }
     }
 
