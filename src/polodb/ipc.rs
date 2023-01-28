@@ -1,6 +1,7 @@
 #[cfg(unix)]
 use std::path::Path;
 use std::io::{Result, Read, Write};
+// use std::net::Shutdown;
 #[cfg(windows)]
 use std::ptr::null_mut;
 #[cfg(windows)]
@@ -33,6 +34,15 @@ pub struct IPC {
 pub struct Connection {
     socket: UnixStream,
 }
+
+// #[cfg(unix)]
+// impl Connection {
+//
+//     fn shutdown(&self) -> Result<()> {
+//         self.socket.shutdown(Shutdown::Both)
+//     }
+//
+// }
 
 #[cfg(unix)]
 pub struct Incoming<'a> {
