@@ -191,10 +191,17 @@ impl Database {
         inner.list_collection_names()
     }
 
+    /// handle request for database
     pub fn handle_request<R: Read>(&self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
         let db_ref = self.inner.lock().unwrap();
         let mut inner = db_ref.borrow_mut();
         inner.handle_request(pipe_in)
+    }
+
+    pub fn handle_request_doc(&self, value: Bson) -> DbResult<HandleRequestResult> {
+        let db_ref = self.inner.lock().unwrap();
+        let mut inner = db_ref.borrow_mut();
+        inner.handle_request_doc(value)
     }
 
     #[inline]
@@ -352,9 +359,7 @@ impl DatabaseInner {
         Ok(names)
     }
 
-    /// handle request for database
-    /// See [MsgTy] for message detail
-    pub fn handle_request<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
+    fn handle_request<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
         self.handle_request_with_result(pipe_in)
     }
 
@@ -594,7 +599,10 @@ impl DatabaseInner {
 
     fn handle_request_with_result<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
         let value = self.receive_request_body(pipe_in)?;
+        self.handle_request_doc(value)
+    }
 
+    fn handle_request_doc(&mut self, value: Bson) -> DbResult<HandleRequestResult> {
         let command_message = bson::from_bson::<CommandMessage>(value)?;
 
         let is_quit = if let CommandMessage::SafelyQuit = command_message {

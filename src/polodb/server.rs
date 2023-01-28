@@ -7,6 +7,8 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 use crate::ErrorKind;
 use crate::ipc::{Connection, IPC};
+use polodb_core::bson;
+use polodb_core::bson::{doc, Document};
 #[cfg(unix)]
 use signal_hook::iterator::Signals;
 #[cfg(unix)]
@@ -32,6 +34,24 @@ impl AppContext {
         }
     }
 
+    fn receive_request_body(conn: &mut Connection) -> crate::Result<Document> {
+        let request_size = conn.read_u32::<BigEndian>()? as usize;
+        let request_body = if request_size == 0 {
+            Vec::new()
+        } else {
+            let mut request_body = vec![0u8; request_size];
+            conn.read_exact(&mut request_body)?;
+            request_body
+        };
+        let body_ref: &[u8] = request_body.as_slice();
+        let val = bson::from_slice(body_ref)?;
+        Ok(val)
+    }
+
+    /// The request body:
+    /// {
+    ///     "body": <request_doc>,
+    /// }
     fn handle_incoming_connection(&self, conn: &mut Connection) -> crate::Result<bool> {
         let mut header_buffer = [0u8; 4];
 
@@ -52,6 +72,15 @@ impl AppContext {
 
         let req_id = conn.read_u32::<BigEndian>()?;
 
+        let req_doc = AppContext::receive_request_body(conn)?;
+
+        let req_body = match req_doc.get("body") {
+            Some(body) => body,
+            None => {
+                return Err(ErrorKind::RequstBodyNotFound.into());
+            }
+        };
+
         // unwrap the db from app context
         let db = {
             // limit the scope of the guard because
@@ -68,27 +97,58 @@ impl AppContext {
                 }
             }
         };
-        let msg_ty_result = db.handle_request(conn);
-        if let Err(err) = msg_ty_result {
-            eprintln!("io error, exit: {}", err);
-            return Ok(false);
-        }
 
-        let result = msg_ty_result.unwrap();
-        let ret_buffer = polodb_core::bson::to_vec(&result.value).unwrap();
+        AppContext::handle_request_in_db(conn, req_id, db, req_body.clone())
+    }
 
-        conn.write(&HEAD)?;
-        conn.write_u32::<BigEndian>(req_id)?;
-        conn.write(&ret_buffer)?;
+    /// The response body:
+    /// {
+    ///     "body": <resp_doc>,
+    /// }
+    ///
+    /// The error:
+    /// {
+    ///     "error": <error_string>,
+    /// }
+    fn handle_request_in_db(conn: &mut Connection, req_id: u32, db: Arc<Database>, req_body: bson::Bson) -> crate::Result<bool> {
+        let msg_ty_result = db.handle_request_doc(req_body.clone());
+
+        let is_quit = match msg_ty_result {
+            Ok(result) => {
+                write_response(conn, req_id, doc! {
+                    "data": result.value,
+                })?;
+                result.is_quit
+            }
+            Err(db_err) => {
+                write_response(conn, req_id, doc! {
+                    "error": format!("{}", db_err)
+                })?;
+                // exit can not be error
+                false
+            }
+        };
+
         conn.flush()?;
 
-        if result.is_quit {
+        if is_quit {
             return Ok(false);
         }
 
         Ok(true)
     }
 
+}
+
+fn write_response(conn: &mut Connection, req_id: u32, doc: Document) -> crate::Result<()> {
+    let ret_buffer = bson::to_vec(&doc).unwrap();
+
+    conn.write(&HEAD)?;
+    conn.write_u32::<BigEndian>(req_id)?;  // write request id
+    conn.write_u32::<BigEndian>(ret_buffer.len() as u32)?;  // write buffer size
+    conn.write(&ret_buffer)?;
+
+    Ok(())
 }
 
 pub fn start_socket_server(path: Option<&str>, socket_addr: &str) {
