@@ -34,15 +34,9 @@ impl AppContext {
         }
     }
 
-    fn receive_request_body(conn: &mut Connection) -> crate::Result<Document> {
-        let request_size = conn.read_u32::<BigEndian>()? as usize;
-        let request_body = if request_size == 0 {
-            Vec::new()
-        } else {
-            let mut request_body = vec![0u8; request_size];
-            conn.read_exact(&mut request_body)?;
-            request_body
-        };
+    fn receive_request_body(request_size: u32, conn: &mut Connection) -> crate::Result<Document> {
+        let mut request_body = vec![0u8; request_size as usize];
+        conn.read_exact(&mut request_body)?;
         let body_ref: &[u8] = request_body.as_slice();
         let val = bson::from_slice(body_ref)?;
         Ok(val)
@@ -71,8 +65,9 @@ impl AppContext {
         }
 
         let req_id = conn.read_u32::<BigEndian>()?;
+        let req_resize = conn.read_u32::<BigEndian>()?;
 
-        let req_doc = AppContext::receive_request_body(conn)?;
+        let req_doc = AppContext::receive_request_body(req_resize, conn)?;
 
         let req_body = match req_doc.get("body") {
             Some(body) => body,
