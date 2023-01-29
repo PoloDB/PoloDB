@@ -116,7 +116,7 @@ impl AppContext {
         let is_quit = match msg_ty_result {
             Ok(result) => {
                 write_response(conn, req_id, doc! {
-                    "data": result.value,
+                    "body": result.value,
                 })?;
                 result.is_quit
             }
