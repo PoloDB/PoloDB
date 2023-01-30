@@ -51,7 +51,7 @@ jobs:
         run: cargo build --release
       - name: Copy files
         run: |
-          cp target/release/polodb polodb_clib-linux-x64
+          cp target/release/polodb polodb-linux-x64
           cp target/release/libpolodb_clib.a libpolodb_clib-linux-x64.a
           cp target/release/libpolodb_clib.so libpolodb_clib-linux-x64.so
       - name: Release
@@ -59,7 +59,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            polodb_clib-linux-x64
+            polodb-linux-x64
             libpolodb_clib-linux-x64.a
             libpolodb_clib-linux-x64.so
 
