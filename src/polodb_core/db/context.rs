@@ -1,8 +1,10 @@
 use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::rc::Rc;
 use bson::{Document, Bson, doc, bson};
+use serde::Serialize;
 use super::db::DbResult;
 use crate::page::header_page_wrapper;
 use crate::error::DbErr;
@@ -20,7 +22,7 @@ use crate::db::db_handle::DbHandle;
 use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeListPageDump, BTreePageDump};
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::backend::Backend;
-use crate::results::InsertOneResult;
+use crate::results::{InsertManyResult, InsertOneResult};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::backend::file::FileBackend;
 #[cfg(not(target_arch = "wasm32"))]
@@ -173,6 +175,33 @@ impl DbContext {
         }
 
         Err(DbErr::CollectionNotFound(name.into()))
+    }
+
+    pub fn get_collection_meta_by_name_advanced_auto(&mut self, name: &str, create_if_not_exist: bool) -> DbResult<Option<CollectionMeta>> {
+        self.page_handler.auto_start_transaction(if create_if_not_exist {
+            TransactionType::Write
+        } else {
+            TransactionType::Read
+        })?;
+
+        let result = try_db_op!(self, self.get_collection_meta_by_name_advanced(name, create_if_not_exist));
+
+        Ok(result)
+    }
+
+    pub fn get_collection_meta_by_name_advanced(&mut self, name: &str, create_if_not_exist: bool) -> DbResult<Option<CollectionMeta>> {
+        match self.internal_get_collection_id_by_name(name) {
+            Ok(meta) => Ok(Some(meta)),
+            Err(DbErr::CollectionNotFound(_)) => {
+                if create_if_not_exist {
+                    let meta = self.internal_create_collection(name)?;
+                    Ok(Some(meta))
+                } else {
+                    Ok(None)
+                }
+            },
+            Err(err) => return Err(err),
+        }
     }
 
     pub(crate) fn get_meta_source(&mut self) -> DbResult<MetaSource> {
@@ -416,17 +445,24 @@ impl DbContext {
         true
     }
 
-    pub fn insert_one_auto(&mut self, col_id: u32, meta_version: u32, doc: &mut Document) -> DbResult<InsertOneResult> {
-        self.check_meta_version(meta_version)?;
-
+    pub fn insert_one_auto(&mut self, col_name: &str, doc: &mut Document) -> DbResult<InsertOneResult> {
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let changed = try_db_op!(self, self.insert_one(col_id, doc));
+        let changed = try_db_op!(self, self.insert_one(col_name, doc));
 
         Ok(changed)
     }
 
-    fn insert_one(&mut self, col_id: u32, doc: &mut Document) -> DbResult<InsertOneResult> {
+    fn insert_one(&mut self, col_name: &str, doc: &mut Document) -> DbResult<InsertOneResult> {
+        let col_meta = self.get_collection_meta_by_name_advanced(col_name, true)?
+            .expect("internal: meta must exist");
+        self.insert_one_with_meta(&col_meta, doc)
+    }
+
+    fn insert_one_with_meta(&mut self, col_meta: &CollectionMeta, doc: &mut Document) -> DbResult<InsertOneResult> {
+        self.check_meta_version(col_meta.meta_version)?;
+        let col_id = col_meta.id;
+
         let meta_source = self.get_meta_source()?;
         let _changed  = self.fix_doc(doc);
 
@@ -488,6 +524,33 @@ impl DbContext {
 
         Ok(InsertOneResult {
             inserted_id: pkey.clone(),
+        })
+    }
+
+    pub fn insert_many_auto<T: Serialize>(&mut self, col_name: &str, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
+        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+
+        let result = try_db_op!(self, self.insert_many(col_name, docs));
+
+        Ok(result)
+    }
+
+    fn insert_many<T: Serialize>(&mut self, col_name: &str, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
+        let col_meta = self.get_collection_meta_by_name_advanced(col_name, true)?
+            .expect("internal: meta must exist");
+        let mut inserted_ids: HashMap<usize, Bson> = HashMap::new();
+        let mut counter: usize = 0;
+
+        for item in docs {
+            let mut doc = bson::to_document(item.borrow())?;
+            let insert_one_result = self.insert_one_with_meta(&col_meta, &mut doc)?;
+            inserted_ids.insert(counter, insert_one_result.inserted_id);
+
+            counter += 1;
+        }
+
+        Ok(InsertManyResult {
+            inserted_ids,
         })
     }
 

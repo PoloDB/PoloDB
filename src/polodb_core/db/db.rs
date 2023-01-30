@@ -4,7 +4,6 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::collections::HashMap;
 use bson::{Bson, Document};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -308,19 +307,9 @@ impl DatabaseInner {
         Ok(())
     }
 
+    #[inline]
     pub(super) fn get_collection_meta_by_name(&mut self, col_name: &str, create_if_not_exist: bool) -> DbResult<Option<CollectionMeta>> {
-        match self.ctx.get_collection_meta_by_name(col_name) {
-            Ok(meta) => Ok(Some(meta)),
-            Err(DbErr::CollectionNotFound(_)) => {
-                if create_if_not_exist {
-                    let meta = self.ctx.create_collection(col_name)?;
-                    Ok(Some(meta))
-                } else {
-                    Ok(None)
-                }
-            },
-            Err(err) => return Err(err),
-        }
+        self.ctx.get_collection_meta_by_name_advanced_auto(col_name, create_if_not_exist)
     }
 
     #[inline]
@@ -444,44 +433,13 @@ impl DatabaseInner {
 
     fn insert_one<T: Serialize>(&mut self, col_name: &str, doc: impl Borrow<T>) -> DbResult<InsertOneResult> {
         let mut doc = bson::to_document(doc.borrow())?;
-        let col_meta = self.get_collection_meta_by_name(col_name, true)?
-            .expect("internal: meta must exist");
-        let result = self.ctx.insert_one_auto(col_meta.id, col_meta.meta_version, &mut doc)?;
+        let result = self.ctx.insert_one_auto(col_name, &mut doc)?;
         Ok(result)
     }
 
+    #[inline]
     fn insert_many<T: Serialize>(&mut self, col_name: &str, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
-        self.start_transaction(Some(TransactionType::Write))?;
-        let col_meta = self.get_collection_meta_by_name(col_name, true)?
-            .expect("internal: meta must exist");
-        let mut inserted_ids: HashMap<usize, Bson> = HashMap::new();
-        let mut counter: usize = 0;
-
-        for item in docs {
-            let mut doc = match bson::to_document(item.borrow()) {
-                Ok(doc) => doc,
-                Err(err) => {
-                    self.rollback().unwrap();
-                    return Err(DbErr::from(err));
-                }
-            };
-            match self.ctx.insert_one_auto(col_meta.id, col_meta.meta_version, &mut doc) {
-                Ok(_) => (),
-                Err(err) => {
-                    self.rollback().unwrap();
-                    return Err(err);
-                }
-            }
-            let pkey = doc.get("_id").unwrap();
-            inserted_ids.insert(counter, pkey.clone());
-
-            counter += 1;
-        }
-
-        self.commit()?;
-        Ok(InsertManyResult {
-            inserted_ids,
-        })
+        self.ctx.insert_many_auto(col_name, docs)
     }
 
     fn update_one(&mut self, col_name: &str, query: Document, update: Document) -> DbResult<UpdateResult> {
