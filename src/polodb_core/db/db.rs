@@ -10,7 +10,7 @@ use serde::de::DeserializeOwned;
 use byteorder::{self, BigEndian, ReadBytesExt};
 use std::sync::Mutex;
 use crate::error::DbErr;
-use crate::Config;
+use crate::{ClientSession, Config};
 use super::context::{CollectionMeta, DbContext};
 use crate::{DbHandle, TransactionType};
 use crate::db::collection::Collection;
@@ -147,6 +147,12 @@ impl Database {
     ///
     pub fn collection<T: Serialize>(&self, col_name: &str) -> Collection<T> {
         Collection::new(self, col_name)
+    }
+
+    pub fn start_session(&self) -> DbResult<ClientSession> {
+        let db_ref = self.inner.lock()?;
+        let mut inner = db_ref.borrow_mut();
+        inner.ctx.start_session()
     }
 
     /// Manually start a transaction. There are three types of transaction.
