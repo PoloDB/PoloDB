@@ -20,6 +20,7 @@ use crate::db::db_handle::DbHandle;
 use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeListPageDump, BTreePageDump};
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::backend::Backend;
+use crate::results::InsertOneResult;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::backend::file::FileBackend;
 #[cfg(not(target_arch = "wasm32"))]
@@ -415,19 +416,19 @@ impl DbContext {
         true
     }
 
-    pub fn insert(&mut self, col_id: u32, meta_version: u32, doc: &mut Document) -> DbResult<bool> {
+    pub fn insert_one_auto(&mut self, col_id: u32, meta_version: u32, doc: &mut Document) -> DbResult<InsertOneResult> {
         self.check_meta_version(meta_version)?;
 
         self.page_handler.auto_start_transaction(TransactionType::Write)?;
 
-        let changed = try_db_op!(self, self.internal_insert(col_id, doc));
+        let changed = try_db_op!(self, self.insert_one(col_id, doc));
 
         Ok(changed)
     }
 
-    fn internal_insert(&mut self, col_id: u32, doc: &mut Document) -> DbResult<bool> {
+    fn insert_one(&mut self, col_id: u32, doc: &mut Document) -> DbResult<InsertOneResult> {
         let meta_source = self.get_meta_source()?;
-        let changed  = self.fix_doc(doc);
+        let _changed  = self.fix_doc(doc);
 
         let mut collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
@@ -485,7 +486,9 @@ impl DbContext {
         }
         // update meta end
 
-        Ok(changed)
+        Ok(InsertOneResult {
+            inserted_id: pkey.clone(),
+        })
     }
 
     /// query: None for findAll
