@@ -1,87 +1,21 @@
-use std::cell::Cell;
-use std::sync::Arc;
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use bson::Document;
-use crate::pagecache::PageCache;
-use crate::transaction::{TransactionType, TransactionState};
-use crate::page::RawPage;
-use crate::backend::{Backend, AutoStartResult};
-use crate::page::header_page_wrapper;
-use crate::page::header_page_wrapper::HeaderPageWrapper;
-use crate::dump::JournalDump;
-use crate::{DbResult, Config};
-use crate::error::DbErr;
-use crate::page::data_page_wrapper::DataPageWrapper;
-use crate::data_ticket::DataTicket;
-use crate::page::free_list_data_wrapper::FreeListDataWrapper;
-use crate::page::large_data_page_wrapper::LargeDataPageWrapper;
 use std::cmp::min;
+use std::cell::Cell;
+use crate::backend::{AutoStartResult, Backend};
+use crate::{Config, DbErr, DbResult, TransactionType};
+use crate::data_ticket::DataTicket;
+use crate::dump::JournalDump;
+use crate::page::data_page_wrapper::DataPageWrapper;
+use crate::page::header_page_wrapper::HeaderPageWrapper;
+use crate::page::large_data_page_wrapper::LargeDataPageWrapper;
+use crate::page::{FreeListDataWrapper, header_page_wrapper, RawPage};
+use crate::page_handler::data_page_allocator::DataPageAllocator;
+use crate::transaction::TransactionState;
+use super::pagecache::PageCache;
 
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
-
-struct DataPageAllocator {
-    // pid -> remain size
-    free_pages: Vec<(u32, u32)>,
-    stash: Option<Vec<(u32, u32)>>,
-}
-
-impl DataPageAllocator {
-
-    fn new() -> DataPageAllocator {
-        DataPageAllocator {
-            free_pages: Vec::new(),
-            stash: None,
-        }
-    }
-
-    fn add_tuple(&mut self, pid: u32, remain_size: u32) {
-        let t = self.stash.as_mut().expect("no transaction");
-        t.push((pid, remain_size));
-    }
-
-    fn try_allocate_data_page(&mut self, need_size: u32) -> Option<(u32, u32)> {
-        let t = self.stash.as_mut().expect("no transaction");
-        let mut index: i64 = -1;
-        let mut result = None;
-        for (i, (pid, remain_size)) in t.iter().enumerate() {
-            if *remain_size >= need_size {
-                index = i as i64;
-                result = Some((*pid, *remain_size));
-                break;
-            }
-        }
-        if index >= 0 {
-            t.remove(index as usize);
-        }
-
-        result
-    }
-
-    fn free_page(&mut self, pid: u32) {
-        let t = self.stash.as_mut().unwrap();
-        let index_opt = t.iter().position(|(x_pid, _)| *x_pid == pid);
-        if let Some(index) = index_opt {
-            t.remove(index);
-        }
-    }
-
-    fn start_transaction(&mut self) {
-        let copy = self.free_pages.clone();
-        self.stash = Some(copy)
-    }
-
-    fn commit(&mut self) {
-        let opt = self.stash.take();
-        if let Some(list) = opt {
-            self.free_pages = list;
-        }
-    }
-
-    fn rollback(&mut self) {
-        self.stash = None;
-    }
-
-}
 
 pub(crate) struct PageHandler {
     backend:             Box<dyn Backend + Send>,
@@ -601,7 +535,7 @@ mod test {
     use std::sync::Arc;
     use crate::backend::file::FileBackend;
     use crate::{Config, TransactionType};
-    use crate::page_handler::PageHandler;
+    use crate::page_handler::page_handler::PageHandler;
 
     const TEST_FREE_LIST_SIZE: usize = 10000;
     const DB_NAME: &str = "test-page-handler";
