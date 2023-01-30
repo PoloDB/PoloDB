@@ -8,7 +8,7 @@ use serde::Serialize;
 use super::db::DbResult;
 use crate::page::header_page_wrapper;
 use crate::error::DbErr;
-use crate::TransactionType;
+use crate::{ClientSession, TransactionType};
 use crate::page_handler::PageHandler;
 use crate::Config;
 use crate::vm::{SubProgram, VM, VmState};
@@ -23,10 +23,12 @@ use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeLi
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::backend::Backend;
 use crate::results::{InsertManyResult, InsertOneResult};
+use crate::session::{Session, DefaultSession};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::backend::file::FileBackend;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+use bson::oid::ObjectId;
 
 macro_rules! try_multiple {
     ($err: expr, $action: expr) => {
@@ -67,6 +69,7 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
 pub(crate) struct DbContext {
     page_handler: Box<PageHandler>,
     pub(crate)meta_version: u32,
+    session_map: hashbrown::HashMap<ObjectId, Box<dyn Session + Send>>,
     #[allow(dead_code)]
     config:       Arc<Config>,
 }
@@ -109,6 +112,7 @@ impl DbContext {
             page_handler: Box::new(page_handler),
             // first_page,
             meta_version: 0,
+            session_map: hashbrown::HashMap::new(),
             config,
         };
 
@@ -116,6 +120,15 @@ impl DbContext {
         ctx.meta_version = meta_source.meta_version;
 
         Ok(ctx)
+    }
+
+    pub fn start_session(&mut self) -> DbResult<ClientSession> {
+        let id = ObjectId::new();
+
+        let session = Box::new(DefaultSession::new(id));
+        self.session_map.insert(id, session);
+
+        Ok(ClientSession::new(id))
     }
 
     /**

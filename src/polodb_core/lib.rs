@@ -77,6 +77,7 @@ mod page;
 mod vm;
 mod error;
 mod cursor;
+mod session;
 
 pub mod db;
 mod data_ticket;
@@ -100,5 +101,6 @@ pub use config::Config;
 pub use transaction::TransactionType;
 pub use db::db_handle::DbHandle;
 pub use error::DbErr;
+pub use session::ClientSession;
 
 pub extern crate bson;
