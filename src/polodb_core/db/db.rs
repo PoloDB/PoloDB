@@ -133,10 +133,10 @@ impl Database {
     }
 
     /// Creates a new collection in the database with the given `name`.
-    pub fn create_collection<T: Serialize>(&self, name: &str) -> DbResult<()> {
+    pub fn create_collection(&self, name: &str) -> DbResult<()> {
         let db_ref = self.inner.lock()?;
         let mut inner = db_ref.borrow_mut();
-        inner.create_collection::<T>(name)
+        inner.create_collection(name)
     }
 
     ///
@@ -302,7 +302,7 @@ impl DatabaseInner {
         })
     }
 
-    fn create_collection<T: Serialize>(&mut self, name: &str) -> DbResult<()> {
+    fn create_collection(&mut self, name: &str) -> DbResult<()> {
         let _collection_meta = self.ctx.create_collection(name)?;
         Ok(())
     }
@@ -667,7 +667,7 @@ impl DatabaseInner {
     }
 
     fn handle_create_collection(&mut self, create_collection: CreateCollectionCommand) -> DbResult<Bson> {
-        let ret = match self.create_collection::<Bson>(&create_collection.ns) {
+        let ret = match self.create_collection(&create_collection.ns) {
             Ok(_) => true,
             Err(DbErr::CollectionAlreadyExits(_)) => false,
             Err(err) => return Err(err),
@@ -697,7 +697,7 @@ impl DatabaseInner {
 mod tests {
     use std::env;
     use bson::{Bson, doc, Document};
-    use crate::{Config, Database, DbErr};
+    use crate::{Config, Database, DbErr, TransactionType};
     use std::io::Read;
     use std::path::PathBuf;
     use std::fs::File;
@@ -794,6 +794,13 @@ mod tests {
 
         let names = db.list_collection_names().unwrap();
         assert_eq!(names.len(), 0);
+    }
+
+    #[test]
+    fn test_create_collection() {
+        let db = prepare_db("test-create-collection").unwrap();
+        db.create_collection("test").unwrap();
+        db.start_transaction(Some(TransactionType::Write)).unwrap();
     }
 
     #[derive(Debug, Serialize, Deserialize)]

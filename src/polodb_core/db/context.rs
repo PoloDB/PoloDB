@@ -262,11 +262,11 @@ impl DbContext {
 
         handle.step()?;
 
-        if handle.state() == (VmState::HasRow as i8) {
-            return Ok(true);
-        }
+        let exist = handle.state() == (VmState::HasRow as i8);
 
-        Ok(false)
+        handle.commit_and_close_vm()?;
+
+        Ok(exist)
     }
 
     fn internal_create_collection(&mut self, name: &str) -> DbResult<CollectionMeta> {
