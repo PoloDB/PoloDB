@@ -1,4 +1,9 @@
 
+# 3.3.3
+
+- Fix: insert_many transaction conflicts
+- bson ipc for Node.js
+
 # 3.3.1
 
 - Update package information
