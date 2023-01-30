@@ -20,9 +20,10 @@ jobs:
       - name: Run Rust tests
         run: cargo test --release --verbose --workspace
       - name: Build Clib
-        run: cargo build --release --package polodb_clib
+        run: cargo build --release
       - name: Copy files
         run: |
+          cp target/release/polodb polodb-darwin-x64
           cp target/release/libpolodb_clib.a libpolodb_clib-darwin-x64.a
           cp target/release/libpolodb_clib.dylib libpolodb_clib-darwin-x64.dylib
       - name: Release
@@ -30,6 +31,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
+            polodb-darwin-x64
             libpolodb_clib-darwin-x64.a
             libpolodb_clib-darwin-x64.dylib
 
@@ -46,9 +48,10 @@ jobs:
       - name: Run Rust tests
         run: cargo test --release --verbose --workspace
       - name: Build Clib
-        run: cargo build --release --package polodb_clib
+        run: cargo build --release
       - name: Copy files
         run: |
+          cp target/release/polodb polodb_clib-linux-x64
           cp target/release/libpolodb_clib.a libpolodb_clib-linux-x64.a
           cp target/release/libpolodb_clib.so libpolodb_clib-linux-x64.so
       - name: Release
@@ -56,6 +59,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
+            polodb_clib-linux-x64
             libpolodb_clib-linux-x64.a
             libpolodb_clib-linux-x64.so
 
@@ -72,9 +76,10 @@ jobs:
       - name: Run Rust tests
         run: cargo test --release --verbose --workspace
       - name: Build Clib
-        run: cargo build --release --package polodb_clib
+        run: cargo build --release
       - name: Copy files
         run: |
+          Copy-Item "target/release/polodb.exe" -Destination "polodb-win32-x64.exe"
           Copy-Item "target/release/polodb_clib.lib" -Destination "polodb_clib-win32-x64.lib"
           Copy-Item "target/release/polodb_clib.dll" -Destination "polodb_clib-win32-x64.dll"
       - name: Release
@@ -82,5 +87,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
+            polodb-win32-x64.exe
             polodb_clib-win32-x64.lib
             polodb_clib-win32-x64.dll
