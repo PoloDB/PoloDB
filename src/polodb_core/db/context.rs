@@ -174,6 +174,7 @@ impl DbContext {
             });
         }
 
+        handle.commit_and_close_vm()?;
         Err(DbErr::CollectionNotFound(name.into()))
     }
 
@@ -454,7 +455,7 @@ impl DbContext {
     }
 
     fn insert_one(&mut self, col_name: &str, doc: &mut Document) -> DbResult<InsertOneResult> {
-        let col_meta = self.get_collection_meta_by_name_advanced(col_name, true)?
+        let col_meta = self.get_collection_meta_by_name_advanced_auto(col_name, true)?
             .expect("internal: meta must exist");
         self.insert_one_with_meta(&col_meta, doc)
     }
@@ -536,7 +537,7 @@ impl DbContext {
     }
 
     fn insert_many<T: Serialize>(&mut self, col_name: &str, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
-        let col_meta = self.get_collection_meta_by_name_advanced(col_name, true)?
+        let col_meta = self.get_collection_meta_by_name_advanced_auto(col_name, true)?
             .expect("internal: meta must exist");
         let mut inserted_ids: HashMap<usize, Bson> = HashMap::new();
         let mut counter: usize = 0;
@@ -913,10 +914,9 @@ fn dump_version(version: &[u8]) -> String {
 impl Drop for DbContext {
 
     fn drop(&mut self) {
-        if self.page_handler.transaction_state() != TransactionState::NoTrans {
+        if !self.page_handler.transaction_state().is_no_trans() {
             let _ = self.page_handler.only_rollback_journal();
         }
     }
 
 }
-

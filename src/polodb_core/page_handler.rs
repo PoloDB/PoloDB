@@ -40,7 +40,7 @@ impl DataPageAllocator {
     }
 
     fn try_allocate_data_page(&mut self, need_size: u32) -> Option<(u32, u32)> {
-        let t = self.stash.as_mut().unwrap();
+        let t = self.stash.as_mut().expect("no transaction");
         let mut index: i64 = -1;
         let mut result = None;
         for (i, (pid, remain_size)) in t.iter().enumerate() {
@@ -514,8 +514,8 @@ impl PageHandler {
     }
 
     #[inline]
-    pub fn transaction_state(&self) -> TransactionState {
-        self.transaction_state
+    pub fn transaction_state(&self) -> &TransactionState {
+        &self.transaction_state
     }
 
     pub fn only_rollback_journal(&mut self) -> DbResult<()> {
@@ -529,9 +529,13 @@ impl PageHandler {
     pub fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<AutoStartResult> {
         let mut result = AutoStartResult { auto_start: false };
         match self.transaction_state {
+            TransactionState::DbAuto(_) => {
+                self.transaction_state.acquire();
+            }
+
             TransactionState::NoTrans => {
                 self.start_transaction(ty)?;
-                self.transaction_state = TransactionState::DbAuto;
+                self.transaction_state = TransactionState::new_db_auto();
                 result.auto_start = true;
             }
 
@@ -548,7 +552,7 @@ impl PageHandler {
     }
 
     pub fn auto_rollback(&mut self) -> DbResult<()> {
-        if self.transaction_state == TransactionState::DbAuto {
+        if self.transaction_state.release() {
             self.rollback()?;
             self.transaction_state = TransactionState::NoTrans;
         }
@@ -556,7 +560,7 @@ impl PageHandler {
     }
 
     pub fn auto_commit(&mut self) -> DbResult<()> {
-        if self.transaction_state == TransactionState::DbAuto {
+        if self.transaction_state.release() {
             self.commit()?;
             self.transaction_state = TransactionState::NoTrans;
         }
