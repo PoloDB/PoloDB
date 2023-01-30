@@ -13,7 +13,7 @@ use crate::cursor::Cursor;
 use crate::page_handler::PageHandler;
 use crate::btree::{HEADER_SIZE, ITEM_SIZE};
 use crate::{TransactionType, DbResult, DbErr};
-use crate::error::{mk_field_name_type_unexpected, mk_unexpected_type_for_op};
+use crate::error::{CannotApplyOperationForTypes, mk_field_name_type_unexpected, mk_unexpected_type_for_op};
 use std::cell::Cell;
 
 const STACK_SIZE: usize = 256;
@@ -193,12 +193,12 @@ impl<'a> VM<'a> {
             (Bson::Double(a), Bson::Int64(b)) => Bson::Double(*a + *b as f64),
 
             _ => {
-                // TODO: better error message
-                let name = format!("{}", b);
-                return Err(mk_field_name_type_unexpected(
-                    key.into(),
-                    "number".into(),
-                    name));
+                return Err(DbErr::CannotApplyOperation(Box::new(CannotApplyOperationForTypes {
+                    op_name: "$inc".into(),
+                    field_name: key.into(),
+                    field_type: a.to_string(),
+                    target_type: b.to_string(),
+                })));
             }
         };
         Ok(val)
@@ -217,12 +217,12 @@ impl<'a> VM<'a> {
             (Bson::Double(a), Bson::Int64(b)) => Bson::Double(*a * *b as f64),
 
             _ => {
-                // TODO: better error message
-                let name = format!("{}", b);
-                return Err(mk_field_name_type_unexpected(
-                    key.into(),
-                    "number".into(),
-                    name));
+                return Err(DbErr::CannotApplyOperation(Box::new(CannotApplyOperationForTypes {
+                    op_name: "$mul".into(),
+                    field_name: key.into(),
+                    field_type: a.to_string(),
+                    target_type: b.to_string(),
+                })));
             }
         };
         Ok(val)

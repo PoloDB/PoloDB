@@ -10,6 +10,14 @@ pub struct FieldTypeUnexpectedStruct {
     pub actual_ty: String,
 }
 
+#[derive(Debug)]
+pub struct CannotApplyOperationForTypes {
+    pub op_name: String,
+    pub field_name: String,
+    pub field_type: String,
+    pub target_type: String,
+}
+
 impl fmt::Display for FieldTypeUnexpectedStruct {
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -147,6 +155,7 @@ pub enum DbErr {
     Multiple(Vec<DbErr>),
     VersionMismatch(Box<VersionMismatchError>),
     LockError,
+    CannotApplyOperation(Box<CannotApplyOperationForTypes>),
 }
 
 impl DbErr {
@@ -240,6 +249,9 @@ impl fmt::Display for DbErr {
                 writeln!(f, "actual: {}.{}.{}.{}", actual[0], actual[1], actual[2], actual[3])
             }
             DbErr::LockError => writeln!(f, "the mutex is poisoned"),
+            DbErr::CannotApplyOperation(msg) =>
+                write!(f, "can not operation {} for \"{}\" with types {} and {}",
+                       msg.op_name, msg.field_name, msg.field_type, msg.target_type),
         }
     }
 

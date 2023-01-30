@@ -246,5 +246,6 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::VersionMismatch(_) => 49,
         DbErr::BsonDeErr(_) => 51,
         DbErr::LockError => 52,
+        DbErr::CannotApplyOperation(_) => 53,
     }
 }
