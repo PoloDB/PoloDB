@@ -2,6 +2,7 @@
 # 3.3.3
 
 - Fix: insert_many transaction conflicts
+- Fix: `$inc` and `$mul` for `i32` type
 - bson ipc for Node.js
 
 # 3.3.1

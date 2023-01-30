@@ -180,6 +180,54 @@ impl<'a> VM<'a> {
         &self.program.static_values[index]
     }
 
+    fn inc_numeric(key: &str, a: &Bson, b: &Bson) -> DbResult<Bson> {
+        let val = match (a, b) {
+            (Bson::Int32(a), Bson::Int32(b)) => Bson::Int32(*a + *b),
+            (Bson::Int32(a), Bson::Int64(b)) => Bson::Int64(*a as i64 + *b),
+            (Bson::Int32(a), Bson::Double(b)) => Bson::Double(*a as f64 + *b),
+            (Bson::Int64(a), Bson::Int64(b)) => Bson::Int64(*a + *b),
+            (Bson::Int64(a), Bson::Int32(b)) => Bson::Int64(*a + *b as i64),
+            (Bson::Int64(a), Bson::Double(b)) => Bson::Double(*a as f64 + *b),
+            (Bson::Double(a), Bson::Double(b)) => Bson::Double(*a + *b),
+            (Bson::Double(a), Bson::Int32(b)) => Bson::Double(*a + *b as f64),
+            (Bson::Double(a), Bson::Int64(b)) => Bson::Double(*a + *b as f64),
+
+            _ => {
+                // TODO: better error message
+                let name = format!("{}", b);
+                return Err(mk_field_name_type_unexpected(
+                    key.into(),
+                    "number".into(),
+                    name));
+            }
+        };
+        Ok(val)
+    }
+
+    fn mul_numeric(key: &str, a: &Bson, b: &Bson) -> DbResult<Bson> {
+        let val = match (a, b) {
+            (Bson::Int32(a), Bson::Int32(b)) => Bson::Int32(*a * *b),
+            (Bson::Int32(a), Bson::Int64(b)) => Bson::Int64(*a as i64 * *b),
+            (Bson::Int32(a), Bson::Double(b)) => Bson::Double(*a as f64 * *b),
+            (Bson::Int64(a), Bson::Int64(b)) => Bson::Int64(*a * *b),
+            (Bson::Int64(a), Bson::Int32(b)) => Bson::Int64(*a * *b as i64),
+            (Bson::Int64(a), Bson::Double(b)) => Bson::Double(*a as f64 * *b),
+            (Bson::Double(a), Bson::Double(b)) => Bson::Double(*a * *b),
+            (Bson::Double(a), Bson::Int32(b)) => Bson::Double(*a * *b as f64),
+            (Bson::Double(a), Bson::Int64(b)) => Bson::Double(*a * *b as f64),
+
+            _ => {
+                // TODO: better error message
+                let name = format!("{}", b);
+                return Err(mk_field_name_type_unexpected(
+                    key.into(),
+                    "number".into(),
+                    name));
+            }
+        };
+        Ok(val)
+    }
+
     fn inc_field(&mut self, field_id: usize) -> DbResult<()> {
         let key = self.program.static_values[field_id].as_str().unwrap();
 
@@ -190,65 +238,14 @@ impl<'a> VM<'a> {
 
         let mut_doc = self.stack[doc_index].as_document_mut().unwrap();
 
-
         match mut_doc.get(key) {
             Some(Bson::Null) => {
                 return Err(DbErr::IncrementNullField);
             }
 
-            Some(Bson::Int64(original_int_value)) => {
-                let new_value = match value {
-                    Bson::Int64(inc_int_value) => {
-                        let new_value = *original_int_value + inc_int_value;
-                        Bson::Int64(new_value)
-                    }
-
-                    Bson::Double(inc_double_value) => {
-                        let new_value = *original_int_value as f64 + inc_double_value;
-                        Bson::Double(new_value)
-                    }
-
-                    _ => {
-                        let name = format!("{}", value);
-                        return Err(mk_field_name_type_unexpected(
-                            key.into(),
-                            "number".into(),
-                            name));
-                    }
-                };
-                mut_doc.insert::<String, Bson>(key.into(), new_value);
-            }
-
-            Some(Bson::Double(original_float_value)) => {
-                let new_value = match value {
-                    Bson::Int64(inc_int_value) => {
-                        let new_value = *original_float_value + inc_int_value as f64;
-                        Bson::Double(new_value)
-                    }
-
-                    Bson::Double(inc_float_value) => {
-                        let new_value = *original_float_value + inc_float_value;
-                        Bson::Double(new_value)
-                    }
-
-                    _ => {
-                        let name = format!("{}", value);
-                        return Err(mk_field_name_type_unexpected(
-                            key.into(),
-                            "number".into(),
-                            name));
-                    }
-
-                };
-                mut_doc.insert::<String, Bson>(key.into(), new_value);
-            }
-
-            Some(_ty) => {
-                let name = format!("{}", value);
-                return Err(mk_field_name_type_unexpected(
-                    key.into(),
-                    "number".into(),
-                    name));
+            Some(original_value) => {
+                let result = VM::inc_numeric(key, original_value, &value)?;
+                mut_doc.insert::<String, Bson>(key.into(), result);
             }
 
             None => {
@@ -270,59 +267,9 @@ impl<'a> VM<'a> {
         let mut_doc = self.stack[doc_index].as_document_mut().unwrap();
 
         match mut_doc.get(key) {
-            Some(Bson::Int64(original_int_value)) => {
-                let new_value = match value {
-                    Bson::Int64(inc_int_value) => {
-                        let new_value = *original_int_value * inc_int_value;
-                        Bson::Int64(new_value)
-                    }
-
-                    Bson::Double(inc_double_value) => {
-                        let new_value = *original_int_value as f64 * inc_double_value;
-                        Bson::Double(new_value)
-                    }
-
-                    _ => {
-                        let name = format!("{}", value);
-                        return Err(mk_field_name_type_unexpected(
-                            key.into(),
-                            "number".into(),
-                            name));
-                    }
-                };
+            Some(original_value) => {
+                let new_value = VM::mul_numeric(key, original_value, &value)?;
                 mut_doc.insert::<String, Bson>(key.into(), new_value);
-            }
-
-            Some(Bson::Double(original_float_value)) => {
-                let new_value = match value {
-                    Bson::Int64(inc_int_value) => {
-                        let new_value = *original_float_value * inc_int_value as f64;
-                        Bson::Double(new_value)
-                    }
-
-                    Bson::Double(inc_float_value) => {
-                        let new_value = *original_float_value * inc_float_value;
-                        Bson::Double(new_value)
-                    }
-
-                    _ => {
-                        let name = format!("{}", value);
-                        return Err(mk_field_name_type_unexpected(
-                            key.into(),
-                            "number".into(),
-                            name));
-                    }
-
-                };
-                mut_doc.insert::<String, Bson>(key.into(), new_value);
-            }
-
-            Some(_ty) => {
-                let name = format!("{}", value);
-                return Err(mk_field_name_type_unexpected(
-                    key.into(),
-                    "number".into(),
-                    name));
             }
 
             None => {
