@@ -446,11 +446,8 @@ impl DatabaseInner {
         let mut doc = bson::to_document(doc.borrow())?;
         let col_meta = self.get_collection_meta_by_name(col_name, true)?
             .expect("internal: meta must exist");
-        let _ = self.ctx.insert(col_meta.id, col_meta.meta_version, &mut doc)?;
-        let pkey = doc.get("_id").unwrap();
-        Ok(InsertOneResult {
-            inserted_id: pkey.clone(),
-        })
+        let result = self.ctx.insert_one_auto(col_meta.id, col_meta.meta_version, &mut doc)?;
+        Ok(result)
     }
 
     fn insert_many<T: Serialize>(&mut self, col_name: &str, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
@@ -468,7 +465,7 @@ impl DatabaseInner {
                     return Err(DbErr::from(err));
                 }
             };
-            match self.ctx.insert(col_meta.id, col_meta.meta_version, &mut doc) {
+            match self.ctx.insert_one_auto(col_meta.id, col_meta.meta_version, &mut doc) {
                 Ok(_) => (),
                 Err(err) => {
                     self.rollback().unwrap();
