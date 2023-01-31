@@ -112,7 +112,7 @@ impl BTreeNode {
         }
     }
 
-    fn from_raw_lossy(page: &RawPage, parent_pid: u32, item_size: u32, page_handler: &mut dyn Session) -> DbResult<BTreeNode> {
+    fn from_raw_lossy(page: &RawPage, parent_pid: u32, item_size: u32, session: &mut dyn Session) -> DbResult<BTreeNode> {
         debug_assert_ne!(page.page_id, 0, "page id is zero, parent pid: {}", parent_pid);
 
         let first_left_pid = page.get_u32(4);
@@ -130,7 +130,7 @@ impl BTreeNode {
 
             let right_pid = page.get_u32(offset);
 
-            let node_data_item = BTreeNode::parse_node_data_item(&page, offset, page_handler)?;
+            let node_data_item = BTreeNode::parse_node_data_item(&page, offset, session)?;
 
             content.push(node_data_item);
             indexes.push(right_pid);
@@ -148,7 +148,7 @@ impl BTreeNode {
     // Offset 2: items_len(2 bytes)
     // Offset 4: left_pid (4 bytes)
     // Offset 8: next_pid (4 bytes)
-    pub(crate) fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32, page_handler: &mut dyn Session) -> DbResult<BTreeNode> {
+    pub(crate) fn from_raw(page: &RawPage, parent_pid: u32, item_size: u32, session: &mut dyn Session) -> DbResult<BTreeNode> {
         let page_type = PageType::BTreeNode;
         let magic = page_type.to_magic();
         if page.data[0..2] != magic {
@@ -164,13 +164,13 @@ impl BTreeNode {
             return Err(err)
         }
 
-        BTreeNode::from_raw_lossy(page, parent_pid, item_size, page_handler)
+        BTreeNode::from_raw_lossy(page, parent_pid, item_size, session)
     }
 
-    fn parse_node_data_item(page: &RawPage, begin_offset: u32, page_handler: &mut dyn Session) -> DbResult<BTreeNodeDataItem> {
+    fn parse_node_data_item(page: &RawPage, begin_offset: u32, session: &mut dyn Session) -> DbResult<BTreeNodeDataItem> {
         let is_complex = page.get_u8(begin_offset + 4);
         if is_complex != 0 {
-            return BTreeNode::parse_complex_data_item(page, begin_offset, page_handler);
+            return BTreeNode::parse_complex_data_item(page, begin_offset, session);
         }
 
         let key_ty_int = page.get_u8(begin_offset + 4 + 1);  // use to parse data
@@ -255,9 +255,9 @@ impl BTreeNode {
         })
     }
 
-    fn parse_complex_data_item(page: &RawPage, begin_offset: u32, page_handler: &mut dyn Session) -> DbResult<BTreeNodeDataItem> {
+    fn parse_complex_data_item(page: &RawPage, begin_offset: u32, session: &mut dyn Session) -> DbResult<BTreeNodeDataItem> {
         let data_ticket = BTreeNode::parse_data_item_ticket(page, begin_offset);
-        let doc = page_handler.get_doc_from_ticket(&data_ticket)?.unwrap();
+        let doc = session.get_doc_from_ticket(&data_ticket)?.unwrap();
         let pkey = doc.get("_id").unwrap().into();
         Ok(BTreeNodeDataItem {
             key: pkey,

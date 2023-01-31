@@ -9,7 +9,6 @@ use super::db::DbResult;
 use crate::page::header_page_wrapper;
 use crate::error::DbErr;
 use crate::{ClientSession, TransactionType};
-use crate::page_handler::PageHandler;
 use crate::Config;
 use crate::vm::{SubProgram, VM, VmState};
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
@@ -23,7 +22,7 @@ use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeLi
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::backend::Backend;
 use crate::results::{InsertManyResult, InsertOneResult};
-use crate::session::Session;
+use crate::session::{Session, PageHandler};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::backend::file::FileBackend;
 #[cfg(not(target_arch = "wasm32"))]

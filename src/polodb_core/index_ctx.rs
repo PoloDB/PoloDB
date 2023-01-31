@@ -4,9 +4,8 @@ use bson::{Document, Bson, doc};
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::DbResult;
 use crate::error::{DbErr, mk_field_name_type_unexpected};
-use crate::page_handler::PageHandler;
 use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
-use crate::session::Session;
+use crate::session::{Session, PageHandler};
 
 pub(crate) struct IndexCtx {
     key_to_entry:   HashMap<String, IndexEntry>,
