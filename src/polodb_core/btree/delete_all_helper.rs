@@ -2,15 +2,15 @@ use crate::DbResult;
 use crate::meta_doc_helper::MetaDocEntry;
 use super::wrapper_base::cal_item_size;
 use crate::btree::BTreeNode;
-use crate::session::{Session, BaseSession};
+use crate::session::Session;
 
-pub(crate) fn delete_all(session: &mut BaseSession, collection_meta: MetaDocEntry) -> DbResult<()> {
-    let item_size = cal_item_size(session.page_size);
+pub(crate) fn delete_all(session: &dyn Session, collection_meta: MetaDocEntry) -> DbResult<()> {
+    let item_size = cal_item_size(session.page_size());
     crate::polo_log!("delete all: {}", collection_meta.doc_ref());
     delete_all_by_btree_pid(session, item_size, 0, collection_meta.root_pid())
 }
 
-fn delete_all_by_btree_pid(session: &mut dyn Session, item_size: u32, parent_id: u32, pid: u32) -> DbResult<()> {
+fn delete_all_by_btree_pid(session: &dyn Session, item_size: u32, parent_id: u32, pid: u32) -> DbResult<()> {
     crate::polo_log!("delete all: parent pid: {}, pid: {}", parent_id, pid);
     let page = session.pipeline_read_page(pid)?;
     let btree_node = BTreeNode::from_raw(&page, parent_id, item_size, session)?;

@@ -347,7 +347,7 @@ impl DbContext {
 
     #[inline]
     fn item_size(&self) -> u32 {
-        (self.base_session.page_size.get() - HEADER_SIZE) / ITEM_SIZE
+        (self.base_session.page_size().get() - HEADER_SIZE) / ITEM_SIZE
     }
 
     pub(crate) fn make_handle(&mut self, program: SubProgram) -> DbHandle {
@@ -639,7 +639,7 @@ impl DbContext {
         let mut meta_source = self.get_meta_source()?;
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
-        delete_all_helper::delete_all(&mut self.base_session, collection_meta)?;
+        delete_all_helper::delete_all(self.base_session.as_ref(), collection_meta)?;
 
         let mut btree_wrapper = BTreePageDeleteWrapper::new(
             self.base_session.as_mut(), meta_source.meta_pid);
@@ -719,7 +719,7 @@ impl DbContext {
                     data_ticket: new_ticket,
                 });
 
-                let mut page = RawPage::new(btree_node.pid, self.base_session.page_size);
+                let mut page = RawPage::new(btree_node.pid, self.base_session.page_size());
                 new_btree_node.to_raw(&mut page)?;
 
                 self.base_session.pipeline_write_page(&page)?;
@@ -857,7 +857,7 @@ impl DbContext {
         let meta_pid = first_page_wrapper.get_meta_page_id();
         let free_list_pid = first_page_wrapper.get_free_list_page_id();
         let free_list_size = first_page_wrapper.get_free_list_size();
-        let page_size = self.base_session.page_size;
+        let page_size = self.base_session.page_size();
 
         let journal_dump = self.base_session.dump_journal()?;
         let full_dump = FullDump {
@@ -875,7 +875,7 @@ impl DbContext {
 
     #[allow(dead_code)]
     fn dump_all_pages(&mut self, file_len: u64) -> DbResult<Vec<PageDump>> {
-        let page_count = file_len / (self.base_session.page_size.get() as u64);
+        let page_count = file_len / (self.base_session.page_size().get() as u64);
         let mut result = Vec::with_capacity(page_count as usize);
 
         for index in 0..page_count {

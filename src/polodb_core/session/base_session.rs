@@ -1,5 +1,5 @@
 use std::num::NonZeroU32;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use bson::Document;
 use std::cmp::min;
 use std::cell::Cell;
@@ -18,7 +18,114 @@ use super::pagecache::PageCache;
 
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
+#[derive(Clone)]
 pub(crate) struct BaseSession {
+    inner: Arc<Mutex<BaseSessionInner>>,
+}
+
+impl BaseSession {
+
+    pub fn new(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<BaseSession> {
+        let inner = BaseSessionInner::new(backend, page_size, config)?;
+        Ok(BaseSession {
+            inner: Arc::new(Mutex::new(inner)),
+        })
+    }
+
+    pub fn transaction_state(&self) -> TransactionState {
+        let session = self.inner.as_ref().lock().unwrap();
+        session.transaction_state().clone()
+    }
+
+    pub fn set_transaction_state(&mut self, state: TransactionState) {
+        let mut session = self.inner.as_ref().lock().unwrap();
+        session.set_transaction_state(state);
+    }
+
+    pub fn dump_journal(&mut self) -> DbResult<Box<JournalDump>> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.dump_journal()
+    }
+
+    pub fn only_rollback_journal(&mut self) -> DbResult<()> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.only_rollback_journal()
+    }
+}
+
+impl Session for BaseSession {
+    fn pipeline_read_page(&self, page_id: u32) -> DbResult<RawPage> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.pipeline_read_page(page_id)
+    }
+
+    fn pipeline_write_page(&self, page: &RawPage) -> DbResult<()> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.pipeline_write_page(page)
+    }
+
+    fn page_size(&self) -> NonZeroU32 {
+        let session = self.inner.as_ref().lock().unwrap();
+        session.page_size
+    }
+
+    fn store_doc(&self, doc: &Document) -> DbResult<DataTicket> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.store_doc(doc)
+    }
+
+    fn alloc_page_id(&self) -> DbResult<u32> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.alloc_page_id()
+    }
+
+    fn free_pages(&self, pages: &[u32]) -> DbResult<()> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.free_pages(pages)
+    }
+
+    fn free_data_ticket(&self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.free_data_ticket(data_ticket)
+    }
+
+    fn get_doc_from_ticket(&self, data_ticket: &DataTicket) -> DbResult<Option<Document>> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.get_doc_from_ticket(data_ticket)
+    }
+
+    fn auto_start_transaction(&self, ty: TransactionType) -> DbResult<AutoStartResult> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.auto_start_transaction(ty)
+    }
+
+    fn auto_commit(&self) -> DbResult<()> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.auto_commit()
+    }
+
+    fn auto_rollback(&self) -> DbResult<()> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.auto_rollback()
+    }
+
+    fn start_transaction(&self, ty: TransactionType) -> DbResult<()> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.start_transaction(ty)
+    }
+
+    fn commit(&self) -> DbResult<()> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.commit()
+    }
+
+    fn rollback(&self) -> DbResult<()> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.rollback()
+    }
+}
+
+struct BaseSessionInner {
     backend:             Box<dyn Backend + Send>,
 
     pub page_size:       NonZeroU32,
@@ -32,12 +139,12 @@ pub(crate) struct BaseSession {
 
 }
 
-impl BaseSession {
+impl BaseSessionInner {
 
-    pub fn new(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<BaseSession> {
+    fn new(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<BaseSessionInner> {
         let page_cache = PageCache::new_default(page_size);
 
-        Ok(BaseSession {
+        Ok(BaseSessionInner {
             backend,
 
             page_size,
@@ -325,7 +432,7 @@ impl BaseSession {
     }
 
     #[inline]
-    pub fn set_transaction_state(&mut self, state: TransactionState) {
+    fn set_transaction_state(&mut self, state: TransactionState) {
         self.transaction_state = state;
     }
 
@@ -334,15 +441,15 @@ impl BaseSession {
         &self.transaction_state
     }
 
-    pub fn only_rollback_journal(&mut self) -> DbResult<()> {
+    fn only_rollback_journal(&mut self) -> DbResult<()> {
         self.backend.rollback()
     }
 
-    pub fn dump_journal(&mut self) -> DbResult<Box<JournalDump>> {
+    fn dump_journal(&mut self) -> DbResult<Box<JournalDump>> {
         Err(DbErr::Busy)
     }
 
-    pub fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+    fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
         self.backend.start_transaction(ty)?;
         if ty == TransactionType::Write {
             self.data_page_allocator.start_transaction();
@@ -350,15 +457,11 @@ impl BaseSession {
         Ok(())
     }
 
-    pub fn commit(&mut self) -> DbResult<()> {
+    fn commit(&mut self) -> DbResult<()> {
         self.backend.commit()?;
         self.data_page_allocator.commit();
         Ok(())
     }
-
-}
-
-impl Session for BaseSession {
 
     // 1. read from page_cache, if none
     // 2. read from journal, if none
@@ -383,10 +486,6 @@ impl Session for BaseSession {
 
         self.page_cache.insert_to_cache(page);
         Ok(())
-    }
-
-    fn page_size(&self) -> NonZeroU32 {
-        self.page_size
     }
 
     fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
@@ -431,6 +530,11 @@ impl Session for BaseSession {
         }?;
 
         Ok(page_id)
+    }
+
+    #[inline]
+    fn free_page(&mut self, pid: u32) -> DbResult<()> {
+        self.free_pages(&[pid])
     }
 
     fn free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
@@ -561,11 +665,14 @@ mod test {
         let page_size = NonZeroU32::new(4096).unwrap();
         let config = Arc::new(Config::default());
         let backend = Box::new(FileBackend::open(db_path.as_ref(), page_size, config.clone()).unwrap());
-        let mut page_handler = BaseSession::new(
+        let base_session = BaseSession::new(
             backend, page_size, config).unwrap();
-        page_handler.start_transaction(TransactionType::Write).unwrap();
+        base_session.start_transaction(TransactionType::Write).unwrap();
 
-        let (free_pid, free_size) = page_handler.first_page_free_list_pid_and_size().unwrap();
+        let (free_pid, free_size) = {
+            let mut inner = base_session.inner.lock().unwrap();
+            inner.first_page_free_list_pid_and_size().unwrap()
+        };
         assert_eq!(free_pid, 0);
         assert_eq!(free_size, 0);
 
@@ -573,15 +680,18 @@ mod test {
         let mut freed_pid: HashSet<u32> = HashSet::new();
 
         for _ in 0..TEST_FREE_LIST_SIZE {
-            let pid = page_handler.alloc_page_id().unwrap();
+            let pid = base_session.alloc_page_id().unwrap();
             id.push(pid);
         }
 
         let mut counter = 0;
         for i in id {
-            page_handler.free_page(i).expect(&*format!("free page failed: {}", i));
+            base_session.free_page(i).expect(&*format!("free page failed: {}", i));
             freed_pid.insert(i);
-            let (free_pid, free_size) = page_handler.first_page_free_list_pid_and_size().unwrap();
+            let (free_pid, free_size) = {
+                let mut inner = base_session.inner.lock().unwrap();
+                inner.first_page_free_list_pid_and_size().unwrap()
+            };
             if free_pid == 0 {
                 assert_eq!(free_size as usize, counter + 1);
             }
@@ -591,7 +701,7 @@ mod test {
         let mut counter = 0;
         let mut recover = 0;
         for _ in 0..TEST_FREE_LIST_SIZE {
-            let pid = page_handler.alloc_page_id().unwrap();
+            let pid = base_session.alloc_page_id().unwrap();
             if freed_pid.contains(&pid) {
                 recover += 1;
                 freed_pid.remove(&pid);
@@ -599,7 +709,7 @@ mod test {
             counter += 1;
         }
 
-        page_handler.commit().unwrap();
+        base_session.commit().unwrap();
 
         let rate = recover as f64 / counter as f64;
         assert!(rate > 0.99, "rate {} too low, pages leak", rate);
