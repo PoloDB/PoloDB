@@ -6,6 +6,7 @@ use crate::DbResult;
 use crate::error::{DbErr, mk_field_name_type_unexpected};
 use crate::page_handler::PageHandler;
 use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
+use crate::session::Session;
 
 pub(crate) struct IndexCtx {
     key_to_entry:   HashMap<String, IndexEntry>,
@@ -130,7 +131,7 @@ impl IndexEntry {
         Ok(())
     }
 
-    fn handle_backward_item(&mut self, meta_doc: &mut Document, backward_item: &InsertBackwardItem, page_handler: &mut PageHandler) -> DbResult<()> {
+    fn handle_backward_item(&mut self, meta_doc: &mut Document, backward_item: &InsertBackwardItem, page_handler: &mut dyn Session) -> DbResult<()> {
         let new_root_id = page_handler.alloc_page_id()?;
 
         crate::polo_log!("index handle backward item, left_pid: {}, new_root_id: {}, right_pid: {}", self.root_pid, new_root_id, backward_item.right_pid);

@@ -23,7 +23,7 @@ use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeLi
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::backend::Backend;
 use crate::results::{InsertManyResult, InsertOneResult};
-use crate::session::{Session, DefaultSession};
+use crate::session::Session;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::backend::file::FileBackend;
 #[cfg(not(target_arch = "wasm32"))]
@@ -69,7 +69,7 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
 pub(crate) struct DbContext {
     page_handler: Box<PageHandler>,
     pub(crate)meta_version: u32,
-    session_map: hashbrown::HashMap<ObjectId, Box<dyn Session + Send>>,
+    _session_map: hashbrown::HashMap<ObjectId, Box<dyn Session + Send>>,
     #[allow(dead_code)]
     config:       Arc<Config>,
 }
@@ -112,7 +112,7 @@ impl DbContext {
             page_handler: Box::new(page_handler),
             // first_page,
             meta_version: 0,
-            session_map: hashbrown::HashMap::new(),
+            _session_map: hashbrown::HashMap::new(),
             config,
         };
 
@@ -125,8 +125,9 @@ impl DbContext {
     pub fn start_session(&mut self) -> DbResult<ClientSession> {
         let id = ObjectId::new();
 
-        let session = Box::new(DefaultSession::new(id));
-        self.session_map.insert(id, session);
+        // TODO
+        // let session = Box::new(DefaultSession::new(id));
+        // self.session_map.insert(id, session);
 
         Ok(ClientSession::new(id))
     }
@@ -306,7 +307,7 @@ impl DbContext {
         doc.insert::<String, Bson>(meta_doc_key::FLAGS.into(), bson!(0));
 
         let mut btree_wrapper = BTreePageInsertWrapper::new(
-            &mut self.page_handler, meta_source.meta_pid);
+            self.page_handler.as_mut(), meta_source.meta_pid);
 
         let insert_result = btree_wrapper.insert_item(&doc, false)?;
 
@@ -317,7 +318,7 @@ impl DbContext {
         if let Some(backward_item) = insert_result.backward_item {
             let new_root_id = self.page_handler.alloc_page_id()?;
 
-            let raw_page = backward_item.write_to_page(&mut self.page_handler,
+            let raw_page = backward_item.write_to_page(self.page_handler.as_mut(),
                                                        new_root_id, meta_source.meta_pid)?;
             self.page_handler.pipeline_write_page(&raw_page)?;
 
@@ -351,14 +352,14 @@ impl DbContext {
     }
 
     pub(crate) fn make_handle(&mut self, program: SubProgram) -> DbHandle {
-        let vm = VM::new(&mut self.page_handler, Box::new(program));
+        let vm = VM::new(self.page_handler.as_mut(), Box::new(program));
         DbHandle::new(vm)
     }
 
     pub(crate) fn find_collection_root_pid_by_id(&mut self, parent_pid: u32, root_pid: u32, id: u32) -> DbResult<MetaDocEntry> {
         let raw_page = self.page_handler.pipeline_read_page(root_pid)?;
         let item_size = self.item_size();
-        let btree_node = BTreeNode::from_raw(&raw_page, parent_pid, item_size, &mut self.page_handler)?;
+        let btree_node = BTreeNode::from_raw(&raw_page, parent_pid, item_size, self.page_handler.as_mut())?;
         let key = Bson::from(id);
         if btree_node.is_empty() {
             return Err(DbErr::CollectionIdNotFound(id));
@@ -510,7 +511,7 @@ impl DbContext {
         // insert index end
 
         let mut insert_wrapper = BTreePageInsertWrapper::new(
-            &mut self.page_handler, collection_meta.root_pid());
+            self.page_handler.as_mut(), collection_meta.root_pid());
         let insert_result: InsertResult = insert_wrapper.insert_item(doc, false)?;
 
         if let Some(backward_item) = &insert_result.backward_item {
@@ -619,7 +620,7 @@ impl DbContext {
         let subprogram = SubProgram::compile_update(&collection_meta, query, update,
                                                     true, is_many)?;
 
-        let mut vm = VM::new(&mut self.page_handler, Box::new(subprogram));
+        let mut vm = VM::new(self.page_handler.as_mut(), Box::new(subprogram));
         vm.execute()?;
 
         Ok(vm.r2 as usize)
@@ -642,7 +643,7 @@ impl DbContext {
         delete_all_helper::delete_all(&mut self.page_handler, collection_meta)?;
 
         let mut btree_wrapper = BTreePageDeleteWrapper::new(
-            &mut self.page_handler, meta_source.meta_pid);
+            self.page_handler.as_mut(), meta_source.meta_pid);
 
         let pkey = Bson::from(col_id);
         btree_wrapper.delete_item(&pkey)?;
@@ -706,7 +707,7 @@ impl DbContext {
 
     fn update_by_root_pid(&mut self, parent_pid: u32, root_pid: u32, key: &Bson, doc: &Document) -> DbResult<bool> {
         let page = self.page_handler.pipeline_read_page(root_pid)?;
-        let btree_node = BTreeNode::from_raw(&page, parent_pid, self.item_size(), &mut self.page_handler)?;
+        let btree_node = BTreeNode::from_raw(&page, parent_pid, self.item_size(), self.page_handler.as_mut())?;
 
         let search_result = btree_node.search(key)?;
         match search_result {
@@ -748,7 +749,7 @@ impl DbContext {
 
         crate::polo_log!("handle backward item, left_pid: {}, new_root_id: {}, right_pid: {}", left_pid, new_root_id, backward_item.right_pid);
 
-        let new_root_page = backward_item.write_to_page(&mut self.page_handler, new_root_id, left_pid)?;
+        let new_root_page = backward_item.write_to_page(self.page_handler.as_mut(), new_root_id, left_pid)?;
         self.page_handler.pipeline_write_page(&new_root_page)?;
 
         collection_meta.set_root_pid(new_root_id);
@@ -771,7 +772,7 @@ impl DbContext {
             0, meta_source.meta_pid, col_id)?;
 
         let mut delete_wrapper = BTreePageDeleteWrapper::new(
-            &mut self.page_handler,
+            self.page_handler.as_mut(),
             collection_meta.root_pid() as u32,
         );
         let result = delete_wrapper.delete_item(key)?;
@@ -794,7 +795,7 @@ impl DbContext {
         let meta_source = self.get_meta_source()?;
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
-        counter_helper::count(&mut self.page_handler, collection_meta)
+        counter_helper::count(self.page_handler.as_mut(), collection_meta)
     }
 
     pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Document>> {

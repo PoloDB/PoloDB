@@ -10,11 +10,11 @@ use std::cmp::Ordering;
 use bson::Bson;
 use op::DbOp;
 use crate::cursor::Cursor;
-use crate::page_handler::PageHandler;
 use crate::btree::{HEADER_SIZE, ITEM_SIZE};
 use crate::{TransactionType, DbResult, DbErr};
 use crate::error::{CannotApplyOperationForTypes, mk_field_name_type_unexpected, mk_unexpected_type_for_op};
 use std::cell::Cell;
+use crate::session::Session;
 
 const STACK_SIZE: usize = 256;
 
@@ -46,7 +46,7 @@ pub struct VM<'a> {
     r1:                  Option<Box<Cursor>>,
     pub(crate) r2:       i64,  // usually the counter
     r3:                  usize,
-    page_handler:        &'a mut PageHandler,
+    page_handler:        &'a mut dyn Session,
     stack:               Vec<Bson>,
     pub(crate) program:  Box<SubProgram>,
     rollback_on_drop:    bool,
@@ -68,7 +68,7 @@ fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> DbResult<bool> {
 
 impl<'a> VM<'a> {
 
-    pub(crate) fn new(page_handler: &mut PageHandler, program: Box<SubProgram>) -> VM {
+    pub(crate) fn new(page_handler: &mut dyn Session, program: Box<SubProgram>) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         VM {
@@ -87,7 +87,7 @@ impl<'a> VM<'a> {
 
     #[inline]
     fn item_size(&self) -> u32 {
-        (self.page_handler.page_size.get() - HEADER_SIZE) / ITEM_SIZE
+        (self.page_handler.page_size().get() - HEADER_SIZE) / ITEM_SIZE
     }
 
     fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {

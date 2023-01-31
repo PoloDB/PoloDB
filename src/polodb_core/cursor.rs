@@ -1,11 +1,11 @@
 use std::rc::Rc;
 use std::collections::LinkedList;
 use bson::{Document, Bson};
-use crate::page_handler::PageHandler;
 use crate::page::RawPage;
 use crate::btree::*;
 use crate::DbResult;
 use crate::data_ticket::DataTicket;
+use crate::session::Session;
 
 #[derive(Clone)]
 struct CursorItem {
@@ -43,7 +43,7 @@ impl Cursor {
         }
     }
 
-    pub fn reset(&mut self, page_handler: &mut PageHandler) -> DbResult<()> {
+    pub fn reset(&mut self, page_handler: &mut dyn Session) -> DbResult<()> {
         self.mk_initial_btree(page_handler, self.root_pid, self.item_size)?;
 
         if self.btree_stack.is_empty() {
@@ -55,7 +55,7 @@ impl Cursor {
         Ok(())
     }
 
-    pub fn reset_by_pkey(&mut self, page_handler: &mut PageHandler, pkey: &Bson) -> DbResult<bool> {
+    pub fn reset_by_pkey(&mut self, page_handler: &mut dyn Session, pkey: &Bson) -> DbResult<bool> {
         self.btree_stack.clear();
 
         let mut current_pid = self.root_pid;
@@ -104,7 +104,7 @@ impl Cursor {
         Ok(false)
     }
 
-    fn mk_initial_btree(&mut self, page_handler: &mut PageHandler, root_page_id: u32, item_size: u32) -> DbResult<()> {
+    fn mk_initial_btree(&mut self, page_handler: &mut dyn Session, root_page_id: u32, item_size: u32) -> DbResult<()> {
         self.btree_stack.clear();
 
         let btree_page = page_handler.pipeline_read_page(root_page_id)?;
@@ -124,7 +124,7 @@ impl Cursor {
         Ok(())
     }
 
-    fn push_all_left_nodes(&mut self, page_handler: &mut PageHandler) -> DbResult<()> {
+    fn push_all_left_nodes(&mut self, page_handler: &mut dyn Session) -> DbResult<()> {
         if self.btree_stack.is_empty() {
             return Ok(());
         }
@@ -165,7 +165,7 @@ impl Cursor {
         Some(ticket)
     }
 
-    pub fn update_current(&mut self, page_handler: &mut PageHandler, doc: &Document) -> DbResult<()> {
+    pub fn update_current(&mut self, page_handler: &mut dyn Session, doc: &Document) -> DbResult<()> {
         let top = self.btree_stack.pop_back().unwrap();
 
         page_handler.free_data_ticket(&top.node.content[top.index].data_ticket)?;
@@ -184,10 +184,10 @@ impl Cursor {
         self.sync_top_btree_node(page_handler)
     }
 
-    fn sync_top_btree_node(&mut self, page_handler: &mut PageHandler) -> DbResult<()> {
+    fn sync_top_btree_node(&mut self, page_handler: &mut dyn Session) -> DbResult<()> {
         let top = self.btree_stack.back().unwrap();
 
-        let mut page = RawPage::new(top.node.pid, page_handler.page_size);
+        let mut page = RawPage::new(top.node.pid, page_handler.page_size());
         top.node.to_raw(&mut page)?;
 
         page_handler.pipeline_write_page(&page)
@@ -198,7 +198,7 @@ impl Cursor {
         !self.btree_stack.is_empty()
     }
 
-    pub fn next(&mut self, page_handler: &mut PageHandler) -> DbResult<Option<Document>> {
+    pub fn next(&mut self, page_handler: &mut dyn Session) -> DbResult<Option<Document>> {
         if self.btree_stack.is_empty() {
             return Ok(None);
         }
