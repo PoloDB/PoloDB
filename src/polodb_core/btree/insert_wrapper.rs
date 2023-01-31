@@ -1,11 +1,11 @@
 use bson::{Document, Bson};
 use crate::DbResult;
 use crate::page::RawPage;
-use crate::page_handler::PageHandler;
 use super::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;
 use crate::error::DbErr;
 use crate::data_ticket::DataTicket;
+use crate::session::Session;
 
 pub(crate) struct InsertBackwardItem {
     pub content: BTreeNodeDataItem,
@@ -19,8 +19,8 @@ pub(crate) struct InsertResult {
 
 impl InsertBackwardItem {
 
-    pub(crate) fn write_to_page(&self, page_handler: &mut PageHandler, new_page_id: u32, left_pid: u32) -> DbResult<RawPage> {
-        let page_size = page_handler.page_size;
+    pub(crate) fn write_to_page(&self, page_handler: &mut dyn Session, new_page_id: u32, left_pid: u32) -> DbResult<RawPage> {
+        let page_size = page_handler.page_size();
         let mut result = RawPage::new(new_page_id, page_size);
 
         let content = vec![self.content.clone()];
@@ -83,7 +83,7 @@ pub struct BTreePageInsertWrapper<'a>(BTreePageWrapperBase<'a>);
 
 impl<'a> BTreePageInsertWrapper<'a> {
 
-    pub(crate) fn new(page_handler: &mut PageHandler, root_page_id: u32) -> BTreePageInsertWrapper {
+    pub(crate) fn new(page_handler: &mut dyn Session, root_page_id: u32) -> BTreePageInsertWrapper {
         let base = BTreePageWrapperBase::new(page_handler, root_page_id);
         BTreePageInsertWrapper(base)
     }

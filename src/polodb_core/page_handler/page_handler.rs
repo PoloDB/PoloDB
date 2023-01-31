@@ -12,6 +12,7 @@ use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::page::large_data_page_wrapper::LargeDataPageWrapper;
 use crate::page::{FreeListDataWrapper, header_page_wrapper, RawPage};
 use crate::page_handler::data_page_allocator::DataPageAllocator;
+use crate::session::Session;
 use crate::transaction::TransactionState;
 use super::pagecache::PageCache;
 
@@ -83,51 +84,10 @@ impl PageHandler {
         self.data_page_allocator.add_tuple(wrapper.pid(), remain_size);
     }
 
-    // 1. write to journal, if success
-    //    - 2. checkpoint journal, if full
-    // 3. write to page_cache
-    pub fn pipeline_write_page(&mut self, page: &RawPage) -> DbResult<()> {
-        self.backend.write_page(page)?;
-
-        self.page_cache.insert_to_cache(page);
-        Ok(())
-    }
-
     #[inline]
     fn pipeline_write_null_page(&mut self, page_id: u32) -> DbResult<()> {
         let page = RawPage::new(page_id, self.page_size);
         self.pipeline_write_page(&page)
-    }
-
-    // 1. read from page_cache, if none
-    // 2. read from journal, if none
-    // 3. read from main db
-    pub fn pipeline_read_page(&mut self, page_id: u32) -> DbResult<RawPage> {
-        if let Some(page) = self.page_cache.get_from_cache(page_id) {
-            return Ok(page);
-        }
-
-        let result = self.backend.read_page(page_id)?;
-
-        self.page_cache.insert_to_cache(&result);
-
-        Ok(result)
-    }
-
-    pub(crate) fn get_doc_from_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Option<Document>> {
-        if data_ticket.is_large_data() {
-            return self.get_doc_from_large_page(data_ticket.pid);
-        }
-        let page = self.pipeline_read_page(data_ticket.pid)?;
-        let wrapper = DataPageWrapper::from_raw(page);
-        let bytes = wrapper.get(data_ticket.index as u32);
-        if let Some(bytes) = bytes {
-            let mut my_ref: &[u8] = bytes;
-            let bytes: &mut &[u8] = &mut my_ref;
-            let doc = crate::doc_serializer::deserialize(bytes)?;
-            return Ok(Some(doc));
-        }
-        Ok(None)
     }
 
     fn get_doc_from_large_page(&mut self, pid: u32) -> DbResult<Option<Document>> {
@@ -145,32 +105,6 @@ impl PageHandler {
         let mut my_ref: &[u8] = bytes.as_ref();
         let doc = crate::doc_serializer::deserialize(&mut my_ref)?;
         Ok(Some(doc))
-    }
-
-    pub(crate) fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
-        let mut bytes = Vec::with_capacity(512);
-        crate::doc_serializer::serialize(doc, &mut bytes)?;
-
-        if bytes.len() >= self.page_size.get() as usize / 2 {
-            return self.store_large_data(&bytes);
-        }
-
-        let mut wrapper = self.distribute_data_page_wrapper(bytes.len() as u32)?;
-        let index = wrapper.bar_len() as u16;
-        let pid = wrapper.pid();
-        if (wrapper.remain_size() as usize) < bytes.len() {
-            panic!("page size not enough: {}, bytes: {}", wrapper.remain_size(), bytes.len());
-        }
-        wrapper.put(&bytes);
-
-        self.pipeline_write_page(wrapper.borrow_page())?;
-
-        self.return_data_page_wrapper(wrapper);
-
-        Ok(DataTicket {
-            pid,
-            index,
-        })
     }
 
     fn store_large_data(&mut self, bytes: &Vec<u8>) -> DbResult<DataTicket> {
@@ -201,25 +135,6 @@ impl PageHandler {
         Ok(DataTicket::large_ticket(first_pid))
     }
 
-    pub(crate) fn free_data_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> {
-        crate::polo_log!("free data ticket: {}", data_ticket);
-
-        if data_ticket.is_large_data() {
-            return self.free_large_data_page(data_ticket.pid);
-        }
-
-        let page = self.pipeline_read_page(data_ticket.pid)?;
-        let mut wrapper = DataPageWrapper::from_raw(page);
-        let bytes = wrapper.get(data_ticket.index as u32).unwrap().to_vec();
-        wrapper.remove(data_ticket.index as u32);
-        if wrapper.is_empty() {
-            self.free_page(data_ticket.pid)?;
-        }
-        let page = wrapper.consume_page();
-        self.pipeline_write_page(&page)?;
-        Ok(bytes)
-    }
-
     fn free_large_data_page(&mut self, pid: u32) -> DbResult<Vec<u8>> {
         let mut result: Vec<u8> = Vec::with_capacity(self.page_size.get() as usize);
         let mut free_pid: Vec<u32> = Vec::new();
@@ -238,11 +153,6 @@ impl PageHandler {
         Ok(result)
     }
 
-    #[inline]
-    pub fn free_page(&mut self, pid: u32) -> DbResult<()> {
-        self.free_pages(&[pid])
-    }
-
     // for test
     #[allow(dead_code)]
     fn first_page_free_list_pid_and_size(&mut self) -> DbResult<(u32, u32)> {
@@ -252,16 +162,6 @@ impl PageHandler {
         let pid = first_page_wrapper.get_free_list_page_id();
         let size = first_page_wrapper.get_free_list_size();
         Ok((pid, size))
-    }
-
-    pub fn free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
-        self.internal_free_pages(pages)?;
-
-        for pid in pages {
-            self.data_page_allocator.free_page(*pid);
-        }
-
-        Ok(())
     }
 
     fn internal_free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
@@ -394,24 +294,6 @@ impl PageHandler {
         self.pipeline_read_page(0)
     }
 
-    pub fn alloc_page_id(&mut self) -> DbResult<u32> {
-        let page_id = match self.try_get_free_page_id()? {
-            Some(page_id) =>  {
-                self.pipeline_write_null_page(page_id)?;
-
-                crate::polo_log!("get new page_id from free list: {}", page_id);
-
-                Ok(page_id)
-            }
-
-            None =>  {
-                self.actual_alloc_page_id()
-            }
-        }?;
-
-        Ok(page_id)
-    }
-
     fn actual_alloc_page_id(&mut self) -> DbResult<u32> {
         let first_page = self.get_first_page()?;
         let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
@@ -460,7 +342,143 @@ impl PageHandler {
         Err(DbErr::Busy)
     }
 
-    pub fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<AutoStartResult> {
+    pub fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+        self.backend.start_transaction(ty)?;
+        if ty == TransactionType::Write {
+            self.data_page_allocator.start_transaction();
+        }
+        Ok(())
+    }
+
+    pub fn commit(&mut self) -> DbResult<()> {
+        self.backend.commit()?;
+        self.data_page_allocator.commit();
+        Ok(())
+    }
+
+}
+
+impl Session for PageHandler {
+
+    // 1. read from page_cache, if none
+    // 2. read from journal, if none
+    // 3. read from main db
+    fn pipeline_read_page(&mut self, page_id: u32) -> DbResult<RawPage> {
+        if let Some(page) = self.page_cache.get_from_cache(page_id) {
+            return Ok(page);
+        }
+
+        let result = self.backend.read_page(page_id)?;
+
+        self.page_cache.insert_to_cache(&result);
+
+        Ok(result)
+    }
+
+    // 1. write to journal, if success
+    //    - 2. checkpoint journal, if full
+    // 3. write to page_cache
+    fn pipeline_write_page(&mut self, page: &RawPage) -> DbResult<()> {
+        self.backend.write_page(page)?;
+
+        self.page_cache.insert_to_cache(page);
+        Ok(())
+    }
+
+    fn page_size(&self) -> NonZeroU32 {
+        self.page_size
+    }
+
+    fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
+        let mut bytes = Vec::with_capacity(512);
+        crate::doc_serializer::serialize(doc, &mut bytes)?;
+
+        if bytes.len() >= self.page_size.get() as usize / 2 {
+            return self.store_large_data(&bytes);
+        }
+
+        let mut wrapper = self.distribute_data_page_wrapper(bytes.len() as u32)?;
+        let index = wrapper.bar_len() as u16;
+        let pid = wrapper.pid();
+        if (wrapper.remain_size() as usize) < bytes.len() {
+            panic!("page size not enough: {}, bytes: {}", wrapper.remain_size(), bytes.len());
+        }
+        wrapper.put(&bytes);
+
+        self.pipeline_write_page(wrapper.borrow_page())?;
+
+        self.return_data_page_wrapper(wrapper);
+
+        Ok(DataTicket {
+            pid,
+            index,
+        })
+    }
+
+    fn alloc_page_id(&mut self) -> DbResult<u32> {
+        let page_id = match self.try_get_free_page_id()? {
+            Some(page_id) =>  {
+                self.pipeline_write_null_page(page_id)?;
+
+                crate::polo_log!("get new page_id from free list: {}", page_id);
+
+                Ok(page_id)
+            }
+
+            None =>  {
+                self.actual_alloc_page_id()
+            }
+        }?;
+
+        Ok(page_id)
+    }
+
+    fn free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
+        self.internal_free_pages(pages)?;
+
+        for pid in pages {
+            self.data_page_allocator.free_page(*pid);
+        }
+
+        Ok(())
+    }
+
+    fn free_data_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> {
+        crate::polo_log!("free data ticket: {}", data_ticket);
+
+        if data_ticket.is_large_data() {
+            return self.free_large_data_page(data_ticket.pid);
+        }
+
+        let page = self.pipeline_read_page(data_ticket.pid)?;
+        let mut wrapper = DataPageWrapper::from_raw(page);
+        let bytes = wrapper.get(data_ticket.index as u32).unwrap().to_vec();
+        wrapper.remove(data_ticket.index as u32);
+        if wrapper.is_empty() {
+            self.free_page(data_ticket.pid)?;
+        }
+        let page = wrapper.consume_page();
+        self.pipeline_write_page(&page)?;
+        Ok(bytes)
+    }
+
+    fn get_doc_from_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Option<Document>> {
+        if data_ticket.is_large_data() {
+            return self.get_doc_from_large_page(data_ticket.pid);
+        }
+        let page = self.pipeline_read_page(data_ticket.pid)?;
+        let wrapper = DataPageWrapper::from_raw(page);
+        let bytes = wrapper.get(data_ticket.index as u32);
+        if let Some(bytes) = bytes {
+            let mut my_ref: &[u8] = bytes;
+            let bytes: &mut &[u8] = &mut my_ref;
+            let doc = crate::doc_serializer::deserialize(bytes)?;
+            return Ok(Some(doc));
+        }
+        Ok(None)
+    }
+
+    fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<AutoStartResult> {
         let mut result = AutoStartResult { auto_start: false };
         match self.transaction_state {
             TransactionState::DbAuto(_) => {
@@ -485,15 +503,7 @@ impl PageHandler {
         Ok(result)
     }
 
-    pub fn auto_rollback(&mut self) -> DbResult<()> {
-        if self.transaction_state.release() {
-            self.rollback()?;
-            self.transaction_state = TransactionState::NoTrans;
-        }
-        Ok(())
-    }
-
-    pub fn auto_commit(&mut self) -> DbResult<()> {
+    fn auto_commit(&mut self) -> DbResult<()> {
         if self.transaction_state.release() {
             self.commit()?;
             self.transaction_state = TransactionState::NoTrans;
@@ -501,30 +511,23 @@ impl PageHandler {
         Ok(())
     }
 
-    pub fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        self.backend.start_transaction(ty)?;
-        if ty == TransactionType::Write {
-            self.data_page_allocator.start_transaction();
+    fn auto_rollback(&mut self) -> DbResult<()> {
+        if self.transaction_state.release() {
+            self.rollback()?;
+            self.transaction_state = TransactionState::NoTrans;
         }
-        Ok(())
-    }
-
-    pub fn commit(&mut self) -> DbResult<()> {
-        self.backend.commit()?;
-        self.data_page_allocator.commit();
         Ok(())
     }
 
     // after the rollback
     // all the cache are wrong
     // cleat it
-    pub fn rollback(&mut self) -> DbResult<()> {
+    fn rollback(&mut self) -> DbResult<()> {
         self.backend.rollback()?;
         self.data_page_allocator.rollback();
         self.page_cache = Box::new(PageCache::new_default(self.page_size));
         Ok(())
     }
-
 }
 
 #[cfg(test)]
@@ -536,6 +539,7 @@ mod test {
     use crate::backend::file::FileBackend;
     use crate::{Config, TransactionType};
     use crate::page_handler::page_handler::PageHandler;
+    use crate::session::Session;
 
     const TEST_FREE_LIST_SIZE: usize = 10000;
     const DB_NAME: &str = "test-page-handler";

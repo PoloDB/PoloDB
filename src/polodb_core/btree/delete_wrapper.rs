@@ -7,8 +7,8 @@ use super::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use super::wrapper_base::BTreePageWrapperBase;
 use crate::DbResult;
 use crate::page::RawPage;
-use crate::page_handler::PageHandler;
 use crate::data_ticket::DataTicket;
+use crate::session::Session;
 
 struct DeleteBackwardItem {
     is_leaf:        bool,
@@ -22,9 +22,9 @@ pub struct BTreePageDeleteWrapper<'a> {
     cache_btree:    HashMap<u32, Box<BTreeNode>>,
 }
 
-impl<'a> BTreePageDeleteWrapper<'a> {
+impl<'a> BTreePageDeleteWrapper<'a>  {
 
-    pub(crate) fn new(page_handler: &mut PageHandler, root_page_id: u32) -> BTreePageDeleteWrapper {
+    pub(crate) fn new(page_handler: &mut dyn Session, root_page_id: u32) -> BTreePageDeleteWrapper {
         let base = BTreePageWrapperBase::new(page_handler, root_page_id);
         BTreePageDeleteWrapper {
             base,
@@ -41,7 +41,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
 
     // #[inline]
     fn write_btree(&mut self, node: BTreeNode) {
-        let mut page = RawPage::new(node.pid, self.base.page_handler.page_size);
+        let mut page = RawPage::new(node.pid, self.base.page_handler.page_size());
         node.to_raw(&mut page).unwrap();
         self.base.page_handler.pipeline_write_page(&page).unwrap();
     }
@@ -49,7 +49,7 @@ impl<'a> BTreePageDeleteWrapper<'a> {
     pub fn flush_pages(&mut self) -> DbResult<()> {
         for pid in &self.dirty_set {
             let node = self.cache_btree.remove(pid).unwrap();
-            let mut page = RawPage::new(node.pid, self.base.page_handler.page_size);
+            let mut page = RawPage::new(node.pid, self.base.page_handler.page_size());
             node.to_raw(&mut page)?;
 
             self.base.page_handler.pipeline_write_page(&page)?;
