@@ -19,8 +19,8 @@ pub(crate) struct InsertResult {
 
 impl InsertBackwardItem {
 
-    pub(crate) fn write_to_page(&self, page_handler: &mut dyn Session, new_page_id: u32, left_pid: u32) -> DbResult<RawPage> {
-        let page_size = page_handler.page_size();
+    pub(crate) fn write_to_page(&self, session: &mut dyn Session, new_page_id: u32, left_pid: u32) -> DbResult<RawPage> {
+        let page_size = session.page_size();
         let mut result = RawPage::new(new_page_id, page_size);
 
         let content = vec![self.content.clone()];
@@ -96,7 +96,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
 
     #[inline]
     fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> {
-        self.0.page_handler.store_doc(doc)
+        self.0.session.store_doc(doc)
     }
 
     fn doc_to_node_data_item(&mut self, doc: &Document) -> DbResult<BTreeNodeDataItem> {
@@ -194,7 +194,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
             }
         };
 
-        let right_page_id = self.0.page_handler.alloc_page_id()?;
+        let right_page_id = self.0.session.alloc_page_id()?;
         // alloc new page to store right
         let right = {
             let content = btree_node.content[(middle_index + 1)..].to_vec();

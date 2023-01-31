@@ -24,8 +24,8 @@ pub struct BTreePageDeleteWrapper<'a> {
 
 impl<'a> BTreePageDeleteWrapper<'a>  {
 
-    pub(crate) fn new(page_handler: &mut dyn Session, root_page_id: u32) -> BTreePageDeleteWrapper {
-        let base = BTreePageWrapperBase::new(page_handler, root_page_id);
+    pub(crate) fn new(session: &mut dyn Session, root_page_id: u32) -> BTreePageDeleteWrapper {
+        let base = BTreePageWrapperBase::new(session, root_page_id);
         BTreePageDeleteWrapper {
             base,
             dirty_set: BTreeSet::new(),
@@ -41,18 +41,18 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
 
     // #[inline]
     fn write_btree(&mut self, node: BTreeNode) {
-        let mut page = RawPage::new(node.pid, self.base.page_handler.page_size());
+        let mut page = RawPage::new(node.pid, self.base.session.page_size());
         node.to_raw(&mut page).unwrap();
-        self.base.page_handler.pipeline_write_page(&page).unwrap();
+        self.base.session.pipeline_write_page(&page).unwrap();
     }
 
     pub fn flush_pages(&mut self) -> DbResult<()> {
         for pid in &self.dirty_set {
             let node = self.cache_btree.remove(pid).unwrap();
-            let mut page = RawPage::new(node.pid, self.base.page_handler.page_size());
+            let mut page = RawPage::new(node.pid, self.base.session.page_size());
             node.to_raw(&mut page)?;
 
-            self.base.page_handler.pipeline_write_page(&page)?;
+            self.base.session.pipeline_write_page(&page)?;
         }
 
         self.dirty_set.clear();
@@ -226,7 +226,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         new_content.extend_from_slice(&right_node.content);
         new_indexes.extend_from_slice(&right_node.indexes);
 
-        self.base.page_handler.free_pages(&[left_pid, right_pid])?;
+        self.base.session.free_pages(&[left_pid, right_pid])?;
 
         // move
         let new_node: Box<BTreeNode> = Box::new(parent_btree_node.clone_with_contents(new_content, new_indexes));
@@ -352,7 +352,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
 
             debug_assert_eq!(current_btree_node.indexes[node_idx], subtree_node.pid);
 
-            self.base.page_handler.free_page(subtree_node.pid)?;
+            self.base.session.free_page(subtree_node.pid)?;
 
             self.write_btree(*left_node);
         } else {  // right
@@ -368,7 +368,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
             current_btree_node.content.remove(node_idx);
             current_btree_node.indexes.remove(node_idx + 1);
 
-            self.base.page_handler.free_page(right_node.pid)?;
+            self.base.session.free_page(right_node.pid)?;
 
             self.write_btree(*subtree_node);
         }
@@ -377,7 +377,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
     }
 
     fn erase_item(&mut self, item: &DataTicket) -> DbResult<Rc<Document>> {
-        let bytes = self.base.page_handler.free_data_ticket(&item)?;
+        let bytes = self.base.session.free_data_ticket(&item)?;
         debug_assert!(!bytes.is_empty(), "bytes is empty");
         let mut my_ref: &[u8] = bytes.as_ref();
         let doc = crate::doc_serializer::deserialize(&mut my_ref)?;

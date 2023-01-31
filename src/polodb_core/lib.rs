@@ -88,7 +88,6 @@ mod config;
 mod macros;
 mod backend;
 mod transaction;
-mod page_handler;
 mod doc_serializer;
 mod bson_utils;
 pub mod results;

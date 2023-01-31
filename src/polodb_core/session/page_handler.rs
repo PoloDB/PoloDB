@@ -11,9 +11,9 @@ use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::page::large_data_page_wrapper::LargeDataPageWrapper;
 use crate::page::{FreeListDataWrapper, header_page_wrapper, RawPage};
-use crate::page_handler::data_page_allocator::DataPageAllocator;
-use crate::session::Session;
 use crate::transaction::TransactionState;
+use super::session::Session;
+use super::data_page_allocator::DataPageAllocator;
 use super::pagecache::PageCache;
 
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
@@ -538,7 +538,7 @@ mod test {
     use std::sync::Arc;
     use crate::backend::file::FileBackend;
     use crate::{Config, TransactionType};
-    use crate::page_handler::page_handler::PageHandler;
+    use crate::session::page_handler::PageHandler;
     use crate::session::Session;
 
     const TEST_FREE_LIST_SIZE: usize = 10000;
