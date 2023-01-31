@@ -5,7 +5,7 @@ use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::DbResult;
 use crate::error::{DbErr, mk_field_name_type_unexpected};
 use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
-use crate::session::{Session, PageHandler};
+use crate::session::{Session, BaseSession};
 
 pub(crate) struct IndexCtx {
     key_to_entry:   HashMap<String, IndexEntry>,
@@ -50,7 +50,7 @@ impl IndexCtx {
         collection_meta.set_indexes(new_back_doc);
     }
 
-    pub fn insert_index_by_content(&mut self, doc: &Document, primary_key: &Bson, is_ctx_changed: &mut bool, page_handler: &mut PageHandler) -> DbResult<()> {
+    pub fn insert_index_by_content(&mut self, doc: &Document, primary_key: &Bson, is_ctx_changed: &mut bool, page_handler: &mut BaseSession) -> DbResult<()> {
         for (key, entry) in &mut self.key_to_entry {
             if let Some(value) = doc.get(key) {
                 // index exist, and value exist
@@ -61,7 +61,7 @@ impl IndexCtx {
         Ok(())
     }
 
-    pub fn delete_index_by_content(&self, doc: &Document, page_handler: &mut PageHandler) -> DbResult<()> {
+    pub fn delete_index_by_content(&self, doc: &Document, page_handler: &mut BaseSession) -> DbResult<()> {
         for (key, entry) in &self.key_to_entry {
             if let Some(value) = doc.get(key) {
                 entry.remove_index(value, page_handler)?;
@@ -109,7 +109,7 @@ impl IndexEntry {
     fn insert_index(
         &mut self, data_value: &Bson, primary_key: Bson,
         is_changed: &mut bool,
-        page_handler: &mut PageHandler) -> DbResult<()> {
+        page_handler: &mut BaseSession) -> DbResult<()> {
 
         if !crate::bson_utils::is_valid_key_type(data_value) {
             let name = format!("{}", data_value);
@@ -151,7 +151,7 @@ impl IndexEntry {
         }
     }
 
-    fn remove_index(&self, data_value: &Bson, page_handler: &mut PageHandler) -> DbResult<()> {
+    fn remove_index(&self, data_value: &Bson, page_handler: &mut BaseSession) -> DbResult<()> {
         let mut delete_wrapper = BTreePageDeleteWrapper::new(page_handler, self.root_pid);
         let _result = delete_wrapper.delete_item(data_value)?;
         Ok(())

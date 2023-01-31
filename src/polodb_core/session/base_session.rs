@@ -18,7 +18,7 @@ use super::pagecache::PageCache;
 
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
-pub(crate) struct PageHandler {
+pub(crate) struct BaseSession {
     backend:             Box<dyn Backend + Send>,
 
     pub page_size:       NonZeroU32,
@@ -32,12 +32,12 @@ pub(crate) struct PageHandler {
 
 }
 
-impl PageHandler {
+impl BaseSession {
 
-    pub fn new(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<PageHandler> {
+    pub fn new(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<BaseSession> {
         let page_cache = PageCache::new_default(page_size);
 
-        Ok(PageHandler {
+        Ok(BaseSession {
             backend,
 
             page_size,
@@ -358,7 +358,7 @@ impl PageHandler {
 
 }
 
-impl Session for PageHandler {
+impl Session for BaseSession {
 
     // 1. read from page_cache, if none
     // 2. read from journal, if none
@@ -538,7 +538,7 @@ mod test {
     use std::sync::Arc;
     use crate::backend::file::FileBackend;
     use crate::{Config, TransactionType};
-    use crate::session::page_handler::PageHandler;
+    use crate::session::base_session::BaseSession;
     use crate::session::Session;
 
     const TEST_FREE_LIST_SIZE: usize = 10000;
@@ -561,7 +561,7 @@ mod test {
         let page_size = NonZeroU32::new(4096).unwrap();
         let config = Arc::new(Config::default());
         let backend = Box::new(FileBackend::open(db_path.as_ref(), page_size, config.clone()).unwrap());
-        let mut page_handler = PageHandler::new(
+        let mut page_handler = BaseSession::new(
             backend, page_size, config).unwrap();
         page_handler.start_transaction(TransactionType::Write).unwrap();
 

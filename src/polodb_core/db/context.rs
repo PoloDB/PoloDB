@@ -22,7 +22,7 @@ use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeLi
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::backend::Backend;
 use crate::results::{InsertManyResult, InsertOneResult};
-use crate::session::{Session, PageHandler};
+use crate::session::{Session, BaseSession};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::backend::file::FileBackend;
 #[cfg(not(target_arch = "wasm32"))]
@@ -44,12 +44,12 @@ macro_rules! try_db_op {
     ($self: tt, $action: expr) => {
         match $action {
             Ok(ret) => {
-                $self.page_handler.auto_commit()?;
+                $self.base_session.auto_commit()?;
                 ret
             }
 
             Err(err) => {
-                try_multiple!(err, $self.page_handler.auto_rollback());
+                try_multiple!(err, $self.base_session.auto_rollback());
                 try_multiple!(err, $self.reset_meta_version());
                 return Err(err);
             }
@@ -66,7 +66,7 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
  * API for all platforms
  */
 pub(crate) struct DbContext {
-    page_handler: Box<PageHandler>,
+    base_session: Box<BaseSession>,
     pub(crate)meta_version: u32,
     _session_map: hashbrown::HashMap<ObjectId, Box<dyn Session + Send>>,
     #[allow(dead_code)]
@@ -105,10 +105,10 @@ impl DbContext {
     }
 
     fn open_with_backend(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<DbContext> {
-        let page_handler = PageHandler::new(backend, page_size, config.clone())?;
+        let page_handler = BaseSession::new(backend, page_size, config.clone())?;
 
         let mut ctx = DbContext {
-            page_handler: Box::new(page_handler),
+            base_session: Box::new(page_handler),
             // first_page,
             meta_version: 0,
             _session_map: hashbrown::HashMap::new(),
@@ -149,7 +149,7 @@ impl DbContext {
     }
 
     pub fn get_collection_meta_by_name(&mut self, name: &str) -> DbResult<CollectionMeta> {
-        self.page_handler.auto_start_transaction(TransactionType::Read)?;
+        self.base_session.auto_start_transaction(TransactionType::Read)?;
 
         let result = try_db_op!(self, self.internal_get_collection_id_by_name(name));
 
@@ -192,7 +192,7 @@ impl DbContext {
     }
 
     pub fn get_collection_meta_by_name_advanced_auto(&mut self, name: &str, create_if_not_exist: bool) -> DbResult<Option<CollectionMeta>> {
-        self.page_handler.auto_start_transaction(if create_if_not_exist {
+        self.base_session.auto_start_transaction(if create_if_not_exist {
             TransactionType::Write
         } else {
             TransactionType::Read
@@ -219,7 +219,7 @@ impl DbContext {
     }
 
     pub(crate) fn get_meta_source(&mut self) -> DbResult<MetaSource> {
-        let head_page = self.page_handler.pipeline_read_page(0)?;
+        let head_page = self.base_session.pipeline_read_page(0)?;
         DbContext::check_first_page_valid(&head_page)?;
         let head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
         let meta_id_counter = head_page_wrapper.get_meta_id_counter();
@@ -248,7 +248,7 @@ impl DbContext {
     }
 
     pub fn create_collection(&mut self, name: &str) -> DbResult<CollectionMeta> {
-        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.base_session.auto_start_transaction(TransactionType::Write)?;
 
         let meta = try_db_op!(self, self.internal_create_collection(name));
 
@@ -300,13 +300,13 @@ impl DbContext {
 
         doc.insert::<String, Bson>(meta_doc_key::NAME.into(), name.into());
 
-        let root_pid = self.page_handler.alloc_page_id()?;
+        let root_pid = self.base_session.alloc_page_id()?;
         doc.insert::<String, Bson>(meta_doc_key::ROOT_PID.into(), Bson::Int64(root_pid as i64));
 
         doc.insert::<String, Bson>(meta_doc_key::FLAGS.into(), bson!(0));
 
         let mut btree_wrapper = BTreePageInsertWrapper::new(
-            self.page_handler.as_mut(), meta_source.meta_pid);
+            self.base_session.as_mut(), meta_source.meta_pid);
 
         let insert_result = btree_wrapper.insert_item(&doc, false)?;
 
@@ -315,11 +315,11 @@ impl DbContext {
         // So you have to distribute a new page to store the "central node",
         // and the newer page is the center of the btree.
         if let Some(backward_item) = insert_result.backward_item {
-            let new_root_id = self.page_handler.alloc_page_id()?;
+            let new_root_id = self.base_session.alloc_page_id()?;
 
-            let raw_page = backward_item.write_to_page(self.page_handler.as_mut(),
+            let raw_page = backward_item.write_to_page(self.base_session.as_mut(),
                                                        new_root_id, meta_source.meta_pid)?;
-            self.page_handler.pipeline_write_page(&raw_page)?;
+            self.base_session.pipeline_write_page(&raw_page)?;
 
             meta_source.meta_pid = new_root_id;
         }
@@ -336,29 +336,29 @@ impl DbContext {
     }
 
     fn update_meta_source(&mut self, meta_source: &MetaSource) -> DbResult<()> {
-        let head_page = self.page_handler.pipeline_read_page(0)?;
+        let head_page = self.base_session.pipeline_read_page(0)?;
         let mut head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
         head_page_wrapper.set_meta_page_id(meta_source.meta_pid);
         head_page_wrapper.set_meta_id_counter(meta_source.meta_id_counter);
         head_page_wrapper.set_meta_version(meta_source.meta_version);
         self.meta_version = meta_source.meta_version;
-        self.page_handler.pipeline_write_page(&head_page_wrapper.0)
+        self.base_session.pipeline_write_page(&head_page_wrapper.0)
     }
 
     #[inline]
     fn item_size(&self) -> u32 {
-        (self.page_handler.page_size.get() - HEADER_SIZE) / ITEM_SIZE
+        (self.base_session.page_size.get() - HEADER_SIZE) / ITEM_SIZE
     }
 
     pub(crate) fn make_handle(&mut self, program: SubProgram) -> DbHandle {
-        let vm = VM::new(self.page_handler.as_mut(), Box::new(program));
+        let vm = VM::new(self.base_session.as_mut(), Box::new(program));
         DbHandle::new(vm)
     }
 
     pub(crate) fn find_collection_root_pid_by_id(&mut self, parent_pid: u32, root_pid: u32, id: u32) -> DbResult<MetaDocEntry> {
-        let raw_page = self.page_handler.pipeline_read_page(root_pid)?;
+        let raw_page = self.base_session.pipeline_read_page(root_pid)?;
         let item_size = self.item_size();
-        let btree_node = BTreeNode::from_raw(&raw_page, parent_pid, item_size, self.page_handler.as_mut())?;
+        let btree_node = BTreeNode::from_raw(&raw_page, parent_pid, item_size, self.base_session.as_mut())?;
         let key = Bson::from(id);
         if btree_node.is_empty() {
             return Err(DbErr::CollectionIdNotFound(id));
@@ -367,7 +367,7 @@ impl DbContext {
         match result {
             SearchKeyResult::Node(node_index) => {
                 let item = &btree_node.content[node_index];
-                let doc = self.page_handler.get_doc_from_ticket(&item.data_ticket)?.unwrap();
+                let doc = self.base_session.get_doc_from_ticket(&item.data_ticket)?.unwrap();
                 let entry = MetaDocEntry::from_doc(doc);
                 Ok(entry)
             }
@@ -385,7 +385,7 @@ impl DbContext {
     }
 
     pub fn create_index(&mut self, col_id: u32, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.base_session.auto_start_transaction(TransactionType::Write)?;
 
         try_db_op!(self, self.internal_create_index(col_id, keys, options));
 
@@ -426,7 +426,7 @@ impl DbContext {
                     // create indexes
                     let mut doc = doc!();
 
-                    let root_pid = self.page_handler.alloc_page_id()?;
+                    let root_pid = self.base_session.alloc_page_id()?;
                     let options_doc = merge_options_into_default(root_pid, options)?;
                     doc.insert(key_name.clone(), Bson::Document(options_doc));
 
@@ -460,7 +460,7 @@ impl DbContext {
     }
 
     pub fn insert_one_auto(&mut self, col_name: &str, doc: &mut Document) -> DbResult<InsertOneResult> {
-        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.base_session.auto_start_transaction(TransactionType::Write)?;
 
         let changed = try_db_op!(self, self.insert_one(col_name, doc));
 
@@ -499,7 +499,7 @@ impl DbContext {
                 doc,
                 &pkey,
                 &mut is_ctx_changed,
-                &mut self.page_handler
+                &mut self.base_session
             )?;
 
             if is_ctx_changed {
@@ -510,7 +510,7 @@ impl DbContext {
         // insert index end
 
         let mut insert_wrapper = BTreePageInsertWrapper::new(
-            self.page_handler.as_mut(), collection_meta.root_pid());
+            self.base_session.as_mut(), collection_meta.root_pid());
         let insert_result: InsertResult = insert_wrapper.insert_item(doc, false)?;
 
         if let Some(backward_item) = &insert_result.backward_item {
@@ -542,7 +542,7 @@ impl DbContext {
     }
 
     pub fn insert_many_auto<T: Serialize>(&mut self, col_name: &str, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
-        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.base_session.auto_start_transaction(TransactionType::Write)?;
 
         let result = try_db_op!(self, self.insert_many(col_name, docs));
 
@@ -594,7 +594,7 @@ impl DbContext {
     pub fn update_many(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         self.check_meta_version(meta_version)?;
 
-        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.base_session.auto_start_transaction(TransactionType::Write)?;
 
         let result = try_db_op!(self, self.internal_update(col_id, query, update, true));
 
@@ -604,7 +604,7 @@ impl DbContext {
     pub fn update_one(&mut self, col_id: u32, meta_version: u32, query: Option<&Document>, update: &Document) -> DbResult<usize> {
         self.check_meta_version(meta_version)?;
 
-        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.base_session.auto_start_transaction(TransactionType::Write)?;
 
         let result = try_db_op!(self, self.internal_update(col_id, query, update, false));
 
@@ -619,7 +619,7 @@ impl DbContext {
         let subprogram = SubProgram::compile_update(&collection_meta, query, update,
                                                     true, is_many)?;
 
-        let mut vm = VM::new(self.page_handler.as_mut(), Box::new(subprogram));
+        let mut vm = VM::new(self.base_session.as_mut(), Box::new(subprogram));
         vm.execute()?;
 
         Ok(vm.r2 as usize)
@@ -628,7 +628,7 @@ impl DbContext {
     pub fn drop_collection(&mut self, col_id: u32, meta_version: u32) -> DbResult<()> {
         self.check_meta_version(meta_version)?;
 
-        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.base_session.auto_start_transaction(TransactionType::Write)?;
 
         try_db_op!(self, self.internal_drop(col_id));
 
@@ -639,10 +639,10 @@ impl DbContext {
         let mut meta_source = self.get_meta_source()?;
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
-        delete_all_helper::delete_all(&mut self.page_handler, collection_meta)?;
+        delete_all_helper::delete_all(&mut self.base_session, collection_meta)?;
 
         let mut btree_wrapper = BTreePageDeleteWrapper::new(
-            self.page_handler.as_mut(), meta_source.meta_pid);
+            self.base_session.as_mut(), meta_source.meta_pid);
 
         let pkey = Bson::from(col_id);
         btree_wrapper.delete_item(&pkey)?;
@@ -652,7 +652,7 @@ impl DbContext {
     }
 
     pub fn delete(&mut self, col_id: u32, meta_version: u32, query: Document, is_many: bool) -> DbResult<usize> {
-        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.base_session.auto_start_transaction(TransactionType::Write)?;
 
         let primary_keys = self.get_primary_keys_by_query(col_id, meta_version,
                                                           Some(query), is_many)?;
@@ -675,7 +675,7 @@ impl DbContext {
         let primary_keys = self.get_primary_keys_by_query(col_id, meta_version,
                                                           None, true)?;
 
-        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.base_session.auto_start_transaction(TransactionType::Write)?;
 
         let result = try_db_op!(self, self.internal_delete(col_id, &primary_keys));
 
@@ -705,24 +705,24 @@ impl DbContext {
     }
 
     fn update_by_root_pid(&mut self, parent_pid: u32, root_pid: u32, key: &Bson, doc: &Document) -> DbResult<bool> {
-        let page = self.page_handler.pipeline_read_page(root_pid)?;
-        let btree_node = BTreeNode::from_raw(&page, parent_pid, self.item_size(), self.page_handler.as_mut())?;
+        let page = self.base_session.pipeline_read_page(root_pid)?;
+        let btree_node = BTreeNode::from_raw(&page, parent_pid, self.item_size(), self.base_session.as_mut())?;
 
         let search_result = btree_node.search(key)?;
         match search_result {
             SearchKeyResult::Node(idx) => {
-                self.page_handler.free_data_ticket(&btree_node.content[idx].data_ticket)?;
+                self.base_session.free_data_ticket(&btree_node.content[idx].data_ticket)?;
 
-                let new_ticket = self.page_handler.store_doc(doc)?;
+                let new_ticket = self.base_session.store_doc(doc)?;
                 let new_btree_node = btree_node.clone_with_content(idx, BTreeNodeDataItem {
                     key: key.clone(),
                     data_ticket: new_ticket,
                 });
 
-                let mut page = RawPage::new(btree_node.pid, self.page_handler.page_size);
+                let mut page = RawPage::new(btree_node.pid, self.base_session.page_size);
                 new_btree_node.to_raw(&mut page)?;
 
-                self.page_handler.pipeline_write_page(&page)?;
+                self.base_session.pipeline_write_page(&page)?;
 
                 Ok(true)
             }
@@ -744,12 +744,12 @@ impl DbContext {
                                    left_pid: u32,
                                    backward_item: &InsertBackwardItem) -> DbResult<()> {
 
-        let new_root_id = self.page_handler.alloc_page_id()?;
+        let new_root_id = self.base_session.alloc_page_id()?;
 
         crate::polo_log!("handle backward item, left_pid: {}, new_root_id: {}, right_pid: {}", left_pid, new_root_id, backward_item.right_pid);
 
-        let new_root_page = backward_item.write_to_page(self.page_handler.as_mut(), new_root_id, left_pid)?;
-        self.page_handler.pipeline_write_page(&new_root_page)?;
+        let new_root_page = backward_item.write_to_page(self.base_session.as_mut(), new_root_id, left_pid)?;
+        self.base_session.pipeline_write_page(&new_root_page)?;
 
         collection_meta.set_root_pid(new_root_id);
 
@@ -758,7 +758,7 @@ impl DbContext {
 
     #[allow(dead_code)]
     pub(crate) fn delete_by_pkey(&mut self, col_id: u32, key: &Bson) -> DbResult<Option<Rc<Document>>> {
-        self.page_handler.auto_start_transaction(TransactionType::Write)?;
+        self.base_session.auto_start_transaction(TransactionType::Write)?;
 
         let result = try_db_op!(self, self.internal_delete_by_pkey(col_id, key));
 
@@ -771,7 +771,7 @@ impl DbContext {
             0, meta_source.meta_pid, col_id)?;
 
         let mut delete_wrapper = BTreePageDeleteWrapper::new(
-            self.page_handler.as_mut(),
+            self.base_session.as_mut(),
             collection_meta.root_pid() as u32,
         );
         let result = delete_wrapper.delete_item(key)?;
@@ -780,7 +780,7 @@ impl DbContext {
         if let Some(deleted_item) = &result {
             let index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
             if let Some(index_ctx) = &index_ctx_opt {
-                index_ctx.delete_index_by_content(deleted_item.borrow(), &mut self.page_handler)?;
+                index_ctx.delete_index_by_content(deleted_item.borrow(), &mut self.base_session)?;
             }
 
             return Ok(result)
@@ -794,7 +794,7 @@ impl DbContext {
         let meta_source = self.get_meta_source()?;
         let collection_meta = self.find_collection_root_pid_by_id(
             0, meta_source.meta_pid, col_id)?;
-        counter_helper::count(self.page_handler.as_mut(), collection_meta)
+        counter_helper::count(self.base_session.as_mut(), collection_meta)
     }
 
     pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Document>> {
@@ -825,13 +825,13 @@ impl DbContext {
     pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
         match ty {
             Some(ty) => {
-                self.page_handler.start_transaction(ty)?;
-                self.page_handler.set_transaction_state(TransactionState::User);
+                self.base_session.start_transaction(ty)?;
+                self.base_session.set_transaction_state(TransactionState::User);
             }
 
             None => {
-                self.page_handler.start_transaction(TransactionType::Read)?;
-                self.page_handler.set_transaction_state(TransactionState::UserAuto);
+                self.base_session.start_transaction(TransactionType::Read)?;
+                self.base_session.set_transaction_state(TransactionState::UserAuto);
             }
 
         }
@@ -839,27 +839,27 @@ impl DbContext {
     }
 
     pub fn commit(&mut self) -> DbResult<()> {
-        self.page_handler.commit()?;
-        self.page_handler.set_transaction_state(TransactionState::NoTrans);
+        self.base_session.commit()?;
+        self.base_session.set_transaction_state(TransactionState::NoTrans);
         Ok(())
     }
 
     pub fn rollback(&mut self) -> DbResult<()> {
-        self.page_handler.rollback()?;
-        self.page_handler.set_transaction_state(TransactionState::NoTrans);
+        self.base_session.rollback()?;
+        self.base_session.set_transaction_state(TransactionState::NoTrans);
         Ok(())
     }
 
     pub fn dump(&mut self) -> DbResult<FullDump> {
-        let first_page = self.page_handler.pipeline_read_page(0)?;
+        let first_page = self.base_session.pipeline_read_page(0)?;
         let first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
         let version = first_page_wrapper.get_version();
         let meta_pid = first_page_wrapper.get_meta_page_id();
         let free_list_pid = first_page_wrapper.get_free_list_page_id();
         let free_list_size = first_page_wrapper.get_free_list_size();
-        let page_size = self.page_handler.page_size;
+        let page_size = self.base_session.page_size;
 
-        let journal_dump = self.page_handler.dump_journal()?;
+        let journal_dump = self.base_session.dump_journal()?;
         let full_dump = FullDump {
             identifier: first_page_wrapper.get_title(),
             version: dump_version(&version),
@@ -875,11 +875,11 @@ impl DbContext {
 
     #[allow(dead_code)]
     fn dump_all_pages(&mut self, file_len: u64) -> DbResult<Vec<PageDump>> {
-        let page_count = file_len / (self.page_handler.page_size.get() as u64);
+        let page_count = file_len / (self.base_session.page_size.get() as u64);
         let mut result = Vec::with_capacity(page_count as usize);
 
         for index in 0..page_count {
-            let raw_page = self.page_handler.pipeline_read_page(index as u32)?;
+            let raw_page = self.base_session.pipeline_read_page(index as u32)?;
             result.push(dump_page(raw_page)?);
         }
 
@@ -927,8 +927,8 @@ fn dump_version(version: &[u8]) -> String {
 impl Drop for DbContext {
 
     fn drop(&mut self) {
-        if !self.page_handler.transaction_state().is_no_trans() {
-            let _ = self.page_handler.only_rollback_journal();
+        if !self.base_session.transaction_state().is_no_trans() {
+            let _ = self.base_session.only_rollback_journal();
         }
     }
 
