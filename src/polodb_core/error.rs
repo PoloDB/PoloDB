@@ -156,6 +156,7 @@ pub enum DbErr {
     VersionMismatch(Box<VersionMismatchError>),
     LockError,
     CannotApplyOperation(Box<CannotApplyOperationForTypes>),
+    NoTransactionStarted,
 }
 
 impl DbErr {
@@ -252,6 +253,7 @@ impl fmt::Display for DbErr {
             DbErr::CannotApplyOperation(msg) =>
                 write!(f, "can not operation {} for \"{}\" with types {} and {}",
                        msg.op_name, msg.field_name, msg.field_type, msg.target_type),
+            DbErr::NoTransactionStarted => write!(f, "no transaction started"),
         }
     }
 
