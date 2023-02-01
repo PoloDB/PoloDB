@@ -22,7 +22,7 @@ use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeLi
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::backend::Backend;
 use crate::results::{InsertManyResult, InsertOneResult};
-use crate::session::{Session, BaseSession};
+use crate::session::{Session, BaseSession, DynamicSession};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::backend::file::FileBackend;
 #[cfg(not(target_arch = "wasm32"))]
@@ -68,7 +68,7 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
 pub(crate) struct DbContext {
     base_session: Box<BaseSession>,
     pub(crate)meta_version: u32,
-    _session_map: hashbrown::HashMap<ObjectId, Box<dyn Session + Send>>,
+    session_map: hashbrown::HashMap<ObjectId, Box<dyn Session + Send>>,
     #[allow(dead_code)]
     config:       Arc<Config>,
 }
@@ -106,12 +106,13 @@ impl DbContext {
 
     fn open_with_backend(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<DbContext> {
         let page_handler = BaseSession::new(backend, page_size, config.clone())?;
+        let session_map = hashbrown::HashMap::new();
 
         let mut ctx = DbContext {
             base_session: Box::new(page_handler),
             // first_page,
             meta_version: 0,
-            _session_map: hashbrown::HashMap::new(),
+            session_map,
             config,
         };
 
@@ -124,9 +125,9 @@ impl DbContext {
     pub fn start_session(&mut self) -> DbResult<ClientSession> {
         let id = ObjectId::new();
 
-        // TODO
-        // let session = Box::new(DefaultSession::new(id));
-        // self.session_map.insert(id, session);
+        let base_session = self.base_session.as_ref().clone();
+        let session = Box::new(DynamicSession::new(base_session));
+        self.session_map.insert(id, session);
 
         Ok(ClientSession::new(id))
     }
