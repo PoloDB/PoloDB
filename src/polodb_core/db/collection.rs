@@ -92,7 +92,7 @@ impl<'a, T>  Collection<'a, T>
     /// release in 0.12
     #[allow(dead_code)]
     fn create_index(&self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        self.db.create_index(&self.name, keys, options)
+        self.db.create_index(&self.name, keys, options, None)
     }
 
     pub fn drop(&self) -> DbResult<()> {

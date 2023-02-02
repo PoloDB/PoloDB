@@ -46,7 +46,7 @@ pub struct VM<'a> {
     r1:                  Option<Box<Cursor>>,
     pub(crate) r2:       i64,  // usually the counter
     r3:                  usize,
-    page_handler:        &'a mut dyn Session,
+    page_handler:        &'a dyn Session,
     stack:               Vec<Bson>,
     pub(crate) program:  Box<SubProgram>,
     rollback_on_drop:    bool,
@@ -68,7 +68,7 @@ fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> DbResult<bool> {
 
 impl<'a> VM<'a> {
 
-    pub(crate) fn new(page_handler: &mut dyn Session, program: Box<SubProgram>) -> VM {
+    pub(crate) fn new(page_handler: &dyn Session, program: Box<SubProgram>) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         VM {

@@ -24,7 +24,7 @@ pub struct BTreePageDeleteWrapper<'a> {
 
 impl<'a> BTreePageDeleteWrapper<'a>  {
 
-    pub(crate) fn new(session: &mut dyn Session, root_page_id: u32) -> BTreePageDeleteWrapper {
+    pub(crate) fn new(session: &dyn Session, root_page_id: u32) -> BTreePageDeleteWrapper {
         let base = BTreePageWrapperBase::new(session, root_page_id);
         BTreePageDeleteWrapper {
             base,

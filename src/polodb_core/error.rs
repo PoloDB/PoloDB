@@ -1,6 +1,7 @@
 use std::io;
 use std::fmt;
 use std::sync::PoisonError;
+use bson::oid::ObjectId;
 use bson::ser::Error as BsonErr;
 
 #[derive(Debug)]
@@ -146,7 +147,6 @@ pub enum DbErr {
     UnknownUpdateOperation(String),
     IncrementNullField,
     VmIsHalt,
-    MetaVersionMismatched(u32, u32),
     CollectionAlreadyExits(String),
     UnableToUpdatePrimaryKey,
     NotAValidDatabase,
@@ -157,6 +157,7 @@ pub enum DbErr {
     LockError,
     CannotApplyOperation(Box<CannotApplyOperationForTypes>),
     NoTransactionStarted,
+    InvalidSession(Box<ObjectId>),
 }
 
 impl DbErr {
@@ -229,7 +230,6 @@ impl fmt::Display for DbErr {
             DbErr::UnknownUpdateOperation(op) => write!(f, "unknown update operation: '{}'", op),
             DbErr::IncrementNullField => write!(f, "can not increment a field which is null"),
             DbErr::VmIsHalt => write!(f, "Vm can not execute because it's halt"),
-            DbErr::MetaVersionMismatched(expected, actual) => write!(f, "meta version mismatched, expect: {}, actual: {}", expected, actual),
             DbErr::Busy => write!(f, "database busy"),
             DbErr::CollectionAlreadyExits(name) => write!(f, "collection name '{}' already exists", name),
             DbErr::UnableToUpdatePrimaryKey => write!(f, "it's illegal to update '_id' field"),
@@ -254,6 +254,7 @@ impl fmt::Display for DbErr {
                 write!(f, "can not operation {} for \"{}\" with types {} and {}",
                        msg.op_name, msg.field_name, msg.field_type, msg.target_type),
             DbErr::NoTransactionStarted => write!(f, "no transaction started"),
+            DbErr::InvalidSession(sid) => write!(f, "invalid session: {}", sid),
         }
     }
 
