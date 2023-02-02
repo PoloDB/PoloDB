@@ -677,12 +677,10 @@ impl DbContext {
     }
 
     pub fn delete(&mut self, col_id: u32, query: Document, is_many: bool, session_id: Option<&ObjectId>) -> DbResult<usize> {
-        let primary_keys = self.get_primary_keys_by_query(col_id, Some(query), is_many, session_id)?;
-
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(session, DbContext::internal_delete(session, col_id, &primary_keys));
+        let result = try_db_op!(session, DbContext::internal_delete_by_query(session, col_id, query, is_many));
 
         Ok(result)
     }
@@ -695,19 +693,29 @@ impl DbContext {
         Ok(primary_keys.len())
     }
 
-    pub fn delete_all(&mut self, col_id: u32, session_id: Option<&ObjectId>) -> DbResult<usize> {
-        let primary_keys = self.get_primary_keys_by_query(col_id, None, true, session_id)?;
+    fn internal_delete_by_query(session: &dyn Session, col_id: u32, query: Document, is_many: bool) -> DbResult<usize> {
+        let primary_keys = DbContext::get_primary_keys_by_query(
+            session, col_id, Some(query), is_many)?;
+        DbContext::internal_delete(session, col_id, &primary_keys)
+    }
 
+    fn internal_delete_all(session: &dyn Session, col_id: u32) -> DbResult<usize> {
+        let primary_keys = DbContext::get_primary_keys_by_query(
+            session, col_id, None, true)?;
+        DbContext::internal_delete(session, col_id, &primary_keys)
+    }
+
+    pub fn delete_all(&mut self, col_id: u32, session_id: Option<&ObjectId>) -> DbResult<usize> {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(session, DbContext::internal_delete(session, col_id, &primary_keys));
+        let result = try_db_op!(session, DbContext::internal_delete_all(session, col_id));
 
         Ok(result)
     }
 
-    fn get_primary_keys_by_query(&mut self, col_id: u32, query: Option<Document>, is_many: bool, session_id: Option<&ObjectId>) -> DbResult<Vec<Bson>> {
-        let mut handle = self.find(col_id, query, session_id)?;
+    fn get_primary_keys_by_query(session: &dyn Session, col_id: u32, query: Option<Document>, is_many: bool) -> DbResult<Vec<Bson>> {
+        let mut handle = DbContext::find_internal(session, col_id, query)?;
         let mut buffer: Vec<Bson> = vec![];
 
         handle.step()?;
@@ -718,12 +726,14 @@ impl DbContext {
             buffer.push(pkey.clone());
 
             if !is_many {
+                handle.commit_and_close_vm()?;
                 return Ok(buffer);
             }
 
             handle.step()?;
         }
 
+        handle.commit_and_close_vm()?;
         Ok(buffer)
     }
 
