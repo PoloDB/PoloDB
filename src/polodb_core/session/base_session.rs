@@ -128,7 +128,7 @@ struct BaseSessionInner {
     backend:             Box<dyn Backend + Send>,
 
     pub page_size:       NonZeroU32,
-    page_cache:          Box<PageCache>,
+    page_cache:          PageCache,
 
     data_page_allocator: DataPageAllocator,
 
@@ -145,9 +145,8 @@ impl BaseSessionInner {
 
         Ok(BaseSessionInner {
             backend,
-
             page_size,
-            page_cache: Box::new(page_cache),
+            page_cache,
 
             data_page_allocator: DataPageAllocator::new(),
 
@@ -353,7 +352,7 @@ impl BaseSessionInner {
     fn rollback(&mut self) -> DbResult<()> {
         self.backend.rollback()?;
         self.data_page_allocator.rollback();
-        self.page_cache = Box::new(PageCache::new_default(self.page_size));
+        self.page_cache = PageCache::new_default(self.page_size);
         Ok(())
     }
 }

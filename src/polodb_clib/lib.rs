@@ -234,7 +234,7 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::UnknownUpdateOperation(_) => 37,
         DbErr::IncrementNullField => 38,
         DbErr::VmIsHalt => 39,
-        DbErr::MetaVersionMismatched(_, _) => 40,
+        // DbErr::MetaVersionMismatched(_, _) => 40,
         DbErr::Busy => 41,
         DbErr::InvalidField(_) => 42,
         DbErr::CollectionAlreadyExits(_) => 43,
@@ -248,5 +248,6 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::LockError => 52,
         DbErr::CannotApplyOperation(_) => 53,
         DbErr::NoTransactionStarted => 54,
+        DbErr::InvalidSession(_) => 55,
     }
 }

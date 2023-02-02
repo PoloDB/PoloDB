@@ -72,8 +72,15 @@ pub struct CreateCollectionCommand {
 }
 
 #[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DropCollectionCommandOptions {
+    pub session_id: Option<ObjectId>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct DropCollectionCommand {
     pub ns: String,
+    pub options: Option<DropCollectionCommandOptions>,
 }
 
 #[derive(Serialize, Deserialize)]

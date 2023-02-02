@@ -272,9 +272,9 @@ impl Database {
         inner.delete_many(col_name, query, session_id)
     }
 
-    pub(super) fn create_index(&self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+    pub(super) fn create_index(&self, col_name: &str, keys: &Document, options: Option<&Document>, session_id: Option<&ObjectId>) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
-        inner.create_index(col_name, keys, options)
+        inner.create_index(col_name, keys, options, session_id)
     }
 
     pub(super) fn drop(&self, col_name: &str, session_id: Option<&ObjectId>) -> DbResult<()> {
@@ -308,8 +308,13 @@ impl DatabaseInner {
     }
 
     #[inline]
-    pub(super) fn get_collection_meta_by_name(&mut self, col_name: &str, create_if_not_exist: bool) -> DbResult<Option<CollectionMeta>> {
-        self.ctx.get_collection_meta_by_name_advanced_auto(col_name, create_if_not_exist)
+    pub(super) fn get_collection_meta_by_name(
+        &mut self,
+        col_name: &str,
+        create_if_not_exist: bool,
+        session_id: Option<&ObjectId>
+    ) -> DbResult<Option<CollectionMeta>> {
+        self.ctx.get_collection_meta_by_name_advanced_auto(col_name, create_if_not_exist, session_id)
     }
 
     #[inline]
@@ -337,32 +342,40 @@ impl DatabaseInner {
         self.ctx.drop_session(session_id)
     }
 
-    pub(crate) fn query_all_meta(&mut self) -> DbResult<Vec<Document>> {
-        self.ctx.query_all_meta()
+    pub(crate) fn query_all_meta(&mut self, session_id: Option<&ObjectId>) -> DbResult<Vec<Document>> {
+        self.ctx.query_all_meta(session_id)
     }
 
     fn list_collection_names(&mut self) -> DbResult<Vec<String>> {
-        let doc_meta = self.query_all_meta()?;
-        let mut names: Vec<String> = Vec::with_capacity(doc_meta.len());
+        let doc_meta = self.query_all_meta(None)?;
+        Ok(DatabaseInner::collection_metas_to_names(doc_meta))
+    }
 
-        for doc in &doc_meta {
-            let name = doc.get("name").unwrap().as_str().unwrap().to_string();
-            names.push(name)
-        }
+    fn list_collection_names_with_session(&mut self, session: &mut ClientSession) -> DbResult<Vec<String>> {
+        let doc_meta = self.query_all_meta(Some(&session.id))?;
+        Ok(DatabaseInner::collection_metas_to_names(doc_meta))
+    }
 
-        Ok(names)
+    fn collection_metas_to_names(doc_meta: Vec<Document>) -> Vec<String> {
+        doc_meta
+            .iter()
+            .map(|doc| {
+                let name = doc.get("name").unwrap().as_str().unwrap().to_string();
+                name
+            })
+            .collect()
     }
 
     fn handle_request<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
         self.handle_request_with_result(pipe_in)
     }
 
-    fn count_documents(&mut self, name: &str, _session_id: Option<&ObjectId>) -> DbResult<u64> {
-        let meta_opt = self.get_collection_meta_by_name(name, false)?;
+    fn count_documents(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<u64> {
+        let meta_opt = self.get_collection_meta_by_name(name, false, session_id)?;
         meta_opt.map_or(Ok(0), |col_meta| {
             self.ctx.count(
                 col_meta.id,
-                col_meta.meta_version
+                session_id
             )
         })
     }
@@ -385,14 +398,14 @@ impl DatabaseInner {
     //     result
     // }
 
-    fn find_one<T: DeserializeOwned>(&mut self, col_name: &str, filter: impl Into<Option<Document>>, _session_id: Option<&ObjectId>) -> DbResult<Option<T>> {
+    fn find_one<T: DeserializeOwned>(&mut self, col_name: &str, filter: impl Into<Option<Document>>, session_id: Option<&ObjectId>) -> DbResult<Option<T>> {
         let filter_query = filter.into();
-        let meta_opt = self.get_collection_meta_by_name(col_name, false)?;
+        let meta_opt = self.get_collection_meta_by_name(col_name, false, session_id)?;
         let result: Option<T> = if let Some(col_meta) = meta_opt {
             let mut handle = self.ctx.find(
                 col_meta.id,
-                col_meta.meta_version,
-                filter_query
+                filter_query,
+                session_id
             )?;
             handle.step()?;
 
@@ -416,16 +429,16 @@ impl DatabaseInner {
     fn find_many<T: DeserializeOwned>(
         &mut self, col_name: &str,
         filter: impl Into<Option<Document>>,
-        _session_id: Option<&ObjectId>
+        session_id: Option<&ObjectId>
     ) -> DbResult<Vec<T>> {
         let filter_query = filter.into();
-        let meta_opt = self.get_collection_meta_by_name(col_name, false)?;
+        let meta_opt = self.get_collection_meta_by_name(col_name, false, session_id)?;
         match meta_opt {
             Some(col_meta) => {
                 let mut handle = self.ctx.find(
                     col_meta.id,
-                    col_meta.meta_version,
-                    filter_query
+                    filter_query,
+                    session_id
                 )?;
 
                 let mut result: Vec<T> = Vec::new();
@@ -440,9 +453,9 @@ impl DatabaseInner {
         }
     }
 
-    fn insert_one<T: Serialize>(&mut self, col_name: &str, doc: impl Borrow<T>, _session_id: Option<&ObjectId>) -> DbResult<InsertOneResult> {
-        let mut doc = bson::to_document(doc.borrow())?;
-        let result = self.ctx.insert_one_auto(col_name, &mut doc)?;
+    fn insert_one<T: Serialize>(&mut self, col_name: &str, doc: impl Borrow<T>, session_id: Option<&ObjectId>) -> DbResult<InsertOneResult> {
+        let doc = bson::to_document(doc.borrow())?;
+        let result = self.ctx.insert_one_auto(col_name, doc, session_id)?;
         Ok(result)
     }
 
@@ -450,20 +463,20 @@ impl DatabaseInner {
         &mut self,
         col_name: &str,
         docs: impl IntoIterator<Item = impl Borrow<T>>,
-        _session_id: Option<&ObjectId>
+        session_id: Option<&ObjectId>
     ) -> DbResult<InsertManyResult> {
-        self.ctx.insert_many_auto(col_name, docs)
+        self.ctx.insert_many_auto(col_name, docs, session_id)
     }
 
-    fn update_one(&mut self, col_name: &str, query: Document, update: Document, _session_id: Option<&ObjectId>) -> DbResult<UpdateResult> {
-        let meta_opt = self.get_collection_meta_by_name(col_name, false)?;
+    fn update_one(&mut self, col_name: &str, query: Document, update: Document, session_id: Option<&ObjectId>) -> DbResult<UpdateResult> {
+        let meta_opt = self.get_collection_meta_by_name(col_name, false, session_id)?;
         let modified_count: u64 = match meta_opt {
             Some(col_meta) => {
                 let size = self.ctx.update_one(
                     col_meta.id,
-                    col_meta.meta_version,
                     Some(&query),
-                    &update
+                    &update,
+                    session_id
                 )?;
                 size as u64
             }
@@ -474,15 +487,15 @@ impl DatabaseInner {
         })
     }
 
-    fn update_many(&mut self, col_name: &str, query: Document, update: Document, _session_id: Option<&ObjectId>,) -> DbResult<UpdateResult> {
-        let meta_opt = self.get_collection_meta_by_name(col_name, false)?;
+    fn update_many(&mut self, col_name: &str, query: Document, update: Document, session_id: Option<&ObjectId>) -> DbResult<UpdateResult> {
+        let meta_opt = self.get_collection_meta_by_name(col_name, false, session_id)?;
         let modified_count: u64 = match meta_opt {
             Some(col_meta) => {
                 let size = self.ctx.update_many(
                     col_meta.id,
-                    col_meta.meta_version,
                     Some(&query),
-                    &update
+                    &update,
+                    session_id
                 )?;
                 size as u64
             }
@@ -493,12 +506,11 @@ impl DatabaseInner {
         })
     }
 
-    fn delete_one(&mut self, col_name: &str, query: Document, _session_id: Option<&ObjectId>) -> DbResult<DeleteResult> {
-        let meta_opt = self.get_collection_meta_by_name(col_name, false)?;
+    fn delete_one(&mut self, col_name: &str, query: Document, session_id: Option<&ObjectId>) -> DbResult<DeleteResult> {
+        let meta_opt = self.get_collection_meta_by_name(col_name, false, session_id)?;
         let deleted_count = match meta_opt {
             Some(col_meta) => {
-                let count = self.ctx.delete(col_meta.id, col_meta.meta_version,
-                                               query, false)?;
+                let count = self.ctx.delete(col_meta.id, query, false, session_id)?;
                 count as u64
             }
             None => 0
@@ -508,14 +520,14 @@ impl DatabaseInner {
         })
     }
 
-    fn delete_many(&mut self, col_name: &str, query: Document, _session_id: Option<&ObjectId>) -> DbResult<DeleteResult> {
-        let meta_opt = self.get_collection_meta_by_name(col_name, false)?;
+    fn delete_many(&mut self, col_name: &str, query: Document, session_id: Option<&ObjectId>) -> DbResult<DeleteResult> {
+        let meta_opt = self.get_collection_meta_by_name(col_name, false, session_id)?;
         let deleted_count = match meta_opt {
             Some(col_meta) => {
                 let count = if query.len() == 0 {
-                    self.ctx.delete_all(col_meta.id, col_meta.meta_version)?
+                    self.ctx.delete_all(col_meta.id, session_id)?
                 } else {
-                    self.ctx.delete(col_meta.id, col_meta.meta_version, query, true)?
+                    self.ctx.delete(col_meta.id, query, true, session_id)?
                 };
                 count as u64
             }
@@ -526,8 +538,8 @@ impl DatabaseInner {
         })
     }
 
-    fn drop_collection(&mut self, col_name: &str, _session_id: Option<&ObjectId>) -> DbResult<()> {
-        let info = match self.get_collection_meta_by_name(col_name, false) {
+    fn drop_collection(&mut self, col_name: &str, session_id: Option<&ObjectId>) -> DbResult<()> {
+        let info = match self.get_collection_meta_by_name(col_name, false, session_id) {
             Ok(None) => {
                 return Ok(());
             }
@@ -537,15 +549,15 @@ impl DatabaseInner {
             Ok(Some(meta)) => meta,
             Err(err) => return Err(err),
         };
-        self.ctx.drop_collection(info.id, info.meta_version)?;
+        self.ctx.drop_collection(info.id, session_id)?;
         Ok(())
     }
 
     /// release in 0.12
-    fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        let col_meta = self.get_collection_meta_by_name(col_name, true)?
+    fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>, session_id: Option<&ObjectId>) -> DbResult<()> {
+        let col_meta = self.get_collection_meta_by_name(col_name, true, session_id)?
             .unwrap();
-        self.ctx.create_index(col_meta.id, keys, options)
+        self.ctx.create_index(col_meta.id, keys, options, session_id)
     }
 
     fn receive_request_body<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<Bson> {
@@ -712,14 +724,18 @@ impl DatabaseInner {
 
     fn handle_drop_collection(&mut self, drop: DropCollectionCommand) -> DbResult<Bson> {
         let col_name = &drop.ns;
-        let info = match self.ctx.get_collection_meta_by_name(col_name) {
+        let session_id = drop.options
+            .as_ref()
+            .map(|o| o.session_id.as_ref())
+            .flatten();
+        let info = match self.ctx.get_collection_meta_by_name(col_name, session_id) {
             Ok(meta) => meta,
             Err(DbErr::CollectionNotFound(_)) => {
                 return Ok(Bson::Null);
             },
             Err(err) => return Err(err),
         };
-        self.ctx.drop_collection(info.id, info.meta_version)?;
+        self.ctx.drop_collection(info.id, session_id)?;
 
         Ok(Bson::Null)
     }

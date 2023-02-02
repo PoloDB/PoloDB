@@ -5,7 +5,7 @@ use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::DbResult;
 use crate::error::{DbErr, mk_field_name_type_unexpected};
 use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
-use crate::session::{Session, BaseSession};
+use crate::session::Session;
 
 pub(crate) struct IndexCtx {
     key_to_entry:   HashMap<String, IndexEntry>,
@@ -50,7 +50,7 @@ impl IndexCtx {
         collection_meta.set_indexes(new_back_doc);
     }
 
-    pub fn insert_index_by_content(&mut self, doc: &Document, primary_key: &Bson, is_ctx_changed: &mut bool, page_handler: &mut BaseSession) -> DbResult<()> {
+    pub fn insert_index_by_content(&mut self, doc: &Document, primary_key: &Bson, is_ctx_changed: &mut bool, page_handler: &dyn Session) -> DbResult<()> {
         for (key, entry) in &mut self.key_to_entry {
             if let Some(value) = doc.get(key) {
                 // index exist, and value exist
@@ -61,7 +61,7 @@ impl IndexCtx {
         Ok(())
     }
 
-    pub fn delete_index_by_content(&self, doc: &Document, page_handler: &mut BaseSession) -> DbResult<()> {
+    pub fn delete_index_by_content(&self, doc: &Document, page_handler: &dyn Session) -> DbResult<()> {
         for (key, entry) in &self.key_to_entry {
             if let Some(value) = doc.get(key) {
                 entry.remove_index(value, page_handler)?;
@@ -109,14 +109,14 @@ impl IndexEntry {
     fn insert_index(
         &mut self, data_value: &Bson, primary_key: Bson,
         is_changed: &mut bool,
-        page_handler: &mut BaseSession) -> DbResult<()> {
+        session: &dyn Session) -> DbResult<()> {
 
         if !crate::bson_utils::is_valid_key_type(data_value) {
             let name = format!("{}", data_value);
             return Err(DbErr::NotAValidKeyType(name));
         }
 
-        let mut insert_wrapper = BTreePageInsertWrapper::new(page_handler, self.root_pid);
+        let mut insert_wrapper = BTreePageInsertWrapper::new(session, self.root_pid);
 
         let mut index_entry_doc = IndexEntry::mk_index_entry_doc(data_value, primary_key);
 
@@ -124,13 +124,13 @@ impl IndexEntry {
 
         if let Some(backward_item) = &insert_result.backward_item {
             *is_changed = true;
-            return self.handle_backward_item(&mut index_entry_doc, backward_item, page_handler)
+            return self.handle_backward_item(&mut index_entry_doc, backward_item, session)
         }
 
         Ok(())
     }
 
-    fn handle_backward_item(&mut self, meta_doc: &mut Document, backward_item: &InsertBackwardItem, page_handler: &mut dyn Session) -> DbResult<()> {
+    fn handle_backward_item(&mut self, meta_doc: &mut Document, backward_item: &InsertBackwardItem, page_handler: &dyn Session) -> DbResult<()> {
         let new_root_id = page_handler.alloc_page_id()?;
 
         crate::polo_log!("index handle backward item, left_pid: {}, new_root_id: {}, right_pid: {}", self.root_pid, new_root_id, backward_item.right_pid);
@@ -151,8 +151,8 @@ impl IndexEntry {
         }
     }
 
-    fn remove_index(&self, data_value: &Bson, page_handler: &mut BaseSession) -> DbResult<()> {
-        let mut delete_wrapper = BTreePageDeleteWrapper::new(page_handler, self.root_pid);
+    fn remove_index(&self, data_value: &Bson, session: &dyn Session) -> DbResult<()> {
+        let mut delete_wrapper = BTreePageDeleteWrapper::new(session, self.root_pid);
         let _result = delete_wrapper.delete_item(data_value)?;
         Ok(())
     }

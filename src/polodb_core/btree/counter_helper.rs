@@ -4,12 +4,12 @@ use crate::session::Session;
 use super::BTreeNode;
 use super::wrapper_base::cal_item_size;
 
-pub(crate) fn count(session: &mut dyn Session, collection_meta: MetaDocEntry) -> DbResult<u64> {
+pub(crate) fn count(session: &dyn Session, collection_meta: MetaDocEntry) -> DbResult<u64> {
     let item_size = cal_item_size(session.page_size());
     count_by_btree_pid(session, item_size, 0, collection_meta.root_pid())
 }
 
-fn count_by_btree_pid(session: &mut dyn Session, item_size: u32, parent_pid: u32, pid: u32) -> DbResult<u64> {
+fn count_by_btree_pid(session: &dyn Session, item_size: u32, parent_pid: u32, pid: u32) -> DbResult<u64> {
     let page = session.pipeline_read_page(pid)?;
     let btree_content = BTreeNode::from_raw(&page, parent_pid, item_size, session)?;
     if btree_content.content.is_empty() {
