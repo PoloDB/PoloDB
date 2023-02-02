@@ -1,15 +1,47 @@
 use bson::oid::ObjectId;
+use crate::{Database, DbResult, TransactionType};
 
-pub struct ClientSession {
-    _session_id: ObjectId,
+/// A PoloDB client session. This struct represents a logical session used for ordering sequential
+/// operations. To create a `ClientSession`, call `start_session` on a `Database`.
+pub struct ClientSession<'a> {
+    db: &'a Database,
+    pub(crate) id: ObjectId,
 }
 
-impl ClientSession {
+impl<'a> ClientSession<'a> {
 
-    pub(crate) fn new(id: ObjectId) -> ClientSession {
+    pub(crate) fn new(db: &'a Database, id: ObjectId) -> ClientSession {
         ClientSession {
-            _session_id: id
+            db,
+            id,
         }
     }
 
+    /// Manually start a transaction. There are three types of transaction.
+    ///
+    /// - `None`: Auto transaction
+    /// - `Some(Transaction::Write)`: Write transaction
+    /// - `Some(Transaction::Read)`: Read transaction
+    ///
+    /// When you pass `None` to type parameter. The PoloDB will go into
+    /// auto mode. The PoloDB will go into read mode firstly, once the users
+    /// execute write operations(insert/update/delete), the DB will turn into
+    /// write mode.
+    pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
+        self.db.start_transaction(&self.id, ty)
+    }
+
+    pub fn commit_transaction(&mut self) -> DbResult<()> {
+        self.db.commit(&self.id)
+    }
+
+    pub fn abort_transaction(&mut self) -> DbResult<()> {
+        self.db.rollback(&self.id)
+    }
+}
+
+impl Drop for ClientSession<'_> {
+    fn drop(&mut self) {
+        self.db.drop_session(&self.id)
+    }
 }

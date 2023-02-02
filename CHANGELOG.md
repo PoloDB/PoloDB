@@ -1,4 +1,8 @@
 
+# 3.4.0
+
+- Implement `ClientSession`
+
 # 3.3.3
 
 - Fix: insert_many transaction conflicts

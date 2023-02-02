@@ -8,7 +8,7 @@ use serde::Serialize;
 use super::db::DbResult;
 use crate::page::header_page_wrapper;
 use crate::error::DbErr;
-use crate::{ClientSession, TransactionType};
+use crate::TransactionType;
 use crate::Config;
 use crate::vm::{SubProgram, VM, VmState};
 use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
@@ -122,14 +122,14 @@ impl DbContext {
         Ok(ctx)
     }
 
-    pub fn start_session(&mut self) -> DbResult<ClientSession> {
+    pub fn start_session(&mut self) -> DbResult<ObjectId> {
         let id = ObjectId::new();
 
         let base_session = self.base_session.clone();
         let session = Box::new(DynamicSession::new(base_session));
         self.session_map.insert(id, session);
 
-        Ok(ClientSession::new(id))
+        Ok(id)
     }
 
     /**
@@ -248,7 +248,7 @@ impl DbContext {
         }
     }
 
-    pub fn create_collection(&mut self, name: &str) -> DbResult<CollectionMeta> {
+    pub fn create_collection(&mut self, name: &str, _session_id: Option<&ObjectId>) -> DbResult<CollectionMeta> {
         self.base_session.auto_start_transaction(TransactionType::Write)?;
 
         let meta = try_db_op!(self, self.internal_create_collection(name));
@@ -862,6 +862,10 @@ impl DbContext {
         self.base_session.rollback()?;
         self.base_session.set_transaction_state(TransactionState::NoTrans);
         Ok(())
+    }
+
+    pub fn drop_session(&mut self, session_id: &ObjectId) {
+        self.session_map.remove(session_id);
     }
 
     pub fn dump(&mut self) -> DbResult<FullDump> {
