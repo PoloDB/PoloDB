@@ -207,7 +207,6 @@ impl Database {
         inner.count_documents(col_name, session_id)
     }
 
-    #[inline]
     pub(super) fn find_one<T: DeserializeOwned>(
         &self, col_name: &str,
         filter: impl Into<Option<Document>>,
@@ -217,7 +216,6 @@ impl Database {
         inner.find_one(col_name, filter, session_id)
     }
 
-    #[inline]
     pub(super) fn find_many<T: DeserializeOwned>(
         &self, col_name: &str,
         filter: impl Into<Option<Document>>,
@@ -227,13 +225,11 @@ impl Database {
         inner.find_many(col_name, filter, session_id)
     }
 
-    #[inline]
     pub(super) fn insert_one<T: Serialize>(&self, col_name: &str, doc: impl Borrow<T>, session_id: Option<&ObjectId>) -> DbResult<InsertOneResult> {
         let mut inner = self.inner.lock()?;
         inner.insert_one(col_name, doc, session_id)
     }
 
-    #[inline]
     pub(super) fn insert_many<T: Serialize>(
         &self,
         col_name: &str,
@@ -244,7 +240,6 @@ impl Database {
         inner.insert_many(col_name, docs, session_id)
     }
 
-    #[inline]
     pub(super) fn update_one(
         &self,
         col_name: &str,
@@ -256,7 +251,6 @@ impl Database {
         inner.update_one(col_name, query, update, session_id)
     }
 
-    #[inline]
     pub(super) fn update_many(
         &self,
         col_name: &str,
@@ -268,25 +262,21 @@ impl Database {
         inner.update_many(col_name, query, update, session_id)
     }
 
-    #[inline]
     pub(super) fn delete_one(&self, col_name: &str, query: Document, session_id: Option<&ObjectId>) -> DbResult<DeleteResult> {
         let mut inner = self.inner.lock()?;
         inner.delete_one(col_name, query, session_id)
     }
 
-    #[inline]
     pub(super) fn delete_many(&self, col_name: &str, query: Document, session_id: Option<&ObjectId>) -> DbResult<DeleteResult> {
         let mut inner = self.inner.lock()?;
         inner.delete_many(col_name, query, session_id)
     }
 
-    #[inline]
     pub(super) fn create_index(&self, col_name: &str, keys: &Document, options: Option<&Document>) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.create_index(col_name, keys, options)
     }
 
-    #[inline]
     pub(super) fn drop(&self, col_name: &str, session_id: Option<&ObjectId>) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.drop_collection(col_name, session_id)
