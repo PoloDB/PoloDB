@@ -50,6 +50,16 @@ impl BaseSession {
         let mut session = self.inner.as_ref().lock()?;
         session.only_rollback_journal()
     }
+
+    pub fn retain_backend(&self) {
+        let mut session = self.inner.as_ref().lock().unwrap();
+        session.release_backend()
+    }
+
+    pub fn release_backend(&self) {
+        let mut session = self.inner.as_ref().lock().unwrap();
+        session.retain_backend()
+    }
 }
 
 impl Session for BaseSession {
@@ -155,6 +165,14 @@ impl BaseSessionInner {
             config,
 
         })
+    }
+
+    fn retain_backend(&mut self) {
+        self.backend.retain()
+    }
+
+    fn release_backend(&mut self) {
+        self.backend.release()
     }
 
     #[inline]

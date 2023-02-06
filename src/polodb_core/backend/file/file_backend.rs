@@ -17,6 +17,7 @@ pub(crate) struct FileBackend {
     page_size:       NonZeroU32,
     journal_manager: JournalManager,
     config:          Arc<Config>,
+    session_counter: i32,
 }
 
 struct InitDbResult {
@@ -105,6 +106,7 @@ impl FileBackend {
             page_size,
             journal_manager,
             config,
+            session_counter: 0,
         })
     }
 
@@ -213,6 +215,13 @@ impl Backend for FileBackend {
         self.journal_manager.start_transaction(ty)
     }
 
+    fn retain(&mut self) {
+        self.session_counter += 1;
+    }
+
+    fn release(&mut self) {
+        self.session_counter -= 1;
+    }
 }
 
 impl Drop for FileBackend {

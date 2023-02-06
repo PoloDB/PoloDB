@@ -119,7 +119,10 @@ impl DbContext {
 
         let base_session = self.base_session.clone();
         let session = Box::new(DynamicSession::new(base_session));
-        self.session_map.insert(id, session);
+        let insert_result = self.session_map.insert(id, session);
+        if insert_result.is_none() {
+            self.base_session.retain_backend();
+        }
 
         Ok(id)
     }
@@ -904,7 +907,10 @@ impl DbContext {
     }
 
     pub fn drop_session(&mut self, session_id: &ObjectId) {
-        self.session_map.remove(session_id);
+        let remove_result = self.session_map.remove(session_id);
+        if remove_result.is_some() {
+            self.base_session.release_backend();
+        }
     }
 
     pub fn dump(&mut self) -> DbResult<FullDump> {
