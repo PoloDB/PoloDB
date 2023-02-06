@@ -94,6 +94,7 @@ pub mod results;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod test_utils;
 pub mod commands;
+mod data_structures;
 
 pub use db::{Database, DbResult};
 pub use config::Config;

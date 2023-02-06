@@ -26,6 +26,7 @@ pub(crate) struct MemoryBackend {
     page_size:   NonZeroU32,
     data:        Vec<u8>,
     transaction: Option<Transaction>,
+    session_counter: i32,
 }
 
 impl MemoryBackend {
@@ -45,6 +46,7 @@ impl MemoryBackend {
             page_size,
             data,
             transaction: None,
+            session_counter: 0,
         }
     }
 
@@ -148,6 +150,14 @@ impl Backend for MemoryBackend {
         self.transaction = Some(new_state);
 
         Ok(())
+    }
+
+    fn retain(&mut self) {
+        self.session_counter += 1;
+    }
+
+    fn release(&mut self) {
+        self.session_counter -= 1;
     }
 }
 
