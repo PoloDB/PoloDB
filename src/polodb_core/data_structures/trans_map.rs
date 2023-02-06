@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+/// Transactional ordered map
 pub(crate) struct TransMap<K, V: Clone> {
     inner: Arc<TransMapInner<K, V>>
 }
@@ -47,7 +48,7 @@ impl<K, V> TransMap<K, V>
         V: Clone,
 {
 
-    fn get(&self, key: &K) -> Option<&V> {
+    pub fn get(&self, key: &K) -> Option<&V> {
         self.inner.get(key)
     }
 
@@ -90,7 +91,7 @@ impl<K, V> TransMapInner<K,V>
         V: Clone,
 {
 
-    fn get(&self, key: &K) -> Option<&V> {
+    pub fn get(&self, key: &K) -> Option<&V> {
         match self.content.get(key) {
             Some(v) => Some(v),
             None => {
@@ -110,13 +111,22 @@ pub(crate) struct TransMapDraft<K, V: Clone> {
 }
 
 impl<K, V> TransMapDraft<K, V>
-    where V: Clone
+    where
+        K: Ord,
+        V: Clone,
 {
 
     pub fn new(base: TransMap<K, V>) -> TransMapDraft<K, V> {
         TransMapDraft {
             base,
             content: BTreeMap::new(),
+        }
+    }
+
+    pub fn get(&self, key: &K) -> Option<&V> {
+        match self.content.get(key) {
+            Some(v) => Some(v),
+            None => self.base.get(key),
         }
     }
 

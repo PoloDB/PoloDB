@@ -1,50 +1,54 @@
 use std::num::{NonZeroU32, NonZeroU64};
-use std::collections::BTreeMap;
 use crate::backend::Backend;
 use crate::{DbResult, TransactionType, DbErr};
+use crate::backend::memory::db_snapshot::{DbSnapshot, DbSnapshotDraft};
 use crate::page::RawPage;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 
 struct Transaction {
     ty: TransactionType,
-    offset_map: BTreeMap<u32, RawPage>,
-    db_file_size: u64,
+    draft: DbSnapshotDraft,
 }
 
 impl Transaction {
 
-    pub(super) fn new(ty: TransactionType, db_file_size: u64) -> Transaction {
+    pub(super) fn new(ty: TransactionType, snapshot: DbSnapshot) -> Transaction {
+        let draft = DbSnapshotDraft::new(snapshot);
         Transaction {
             ty,
-            offset_map: BTreeMap::new(),
-            db_file_size,
+            draft,
         }
     }
 
 }
+
 pub(crate) struct MemoryBackend {
     page_size:   NonZeroU32,
-    data:        Vec<u8>,
+    snapshot:    DbSnapshot,
     transaction: Option<Transaction>,
     session_counter: i32,
 }
 
 impl MemoryBackend {
 
-    fn force_write_first_block(data: &mut Vec<u8>, page_size: NonZeroU32) {
+    fn force_write_first_block(snapshot: DbSnapshot, page_size: NonZeroU32) -> DbSnapshot {
         let wrapper = HeaderPageWrapper::init(0, page_size);
-        let wrapper_size = wrapper.0.data.len();
-        data[0..wrapper_size].copy_from_slice(&wrapper.0.data);
+
+        let mut snapshot_draft = DbSnapshotDraft::new(snapshot);
+        snapshot_draft.write_page(&wrapper.0);
+
+        snapshot_draft.commit()
     }
 
     pub(crate) fn new(page_size: NonZeroU32, init_block_count: NonZeroU64) -> MemoryBackend {
         let data_len = init_block_count.get() * (page_size.get() as u64);
-        let data_len = data_len as usize;
-        let mut data = vec![0; data_len];
-        MemoryBackend::force_write_first_block(&mut data, page_size);
+        let snapshot = MemoryBackend::force_write_first_block(
+            DbSnapshot::new(page_size, data_len),
+            page_size
+        );
         MemoryBackend {
             page_size,
-            data,
+            snapshot,
             transaction: None,
             session_counter: 0,
         }
@@ -52,14 +56,7 @@ impl MemoryBackend {
 
     fn merge_transaction(&mut self) {
         let state = self.transaction.take().unwrap();
-        let db_file_size = state.db_file_size;
-        self.data.resize(db_file_size as usize, 0);
-        for (key, value) in state.offset_map {
-            let page_size = self.page_size.get() as usize;
-            let start = (key as usize) * page_size;
-            let end = start + page_size;
-            self.data[start..end].copy_from_slice(&value.data);
-        }
+        self.snapshot = state.draft.commit();
     }
 
     fn recover_file_and_state(&mut self) {
@@ -71,18 +68,13 @@ impl MemoryBackend {
 impl Backend for MemoryBackend {
     fn read_page(&self, page_id: u32) -> DbResult<RawPage> {
         if let Some(transaction) = &self.transaction {
-            if let Some(page) = transaction.offset_map.get(&page_id) {
-                return Ok(page.clone());
+            if let Some(page) = transaction.draft.read_page(page_id) {
+                return Ok(page);
             }
         }
 
-        let data_index = (page_id as usize) * (self.page_size.get() as usize);
-        let mut result = RawPage::new(page_id, self.page_size);
-
-        let end = data_index + (self.page_size.get() as usize);
-        result.data.copy_from_slice(&self.data[data_index..end]);
-
-        Ok(result)
+        let page = self.snapshot.read_page(page_id).expect("page not exist");
+        Ok(page)
     }
 
     fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
@@ -91,14 +83,13 @@ impl Backend for MemoryBackend {
             _ => return Err(DbErr::CannotWriteDbWithoutTransaction),
         };
 
-        let state = self.transaction.as_mut().unwrap();
-
         let page_id = page.page_id;
-        state.offset_map.insert(page_id, page.clone());
+        let state = self.transaction.as_mut().unwrap();
+        state.draft.write_page(page);
 
         let expected_db_size = (page_id as u64 + 1) * (self.page_size.get() as u64);
-        if expected_db_size > state.db_file_size {
-            state.db_file_size = expected_db_size;
+        if expected_db_size > state.draft.db_file_size() {
+            state.draft.set_db_file_size(expected_db_size);
         }
 
         Ok(())
@@ -115,7 +106,7 @@ impl Backend for MemoryBackend {
     }
 
     fn db_size(&self) -> u64 {
-        self.data.len() as u64
+        self.snapshot.db_file_size()
     }
 
     fn set_db_size(&mut self, _size: u64) -> DbResult<()> {
@@ -127,8 +118,10 @@ impl Backend for MemoryBackend {
     }
 
     fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
-        let db_size = self.data.len() as u64;
-        let new_state = Transaction::new(TransactionType::Write, db_size);
+        let new_state = Transaction::new(
+            TransactionType::Write,
+            self.snapshot.clone(),
+        );
         self.transaction = Some(new_state);
         Ok(())
     }
@@ -145,8 +138,7 @@ impl Backend for MemoryBackend {
         if self.transaction.is_some() {
             return Err(DbErr::Busy);
         }
-        let db_size = self.data.len() as u64;
-        let new_state = Transaction::new(ty, db_size);
+        let new_state = Transaction::new(ty, self.snapshot.clone());
         self.transaction = Some(new_state);
 
         Ok(())
