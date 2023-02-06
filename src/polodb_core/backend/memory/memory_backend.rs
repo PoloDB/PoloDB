@@ -73,7 +73,17 @@ impl Backend for MemoryBackend {
             }
         }
 
-        let page = self.snapshot.read_page(page_id).expect("page not exist");
+        let test_page = self.snapshot.read_page(page_id);
+
+        if test_page.is_none() {
+            let page_size = self.page_size.get() as u64;
+            let db_file_size = self.db_size();
+            if (page_id as u64) * page_size < db_file_size {
+                return Ok(RawPage::new(page_id, self.page_size));
+            }
+        }
+
+        let page = test_page.expect(format!("page not exist: {}", page_id).as_str());
         Ok(page)
     }
 
@@ -106,11 +116,18 @@ impl Backend for MemoryBackend {
     }
 
     fn db_size(&self) -> u64 {
-        self.snapshot.db_file_size()
+        if let Some(transaction) = &self.transaction {
+            transaction.draft.db_file_size()
+        } else {
+            self.snapshot.db_file_size()
+        }
     }
 
-    fn set_db_size(&mut self, _size: u64) -> DbResult<()> {
-        todo!()
+    fn set_db_size(&mut self, size: u64) -> DbResult<()> {
+        if let Some(transaction) = &mut self.transaction {
+            transaction.draft.set_db_file_size(size);
+        }
+        Ok(())
     }
 
     fn transaction_type(&self) -> Option<TransactionType> {
