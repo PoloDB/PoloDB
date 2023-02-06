@@ -1,17 +1,28 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+const MAX_DEPTH: usize = 8;
+
 /// Transactional ordered map
 pub(crate) struct TransMap<K, V: Clone> {
     inner: Arc<TransMapInner<K, V>>
 }
 
 impl<K, V> TransMap<K, V>
-    where V: Clone
+    where
+        K: Ord + Copy,
+        V: Clone,
 {
 
     pub fn new() -> TransMap<K, V> {
         let inner = TransMapInner::new();
+        TransMap {
+            inner: Arc::new(inner),
+        }
+    }
+
+    fn new_with_map(map: BTreeMap<K, V>) -> TransMap<K, V> {
+        let inner = TransMapInner::new_with_map(map);
         TransMap {
             inner: Arc::new(inner),
         }
@@ -22,6 +33,10 @@ impl<K, V> TransMap<K, V>
         TransMap {
             inner: Arc::new(inner),
         }
+    }
+
+    fn traverse(&self, map: &mut BTreeMap<K ,V>) {
+        self.inner.traverse(map)
     }
 
     pub fn depth(&self) -> usize {
@@ -62,13 +77,22 @@ struct TransMapInner<K, V: Clone> {
 
 impl<K, V> TransMapInner<K, V>
 where
-    V: Clone
+    K: Ord + Copy,
+    V: Clone,
 {
 
     fn new() -> TransMapInner<K, V> {
         TransMapInner {
             prev: None,
             content: BTreeMap::new(),
+            depth: 1,
+        }
+    }
+
+    fn new_with_map(map: BTreeMap<K, V>) -> TransMapInner<K, V> {
+        TransMapInner {
+            prev: None,
+            content: map,
             depth: 1,
         }
     }
@@ -80,6 +104,16 @@ where
             prev,
             content,
             depth: prev_depth + 1,
+        }
+    }
+
+    fn traverse(&self, map: &mut BTreeMap<K ,V>) {
+        if let Some(prev_map) = &self.prev {
+            prev_map.traverse(map);
+        }
+
+        for (key, value) in &self.content {
+            map.insert(*key, value.clone());
         }
     }
 
@@ -112,7 +146,7 @@ pub(crate) struct TransMapDraft<K, V: Clone> {
 
 impl<K, V> TransMapDraft<K, V>
     where
-        K: Ord,
+        K: Ord + Copy,
         V: Clone,
 {
 
@@ -135,18 +169,29 @@ impl<K, V> TransMapDraft<K, V>
             K: Ord,
     {
         self.content.insert(key, value)
-
     }
 
     pub fn commit(self) -> TransMap<K, V> {
-        let prev = self.base.clone();
-        TransMap::new_with_content(prev, self.content)
+        if self.base.depth() >= MAX_DEPTH {
+            let mut content = BTreeMap::new();
+            self.base.traverse(&mut content);
+
+            for (key, value) in &self.content {
+                content.insert(*key, value.clone());
+            }
+
+            TransMap::new_with_map(content)
+        } else {
+            let prev = self.base.clone();
+            TransMap::new_with_content(prev, self.content)
+        }
     }
 
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use crate::data_structures::trans_map::{TransMap, TransMapDraft};
 
     #[test]
@@ -169,6 +214,24 @@ mod tests {
         assert_eq!(t2.get(&2).map(|r| *r), Some(2));
         assert_eq!(t2.get(&3).map(|r| *r), Some(3));
         assert_eq!(t2.depth(), 3);
+    }
+
+    #[test]
+    fn test_max_depth() {
+        let base_map = RefCell::new(TransMap::<i32, i32>::new());
+        for i in 0..8 {
+            let mut draft = TransMapDraft::new(base_map.borrow().clone());
+            draft.insert(i, i);
+
+            let mut borrowed_map = base_map.borrow_mut();
+            *borrowed_map = draft.commit();
+        }
+
+        let final_map = base_map.borrow();
+        assert_eq!(final_map.depth(), 1);
+        for i in 0..8 {
+            assert_eq!(*final_map.get(&i).unwrap(), i);
+        }
     }
 
 }
