@@ -6,6 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 use getrandom::getrandom;
 use crc64fast::Digest;
+use crate::data_structures::trans_map::TransMap;
 use super::transaction_state::TransactionState;
 use super::frame_header::FrameHeader;
 use crate::transaction::TransactionType;
@@ -33,13 +34,13 @@ pub(super) struct JournalManager {
     page_size:         NonZeroU32,
     salt1:             u32,
     salt2:             NonZeroU32,
-    transaction_state: Option<Box<TransactionState>>,
+    transaction_state: Option<TransactionState>,
 
     // origin_state
     db_file_size:      u64,
 
     // page_id => file_position
-    offset_map:        BTreeMap<u32, u64>,
+    offset_map:        TransMap<u32, u64>,
 
     // count of all frames
     count:             u32,
@@ -86,7 +87,7 @@ impl JournalManager {
             salt2: generate_a_nonzero_salt(),
             transaction_state: None,
 
-            offset_map: BTreeMap::new(),
+            offset_map: TransMap::new(),
             count: 0,
         };
 
@@ -191,8 +192,13 @@ impl JournalManager {
     }
 
     fn new_write_state(&mut self) {
-        let new_state = Box::new(TransactionState::new(
-            TransactionType::Write, self.count, self.db_file_size));
+        let offset_map = self.offset_map.clone();
+        let new_state = TransactionState::new(
+            TransactionType::Write,
+            offset_map,
+            self.count,
+            self.db_file_size
+        );
         self.transaction_state = Some(new_state);
     }
 
@@ -295,11 +301,12 @@ impl JournalManager {
         }
 
         // load frame
-        self.offset_map.insert(frame_header.page_id, current_pos);
+        let transaction = self.transaction_state.as_mut().unwrap();
+        transaction.offset_map.insert(frame_header.page_id, current_pos);
 
         // is a commit frame
         if frame_header.db_size != 0 {
-            self.db_file_size = frame_header.db_size;
+            transaction.db_file_size = frame_header.db_size;
             is_commit.set(true);
         }
         Ok(())
@@ -307,11 +314,9 @@ impl JournalManager {
 
     fn merge_transaction_state(&mut self) -> TransactionType {
         let state = self.transaction_state.take().unwrap();
-        for (page_id, offset) in &state.offset_map {
-            self.offset_map.insert(*page_id, *offset);
-        }
         self.db_file_size = state.db_file_size;
         self.count = state.frame_count;
+        self.offset_map = state.offset_map.commit();
         state.ty
     }
 
@@ -460,14 +465,17 @@ impl JournalManager {
         db_file.set_len(self.db_file_size)?;
 
         {
+            let mut offset_map = BTreeMap::new();
+            self.offset_map.traverse(&mut offset_map);
+
             let mut journal_file = self.journal_file.borrow_mut();
-            for (page_id, offset) in &self.offset_map {
+            for (page_id, offset) in offset_map {
                 let data_offset = offset + FRAME_HEADER_SIZE;
 
-                let mut result = RawPage::new(*page_id, self.page_size);
+                let mut result = RawPage::new(page_id, self.page_size);
                 result.read_from_file(&mut journal_file, data_offset)?;
 
-                result.sync_to_file(db_file, (*page_id as u64) * (self.page_size.get() as u64))?;
+                result.sync_to_file(db_file, (page_id as u64) * (self.page_size.get() as u64))?;
             }
         }
 
@@ -493,7 +501,7 @@ impl JournalManager {
         // clear all data
         self.count = 0;
 
-        self.offset_map.clear();
+        self.offset_map = TransMap::new();
 
         self.plus_salt1();
         self.salt2 = generate_a_nonzero_salt();
@@ -517,8 +525,11 @@ impl JournalManager {
 
         }
 
-        let new_state = Box::new(
-            TransactionState::new(ty, self.count, self.db_file_size)
+        let new_state = TransactionState::new(
+            ty,
+            self.offset_map.clone(),
+            self.count,
+            self.db_file_size
         );
         self.transaction_state = Some(new_state);
 
@@ -562,10 +573,9 @@ impl JournalManager {
         let mut journal_file = self.journal_file.borrow_mut();
         exclusive_lock_file(&mut journal_file)?;
 
-        let new_state = Box::new(
-            TransactionState::new(TransactionType::Write, self.count, self.db_file_size)
-        );
-        self.transaction_state = Some(new_state);
+        if let Some(state) = &mut self.transaction_state {
+            state.set_type(TransactionType::Write);
+        }
         Ok(())
     }
 

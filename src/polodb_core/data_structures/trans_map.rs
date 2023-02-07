@@ -35,7 +35,7 @@ impl<K, V> TransMap<K, V>
         }
     }
 
-    fn traverse(&self, map: &mut BTreeMap<K ,V>) {
+    pub fn traverse(&self, map: &mut BTreeMap<K ,V>) {
         self.inner.traverse(map)
     }
 
