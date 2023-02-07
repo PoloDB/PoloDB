@@ -4,7 +4,10 @@ use std::cell::RefCell;
 use std::io::{SeekFrom, Seek, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use bson::oid::ObjectId;
+use hashbrown::HashMap;
 use super::journal_manager::JournalManager;
+use super::transaction_state::TransactionState;
 use crate::backend::Backend;
 use crate::{DbResult, DbErr, Config};
 use crate::page::RawPage;
@@ -17,7 +20,7 @@ pub(crate) struct FileBackend {
     page_size:       NonZeroU32,
     journal_manager: JournalManager,
     config:          Arc<Config>,
-    session_counter: i32,
+    state_map:       HashMap<ObjectId, TransactionState>,
 }
 
 struct InitDbResult {
@@ -106,7 +109,7 @@ impl FileBackend {
             page_size,
             journal_manager,
             config,
-            session_counter: 0,
+            state_map: HashMap::new(),
         })
     }
 
@@ -184,7 +187,7 @@ impl Backend for FileBackend {
     fn commit(&mut self) -> DbResult<()> {
         let mut main_db = self.file.borrow_mut();
         self.journal_manager.commit()?;
-        if self.is_journal_full() {
+        if self.is_journal_full() && self.state_map.is_empty() {
             self.journal_manager.checkpoint_journal(&mut main_db)?;
             crate::polo_log!("checkpoint journal finished");
         }
@@ -215,12 +218,15 @@ impl Backend for FileBackend {
         self.journal_manager.start_transaction(ty)
     }
 
-    fn retain(&mut self) {
-        self.session_counter += 1;
+    fn new_session(&mut self, id: &ObjectId) -> DbResult<()> {
+        let state = self.journal_manager.new_state(TransactionType::Read);
+        self.state_map.insert(id.clone(), state);
+        Ok(())
     }
 
-    fn release(&mut self) {
-        self.session_counter -= 1;
+    fn remove_session(&mut self, id: &ObjectId) -> DbResult<()> {
+        self.state_map.remove(id);
+        Ok(())
     }
 }
 

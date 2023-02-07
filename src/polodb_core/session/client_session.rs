@@ -42,6 +42,9 @@ impl<'a> ClientSession<'a> {
 
 impl Drop for ClientSession<'_> {
     fn drop(&mut self) {
-        self.db.drop_session(&self.id)
+        let drop_error = self.db.drop_session(&self.id);
+        if let Err(err) = drop_error {
+            crate::polo_log!("drop session error: {}", err);
+        }
     }
 }

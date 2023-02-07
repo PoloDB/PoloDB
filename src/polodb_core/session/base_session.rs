@@ -2,6 +2,7 @@ use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 use bson::Document;
 use std::cell::Cell;
+use bson::oid::ObjectId;
 use crate::backend::{AutoStartResult, Backend};
 use crate::{Config, DbErr, DbResult, TransactionType};
 use crate::data_ticket::DataTicket;
@@ -51,14 +52,14 @@ impl BaseSession {
         session.only_rollback_journal()
     }
 
-    pub fn retain_backend(&self) {
+    pub fn new_session(&self, sid: &ObjectId) -> DbResult<()> {
         let mut session = self.inner.as_ref().lock().unwrap();
-        session.release_backend()
+        session.new_session(sid)
     }
 
-    pub fn release_backend(&self) {
+    pub fn remove_session(&self, sid: &ObjectId) -> DbResult<()> {
         let mut session = self.inner.as_ref().lock().unwrap();
-        session.retain_backend()
+        session.remove_session(sid)
     }
 }
 
@@ -167,12 +168,12 @@ impl BaseSessionInner {
         })
     }
 
-    fn retain_backend(&mut self) {
-        self.backend.retain()
+    fn new_session(&mut self, sid: &ObjectId) -> DbResult<()> {
+        self.backend.new_session(sid)
     }
 
-    fn release_backend(&mut self) {
-        self.backend.release()
+    fn remove_session(&mut self, sid: &ObjectId) -> DbResult<()> {
+        self.backend.remove_session(sid)
     }
 
     #[inline]

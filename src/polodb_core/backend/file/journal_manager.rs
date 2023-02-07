@@ -508,6 +508,15 @@ impl JournalManager {
         self.write_header_to_file()
     }
 
+    pub fn new_state(&self, ty: TransactionType) -> TransactionState {
+        TransactionState::new(
+            ty,
+            self.offset_map.clone(),
+            self.count,
+            self.db_file_size
+        )
+    }
+
     pub(crate) fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
         if self.transaction_state.is_some() {
             return Err(DbErr::StartTransactionInAnotherTransaction);

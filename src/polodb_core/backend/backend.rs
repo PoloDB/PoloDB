@@ -1,3 +1,4 @@
+use bson::oid::ObjectId;
 use crate::DbResult;
 use crate::page::RawPage;
 use crate::transaction::TransactionType;
@@ -18,13 +19,6 @@ pub(crate) trait Backend {
     fn rollback(&mut self) -> DbResult<()>;
     fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()>;
 
-    /// The backend is referenced by a session,
-    /// the counter plus 1,
-    /// which means the backend can not merge the journals.
-    ///
-    /// Otherwise, merging the journal will make data error.
-    fn retain(&mut self);
-
-    /// Minus the counter
-    fn release(&mut self);
+    fn new_session(&mut self, id: &ObjectId) -> DbResult<()>;
+    fn remove_session(&mut self, id: &ObjectId) -> DbResult<()>;
 }
