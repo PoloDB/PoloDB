@@ -1,4 +1,6 @@
 use std::num::{NonZeroU32, NonZeroU64};
+use bson::oid::ObjectId;
+use hashbrown::HashMap;
 use crate::backend::Backend;
 use crate::{DbResult, TransactionType, DbErr};
 use crate::backend::memory::db_snapshot::{DbSnapshot, DbSnapshotDraft};
@@ -26,7 +28,7 @@ pub(crate) struct MemoryBackend {
     page_size:   NonZeroU32,
     snapshot:    DbSnapshot,
     transaction: Option<Transaction>,
-    session_counter: i32,
+    state_map:   HashMap<ObjectId, Transaction>,
 }
 
 impl MemoryBackend {
@@ -50,7 +52,7 @@ impl MemoryBackend {
             page_size,
             snapshot,
             transaction: None,
-            session_counter: 0,
+            state_map: HashMap::new(),
         }
     }
 
@@ -161,12 +163,18 @@ impl Backend for MemoryBackend {
         Ok(())
     }
 
-    fn retain(&mut self) {
-        self.session_counter += 1;
+    fn new_session(&mut self, id: &ObjectId) -> DbResult<()> {
+        let transaction = Transaction::new(
+            TransactionType::Read,
+            self.snapshot.clone(),
+        );
+        self.state_map.insert(id.clone(), transaction);
+        Ok(())
     }
 
-    fn release(&mut self) {
-        self.session_counter -= 1;
+    fn remove_session(&mut self, id: &ObjectId) -> DbResult<()> {
+        self.state_map.remove(id);
+        Ok(())
     }
 }
 

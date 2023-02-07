@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use crate::data_structures::trans_map::{TransMap, TransMapDraft};
 use crate::transaction::TransactionType;
 

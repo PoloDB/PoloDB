@@ -175,7 +175,7 @@ impl Database {
         inner.rollback()
     }
 
-    pub(crate) fn drop_session(&self, session_id: &ObjectId) {
+    pub(crate) fn drop_session(&self, session_id: &ObjectId) -> DbResult<()> {
         let mut inner = self.inner.lock().unwrap();
         inner.drop_session(session_id)
     }
@@ -338,7 +338,7 @@ impl DatabaseInner {
     }
 
     #[inline]
-    fn drop_session(&mut self, session_id: &ObjectId) {
+    fn drop_session(&mut self, session_id: &ObjectId) -> DbResult<()> {
         self.ctx.drop_session(session_id)
     }
 
