@@ -28,7 +28,7 @@ impl<K, V> TransMap<K, V>
         }
     }
 
-    fn new_with_content(prev: TransMap<K, V>, content: BTreeMap<K, V>) -> TransMap<K, V> {
+    fn new_with_content(prev: Option<TransMap<K, V>>, content: BTreeMap<K, V>) -> TransMap<K, V> {
         let inner = TransMapInner::new_with_content(prev, content);
         TransMap {
             inner: Arc::new(inner),
@@ -97,13 +97,16 @@ where
         }
     }
 
-    fn new_with_content(prev: TransMap<K, V>, content: BTreeMap<K, V>) -> TransMapInner<K, V> {
-        let prev_depth = prev.depth();
-        let prev = Some(prev);
+    fn new_with_content(prev: Option<TransMap<K, V>>, content: BTreeMap<K, V>) -> TransMapInner<K, V> {
+        let depth = if let Some(prev) = &prev {
+            prev.depth() + 1
+        } else {
+            1
+        };
         TransMapInner {
             prev,
             content,
-            depth: prev_depth + 1,
+            depth,
         }
     }
 
@@ -183,7 +186,11 @@ impl<K, V> TransMapDraft<K, V>
             TransMap::new_with_map(content)
         } else {
             let prev = self.base.clone();
-            TransMap::new_with_content(prev, self.content)
+            if prev.inner.content.is_empty() {  // ignore this
+                TransMap::new_with_content(None, self.content)
+            } else {
+                TransMap::new_with_content(Some(prev), self.content)
+            }
         }
     }
 
@@ -204,7 +211,7 @@ mod tests {
         let t1 = draft.commit();
         assert_eq!(t0.get(&1).map(|r| *r), None);
         assert_eq!(t1.get(&1).map(|r| *r), Some(1));
-        assert_eq!(t1.depth(), 2);
+        assert_eq!(t1.depth(), 1);
 
         let mut draft = TransMapDraft::new(t1.clone());
         draft.insert(1, 0);
@@ -213,13 +220,13 @@ mod tests {
         assert_eq!(t2.get(&1).map(|r| *r), Some(0));
         assert_eq!(t2.get(&2).map(|r| *r), Some(2));
         assert_eq!(t2.get(&3).map(|r| *r), Some(3));
-        assert_eq!(t2.depth(), 3);
+        assert_eq!(t2.depth(), 2);
     }
 
     #[test]
     fn test_max_depth() {
         let base_map = RefCell::new(TransMap::<i32, i32>::new());
-        for i in 0..8 {
+        for i in 0..9{
             let mut draft = TransMapDraft::new(base_map.borrow().clone());
             draft.insert(i, i);
 
@@ -229,7 +236,7 @@ mod tests {
 
         let final_map = base_map.borrow();
         assert_eq!(final_map.depth(), 1);
-        for i in 0..8 {
+        for i in 0..9 {
             assert_eq!(*final_map.get(&i).unwrap(), i);
         }
     }
