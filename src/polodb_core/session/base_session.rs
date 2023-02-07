@@ -61,17 +61,28 @@ impl BaseSession {
         let mut session = self.inner.as_ref().lock().unwrap();
         session.remove_session(sid)
     }
+
+    pub fn pipeline_read_page(&self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<RawPage> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.pipeline_read_page(page_id, session_id)
+    }
+
+    #[allow(dead_code)]
+    pub fn pipeline_write_page(&mut self, page: &RawPage, session_id: Option<&ObjectId>) -> DbResult<()> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.pipeline_write_page(page, session_id)
+    }
 }
 
 impl Session for BaseSession {
-    fn pipeline_read_page(&self, page_id: u32) -> DbResult<RawPage> {
+    fn read_page(&self, page_id: u32) -> DbResult<RawPage> {
         let mut session = self.inner.as_ref().lock()?;
-        session.pipeline_read_page(page_id)
+        session.read_page(page_id)
     }
 
-    fn pipeline_write_page(&self, page: &RawPage) -> DbResult<()> {
+    fn write_page(&self, page: &RawPage) -> DbResult<()> {
         let mut session = self.inner.as_ref().lock()?;
-        session.pipeline_write_page(page)
+        session.write_page(page)
     }
 
     fn page_size(&self) -> NonZeroU32 {
@@ -186,7 +197,7 @@ impl BaseSessionInner {
     // for test
     #[allow(dead_code)]
     fn first_page_free_list_pid_and_size(&mut self) -> DbResult<(u32, u32)> {
-        let first_page = self.pipeline_read_page(0)?;
+        let first_page = self.read_page(0)?;
         let first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
 
         let pid = first_page_wrapper.get_free_list_page_id();
@@ -199,7 +210,7 @@ impl BaseSessionInner {
             crate::polo_log!("free page, id: {}", *pid);
         }
 
-        let first_page = self.pipeline_read_page(0)?;
+        let first_page = self.read_page(0)?;
         let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
         let free_list_pid = first_page_wrapper.get_free_list_page_id();
         if free_list_pid != 0 {
@@ -208,7 +219,7 @@ impl BaseSessionInner {
 
             if cell.get() != free_list_pid {  // free list pid changed
                 first_page_wrapper.set_free_list_page_id(cell.get());
-                self.pipeline_write_page(&first_page_wrapper.0)?;
+                self.write_page(&first_page_wrapper.0)?;
             }
 
             return Ok(())
@@ -218,7 +229,7 @@ impl BaseSessionInner {
         if (current_size as usize) + pages.len() >= header_page_wrapper::HEADER_FREE_LIST_MAX_SIZE {
             let free_list_pid = self.alloc_page_id()?;
             first_page_wrapper.set_free_list_page_id(free_list_pid);
-            self.pipeline_write_page(&first_page_wrapper.0)?;
+            self.write_page(&first_page_wrapper.0)?;
 
             let cell = Cell::new(free_list_pid);
             return self.complex_free_pages(&cell, true, None, pages);
@@ -229,7 +240,7 @@ impl BaseSessionInner {
             first_page_wrapper.set_free_list_content(current_size + (counter as u32), *pid);
         }
 
-        self.pipeline_write_page(&first_page_wrapper.0)?;
+        self.write_page(&first_page_wrapper.0)?;
 
         Ok(())
     }
@@ -239,7 +250,7 @@ impl BaseSessionInner {
         let mut free_list_page_wrapper = if is_new {
             FreeListDataWrapper::init(current_free_page_id, self.page_size)
         } else {
-            let raw_page = self.pipeline_read_page(current_free_page_id)?;
+            let raw_page = self.read_page(current_free_page_id)?;
             FreeListDataWrapper::from_raw(raw_page)
         };
 
@@ -251,7 +262,7 @@ impl BaseSessionInner {
             for pid in pages {
                 free_list_page_wrapper.append_page_id(*pid);
             }
-            return self.pipeline_write_page(free_list_page_wrapper.borrow_page());
+            return self.write_page(free_list_page_wrapper.borrow_page());
         }
 
         let new_free_page_pid = self.alloc_page_id()?;
@@ -268,7 +279,7 @@ impl BaseSessionInner {
                 free_list_page_wrapper.append_page_id(*pid);
             }
 
-            self.pipeline_write_page(free_list_page_wrapper.borrow_page())?;
+            self.write_page(free_list_page_wrapper.borrow_page())?;
         }
 
         free_page_id.set(next_cell.get());
@@ -278,7 +289,7 @@ impl BaseSessionInner {
 
     #[inline]
     pub fn get_first_page(&mut self) -> Result<RawPage, DbErr> {
-        self.pipeline_read_page(0)
+        self.read_page(0)
     }
 
     #[inline]
@@ -374,13 +385,12 @@ impl BaseSessionInner {
         self.page_cache = PageCache::new_default(self.page_size);
         Ok(())
     }
-}
 
-impl SessionInner for BaseSessionInner {
+
     // 1. read from page_cache, if none
     // 2. read from journal, if none
     // 3. read from main db
-    fn pipeline_read_page(&mut self, page_id: u32) -> DbResult<RawPage> {
+    fn pipeline_read_page(&mut self, page_id: u32, _session_id: Option<&ObjectId>) -> DbResult<RawPage> {
         if let Some(page) = self.page_cache.get_from_cache(page_id) {
             return Ok(page);
         }
@@ -395,18 +405,28 @@ impl SessionInner for BaseSessionInner {
     // 1. write to journal, if success
     //    - 2. checkpoint journal, if full
     // 3. write to page_cache
-    fn pipeline_write_page(&mut self, page: &RawPage) -> DbResult<()> {
+    pub fn pipeline_write_page(&mut self, page: &RawPage, _session_id: Option<&ObjectId>) -> DbResult<()> {
         self.backend.write_page(page)?;
 
         self.page_cache.insert_to_cache(page);
         Ok(())
+    }
+}
+
+impl SessionInner for BaseSessionInner {
+    fn read_page(&mut self, page_id: u32) -> DbResult<RawPage> {
+        self.pipeline_read_page(page_id, None)
+    }
+
+    fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
+        self.pipeline_write_page(page, None)
     }
 
     fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper> {
         let data_size = data_size + 2;  // preserve 2 bytes
         let try_result = self.data_page_allocator.try_allocate_data_page(data_size);
         if let Some((pid, _)) = try_result {
-            let raw_page = self.pipeline_read_page(pid)?;
+            let raw_page = self.read_page(pid)?;
             let wrapper = DataPageWrapper::from_raw(raw_page);
             return Ok(wrapper);
         }
@@ -439,7 +459,7 @@ impl SessionInner for BaseSessionInner {
             self.backend.set_db_size(exceed_size)?;
         }
 
-        self.pipeline_write_page(&first_page_wrapper.0)?;
+        self.write_page(&first_page_wrapper.0)?;
 
         crate::polo_log!("alloc new page_id : {}", null_page_bar);
 

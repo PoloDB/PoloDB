@@ -12,7 +12,7 @@ pub(crate) fn delete_all(session: &dyn Session, collection_meta: MetaDocEntry) -
 
 fn delete_all_by_btree_pid(session: &dyn Session, item_size: u32, parent_id: u32, pid: u32) -> DbResult<()> {
     crate::polo_log!("delete all: parent pid: {}, pid: {}", parent_id, pid);
-    let page = session.pipeline_read_page(pid)?;
+    let page = session.read_page(pid)?;
     let btree_node = BTreeNode::from_raw(&page, parent_id, item_size, session)?;
     if btree_node.content.is_empty() {
         return Ok(())

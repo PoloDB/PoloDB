@@ -10,7 +10,7 @@ pub(crate) fn count(session: &dyn Session, collection_meta: MetaDocEntry) -> DbR
 }
 
 fn count_by_btree_pid(session: &dyn Session, item_size: u32, parent_pid: u32, pid: u32) -> DbResult<u64> {
-    let page = session.pipeline_read_page(pid)?;
+    let page = session.read_page(pid)?;
     let btree_content = BTreeNode::from_raw(&page, parent_pid, item_size, session)?;
     if btree_content.content.is_empty() {
         return Ok(0)

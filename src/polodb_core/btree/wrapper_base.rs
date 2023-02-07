@@ -29,7 +29,7 @@ impl<'a> BTreePageWrapperBase<'a> {
     }
 
     pub(super) fn get_node(&mut self, pid: u32, parent_pid: u32) -> DbResult<BTreeNode> {
-        let raw_page = self.session.pipeline_read_page(pid)?;
+        let raw_page = self.session.read_page(pid)?;
 
         BTreeNode::from_raw(&raw_page, parent_pid, self.item_size, self.session)
     }
@@ -39,7 +39,7 @@ impl<'a> BTreePageWrapperBase<'a> {
 
         node.to_raw(&mut raw_page)?;
 
-        self.session.pipeline_write_page(&raw_page)
+        self.session.write_page(&raw_page)
     }
 
 }

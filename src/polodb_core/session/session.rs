@@ -11,8 +11,8 @@ use crate::page::large_data_page_wrapper::LargeDataPageWrapper;
 use crate::page::{FreeListDataWrapper, RawPage};
 
 pub(crate) trait Session {
-    fn pipeline_read_page(&self, page_id: u32) -> DbResult<RawPage>;
-    fn pipeline_write_page(&self, page: &RawPage) -> DbResult<()>;
+    fn read_page(&self, page_id: u32) -> DbResult<RawPage>;
+    fn write_page(&self, page: &RawPage) -> DbResult<()>;
     fn page_size(&self) -> NonZeroU32;
     fn store_doc(&self, doc: &Document) -> DbResult<DataTicket>;
     fn alloc_page_id(&self) -> DbResult<u32>;
@@ -31,8 +31,8 @@ pub(crate) trait Session {
 }
 
 pub(crate) trait SessionInner {
-    fn pipeline_read_page(&mut self, page_id: u32) -> DbResult<RawPage>;
-    fn pipeline_write_page(&mut self, page: &RawPage) -> DbResult<()>;
+    fn read_page(&mut self, page_id: u32) -> DbResult<RawPage>;
+    fn write_page(&mut self, page: &RawPage) -> DbResult<()>;
     fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper>;
     fn return_data_page_wrapper(&mut self, wrapper: DataPageWrapper);
     fn actual_alloc_page_id(&mut self) -> DbResult<u32>;
@@ -78,7 +78,7 @@ pub(crate) trait SessionInner {
         }
         wrapper.put(&bytes);
 
-        self.pipeline_write_page(wrapper.borrow_page())?;
+        self.write_page(wrapper.borrow_page())?;
 
         self.return_data_page_wrapper(wrapper);
 
@@ -90,11 +90,11 @@ pub(crate) trait SessionInner {
 
     fn pipeline_write_null_page(&mut self, page_id: u32) -> DbResult<()> {
         let page = RawPage::new(page_id, self.page_size());
-        self.pipeline_write_page(&page)
+        self.write_page(&page)
     }
 
     fn get_first_page(&mut self) -> Result<RawPage, DbErr> {
-        self.pipeline_read_page(0)
+        self.read_page(0)
     }
 
     fn free_data_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> where Self: Sized {
@@ -104,7 +104,7 @@ pub(crate) trait SessionInner {
             return free_large_data_page(self, data_ticket.pid);
         }
 
-        let page = self.pipeline_read_page(data_ticket.pid)?;
+        let page = self.read_page(data_ticket.pid)?;
         let mut wrapper = DataPageWrapper::from_raw(page);
         let bytes = wrapper.get(data_ticket.index as u32).unwrap().to_vec();
         wrapper.remove(data_ticket.index as u32);
@@ -112,7 +112,7 @@ pub(crate) trait SessionInner {
             self.free_page(data_ticket.pid)?;
         }
         let page = wrapper.consume_page();
-        self.pipeline_write_page(&page)?;
+        self.write_page(&page)?;
         Ok(bytes)
     }
 
@@ -120,7 +120,7 @@ pub(crate) trait SessionInner {
         if data_ticket.is_large_data() {
             return self.get_doc_from_large_page(data_ticket.pid);
         }
-        let page = self.pipeline_read_page(data_ticket.pid)?;
+        let page = self.read_page(data_ticket.pid)?;
         let wrapper = DataPageWrapper::from_raw(page);
         let bytes = wrapper.get(data_ticket.index as u32);
         if let Some(bytes) = bytes {
@@ -138,7 +138,7 @@ pub(crate) trait SessionInner {
         let mut next_pid = pid;
 
         while next_pid != 0 {
-            let page = self.pipeline_read_page(next_pid)?;
+            let page = self.read_page(next_pid)?;
             let wrapper = LargeDataPageWrapper::from_raw(page);
             wrapper.write_to_buffer(&mut bytes);
             next_pid = wrapper.next_pid();
@@ -158,7 +158,7 @@ fn free_large_data_page(session: &mut impl SessionInner, pid: u32) -> DbResult<V
     while next_pid != 0 {
         free_pid.push(next_pid);
 
-        let page = session.pipeline_read_page(next_pid)?;
+        let page = session.read_page(next_pid)?;
         let wrapper = LargeDataPageWrapper::from_raw(page);
         wrapper.write_to_buffer(&mut result);
         next_pid = wrapper.next_pid();
@@ -169,7 +169,7 @@ fn free_large_data_page(session: &mut impl SessionInner, pid: u32) -> DbResult<V
 }
 
 fn get_free_page_id_from_external_page(session: &mut impl SessionInner, free_list_page_id: u32, free_and_next: &Cell<i64>) -> DbResult<u32> {
-    let raw_page = session.pipeline_read_page(free_list_page_id)?;
+    let raw_page = session.read_page(free_list_page_id)?;
     let mut free_list_page_wrapper = FreeListDataWrapper::from_raw(raw_page);
     let pid = free_list_page_wrapper.consume_a_free_page();
     if free_list_page_wrapper.size() == 0 {
@@ -177,7 +177,7 @@ fn get_free_page_id_from_external_page(session: &mut impl SessionInner, free_lis
         session.free_page(pid)?;
         free_and_next.set(next_pid as i64);
     } else {
-        session.pipeline_write_page(free_list_page_wrapper.borrow_page())?;
+        session.write_page(free_list_page_wrapper.borrow_page())?;
         free_and_next.set(-1);
     }
     Ok(pid)
@@ -193,7 +193,7 @@ fn try_get_free_page_id(session: &mut impl SessionInner) -> DbResult<Option<u32>
         let pid = get_free_page_id_from_external_page(session, free_list_page_id, &free_and_next)?;
         if free_and_next.get() >= 0 {
             first_page_wrapper.set_free_list_page_id(free_and_next.get() as u32);
-            session.pipeline_write_page(&first_page_wrapper.0)?;
+            session.write_page(&first_page_wrapper.0)?;
         }
         return Ok(Some(pid));
     }
@@ -206,7 +206,7 @@ fn try_get_free_page_id(session: &mut impl SessionInner) -> DbResult<Option<u32>
     let result = first_page_wrapper.get_free_list_content(free_list_size - 1);
     first_page_wrapper.set_free_list_size(free_list_size - 1);
 
-    session.pipeline_write_page(&first_page_wrapper.0)?;
+    session.write_page(&first_page_wrapper.0)?;
 
     Ok(Some(result))
 }
@@ -237,7 +237,7 @@ fn store_large_data(session: &mut impl SessionInner, bytes: &Vec<u8>) -> DbResul
     let first_pid = pages.first().unwrap().borrow_page().page_id;
 
     for page in pages {
-        session.pipeline_write_page(page.borrow_page())?;
+        session.write_page(page.borrow_page())?;
     }
 
     Ok(DataTicket::large_ticket(first_pid))

@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::sync::Mutex;
 use bson::Document;
+use bson::oid::ObjectId;
 use crate::data_ticket::DataTicket;
 use crate::{DbErr, DbResult, TransactionType};
 use crate::backend::AutoStartResult;
@@ -11,6 +12,7 @@ use crate::session::{BaseSession, Session};
 use crate::session::session::SessionInner;
 
 struct DynamicSessionInner {
+    id: ObjectId,
     base_session: BaseSession,
     page_map: Option<BTreeMap<u32, RawPage>>,
     page_size: NonZeroU32,
@@ -18,9 +20,10 @@ struct DynamicSessionInner {
 
 impl DynamicSessionInner {
 
-    fn new(base_session: BaseSession) -> DynamicSessionInner {
+    fn new(id: ObjectId, base_session: BaseSession) -> DynamicSessionInner {
         let page_size = base_session.page_size();
         DynamicSessionInner {
+            id,
             base_session,
             page_map: None,
             page_size,
@@ -51,15 +54,21 @@ impl DynamicSessionInner {
 }
 
 impl SessionInner for DynamicSessionInner {
-    fn pipeline_read_page(&mut self, page_id: u32) -> DbResult<RawPage> {
+    fn read_page(&mut self, page_id: u32) -> DbResult<RawPage> {
         let page_map = self.page_map.as_ref().ok_or(DbErr::NoTransactionStarted)?;
         match page_map.get(&page_id) {
             Some(page) => Ok(page.clone()),
-            None => self.base_session.pipeline_read_page(page_id),
+            None => {
+                self.base_session
+                    .pipeline_read_page(
+                        page_id,
+                        Some(&self.id),
+                    )
+            },
         }
     }
 
-    fn pipeline_write_page(&mut self, page: &RawPage) -> DbResult<()> {
+    fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
         let page_map = self.page_map.as_mut().ok_or(DbErr::NoTransactionStarted)?;
         page_map.insert(page.page_id, page.clone());
         Ok(())
@@ -92,8 +101,11 @@ pub(crate) struct DynamicSession {
 
 impl DynamicSession {
 
-    pub fn new(base_session: BaseSession) -> DynamicSession {
-        let inner = DynamicSessionInner::new(base_session);
+    pub fn new(id: ObjectId, base_session: BaseSession) -> DynamicSession {
+        let inner = DynamicSessionInner::new(
+            id,
+            base_session,
+        );
         DynamicSession {
             inner: Mutex::new(inner),
         }
@@ -102,14 +114,14 @@ impl DynamicSession {
 }
 
 impl Session for DynamicSession {
-    fn pipeline_read_page(&self, page_id: u32) -> DbResult<RawPage> {
+    fn read_page(&self, page_id: u32) -> DbResult<RawPage> {
         let mut inner = self.inner.lock()?;
-        inner.pipeline_read_page(page_id)
+        inner.read_page(page_id)
     }
 
-    fn pipeline_write_page(&self, page: &RawPage) -> DbResult<()> {
+    fn write_page(&self, page: &RawPage) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
-        inner.pipeline_write_page(page)
+        inner.write_page(page)
     }
 
     fn page_size(&self) -> NonZeroU32 {
