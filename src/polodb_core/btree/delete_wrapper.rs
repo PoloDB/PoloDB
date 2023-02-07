@@ -43,7 +43,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
     fn write_btree(&mut self, node: BTreeNode) {
         let mut page = RawPage::new(node.pid, self.base.session.page_size());
         node.to_raw(&mut page).unwrap();
-        self.base.session.pipeline_write_page(&page).unwrap();
+        self.base.session.write_page(&page).unwrap();
     }
 
     pub fn flush_pages(&mut self) -> DbResult<()> {
@@ -52,7 +52,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
             let mut page = RawPage::new(node.pid, self.base.session.page_size());
             node.to_raw(&mut page)?;
 
-            self.base.session.pipeline_write_page(&page)?;
+            self.base.session.write_page(&page)?;
         }
 
         self.dirty_set.clear();

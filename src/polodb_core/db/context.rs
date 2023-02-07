@@ -118,7 +118,10 @@ impl DbContext {
         let id = ObjectId::new();
 
         let base_session = self.base_session.clone();
-        let session = Box::new(DynamicSession::new(base_session));
+        let session = Box::new(DynamicSession::new(
+            id.clone(),
+            base_session,
+        ));
         let insert_result = self.session_map.insert(id, session);
         if insert_result.is_none() {
             self.base_session.new_session(&id)?;
@@ -204,7 +207,7 @@ impl DbContext {
     }
 
     fn get_meta_source(session: &dyn Session) -> DbResult<MetaSource> {
-        let head_page = session.pipeline_read_page(0)?;
+        let head_page = session.read_page(0)?;
         DbContext::check_first_page_valid(&head_page)?;
         let head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
         let meta_id_counter = head_page_wrapper.get_meta_id_counter();
@@ -323,7 +326,7 @@ impl DbContext {
                 new_root_id,
                 meta_source.meta_pid
             )?;
-            session.pipeline_write_page(&raw_page)?;
+            session.write_page(&raw_page)?;
 
             meta_source.meta_pid = new_root_id;
         }
@@ -338,11 +341,11 @@ impl DbContext {
     }
 
     fn update_meta_source(session: &dyn Session, meta_source: &MetaSource) -> DbResult<()> {
-        let head_page = session.pipeline_read_page(0)?;
+        let head_page = session.read_page(0)?;
         let mut head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
         head_page_wrapper.set_meta_page_id(meta_source.meta_pid);
         head_page_wrapper.set_meta_id_counter(meta_source.meta_id_counter);
-        session.pipeline_write_page(&head_page_wrapper.0)
+        session.write_page(&head_page_wrapper.0)
     }
 
     #[inline]
@@ -356,7 +359,7 @@ impl DbContext {
     }
 
     fn find_collection_root_pid_by_id(session: &dyn Session, parent_pid: u32, root_pid: u32, id: u32) -> DbResult<MetaDocEntry> {
-        let raw_page = session.pipeline_read_page(root_pid)?;
+        let raw_page = session.read_page(root_pid)?;
         let item_size = DbContext::item_size(session);
         let btree_node = BTreeNode::from_raw(
             &raw_page,
@@ -741,7 +744,7 @@ impl DbContext {
     }
 
     fn update_by_root_pid(session: &dyn Session, parent_pid: u32, root_pid: u32, key: &Bson, doc: &Document) -> DbResult<bool> {
-        let page = session.pipeline_read_page(root_pid)?;
+        let page = session.read_page(root_pid)?;
         let item_size = DbContext::item_size(session);
         let page_size = session.page_size();
         let btree_node = BTreeNode::from_raw(
@@ -765,7 +768,7 @@ impl DbContext {
                 let mut page = RawPage::new(btree_node.pid, page_size);
                 new_btree_node.to_raw(&mut page)?;
 
-                session.pipeline_write_page(&page)?;
+                session.write_page(&page)?;
 
                 Ok(true)
             }
@@ -792,7 +795,7 @@ impl DbContext {
         crate::polo_log!("handle backward item, left_pid: {}, new_root_id: {}, right_pid: {}", left_pid, new_root_id, backward_item.right_pid);
 
         let new_root_page = backward_item.write_to_page(session, new_root_id, left_pid)?;
-        session.pipeline_write_page(&new_root_page)?;
+        session.write_page(&new_root_page)?;
 
         collection_meta.set_root_pid(new_root_id);
 
@@ -915,7 +918,7 @@ impl DbContext {
     }
 
     pub fn dump(&mut self) -> DbResult<FullDump> {
-        let first_page = self.base_session.pipeline_read_page(0)?;
+        let first_page = self.base_session.read_page(0)?;
         let first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
         let version = first_page_wrapper.get_version();
         let meta_pid = first_page_wrapper.get_meta_page_id();
@@ -943,7 +946,7 @@ impl DbContext {
         let mut result = Vec::with_capacity(page_count as usize);
 
         for index in 0..page_count {
-            let raw_page = self.base_session.pipeline_read_page(index as u32)?;
+            let raw_page = self.base_session.read_page(index as u32)?;
             result.push(dump_page(raw_page)?);
         }
 

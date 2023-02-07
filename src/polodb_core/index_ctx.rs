@@ -141,7 +141,7 @@ impl IndexEntry {
 
         self.root_pid = new_root_id;
 
-        page_handler.pipeline_write_page(&new_root_page)
+        page_handler.write_page(&new_root_page)
     }
 
     fn mk_index_entry_doc(data_value: &Bson, primary_key: Bson) -> Document {

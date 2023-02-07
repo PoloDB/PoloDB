@@ -63,7 +63,7 @@ impl Cursor {
 
         // recursively find the item
         while current_pid > 0 {
-            let btree_page = page_handler.pipeline_read_page(current_pid)?;
+            let btree_page = page_handler.read_page(current_pid)?;
             let btree_node = BTreeNode::from_raw(
                 &btree_page, 0,
                 item_size,
@@ -107,7 +107,7 @@ impl Cursor {
     fn mk_initial_btree(&mut self, page_handler: &dyn Session, root_page_id: u32, item_size: u32) -> DbResult<()> {
         self.btree_stack.clear();
 
-        let btree_page = page_handler.pipeline_read_page(root_page_id)?;
+        let btree_page = page_handler.read_page(root_page_id)?;
         let btree_node = BTreeNode::from_raw(
             &btree_page, 0,
             item_size,
@@ -132,7 +132,7 @@ impl Cursor {
         let mut left_pid = top.node.indexes[top.index];
 
         while left_pid != 0 {
-            let btree_page = page_handler.pipeline_read_page(left_pid)?;
+            let btree_page = page_handler.read_page(left_pid)?;
             let btree_node = BTreeNode::from_raw(
                 &btree_page,
                 top.node.pid,
@@ -190,7 +190,7 @@ impl Cursor {
         let mut page = RawPage::new(top.node.pid, page_handler.page_size());
         top.node.to_raw(&mut page)?;
 
-        page_handler.pipeline_write_page(&page)
+        page_handler.write_page(&page)
     }
 
     #[inline]
