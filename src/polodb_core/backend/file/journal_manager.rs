@@ -16,7 +16,7 @@ use crate::error::DbErr;
 use super::file_lock::*;
 use crate::dump::{JournalDump, JournalFrameDump};
 
-static HEADER_DESP: &str       = "PoloDB Journal v0.2";
+static HEADER_DESP: &str       = "PoloDB Journal v0.3";
 const JOURNAL_DATA_BEGIN: u64 = 64;
 const FRAME_HEADER_SIZE: u64  = 40;
 
