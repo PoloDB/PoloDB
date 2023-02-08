@@ -158,15 +158,17 @@ impl FileBackend {
         (self.journal_manager.len() as u64) >= self.config.journal_full_size
     }
 
-}
-
-impl Backend for FileBackend {
-
-    fn read_page(&self, page_id: u32) -> DbResult<RawPage> {
-        if let Some(page) = self.journal_manager.read_page(page_id)? {
+    /// 1. Read the page from the journal
+    /// 2. Read the page from the main file
+    fn read_page_main(&self, page_id: u32) -> DbResult<RawPage> {
+        if let Some(page) = self.journal_manager.read_page_main(page_id)? {
             return Ok(page);
         }
 
+        self.read_page_from_main_file(page_id)
+    }
+
+    fn read_page_from_main_file(&self, page_id: u32) -> DbResult<RawPage> {
         let offset = (page_id as u64) * (self.page_size.get() as u64);
         let mut result = RawPage::new(page_id, self.page_size);
         let mut main_file = self.file.borrow_mut();
@@ -179,11 +181,35 @@ impl Backend for FileBackend {
 
         Ok(result)
     }
+}
 
-    fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
+impl Backend for FileBackend {
+
+    fn read_page(&self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<RawPage> {
+        match session_id {
+            Some(session_id) => {
+                let state = self.state_map
+                    .get(session_id)
+                    .ok_or(DbErr::InvalidSession(Box::new(session_id.clone())))?;
+                if let Some(page) = self.journal_manager.read_page(page_id, Some(state))? {
+                    return Ok(page);
+                }
+                self.read_page_from_main_file(page_id)
+            }
+            None => self.read_page_main(page_id)
+        }
+    }
+
+    fn write_page(&mut self, page: &RawPage, session_id: Option<&ObjectId>) -> DbResult<()> {
+        if session_id.is_some() {
+            unimplemented!()
+        }
         self.journal_manager.append_raw_page(page)
     }
 
+    /// 1. Write a mark to the journal
+    /// 2. If the journal is full, and there is not session is opened,
+    ///    merge the journal to the main database.
     fn commit(&mut self) -> DbResult<()> {
         let mut main_db = self.file.borrow_mut();
         self.journal_manager.commit()?;
@@ -233,6 +259,9 @@ impl Backend for FileBackend {
 impl Drop for FileBackend {
 
     fn drop(&mut self) {
+        // release all the session
+        self.state_map.clear();
+
         let mut main_db = self.file.borrow_mut();
         #[cfg(not(target_os = "windows"))]
         let _ = super::file_lock::unlock_file(&main_db);

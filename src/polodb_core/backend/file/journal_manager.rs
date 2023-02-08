@@ -419,8 +419,12 @@ impl JournalManager {
         Ok(())
     }
 
-    pub(crate) fn read_page(&self, page_id: u32) -> std::io::Result<Option<RawPage>> {
-        let offset = match &self.transaction_state {
+    pub(crate) fn read_page_main(&self, page_id: u32) -> std::io::Result<Option<RawPage>> {
+        self.read_page(page_id, self.transaction_state.as_ref())
+    }
+
+    pub(crate) fn read_page(&self, page_id: u32, state: Option<&TransactionState>) -> std::io::Result<Option<RawPage>> {
+        let offset = match state {
 
             // currently in transaction state
             // find it in state firstly
@@ -694,7 +698,7 @@ mod tests {
         }
 
         for i in 0..TEST_PAGE_LEN {
-            let page = journal_manager.read_page(i).unwrap().unwrap();
+            let page = journal_manager.read_page_main(i).unwrap().unwrap();
 
             for (index, ch) in page.data.iter().enumerate() {
                 assert_eq!(*ch, ten_pages[i as usize].data[index])

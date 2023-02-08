@@ -387,39 +387,64 @@ impl BaseSessionInner {
     }
 
 
-    // 1. read from page_cache, if none
-    // 2. read from journal, if none
-    // 3. read from main db
-    fn pipeline_read_page(&mut self, page_id: u32, _session_id: Option<&ObjectId>) -> DbResult<RawPage> {
+    /// Read page depends on the session
+    ///
+    /// If the session_id is provided,
+    /// read the page from the backend.
+    ///
+    /// This method will not cache the page for the session.
+    ///
+    /// Otherwise, the page will read from the main session,
+    /// which contains cached pages.
+    fn pipeline_read_page(&mut self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<RawPage> {
+        match session_id {
+            Some(_) => self.backend.read_page(page_id, session_id),
+            None => self.pipeline_read_page_main(page_id)
+        }
+    }
+
+    /// 1. read from page_cache, if none
+    /// 2. read from journal, if none
+    /// 3. read from main db
+    fn pipeline_read_page_main(&mut self, page_id: u32) -> DbResult<RawPage> {
         if let Some(page) = self.page_cache.get_from_cache(page_id) {
             return Ok(page);
         }
 
-        let result = self.backend.read_page(page_id)?;
+        let result = self.backend.read_page(page_id, None)?;
 
         self.page_cache.insert_to_cache(&result);
 
         Ok(result)
     }
 
-    // 1. write to journal, if success
-    //    - 2. checkpoint journal, if full
-    // 3. write to page_cache
-    pub fn pipeline_write_page(&mut self, page: &RawPage, _session_id: Option<&ObjectId>) -> DbResult<()> {
-        self.backend.write_page(page)?;
+    /// Write page depends on the session
+    pub fn pipeline_write_page(&mut self, page: &RawPage, session_id: Option<&ObjectId>) -> DbResult<()> {
+        match session_id {
+            Some(_) => self.backend.write_page(page, session_id),
+            None => self.pipeline_write_page_main(page),
+        }
+    }
+
+    /// 1. write to journal, if success
+    ///    - 2. checkpoint journal, if full
+    /// 3. write to page_cache
+    fn pipeline_write_page_main(&mut self, page: &RawPage) -> DbResult<()> {
+        self.backend.write_page(page, None)?;
 
         self.page_cache.insert_to_cache(page);
         Ok(())
     }
+
 }
 
 impl SessionInner for BaseSessionInner {
     fn read_page(&mut self, page_id: u32) -> DbResult<RawPage> {
-        self.pipeline_read_page(page_id, None)
+        self.pipeline_read_page_main(page_id)
     }
 
     fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
-        self.pipeline_write_page(page, None)
+        self.pipeline_write_page_main(page)
     }
 
     fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper> {
