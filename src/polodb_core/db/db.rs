@@ -766,8 +766,7 @@ mod tests {
 
     static TEST_SIZE: usize = 1000;
 
-    fn create_and_return_db_with_items(db_name: &str, size: usize) -> Database {
-        let db = prepare_db(db_name).unwrap();
+    fn insert_items_to_db(db: Database, size: usize) -> Database {
         let collection = db.collection::<Document>("test");
 
         let mut data: Vec<Document> = vec![];
@@ -785,13 +784,23 @@ mod tests {
         db
     }
 
+    fn create_file_and_return_db_with_items(db_name: &str, size: usize) -> Database {
+        let db = prepare_db(db_name).unwrap();
+        insert_items_to_db(db, size)
+    }
+
+    fn create_memory_and_return_db_with_items(size: usize) -> Database {
+        let db = Database::open_memory().unwrap();
+        insert_items_to_db(db, size)
+    }
+
     #[test]
     fn test_multi_threads() {
         use std::thread;
         use std::sync::Arc;
 
         let db = {
-            let raw = create_and_return_db_with_items("test-collection", TEST_SIZE);
+            let raw = create_file_and_return_db_with_items("test-collection", TEST_SIZE);
             Arc::new(raw)
         };
         let db2 = db.clone();
@@ -812,47 +821,54 @@ mod tests {
 
     #[test]
     fn test_create_collection_and_find_all() {
-        let db = create_and_return_db_with_items("test-collection", TEST_SIZE);
+        vec![
+            create_file_and_return_db_with_items("test-collection", TEST_SIZE),
+            create_memory_and_return_db_with_items(TEST_SIZE),
+        ].iter().for_each(|db| {
+            let test_collection = db.collection::<Document>("test");
+            let all = test_collection.find_many(None).unwrap();
 
-        let test_collection = db.collection::<Document>("test");
-        let all = test_collection.find_many(None).unwrap();
+            let second = test_collection.find_one(doc! {
+                "content": "1",
+            }).unwrap().unwrap();
+            assert_eq!(second.get("content").unwrap().as_str().unwrap(), "1");
+            assert!(second.get("content").is_some());
 
-        let second = test_collection.find_one(doc! {
-            "content": "1",
-        }).unwrap().unwrap();
-        assert_eq!(second.get("content").unwrap().as_str().unwrap(), "1");
-        assert!(second.get("content").is_some());
-
-        assert_eq!(TEST_SIZE, all.len())
+            assert_eq!(TEST_SIZE, all.len())
+        });
     }
 
     #[test]
     fn test_create_collection_and_drop() {
-        let db = prepare_db("test-create-and-drops").unwrap();
-        let names = db.list_collection_names().unwrap();
-        assert_eq!(names.len(), 0);
+        vec![
+            prepare_db("test-create-and-drops").unwrap(),
+            Database::open_memory().unwrap(),
+        ].iter().for_each(|db| {
+            let names = db.list_collection_names().unwrap();
+            assert_eq!(names.len(), 0);
 
-        let collection = db.collection::<Document>("test");
-        let insert_result = collection.insert_many(&vec![
-            doc! {
+            let collection = db.collection::<Document>("test");
+            let insert_result = collection.insert_many(&vec![
+                doc! {
                 "name": "Apple"
             },
-            doc! {
+                doc! {
                 "name": "Banana"
             },
-        ]).unwrap();
+            ]).unwrap();
 
-        assert_eq!(insert_result.inserted_ids.len(), 2);
+            assert_eq!(insert_result.inserted_ids.len(), 2);
 
-        let names = db.list_collection_names().unwrap();
-        assert_eq!(names.len(), 1);
-        assert_eq!(names[0], "test");
+            let names = db.list_collection_names().unwrap();
+            assert_eq!(names.len(), 1);
+            assert_eq!(names[0], "test");
 
-        let collection = db.collection::<Document>("test");
-        collection.drop().unwrap();
+            let collection = db.collection::<Document>("test");
+            collection.drop().unwrap();
 
-        let names = db.list_collection_names().unwrap();
-        assert_eq!(names.len(), 0);
+            let names = db.list_collection_names().unwrap();
+            assert_eq!(names.len(), 0);
+        });
     }
 
     // #[test]
@@ -870,41 +886,45 @@ mod tests {
 
     #[test]
     fn test_insert_struct() {
-        let db = prepare_db("test-insert-struct").unwrap();
-        // Get a handle to a collection of `Book`.
-        let typed_collection = db.collection::<Book>("books");
+        vec![
+            prepare_db("test-insert-struct").unwrap(),
+            Database::open_memory().unwrap(),
+        ].iter().for_each(|db| {
+            // Get a handle to a collection of `Book`.
+            let typed_collection = db.collection::<Book>("books");
 
-        let books = vec![
-            Book {
-                title: "The Grapes of Wrath".to_string(),
-                author: "John Steinbeck".to_string(),
-            },
-            Book {
-                title: "To Kill a Mockingbird".to_string(),
-                author: "Harper Lee".to_string(),
-            },
-        ];
-
-        // Insert the books into "mydb.books" collection, no manual conversion to BSON necessary.
-        typed_collection.insert_many(books).unwrap();
-
-        let result = typed_collection.find_one(doc! {
-            "title": "The Grapes of Wrath",
-        }).unwrap();
-        let book = result.unwrap();
-        assert_eq!(book.author, "John Steinbeck");
-
-        let result = typed_collection.find_many(doc! {
-            "$or": [
-                {
-                    "title": "The Grapes of Wrath",
+            let books = vec![
+                Book {
+                    title: "The Grapes of Wrath".to_string(),
+                    author: "John Steinbeck".to_string(),
                 },
-                {
-                    "title": "To Kill a Mockingbird",
-                }
-            ]
-        }).unwrap();
-        assert_eq!(result.len(), 2);
+                Book {
+                    title: "To Kill a Mockingbird".to_string(),
+                    author: "Harper Lee".to_string(),
+                },
+            ];
+
+            // Insert the books into "mydb.books" collection, no manual conversion to BSON necessary.
+            typed_collection.insert_many(books).unwrap();
+
+            let result = typed_collection.find_one(doc! {
+                "title": "The Grapes of Wrath",
+            }).unwrap();
+                let book = result.unwrap();
+                assert_eq!(book.author, "John Steinbeck");
+
+                let result = typed_collection.find_many(doc! {
+                "$or": [
+                    {
+                        "title": "The Grapes of Wrath",
+                    },
+                    {
+                        "title": "To Kill a Mockingbird",
+                    }
+                ]
+            }).unwrap();
+            assert_eq!(result.len(), 2);
+        });
     }
 
     // #[test]
@@ -962,61 +982,65 @@ mod tests {
 
     #[test]
     fn test_multiple_find_one() {
-        let db = prepare_db("test-multiple-find-one").unwrap();
-        {
-            let collection = db.collection("config");
-            let doc1 = doc! {
-                "_id": "c1",
-                "value": "c1",
-            };
-            collection.insert_one(doc1).unwrap();
+        vec![
+            prepare_db("test-multiple-find-one").unwrap(),
+            Database::open_memory().unwrap(),
+        ].iter().for_each(|db| {
+            {
+                let collection = db.collection("config");
+                let doc1 = doc! {
+                    "_id": "c1",
+                    "value": "c1",
+                };
+                collection.insert_one(doc1).unwrap();
 
-            let doc2 = doc! {
-                "_id": "c2",
-                "value": "c2",
-            };
-            collection.insert_one(doc2).unwrap();
+                let doc2 = doc! {
+                    "_id": "c2",
+                    "value": "c2",
+                };
+                collection.insert_one(doc2).unwrap();
 
-            let doc2 = doc! {
-                "_id": "c3",
-                "value": "c3",
-            };
-            collection.insert_one(doc2).unwrap();
+                let doc2 = doc! {
+                    "_id": "c3",
+                    "value": "c3",
+                };
+                collection.insert_one(doc2).unwrap();
 
-            assert_eq!(collection.count_documents().unwrap(), 3);
-        }
+                assert_eq!(collection.count_documents().unwrap(), 3);
+            }
 
-        {
+            {
+                let collection = db.collection::<Document>("config");
+                collection.update_many(doc! {
+                    "_id": "c2"
+                }, doc! {
+                    "$set": doc! {
+                        "value": "c33",
+                    },
+                }).unwrap();
+                collection.update_many(doc! {
+                    "_id": "c2",
+                }, doc! {
+                    "$set": doc! {
+                        "value": "c22",
+                    },
+                }).unwrap();
+            }
+
             let collection = db.collection::<Document>("config");
-            collection.update_many(doc! {
-                "_id": "c2"
-            }, doc! {
-                "$set": doc! {
-                    "value": "c33",
-                },
-            }).unwrap();
-            collection.update_many(doc! {
+            let doc1 = collection.find_one(doc! {
+                "_id": "c1",
+            }).unwrap().unwrap();
+
+            assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c1");
+
+            let collection = db.collection::<Document>("config");
+            let doc1 = collection.find_one(doc! {
                 "_id": "c2",
-            }, doc! {
-                "$set": doc! {
-                    "value": "c22",
-                },
-            }).unwrap();
-        }
+            }).unwrap().unwrap();
 
-        let collection = db.collection::<Document>("config");
-        let doc1 = collection.find_one(doc! {
-            "_id": "c1",
-        }).unwrap().unwrap();
-
-        assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c1");
-
-        let collection = db.collection::<Document>("config");
-        let doc1 = collection.find_one(doc! {
-            "_id": "c2",
-        }).unwrap().unwrap();
-
-        assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c22");
+            assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c22");
+        });
     }
 
     // #[test]
@@ -1052,8 +1076,10 @@ mod tests {
 
     #[test]
     fn test_create_collection_with_number_pkey() {
-        let db = {
-            let db = prepare_db("test-number-pkey").unwrap();
+        vec![
+            prepare_db("test-number-pkey").unwrap(),
+            Database::open_memory().unwrap()
+        ].iter().for_each(|db| {
             let collection = db.collection::<Document>("test");
             let mut data: Vec<Document> = vec![];
 
@@ -1068,58 +1094,62 @@ mod tests {
 
             collection.insert_many(&data).unwrap();
 
-            db
-        };
+            let collection: Collection<Document> = db.collection::<Document>("test");
 
-        let collection: Collection<Document> = db.collection::<Document>("test");
+            let count = collection.count_documents().unwrap();
+            assert_eq!(TEST_SIZE, count as usize);
 
-        let count = collection.count_documents().unwrap();
-        assert_eq!(TEST_SIZE, count as usize);
+            let all = collection.find_many(None).unwrap();
 
-        let all = collection.find_many(None).unwrap();
-
-        assert_eq!(TEST_SIZE, all.len())
+            assert_eq!(TEST_SIZE, all.len())
+        });
     }
 
     #[test]
     fn test_find() {
-        let db = create_and_return_db_with_items("test-find", TEST_SIZE);
-        let collection = db.collection::<Document>("test");
+        vec![
+            create_file_and_return_db_with_items("test-find", TEST_SIZE),
+            create_memory_and_return_db_with_items(TEST_SIZE),
+        ].iter().for_each(|db| {
+            let collection = db.collection::<Document>("test");
 
-        let result = collection.find_many(
-            doc! {
+            let result = collection.find_many(doc! {
                 "content": "3",
-            }
-        ).unwrap();
+            }).unwrap();
 
-        assert_eq!(result.len(), 1);
+            assert_eq!(result.len(), 1);
 
-        let one = result[0].clone();
-        assert_eq!(one.get("content").unwrap().as_str().unwrap(), "3");
+            let one = result[0].clone();
+            assert_eq!(one.get("content").unwrap().as_str().unwrap(), "3");
+        });
     }
 
     #[test]
     fn test_create_collection_and_find_by_pkey() {
-        let db = create_and_return_db_with_items("test-find-pkey", 10);
-        let collection = db.collection::<Document>("test");
+        vec![
+            create_file_and_return_db_with_items("test-find-pkey", 10),
+            create_memory_and_return_db_with_items(10),
+        ].iter().for_each(|db| {
+            let collection = db.collection::<Document>("test");
 
-        let all = collection.find_many(None).unwrap();
+            let all = collection.find_many(None).unwrap();
 
-        assert_eq!(all.len(), 10);
+            assert_eq!(all.len(), 10);
 
-        let first_key = &all[0].get("_id").unwrap();
+            let first_key = &all[0].get("_id").unwrap();
 
-        let result = collection.find_many(doc! {
-            "_id": first_key.clone(),
-        }).unwrap();
+            let result = collection.find_many(doc! {
+                "_id": first_key.clone(),
+            }).unwrap();
 
-        assert_eq!(result.len(), 1);
+            assert_eq!(result.len(), 1);
+        });
     }
 
     #[test]
     fn test_reopen_db() {
         {
-            let _db1 = create_and_return_db_with_items("test-reopen", 5);
+            let _db1 = create_file_and_return_db_with_items("test-reopen", 5);
         }
 
         {
@@ -1131,32 +1161,38 @@ mod tests {
 
     #[test]
     fn test_pkey_type_check() {
-        let db = create_and_return_db_with_items("test-type-check", TEST_SIZE);
+        vec![
+            create_file_and_return_db_with_items("test-type-check", TEST_SIZE),
+            create_memory_and_return_db_with_items(TEST_SIZE),
+        ].iter().for_each(|db| {
+            let doc = doc! {
+                "_id": 10,
+                "value": "something",
+            };
 
-        let doc = doc! {
-            "_id": 10,
-            "value": "something",
-        };
-
-        let collection = db.collection::<Document>("test");
-        collection.insert_one(doc).expect_err("should not success");
+            let collection = db.collection::<Document>("test");
+            collection.insert_one(doc).expect_err("should not success");
+        });
     }
 
     #[test]
     fn test_insert_bigger_key() {
-        let db = prepare_db("test-insert-bigger-key").unwrap();
-        let collection = db.collection("test");
+        vec![
+            prepare_db("test-insert-bigger-key").unwrap(),
+            Database::open_memory().unwrap(),
+        ].iter().for_each(|db| {
+            let collection = db.collection("test");
+            let mut doc = doc! {};
 
-        let mut doc = doc! {};
+            let mut new_str: String = String::new();
+            for _i in 0..32 {
+                new_str.push('0');
+            }
 
-        let mut new_str: String = String::new();
-        for _i in 0..32 {
-            new_str.push('0');
-        }
+            doc.insert::<String, Bson>("_id".into(), Bson::String(new_str.clone()));
 
-        doc.insert::<String, Bson>("_id".into(), Bson::String(new_str.clone()));
-
-        let _ = collection.insert_one(doc).unwrap();
+            let _ = collection.insert_one(doc).unwrap();
+        });
     }
 
     #[test]
@@ -1184,116 +1220,132 @@ mod tests {
 
     #[test]
     fn test_update_one() {
-        let db = prepare_db("test-update-one").unwrap();
-        let collection = db.collection::<Document>("test");
+        vec![
+            prepare_db("test-update-one").unwrap(),
+            Database::open_memory().unwrap(),
+        ].iter().for_each(|db| {
+            let collection = db.collection::<Document>("test");
 
-        let result = collection.insert_many(vec![
-            doc! {
+            let result = collection.insert_many(vec![
+                doc! {
                 "name": "Vincent",
                 "age": 17,
             },
-            doc! {
+                doc! {
                 "name": "Vincent",
                 "age": 18,
             },
-        ]).unwrap();
+            ]).unwrap();
 
-        assert_eq!(result.inserted_ids.len(), 2);
+            assert_eq!(result.inserted_ids.len(), 2);
 
-        let result = collection.update_one(doc! {
-            "name": "Vincent",
-        }, doc! {
-            "$set": {
-                "name": "Steve",
-            }
-        }).unwrap();
+            let result = collection.update_one(doc! {
+                "name": "Vincent",
+            }, doc! {
+                "$set": {
+                    "name": "Steve",
+                }
+            }).unwrap();
 
-        assert_eq!(result.modified_count, 1);
+            assert_eq!(result.modified_count, 1);
+        });
     }
 
     #[test]
     fn test_delete_one() {
-        let db = prepare_db("test-update-one").unwrap();
-        let collection = db.collection::<Document>("test");
+        vec![
+            prepare_db("test-update-one").unwrap(),
+            Database::open_memory().unwrap(),
+        ].iter().for_each(|db| {
+            let collection = db.collection::<Document>("test");
 
-        let result = collection.insert_many(vec![
-            doc! {
+            let result = collection.insert_many(vec![
+                doc! {
+                    "name": "Vincent",
+                    "age": 17,
+                },
+                doc! {
+                    "name": "Vincent",
+                    "age": 18,
+                },
+            ]).unwrap();
+
+            assert_eq!(result.inserted_ids.len(), 2);
+
+            let result = collection.delete_one(doc! {
                 "name": "Vincent",
-                "age": 17,
-            },
-            doc! {
-                "name": "Vincent",
-                "age": 18,
-            },
-        ]).unwrap();
+            }).unwrap();
 
-        assert_eq!(result.inserted_ids.len(), 2);
+            assert_eq!(result.deleted_count, 1);
 
-        let result = collection.delete_one(doc! {
-            "name": "Vincent",
-        }).unwrap();
-
-        assert_eq!(result.deleted_count, 1);
-
-        let remain = collection.count_documents().unwrap();
-        assert_eq!(remain, 1);
+            let remain = collection.count_documents().unwrap();
+            assert_eq!(remain, 1);
+        });
     }
 
     #[test]
     fn test_one_delete_item() {
-        let db = prepare_db("test-delete-item").unwrap();
-        let collection = db.collection::<Document>("test");
+        vec![
+            prepare_db("test-delete-item").unwrap(),
+            Database::open_memory().unwrap(),
+        ].iter().for_each(|db| {
+            let collection = db.collection::<Document>("test");
 
-        let mut doc_collection  = vec![];
+            let mut doc_collection  = vec![];
 
-        for i in 0..100 {
-            let content = i.to_string();
+            for i in 0..100 {
+                let content = i.to_string();
 
-            let new_doc = doc! {
-                "content": content,
+                let new_doc = doc! {
+                    "content": content,
+                };
+
+                doc_collection.push(new_doc);
+            }
+            let result = collection.insert_many(&doc_collection).unwrap();
+
+            let third_key = result.inserted_ids.get(&3).unwrap();
+            let delete_doc = doc! {
+                "_id": third_key.clone(),
             };
-
-            doc_collection.push(new_doc);
-        }
-        let result = collection.insert_many(&doc_collection).unwrap();
-
-        let third_key = result.inserted_ids.get(&3).unwrap();
-        let delete_doc = doc! {
-            "_id": third_key.clone(),
-        };
-        assert_eq!(collection.delete_many(delete_doc.clone()).unwrap().deleted_count, 1);
-        assert_eq!(collection.delete_many(delete_doc).unwrap().deleted_count, 0);
+            assert_eq!(collection.delete_many(delete_doc.clone()).unwrap().deleted_count, 1);
+            assert_eq!(collection.delete_many(delete_doc).unwrap().deleted_count, 0);
+        });
     }
 
     #[test]
     fn test_delete_all_items() {
-        let db = prepare_db("test-delete-all-items").unwrap();
-        let collection = db.collection::<Document>("test");
+        vec![
+            prepare_db("test-delete-all-items").unwrap(),
+            Database::open_memory().unwrap(),
+        ].iter().for_each(|db| {
+            let collection = db.collection::<Document>("test");
 
-        let mut doc_collection  = vec![];
+            let mut doc_collection  = vec![];
 
-        for i in 0..1000 {
-            let content = i.to_string();
-            let new_doc = doc! {
-                "_id": i,
-                "content": content,
-            };
-            doc_collection.push(new_doc);
-        }
-        collection.insert_many(&doc_collection).unwrap();
+            for i in 0..1000 {
+                let content = i.to_string();
+                let new_doc = doc! {
+                    "_id": i,
+                    "content": content,
+                };
+                doc_collection.push(new_doc);
+            }
+            collection.insert_many(&doc_collection).unwrap();
 
-        for doc in &doc_collection {
-            let key = doc.get("_id").unwrap();
-            let deleted_result = collection.delete_many(doc!{
-                "_id": key.clone(),
-            }).unwrap();
-            assert!(deleted_result.deleted_count > 0, "delete nothing with key: {}", key);
-            let find_doc = doc! {
-                "_id": key.clone(),
-            };
-            let result = collection.find_many(find_doc).unwrap();
-            assert_eq!(result.len(), 0, "item with key: {}", key);
-        }
+            for doc in &doc_collection {
+                let key = doc.get("_id").unwrap();
+                let deleted_result = collection.delete_many(doc!{
+                    "_id": key.clone(),
+                }).unwrap();
+                assert!(deleted_result.deleted_count > 0, "delete nothing with key: {}", key);
+                let find_doc = doc! {
+                    "_id": key.clone(),
+                };
+                let result = collection.find_many(find_doc).unwrap();
+                assert_eq!(result.len(), 0, "item with key: {}", key);
+            }
+        });
     }
 
     #[test]
@@ -1309,32 +1361,36 @@ mod tests {
         file.read_to_end(&mut data).unwrap();
 
         println!("data size: {}", data.len());
-        let db = prepare_db("test-very-large-data").unwrap();
-        let collection = db.collection("test");
+        vec![
+            prepare_db("test-very-large-data").unwrap(),
+            Database::open_memory().unwrap(),
+        ].iter().for_each(|db| {
+            let collection = db.collection("test");
 
-        let mut doc = doc! {};
-        let origin_data = data.clone();
-        doc.insert::<String, Bson>("content".into(), Bson::Binary(bson::Binary {
-            subtype: bson::spec::BinarySubtype::Generic,
-            bytes: origin_data.clone(),
-        }));
+            let mut doc = doc! {};
+            let origin_data = data.clone();
+            doc.insert::<String, Bson>("content".into(), Bson::Binary(bson::Binary {
+                subtype: bson::spec::BinarySubtype::Generic,
+                bytes: origin_data.clone(),
+            }));
 
-        let result = collection.insert_one(doc).unwrap();
+            let result = collection.insert_one(doc).unwrap();
 
-        let new_id = result.inserted_id;
-        let back = collection.find_one(doc! {
-            "_id": new_id,
-        }).unwrap().unwrap();
+            let new_id = result.inserted_id;
+            let back = collection.find_one(doc! {
+                "_id": new_id,
+            }).unwrap().unwrap();
 
-        let back_bin = back.get("content").unwrap();
+            let back_bin = back.get("content").unwrap();
 
-        let binary = match back_bin {
-            bson::Bson::Binary(bin) => {
-                bin
-            }
-            _ => panic!("type unmatched"),
-        };
-        assert_eq!(&binary.bytes, &origin_data);
+            let binary = match back_bin {
+                Bson::Binary(bin) => {
+                    bin
+                }
+                _ => panic!("type unmatched"),
+            };
+            assert_eq!(&binary.bytes, &origin_data);
+        });
     }
 
 }
