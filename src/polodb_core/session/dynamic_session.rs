@@ -13,6 +13,7 @@ use crate::session::session::SessionInner;
 
 struct DynamicSessionInner {
     id: ObjectId,
+    version: usize,
     base_session: BaseSession,
     page_map: Option<BTreeMap<u32, RawPage>>,
     page_size: NonZeroU32,
@@ -22,8 +23,10 @@ impl DynamicSessionInner {
 
     fn new(id: ObjectId, base_session: BaseSession) -> DynamicSessionInner {
         let page_size = base_session.page_size();
+        let version = base_session.version();
         DynamicSessionInner {
             id,
+            version,
             base_session,
             page_map: None,
             page_size,
@@ -38,10 +41,27 @@ impl DynamicSessionInner {
         Ok(())
     }
 
-    // 1. check version first, if the base_session is updated, this commit MUST fail
-    // 2. if the version is valid, flush all the pages to the base
+    /// 1. Check version first.
+    ///    If the base_session is updated, this commit MUST fail
+    /// 2. If the version is valid, flush all the pages to the base
     fn commit(&mut self) -> DbResult<()> {
-        todo!()
+        let current_version = self.base_session.version();
+        if current_version != self.version {
+            return Err(DbErr::SessionOutdated);
+        }
+
+        if let Some(page_map) = &self.page_map {
+            self.base_session.start_transaction(TransactionType::Write)?;
+
+            for (_page_id, page) in page_map {
+                self.base_session.write_page(page)?;
+            }
+
+            self.base_session.commit()?;
+            self.page_map = None;  // clear the map after commited
+        }
+
+        Ok(())
     }
 
     fn rollback(&mut self) -> DbResult<()> {

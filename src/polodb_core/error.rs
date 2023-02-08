@@ -158,6 +158,7 @@ pub enum DbErr {
     CannotApplyOperation(Box<CannotApplyOperationForTypes>),
     NoTransactionStarted,
     InvalidSession(Box<ObjectId>),
+    SessionOutdated,
 }
 
 impl DbErr {
@@ -255,6 +256,7 @@ impl fmt::Display for DbErr {
                        msg.op_name, msg.field_name, msg.field_type, msg.target_type),
             DbErr::NoTransactionStarted => write!(f, "no transaction started"),
             DbErr::InvalidSession(sid) => write!(f, "invalid session: {}", sid),
+            DbErr::SessionOutdated => write!(f, "session is outdated"),
         }
     }
 

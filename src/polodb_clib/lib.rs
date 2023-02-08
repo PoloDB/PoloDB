@@ -249,5 +249,6 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::CannotApplyOperation(_) => 53,
         DbErr::NoTransactionStarted => 54,
         DbErr::InvalidSession(_) => 55,
+        DbErr::SessionOutdated => 56,
     }
 }
