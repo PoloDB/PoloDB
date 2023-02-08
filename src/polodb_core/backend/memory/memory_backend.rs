@@ -65,10 +65,7 @@ impl MemoryBackend {
         self.transaction = None;
     }
 
-}
-
-impl Backend for MemoryBackend {
-    fn read_page(&self, page_id: u32) -> DbResult<RawPage> {
+    fn read_page_main(&self, page_id: u32) -> DbResult<RawPage> {
         if let Some(transaction) = &self.transaction {
             if let Some(page) = transaction.draft.read_page(page_id) {
                 return Ok(page);
@@ -88,8 +85,37 @@ impl Backend for MemoryBackend {
         let page = test_page.expect(format!("page not exist: {}", page_id).as_str());
         Ok(page)
     }
+}
 
-    fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
+impl Backend for MemoryBackend {
+    fn read_page(&self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<RawPage> {
+        match session_id {
+            Some(session_id) => {
+                // read the page from the state
+                let state = self.state_map
+                    .get(session_id)
+                    .ok_or(DbErr::InvalidSession(Box::new(session_id.clone())))?;
+                let test_page = state.draft.read_page(page_id);
+
+                if test_page.is_none() {
+                    let page_size = self.page_size.get() as u64;
+                    let db_file_size = state.draft.db_file_size();
+                    if (page_id as u64) * page_size < db_file_size {
+                        return Ok(RawPage::new(page_id, self.page_size));
+                    }
+                }
+
+                Ok(test_page.unwrap())
+            }
+            None => self.read_page_main(page_id),
+        }
+    }
+
+    fn write_page(&mut self, page: &RawPage, session_id: Option<&ObjectId>) -> DbResult<()> {
+        if session_id.is_some() {
+            unimplemented!()
+        }
+
         match &self.transaction {
             Some(state) if state.ty == TransactionType::Write => (),
             _ => return Err(DbErr::CannotWriteDbWithoutTransaction),
@@ -216,13 +242,13 @@ mod tests {
 
         backend.start_transaction(TransactionType::Write).unwrap();
         for item in &ten_pages {
-            backend.write_page(item).unwrap();
+            backend.write_page(item, None).unwrap();
         }
 
         backend.commit().unwrap();
 
         for i in 0..TEST_PAGE_LEN {
-            let page = backend.read_page(i).unwrap();
+            let page = backend.read_page_main(i).unwrap();
 
             for (index, ch) in page.data.iter().enumerate() {
                 assert_eq!(*ch, ten_pages[i as usize].data[index])
