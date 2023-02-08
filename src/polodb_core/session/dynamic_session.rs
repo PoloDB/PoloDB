@@ -59,6 +59,7 @@ impl DynamicSessionInner {
 
             self.base_session.commit()?;
             self.page_map = None;  // clear the map after commited
+            self.version = self.base_session.version();
         }
 
         Ok(())

@@ -160,19 +160,19 @@ impl Database {
         Ok(ClientSession::new(self, session_id))
     }
 
-    pub(crate) fn start_transaction(&self, _session_id: &ObjectId, ty: Option<TransactionType>) -> DbResult<()> {
+    pub(crate) fn start_transaction(&self, ty: Option<TransactionType>, session_id: Option<&ObjectId>) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
-        inner.start_transaction(ty)
+        inner.start_transaction(ty, session_id)
     }
 
-    pub(crate) fn commit(&self, _session: &ObjectId) -> DbResult<()> {
+    pub(crate) fn commit(&self, session_id: Option<&ObjectId>) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
-        inner.commit()
+        inner.commit(session_id)
     }
 
-    pub(crate) fn rollback(&self, _session: &ObjectId) -> DbResult<()> {
+    pub(crate) fn rollback(&self, session_id: Option<&ObjectId>) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
-        inner.rollback()
+        inner.rollback(session_id)
     }
 
     pub(crate) fn drop_session(&self, session_id: &ObjectId) -> DbResult<()> {
@@ -329,18 +329,18 @@ impl DatabaseInner {
     }
 
     #[inline]
-    fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
-        self.ctx.start_transaction(ty)
+    fn start_transaction(&mut self, ty: Option<TransactionType>, session_id: Option<&ObjectId>) -> DbResult<()> {
+        self.ctx.start_transaction(ty, session_id)
     }
 
     #[inline]
-    fn commit(&mut self) -> DbResult<()> {
-        self.ctx.commit()
+    fn commit(&mut self, session_id: Option<&ObjectId>) -> DbResult<()> {
+        self.ctx.commit(session_id)
     }
 
     #[inline]
-    fn rollback(&mut self) -> DbResult<()> {
-        self.ctx.rollback()
+    fn rollback(&mut self, session_id: Option<&ObjectId>) -> DbResult<()> {
+        self.ctx.rollback(session_id)
     }
 
     #[inline]
@@ -579,7 +579,7 @@ impl DatabaseInner {
     }
 
     fn handle_start_transaction(&mut self, start_transaction: StartTransactionCommand) -> DbResult<Bson> {
-        self.start_transaction(start_transaction.ty)?;
+        self.start_transaction(start_transaction.ty, Some(&start_transaction.session_id))?;
         Ok(Bson::Null)
     }
 
@@ -619,12 +619,12 @@ impl DatabaseInner {
             CommandMessage::StartTransaction(start_transaction) => {
                 self.handle_start_transaction(start_transaction)?
             }
-            CommandMessage::Commit => {
-                self.commit()?;
+            CommandMessage::Commit(commit) => {
+                self.commit(Some(&commit.session_id))?;
                 Bson::Null
             }
-            CommandMessage::Rollback => {
-                self.rollback()?;
+            CommandMessage::Rollback(rollback) => {
+                self.rollback(Some(&rollback.session_id))?;
                 Bson::Null
             }
             CommandMessage::SafelyQuit => {
