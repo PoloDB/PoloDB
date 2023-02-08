@@ -191,6 +191,12 @@ impl Database {
         inner.list_collection_names()
     }
 
+    /// Gets the names of the collections in the database.
+    pub fn list_collection_names_with_session(&self, session: &mut ClientSession) -> DbResult<Vec<String>> {
+        let mut inner = self.inner.lock()?;
+        inner.list_collection_names_with_session(session)
+    }
+
     /// handle request for database
     pub fn handle_request<R: Read>(&self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
         let mut inner = self.inner.lock()?;

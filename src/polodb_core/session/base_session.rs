@@ -72,6 +72,11 @@ impl BaseSession {
         let mut session = self.inner.as_ref().lock()?;
         session.pipeline_write_page(page, session_id)
     }
+
+    pub fn version(&self) -> usize {
+        let session = self.inner.as_ref().lock().unwrap();
+        session.version
+    }
 }
 
 impl Session for BaseSession {
@@ -147,6 +152,7 @@ impl Session for BaseSession {
 }
 
 struct BaseSessionInner {
+    version:             usize,
     backend:             Box<dyn Backend + Send>,
 
     pub page_size:       NonZeroU32,
@@ -166,6 +172,7 @@ impl BaseSessionInner {
         let page_cache = PageCache::new_default(page_size);
 
         Ok(BaseSessionInner {
+            version: 0,
             backend,
             page_size,
             page_cache,
@@ -332,6 +339,7 @@ impl BaseSessionInner {
     fn commit(&mut self) -> DbResult<()> {
         self.backend.commit()?;
         self.data_page_allocator.commit();
+        self.version += 1;
         Ok(())
     }
 
