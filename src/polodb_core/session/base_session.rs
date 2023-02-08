@@ -1,7 +1,6 @@
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 use bson::Document;
-use std::cell::Cell;
 use bson::oid::ObjectId;
 use crate::backend::{AutoStartResult, Backend};
 use crate::{Config, DbErr, DbResult, TransactionType};
@@ -9,10 +8,9 @@ use crate::data_ticket::DataTicket;
 use crate::dump::JournalDump;
 use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
-use crate::page::{FreeListDataWrapper, header_page_wrapper, RawPage};
-use crate::session::session::SessionInner;
+use crate::page::RawPage;
 use crate::transaction::TransactionState;
-use super::session::Session;
+use super::session::{Session, SessionInner};
 use super::data_page_allocator::DataPageAllocator;
 use super::pagecache::PageCache;
 
@@ -210,88 +208,6 @@ impl BaseSessionInner {
         let pid = first_page_wrapper.get_free_list_page_id();
         let size = first_page_wrapper.get_free_list_size();
         Ok((pid, size))
-    }
-
-    fn internal_free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
-        for pid in pages {
-            crate::polo_log!("free page, id: {}", *pid);
-        }
-
-        let first_page = self.read_page(0)?;
-        let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
-        let free_list_pid = first_page_wrapper.get_free_list_page_id();
-        if free_list_pid != 0 {
-            let cell = Cell::new(free_list_pid);
-            self.complex_free_pages(&cell, false, None, pages)?;
-
-            if cell.get() != free_list_pid {  // free list pid changed
-                first_page_wrapper.set_free_list_page_id(cell.get());
-                self.write_page(&first_page_wrapper.0)?;
-            }
-
-            return Ok(())
-        }
-
-        let current_size = first_page_wrapper.get_free_list_size();
-        if (current_size as usize) + pages.len() >= header_page_wrapper::HEADER_FREE_LIST_MAX_SIZE {
-            let free_list_pid = self.alloc_page_id()?;
-            first_page_wrapper.set_free_list_page_id(free_list_pid);
-            self.write_page(&first_page_wrapper.0)?;
-
-            let cell = Cell::new(free_list_pid);
-            return self.complex_free_pages(&cell, true, None, pages);
-        }
-
-        first_page_wrapper.set_free_list_size(current_size + (pages.len() as u32));
-        for (counter, pid) in pages.iter().enumerate() {
-            first_page_wrapper.set_free_list_content(current_size + (counter as u32), *pid);
-        }
-
-        self.write_page(&first_page_wrapper.0)?;
-
-        Ok(())
-    }
-
-    fn complex_free_pages(&mut self, free_page_id: &Cell<u32>, is_new: bool, next_pid: Option<u32>, pages: &[u32]) -> DbResult<()> {
-        let current_free_page_id = free_page_id.get();
-        let mut free_list_page_wrapper = if is_new {
-            FreeListDataWrapper::init(current_free_page_id, self.page_size)
-        } else {
-            let raw_page = self.read_page(current_free_page_id)?;
-            FreeListDataWrapper::from_raw(raw_page)
-        };
-
-        if let Some(next_pid) = next_pid {
-            free_list_page_wrapper.set_next_pid(next_pid);
-        };
-
-        if free_list_page_wrapper.can_store(pages.len()) {
-            for pid in pages {
-                free_list_page_wrapper.append_page_id(*pid);
-            }
-            return self.write_page(free_list_page_wrapper.borrow_page());
-        }
-
-        let new_free_page_pid = self.alloc_page_id()?;
-
-        let remain_size = free_list_page_wrapper.remain_size();
-        let front = &pages[0..remain_size as usize];
-        let back = &pages[remain_size as usize..];
-
-        let next_cell = Cell::new(new_free_page_pid);
-        self.complex_free_pages(&next_cell, true, Some(current_free_page_id), back)?;
-
-        if !front.is_empty() {
-            for pid in front {
-                free_list_page_wrapper.append_page_id(*pid);
-            }
-
-            self.write_page(free_list_page_wrapper.borrow_page())?;
-        }
-
-        free_page_id.set(next_cell.get());
-
-        Ok(())
     }
 
     #[inline]

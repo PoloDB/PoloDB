@@ -881,7 +881,7 @@ impl DbContext {
         Ok(result)
     }
 
-    pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
+    pub fn start_transaction(&mut self, ty: Option<TransactionType>, _session_id: Option<&ObjectId>) -> DbResult<()> {
         match ty {
             Some(ty) => {
                 self.base_session.start_transaction(ty)?;
@@ -897,13 +897,13 @@ impl DbContext {
         Ok(())
     }
 
-    pub fn commit(&mut self) -> DbResult<()> {
+    pub fn commit(&mut self, _session_id: Option<&ObjectId>) -> DbResult<()> {
         self.base_session.commit()?;
         self.base_session.set_transaction_state(TransactionState::NoTrans);
         Ok(())
     }
 
-    pub fn rollback(&mut self) -> DbResult<()> {
+    pub fn rollback(&mut self, _session_id: Option<&ObjectId>) -> DbResult<()> {
         self.base_session.rollback()?;
         self.base_session.set_transaction_state(TransactionState::NoTrans);
         Ok(())

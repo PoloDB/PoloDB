@@ -28,15 +28,15 @@ impl<'a> ClientSession<'a> {
     /// execute write operations(insert/update/delete), the DB will turn into
     /// write mode.
     pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
-        self.db.start_transaction(&self.id, ty)
+        self.db.start_transaction(ty, Some(&self.id))
     }
 
     pub fn commit_transaction(&mut self) -> DbResult<()> {
-        self.db.commit(&self.id)
+        self.db.commit(Some(&self.id))
     }
 
     pub fn abort_transaction(&mut self) -> DbResult<()> {
-        self.db.rollback(&self.id)
+        self.db.rollback(Some(&self.id))
     }
 }
 
