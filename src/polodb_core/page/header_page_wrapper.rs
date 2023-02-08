@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 use super::RawPage;
 
-static HEADER_DESP: &str          = "PoloDB Format v2.0";
+static HEADER_DESP: &str          = "PoloDB Format v3.0";
 const SECTOR_SIZE_OFFSET: u32     = 40;
 const PAGE_SIZE_OFFSET: u32       = 44;
 const NULL_PAGE_BAR_OFFSET: u32   = 48;
@@ -14,8 +14,8 @@ pub const HEADER_FREE_LIST_MAX_SIZE: usize = (2048 - 8) / 4;
 pub const DATABASE_VERSION: [u8; 4] = [0, 0, 2, 0];
 
 /**
- * Offset 0 (32 bytes) : "PoloDB Format v2.0";
- * Offset 32 (8 bytes) : Version 0.0.2.0;
+ * Offset 0 (32 bytes) : "PoloDB Format v3.0";
+ * Offset 32 (8 bytes) : Version 0.0.3.0;
  * Offset 40 (4 bytes) : SectorSize;
  * Offset 44 (4 bytes) : PageSize;
  * Offset 48 (4 bytes) : NullPageBarId;
