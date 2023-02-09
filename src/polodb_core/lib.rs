@@ -95,6 +95,7 @@ pub mod results;
 pub mod test_utils;
 pub mod commands;
 mod data_structures;
+mod collection_info;
 
 pub use db::{Database, DbResult};
 pub use config::Config;
