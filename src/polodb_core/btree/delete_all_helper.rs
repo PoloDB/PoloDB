@@ -1,5 +1,4 @@
 use crate::DbResult;
-use crate::meta_doc_helper::MetaDocEntry;
 use super::wrapper_base::cal_item_size;
 use crate::btree::BTreeNode;
 use crate::collection_info::CollectionSpecification;

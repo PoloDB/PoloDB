@@ -11,7 +11,7 @@ use crate::error::DbErr;
 use crate::TransactionType;
 use crate::Config;
 use crate::vm::{SubProgram, VM, VmState};
-use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
+use crate::meta_doc_helper::meta_doc_key;
 use crate::index_ctx::{IndexCtx, merge_options_into_default};
 use crate::btree::*;
 use crate::transaction::TransactionState;

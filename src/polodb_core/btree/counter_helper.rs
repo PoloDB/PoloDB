@@ -1,5 +1,4 @@
 use crate::collection_info::CollectionSpecification;
-use crate::meta_doc_helper::MetaDocEntry;
 use crate::DbResult;
 use crate::session::Session;
 use super::BTreeNode;
