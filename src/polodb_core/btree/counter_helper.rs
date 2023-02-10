@@ -1,12 +1,13 @@
+use crate::collection_info::CollectionSpecification;
 use crate::meta_doc_helper::MetaDocEntry;
 use crate::DbResult;
 use crate::session::Session;
 use super::BTreeNode;
 use super::wrapper_base::cal_item_size;
 
-pub(crate) fn count(session: &dyn Session, collection_meta: MetaDocEntry) -> DbResult<u64> {
+pub(crate) fn count(session: &dyn Session, col_spec: &CollectionSpecification) -> DbResult<u64> {
     let item_size = cal_item_size(session.page_size());
-    count_by_btree_pid(session, item_size, 0, collection_meta.root_pid())
+    count_by_btree_pid(session, item_size, 0, col_spec.info.root_pid)
 }
 
 fn count_by_btree_pid(session: &dyn Session, item_size: u32, parent_pid: u32, pid: u32) -> DbResult<u64> {

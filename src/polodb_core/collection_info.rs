@@ -28,10 +28,11 @@ pub struct CollectionSpecificationInfo {
     pub root_pid: u32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CollectionSpecification {
     /// The name of the collection.
+    #[serde(rename = "_id")]
     pub _id: String,
 
     /// Type of the data store.
@@ -64,4 +65,28 @@ pub enum CollectionType {
 
     /// Indicates that the data store is a collection.
     Collection,
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashMap;
+    use bson::{bson, Bson, DateTime};
+    use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
+
+    #[test]
+    fn test_serial() {
+        let spec = CollectionSpecification {
+            _id: "test".to_string(),
+            collection_type: CollectionType::Collection,
+            info: CollectionSpecificationInfo {
+                uuid: None,
+                create_at: DateTime::now(),
+                root_pid:1
+            },
+            indexes: HashMap::new(),
+        };
+        let doc = bson::to_document(&spec).unwrap();
+        assert_eq!(doc.get("_id").unwrap().as_str().unwrap(), "test");
+    }
+
 }

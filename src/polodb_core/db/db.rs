@@ -367,7 +367,7 @@ impl DatabaseInner {
         doc_meta
             .iter()
             .map(|doc| {
-                let name = doc.get("name").unwrap().as_str().unwrap().to_string();
+                let name = doc.get("_id").unwrap().as_str().unwrap().to_string();
                 name
             })
             .collect()
@@ -378,13 +378,12 @@ impl DatabaseInner {
     }
 
     fn count_documents(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<u64> {
-        let meta_opt = self.get_collection_meta_by_name(name, false, session_id)?;
-        meta_opt.map_or(Ok(0), |col_meta| {
-            self.ctx.count(
-                col_meta.info.root_pid,
-                session_id
-            )
-        })
+        let test_result = self.ctx.count(name, session_id);
+        match test_result {
+            Ok(result) => Ok(result),
+            Err(DbErr::CollectionNotFound(_)) => Ok(0),
+            Err(err) => Err(err),
+        }
     }
 
     // fn send_response_with_result<W: Write>(&mut self, pipe_out: &mut W, result: DbResult<HandleRequestResult>, body: Vec<u8>) -> DbResult<HandleRequestResult> {
@@ -407,10 +406,10 @@ impl DatabaseInner {
 
     fn find_one<T: DeserializeOwned>(&mut self, col_name: &str, filter: impl Into<Option<Document>>, session_id: Option<&ObjectId>) -> DbResult<Option<T>> {
         let filter_query = filter.into();
-        let meta_opt = self.get_collection_meta_by_name(col_name, false, session_id)?;
-        let result: Option<T> = if let Some(col_spec) = meta_opt {
+        let col_spec = self.get_collection_meta_by_name(col_name, false, session_id)?;
+        let result: Option<T> = if let Some(col_spec) = col_spec {
             let mut handle = self.ctx.find(
-                col_spec.info.root_pid,
+                &col_spec,
                 filter_query,
                 session_id
             )?;
@@ -443,7 +442,7 @@ impl DatabaseInner {
         match meta_opt {
             Some(col_spec) => {
                 let mut handle = self.ctx.find(
-                    col_spec.info.root_pid,
+                    &col_spec,
                     filter_query,
                     session_id
                 )?;
@@ -480,7 +479,7 @@ impl DatabaseInner {
         let modified_count: u64 = match meta_opt {
             Some(col_spec) => {
                 let size = self.ctx.update_one(
-                    col_spec.info.root_pid,
+                    &col_spec,
                     Some(&query),
                     &update,
                     session_id
@@ -499,7 +498,7 @@ impl DatabaseInner {
         let modified_count: u64 = match meta_opt {
             Some(col_spec) => {
                 let size = self.ctx.update_many(
-                    col_spec.info.root_pid,
+                    &col_spec,
                     Some(&query),
                     &update,
                     session_id
@@ -518,7 +517,7 @@ impl DatabaseInner {
         let deleted_count = match meta_opt {
             Some(col_spec) => {
                 let count = self.ctx.delete(
-                    col_spec.info.root_pid,
+                    col_name,
                     query,
                     false,
                     session_id,
@@ -533,36 +532,24 @@ impl DatabaseInner {
     }
 
     fn delete_many(&mut self, col_name: &str, query: Document, session_id: Option<&ObjectId>) -> DbResult<DeleteResult> {
-        let meta_opt = self.get_collection_meta_by_name(col_name, false, session_id)?;
-        let deleted_count = match meta_opt {
-            Some(col_spec) => {
-                let root_pid = col_spec.info.root_pid;
-                let count = if query.len() == 0 {
-                    self.ctx.delete_all(root_pid, session_id)?
-                } else {
-                    self.ctx.delete(root_pid, query, true, session_id)?
-                };
-                count as u64
-            }
-            None => 0
+        let test_deleted_count = if query.len() == 0 {
+            self.ctx.delete_all(col_name, session_id)
+        } else {
+            self.ctx.delete(col_name, query, true, session_id)
         };
-        Ok(DeleteResult {
-            deleted_count,
-        })
+        match test_deleted_count {
+            Ok(deleted_count) => Ok(DeleteResult {
+                deleted_count: deleted_count as u64,
+            }),
+            Err(DbErr::CollectionNotFound(_)) => Ok(DeleteResult {
+                deleted_count: 0
+            }),
+            Err(err) => Err(err),
+        }
     }
 
     fn drop_collection(&mut self, col_name: &str, session_id: Option<&ObjectId>) -> DbResult<()> {
-        let col_spec = match self.get_collection_meta_by_name(col_name, false, session_id) {
-            Ok(None) => {
-                return Ok(());
-            }
-            Err(DbErr::CollectionNotFound(_)) => {
-                return Ok(());
-            },
-            Ok(Some(meta)) => meta,
-            Err(err) => return Err(err),
-        };
-        self.ctx.drop_collection(col_spec.info.root_pid, session_id)?;
+        self.ctx.drop_collection(col_name, session_id)?;
         Ok(())
     }
 
@@ -746,14 +733,7 @@ impl DatabaseInner {
             .as_ref()
             .map(|o| o.session_id.as_ref())
             .flatten();
-        let col_spec = match self.ctx.get_collection_meta_by_name(col_name, session_id) {
-            Ok(meta) => meta,
-            Err(DbErr::CollectionNotFound(_)) => {
-                return Ok(Bson::Null);
-            },
-            Err(err) => return Err(err),
-        };
-        self.ctx.drop_collection(col_spec.info.root_pid, session_id)?;
+        self.ctx.drop_collection(col_name, session_id)?;
 
         Ok(Bson::Null)
     }
