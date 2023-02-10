@@ -5,6 +5,7 @@ use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
 use crate::DbResult;
 use crate::error::{DbErr, mk_field_name_type_unexpected};
 use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
+use crate::collection_info::CollectionSpecification;
 use crate::session::Session;
 
 pub(crate) struct IndexCtx {
@@ -21,23 +22,22 @@ impl IndexCtx {
 
     // indexes:
     //     key -> index_entry
-    pub fn from_meta_doc(doc: &Document) -> Option<IndexCtx> {
-        let indexes = doc.get(meta_doc_key::INDEXES)?;
-
-        let meta_doc: &Document = indexes.as_document().unwrap();
-        if meta_doc.is_empty() {
-            return None;
-        }
-
-        let mut result = IndexCtx::new();
-
-        for (key, options) in meta_doc.iter() {
-            let options_doc = options.as_document().unwrap();
-            let entry = IndexEntry::from_option_doc(options_doc.borrow());
-            result.key_to_entry.insert(key.clone(), entry);
-        }
-
-        Some(result)
+    pub fn from_col_spec(col_spec: &CollectionSpecification) -> Option<IndexCtx> {
+        // match &col_spec.id_index {
+        //     Some(index_doc) => {
+        //         let mut result = IndexCtx::new();
+        //
+        //         for (key, options) in index_doc.iter() {
+        //             let options_doc = options.as_document().unwrap();
+        //             let entry = IndexEntry::from_option_doc(options_doc.borrow());
+        //             result.key_to_entry.insert(key.clone(), entry);
+        //         }
+        //
+        //         Some(result)
+        //     }
+        //     None => None,
+        // }
+        unimplemented!()
     }
 
     pub fn merge_to_meta_doc(&self, collection_meta: &mut MetaDocEntry) {
