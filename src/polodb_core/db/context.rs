@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::rc::Rc;
-use bson::{Document, Bson, doc, bson};
+use bson::{Document, Bson, doc, bson, DateTime, Binary};
 use serde::Serialize;
 use super::db::DbResult;
 use crate::page::header_page_wrapper;
@@ -28,6 +28,8 @@ use crate::backend::file::FileBackend;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 use bson::oid::ObjectId;
+use bson::spec::BinarySubtype;
+use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
 
 macro_rules! try_multiple {
     ($err: expr, $action: expr) => {
@@ -66,7 +68,8 @@ fn index_already_exists(index_doc: &Document, key: &str) -> bool {
  */
 pub(crate) struct DbContext {
     base_session: BaseSession,
-    session_map: hashbrown::HashMap<ObjectId, Box<dyn Session + Send>>,
+    session_map:  hashbrown::HashMap<ObjectId, Box<dyn Session + Send>>,
+    node_id:      [u8; 6],
     #[allow(dead_code)]
     config:       Arc<Config>,
 }
@@ -75,11 +78,6 @@ pub(crate) struct DbContext {
 pub struct MetaSource {
     pub meta_id_counter: u32,
     pub meta_pid: u32,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct CollectionMeta {
-    pub id: u32,
 }
 
 impl DbContext {
@@ -104,9 +102,13 @@ impl DbContext {
         let base_session = BaseSession::new(backend, page_size, config.clone())?;
         let session_map = hashbrown::HashMap::new();
 
+        let mut node_id: [u8; 6] = [0; 6];
+        getrandom::getrandom(&mut node_id).unwrap();
+
         let ctx = DbContext {
             base_session,
             // first_page,
+            node_id,
             session_map,
             config,
         };
@@ -130,7 +132,7 @@ impl DbContext {
         Ok(id)
     }
 
-    pub fn get_collection_meta_by_name(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<CollectionMeta> {
+    pub fn get_collection_meta_by_name(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<CollectionSpecification> {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Read)?;
 
@@ -139,13 +141,13 @@ impl DbContext {
         Ok(result)
     }
 
-    fn internal_get_collection_id_by_name(session: &dyn Session, name: &str) -> DbResult<CollectionMeta> {
+    fn internal_get_collection_id_by_name(session: &dyn Session, name: &str) -> DbResult<CollectionSpecification> {
         let meta_src = DbContext::get_meta_source(session)?;
 
         let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
 
         let query_doc = doc! {
-            "name": name,
+            "_id": name,
         };
 
         let meta_doc = doc!{};
@@ -160,13 +162,13 @@ impl DbContext {
         handle.step()?;
 
         if handle.state() == (VmState::HasRow as i8) {
-            let doc = handle.get().as_document().unwrap();
+            let doc = handle.get().as_document().unwrap().clone();
             let int_raw = doc.get("_id").unwrap().as_i64().unwrap();
 
             handle.commit_and_close_vm()?;
-            return Ok(CollectionMeta {
-                id: int_raw as u32,
-            });
+
+            let spec = bson::from_document::<CollectionSpecification>(doc)?;
+            return Ok(spec);
         }
 
         handle.commit_and_close_vm()?;
@@ -178,7 +180,7 @@ impl DbContext {
         name: &str,
         create_if_not_exist: bool,
         session_id: Option<&ObjectId>
-    ) -> DbResult<Option<CollectionMeta>> {
+    ) -> DbResult<Option<CollectionSpecification>> {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(if create_if_not_exist {
             TransactionType::Write
@@ -186,17 +188,20 @@ impl DbContext {
             TransactionType::Read
         })?;
 
-        let result = try_db_op!(session, DbContext::get_collection_meta_by_name_advanced(session, name, create_if_not_exist));
+        let result = try_db_op!(
+            session,
+            DbContext::get_collection_meta_by_name_advanced(session, name, create_if_not_exist, &self.node_id)
+        );
 
         Ok(result)
     }
 
-    pub fn get_collection_meta_by_name_advanced(session: &dyn Session, name: &str, create_if_not_exist: bool) -> DbResult<Option<CollectionMeta>> {
+    pub fn get_collection_meta_by_name_advanced(session: &dyn Session, name: &str, create_if_not_exist: bool, node_id: &[u8; 6]) -> DbResult<Option<CollectionSpecification>> {
         match DbContext::internal_get_collection_id_by_name(session, name) {
             Ok(meta) => Ok(Some(meta)),
             Err(DbErr::CollectionNotFound(_)) => {
                 if create_if_not_exist {
-                    let meta = DbContext::internal_create_collection(session, name)?;
+                    let meta = DbContext::internal_create_collection(session, name, node_id)?;
                     Ok(Some(meta))
                 } else {
                     Ok(None)
@@ -250,11 +255,11 @@ impl DbContext {
         }
     }
 
-    pub fn create_collection(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<CollectionMeta> {
+    pub fn create_collection(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<CollectionSpecification> {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
-        let meta = try_db_op!(session, DbContext::internal_create_collection(session, name));
+        let meta = try_db_op!(session, DbContext::internal_create_collection(session, name, &self.node_id));
 
         Ok(meta)
     }
@@ -263,7 +268,7 @@ impl DbContext {
         let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
 
         let query_doc = doc! {
-            "name": name,
+            "_id": name,
         };
 
         let meta_doc = doc!{};
@@ -286,7 +291,7 @@ impl DbContext {
         Ok(exist)
     }
 
-    fn internal_create_collection(session: &dyn Session, name: &str) -> DbResult<CollectionMeta> {
+    fn internal_create_collection(session: &dyn Session, name: &str, node_id: &[u8; 6]) -> DbResult<CollectionSpecification> {
         if name.is_empty() {
             return Err(DbErr::IllegalCollectionName(name.into()));
         }
@@ -296,23 +301,33 @@ impl DbContext {
         if exist {
             return Err(DbErr::CollectionAlreadyExits(name.into()));
         }
-
-        let mut doc = doc!();
-
-        let collection_id = meta_source.meta_id_counter;
-        doc.insert::<String, Bson>(meta_doc_key::ID.into(), Bson::Int64(collection_id as i64));
-
-        doc.insert::<String, Bson>(meta_doc_key::NAME.into(), name.into());
-
         let root_pid = session.alloc_page_id()?;
-        doc.insert::<String, Bson>(meta_doc_key::ROOT_PID.into(), Bson::Int64(root_pid as i64));
 
-        doc.insert::<String, Bson>(meta_doc_key::FLAGS.into(), bson!(0));
+        let uuid = uuid::Uuid::now_v1(node_id);
+
+        let spec = CollectionSpecification {
+            _id: name.to_string(),
+            collection_type: CollectionType::Collection,
+            info: CollectionSpecificationInfo {
+                uuid: Some(Binary {
+                    subtype: BinarySubtype::Uuid,
+                    bytes: uuid.as_bytes().to_vec(),
+                }),
+
+                create_at: DateTime::now(),
+
+                root_pid,
+            },
+            indexes: HashMap::new(),
+        };
 
         let mut btree_wrapper = BTreePageInsertWrapper::new(
-            session, meta_source.meta_pid);
+            session,
+            meta_source.meta_pid,
+        );
 
-        let insert_result = btree_wrapper.insert_item(&doc, false)?;
+        let spec_doc = bson::to_document(&spec)?;
+        let insert_result = btree_wrapper.insert_item(&spec_doc, false)?;
 
         // if a backward item returns, it's saying that the btree has been "rotated".
         // the center node of the btree has been changed.
@@ -335,9 +350,7 @@ impl DbContext {
 
         DbContext::update_meta_source(session, &meta_source)?;
 
-        Ok(CollectionMeta {
-            id: collection_id,
-        })
+        Ok(spec)
     }
 
     fn update_meta_source(session: &dyn Session, meta_source: &MetaSource) -> DbResult<()> {
@@ -475,78 +488,82 @@ impl DbContext {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
-        let changed = try_db_op!(session, DbContext::insert_one(session, col_name, doc));
+        let changed = try_db_op!(session, DbContext::insert_one(session, col_name, doc, &self.node_id));
 
         Ok(changed)
     }
 
-    fn insert_one(session: &dyn Session, col_name: &str, doc: Document) -> DbResult<InsertOneResult> {
-        let col_meta = DbContext::get_collection_meta_by_name_advanced(session, col_name, true)?
+    fn insert_one(session: &dyn Session, col_name: &str, doc: Document, node_id: &[u8; 6]) -> DbResult<InsertOneResult> {
+        let col_meta = DbContext::get_collection_meta_by_name_advanced(session, col_name, true, node_id)?
             .expect("internal: meta must exist");
-        DbContext::insert_one_with_meta(session, &col_meta, doc)
+        let (result, _) = DbContext::insert_one_with_meta(session, col_meta, doc)?;
+        Ok(result)
     }
 
-    fn insert_one_with_meta(session: &dyn Session, col_meta: &CollectionMeta, doc: Document) -> DbResult<InsertOneResult> {
-        let col_id = col_meta.id;
+    /// Insert one item with the collection spec
+    /// return the new spec for the outside to do the following operation
+    fn insert_one_with_meta(session: &dyn Session, mut col_spec: CollectionSpecification, doc: Document) -> DbResult<(InsertOneResult, CollectionSpecification)> {
+        let col_id = col_spec.name().to_string();
 
         let meta_source = DbContext::get_meta_source(session)?;
         let doc  = DbContext::fix_doc(doc);
 
-        let mut collection_meta = DbContext::find_collection_root_pid_by_id(
-            session, 0, meta_source.meta_pid, col_id
-        )?;
-
         let pkey = doc.get("_id").unwrap();
 
-        let mut is_pkey_check_skipped = false;
-        collection_meta.check_pkey_ty(&pkey, &mut is_pkey_check_skipped)?;
+        // let mut is_pkey_check_skipped = false;
+        // collection_meta.check_pkey_ty(&pkey, &mut is_pkey_check_skipped)?;
 
         let mut is_meta_changed = false;
 
-        // insert index begin
-        let mut index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
-        if let Some(index_ctx) = &mut index_ctx_opt {
-            let mut is_ctx_changed = false;
-
-            index_ctx.insert_index_by_content(
-                &doc,
-                &pkey,
-                &mut is_ctx_changed,
-                session,
-            )?;
-
-            if is_ctx_changed {
-                index_ctx.merge_to_meta_doc(&mut collection_meta);
-                is_meta_changed = true;
-            }
-        }
-        // insert index end
+        // // insert index begin
+        // let mut index_ctx_opt = IndexCtx::from_meta_doc(col_spec);
+        // if let Some(index_ctx) = &mut index_ctx_opt {
+        //     let mut is_ctx_changed = false;
+        //
+        //     index_ctx.insert_index_by_content(
+        //         &doc,
+        //         &pkey,
+        //         &mut is_ctx_changed,
+        //         session,
+        //     )?;
+        //
+        //     if is_ctx_changed {
+        //         index_ctx.merge_to_meta_doc(&mut collection_meta);
+        //         is_meta_changed = true;
+        //     }
+        // }
+        // // insert index end
 
         let mut insert_wrapper = BTreePageInsertWrapper::new(
-            session, collection_meta.root_pid());
+            session,
+            col_spec.info.root_pid,
+        );
         let insert_result: InsertResult = insert_wrapper.insert_item(&doc, false)?;
 
         if let Some(backward_item) = &insert_result.backward_item {
-            let root_pid = collection_meta.root_pid();
+            let root_pid = col_spec.info.root_pid;
             DbContext::handle_insert_backward_item(
-                session, &mut collection_meta,
+                session, &mut col_spec,
                 root_pid, backward_item
             )?;
             is_meta_changed = true;
         }
 
-        // insert successfully
-        if is_pkey_check_skipped {
-            collection_meta.merge_pkey_ty_to_meta(&doc);
-            is_meta_changed = true;
-        }
+        // // insert successfully
+        // if is_pkey_check_skipped {
+        //     collection_meta.merge_pkey_ty_to_meta(&doc);
+        //     is_meta_changed = true;
+        // }
 
         // update meta begin
         if is_meta_changed {
             let key = Bson::from(col_id);
+            let doc = bson::to_document(&col_spec)?;
             let updated= DbContext::update_by_root_pid(
-                session, 0, meta_source.meta_pid,
-                &key, collection_meta.doc_ref()
+                session,
+                0,
+                meta_source.meta_pid,
+                &key, &doc,
             )?;
             if !updated {
                 panic!("unexpected: update meta page failed")
@@ -554,9 +571,10 @@ impl DbContext {
         }
         // update meta end
 
-        Ok(InsertOneResult {
-            inserted_id: pkey.clone(),
-        })
+        Ok((
+            InsertOneResult { inserted_id: pkey.clone() },
+            col_spec
+        ))
     }
 
     pub fn insert_many_auto<T: Serialize>(
@@ -568,7 +586,7 @@ impl DbContext {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(session, DbContext::insert_many(session, col_name, docs));
+        let result = try_db_op!(session, DbContext::insert_many(session, col_name, docs, &self.node_id));
 
         Ok(result)
     }
@@ -577,18 +595,20 @@ impl DbContext {
         session: &dyn Session,
         col_name: &str,
         docs: impl IntoIterator<Item = impl Borrow<T>>,
+        node_id: &[u8; 6],
     ) -> DbResult<InsertManyResult> {
-        let col_meta = DbContext::get_collection_meta_by_name_advanced(session, col_name, true)?
+        let mut col_spec = DbContext::get_collection_meta_by_name_advanced(session, col_name, true, node_id)?
             .expect("internal: meta must exist");
         let mut inserted_ids: HashMap<usize, Bson> = HashMap::new();
         let mut counter: usize = 0;
 
         for item in docs {
             let doc = bson::to_document(item.borrow())?;
-            let insert_one_result = DbContext::insert_one_with_meta(session, &col_meta, doc)?;
+            let (insert_one_result, new_col_spec) = DbContext::insert_one_with_meta(session, col_spec, doc)?;
             inserted_ids.insert(counter, insert_one_result.inserted_id);
 
             counter += 1;
+            col_spec = new_col_spec;
         }
 
         Ok(InsertManyResult {
@@ -786,7 +806,7 @@ impl DbContext {
     }
 
     fn handle_insert_backward_item(session: &dyn Session,
-                                   collection_meta: &mut MetaDocEntry,
+                                   col_spec: &mut CollectionSpecification,
                                    left_pid: u32,
                                    backward_item: &InsertBackwardItem
     ) -> DbResult<()> {
@@ -797,7 +817,7 @@ impl DbContext {
         let new_root_page = backward_item.write_to_page(session, new_root_id, left_pid)?;
         session.write_page(&new_root_page)?;
 
-        collection_meta.set_root_pid(new_root_id);
+        col_spec.info.root_pid = new_root_id;
 
         Ok(())
     }
@@ -825,11 +845,11 @@ impl DbContext {
         let result = delete_wrapper.delete_item(key)?;
         delete_wrapper.flush_pages()?;
 
-        if let Some(deleted_item) = &result {
-            let index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
-            if let Some(index_ctx) = &index_ctx_opt {
-                index_ctx.delete_index_by_content(deleted_item.borrow(), session)?;
-            }
+        if let Some(_deleted_item) = &result {
+            // let index_ctx_opt = IndexCtx::from_meta_doc(collection_meta.doc_ref());
+            // if let Some(index_ctx) = &index_ctx_opt {
+            //     index_ctx.delete_index_by_content(deleted_item.borrow(), session)?;
+            // }
 
             return Ok(result)
         }
