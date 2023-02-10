@@ -142,37 +142,42 @@ impl DbContext {
     }
 
     fn internal_get_collection_id_by_name(session: &dyn Session, name: &str) -> DbResult<CollectionSpecification> {
-        let meta_src = DbContext::get_meta_source(session)?;
+        let meta_source = DbContext::get_meta_source(session)?;
+        DbContext::internal_get_collection_id_by_name_with_pid(session, 0, meta_source.meta_pid, name)
+    }
 
-        let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
-
-        let query_doc = doc! {
-            "_id": name,
-        };
-
-        let meta_doc = doc!{};
-
-        let subprogram = SubProgram::compile_query(
-            &collection_meta,
-            &meta_doc,
-            &query_doc,
-            true)?;
-
-        let mut handle = DbContext::make_handle(session, subprogram);
-        handle.step()?;
-
-        if handle.state() == (VmState::HasRow as i8) {
-            let doc = handle.get().as_document().unwrap().clone();
-            let int_raw = doc.get("_id").unwrap().as_i64().unwrap();
-
-            handle.commit_and_close_vm()?;
-
-            let spec = bson::from_document::<CollectionSpecification>(doc)?;
-            return Ok(spec);
+    fn internal_get_collection_id_by_name_with_pid(session: &dyn Session, parent_pid: u32, root_pid: u32, name: &str) -> DbResult<CollectionSpecification> {
+        let raw_page = session.read_page(root_pid)?;
+        let item_size = DbContext::item_size(session);
+        let btree_node = BTreeNode::from_raw(
+            &raw_page,
+            parent_pid,
+            item_size,
+            session
+        )?;
+        let key = Bson::from(name);
+        if btree_node.is_empty() {
+            return Err(DbErr::CollectionNotFound(name.to_string()));
         }
+        let result = btree_node.search(&key)?;
+        match result {
+            SearchKeyResult::Node(node_index) => {
+                let item = &btree_node.content[node_index];
+                let doc = session.get_doc_from_ticket(&item.data_ticket)?.unwrap();
+                let entry = bson::from_document::<CollectionSpecification>(doc)?;
+                Ok(entry)
+            }
 
-        handle.commit_and_close_vm()?;
-        Err(DbErr::CollectionNotFound(name.into()))
+            SearchKeyResult::Index(child_index) => {
+                let next_pid = btree_node.indexes[child_index];
+                if next_pid == 0 {
+                    return Err(DbErr::CollectionNotFound(name.to_string()));
+                }
+
+                DbContext::internal_get_collection_id_by_name_with_pid(session, root_pid, next_pid, name)
+            }
+
+        }
     }
 
     pub fn get_collection_meta_by_name_advanced_auto(
@@ -264,43 +269,25 @@ impl DbContext {
         Ok(meta)
     }
 
-    fn check_collection_exist(session: &dyn Session, name: &str, meta_src: &MetaSource) -> DbResult<bool> {
-        let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
-
-        let query_doc = doc! {
-            "_id": name,
-        };
-
-        let meta_doc = doc!{};
-
-        let subprogram = SubProgram::compile_query(
-            &collection_meta,
-            &meta_doc,
-            &query_doc,
-            true)?;
-
-        let mut handle = DbContext::make_handle(session, subprogram);
-        handle.set_rollback_on_drop(false);
-
-        handle.step()?;
-
-        let exist = handle.state() == (VmState::HasRow as i8);
-
-        handle.commit_and_close_vm()?;
-
-        Ok(exist)
+    fn check_collection_exist(session: &dyn Session, name: &str) -> DbResult<bool> {
+        let test_collection = DbContext::internal_get_collection_id_by_name(session, name);
+        match test_collection {
+            Ok(_) => Ok(true),
+            Err(DbErr::CollectionNotFound(_)) => Ok(false),
+            Err(err) => Err(err),
+        }
     }
 
     fn internal_create_collection(session: &dyn Session, name: &str, node_id: &[u8; 6]) -> DbResult<CollectionSpecification> {
         if name.is_empty() {
             return Err(DbErr::IllegalCollectionName(name.into()));
         }
-        let mut meta_source = DbContext::get_meta_source(session)?;
-
-        let exist = DbContext::check_collection_exist(session, name, &meta_source)?;
+        let exist = DbContext::check_collection_exist(session, name)?;
         if exist {
             return Err(DbErr::CollectionAlreadyExits(name.into()));
         }
+
+        let mut meta_source = DbContext::get_meta_source(session)?;
         let root_pid = session.alloc_page_id()?;
 
         let uuid = uuid::Uuid::now_v1(node_id);
@@ -371,39 +358,39 @@ impl DbContext {
         DbHandle::new(vm)
     }
 
-    fn find_collection_root_pid_by_id(session: &dyn Session, parent_pid: u32, root_pid: u32, id: u32) -> DbResult<MetaDocEntry> {
-        let raw_page = session.read_page(root_pid)?;
-        let item_size = DbContext::item_size(session);
-        let btree_node = BTreeNode::from_raw(
-            &raw_page,
-            parent_pid,
-            item_size,
-            session
-        )?;
-        let key = Bson::from(id);
-        if btree_node.is_empty() {
-            return Err(DbErr::CollectionIdNotFound(id));
-        }
-        let result = btree_node.search(&key)?;
-        match result {
-            SearchKeyResult::Node(node_index) => {
-                let item = &btree_node.content[node_index];
-                let doc = session.get_doc_from_ticket(&item.data_ticket)?.unwrap();
-                let entry = MetaDocEntry::from_doc(doc);
-                Ok(entry)
-            }
-
-            SearchKeyResult::Index(child_index) => {
-                let next_pid = btree_node.indexes[child_index];
-                if next_pid == 0 {
-                    return Err(DbErr::CollectionIdNotFound(id));
-                }
-
-                DbContext::find_collection_root_pid_by_id(session, root_pid, next_pid, id)
-            }
-
-        }
-    }
+    // fn find_collection_root_pid_by_id(session: &dyn Session, parent_pid: u32, root_pid: u32, id: u32) -> DbResult<MetaDocEntry> {
+    //     let raw_page = session.read_page(root_pid)?;
+    //     let item_size = DbContext::item_size(session);
+    //     let btree_node = BTreeNode::from_raw(
+    //         &raw_page,
+    //         parent_pid,
+    //         item_size,
+    //         session
+    //     )?;
+    //     let key = Bson::from(id);
+    //     if btree_node.is_empty() {
+    //         return Err(DbErr::CollectionIdNotFound(id));
+    //     }
+    //     let result = btree_node.search(&key)?;
+    //     match result {
+    //         SearchKeyResult::Node(node_index) => {
+    //             let item = &btree_node.content[node_index];
+    //             let doc = session.get_doc_from_ticket(&item.data_ticket)?.unwrap();
+    //             let entry = MetaDocEntry::from_doc(doc);
+    //             Ok(entry)
+    //         }
+    //
+    //         SearchKeyResult::Index(child_index) => {
+    //             let next_pid = btree_node.indexes[child_index];
+    //             if next_pid == 0 {
+    //                 return Err(DbErr::CollectionIdNotFound(id));
+    //             }
+    //
+    //             DbContext::find_collection_root_pid_by_id(session, root_pid, next_pid, id)
+    //         }
+    //
+    //     }
+    // }
 
     pub fn create_index(&mut self, col_id: u32, keys: &Document, options: Option<&Document>, session_id: Option<&ObjectId>) -> DbResult<()> {
         let session = self.get_session_by_id(session_id)?;
@@ -415,62 +402,63 @@ impl DbContext {
     }
 
     fn internal_create_index(session: &dyn Session, col_id: u32, keys: &Document, options: Option<&Document>) -> DbResult<()> {
-        let meta_source = DbContext::get_meta_source(session)?;
-        let mut meta_doc = DbContext::find_collection_root_pid_by_id(
-            session, 0, meta_source.meta_pid, col_id
-        )?;
-
-        for (key_name, value_of_key) in keys.iter() {
-            if let Bson::Int32(1) = value_of_key {
-                // nothing
-            } else if let Bson::Int64(1) = value_of_key {
-                // nothing
-            } else {
-                return Err(DbErr::InvalidOrderOfIndex(key_name.clone()));
-            }
-
-            match meta_doc.doc_ref().get(meta_doc_key::INDEXES) {
-                Some(indexes_obj) => match indexes_obj {
-                    Bson::Document(index_doc) => {
-                        if index_already_exists(index_doc.borrow(), key_name) {
-                            return Err(DbErr::IndexAlreadyExists(key_name.clone()));
-                        }
-
-                        unimplemented!()
-                    }
-
-                    _ => {
-                        panic!("unexpected: indexes object is not a Document");
-                    }
-
-                },
-
-                None => {
-                    // create indexes
-                    let mut doc = doc!();
-
-                    let root_pid = session.alloc_page_id()?;
-                    let options_doc = merge_options_into_default(root_pid, options)?;
-                    doc.insert(key_name.clone(), Bson::Document(options_doc));
-
-                    meta_doc.set_indexes(doc);
-                }
-
-            }
-        }
-
-        let key_col = Bson::from(col_id);
-
-        let meta_source = DbContext::get_meta_source(session)?;
-        let inserted = DbContext::update_by_root_pid(
-            session, 0, meta_source.meta_pid,
-            &key_col, meta_doc.doc_ref()
-        )?;
-        if !inserted {
-            panic!("update failed");
-        }
-
-        Ok(())
+        unimplemented!()
+        // let meta_source = DbContext::get_meta_source(session)?;
+        // let mut meta_doc = DbContext::find_collection_root_pid_by_id(
+        //     session, 0, meta_source.meta_pid, col_id
+        // )?;
+        //
+        // for (key_name, value_of_key) in keys.iter() {
+        //     if let Bson::Int32(1) = value_of_key {
+        //         // nothing
+        //     } else if let Bson::Int64(1) = value_of_key {
+        //         // nothing
+        //     } else {
+        //         return Err(DbErr::InvalidOrderOfIndex(key_name.clone()));
+        //     }
+        //
+        //     match meta_doc.doc_ref().get(meta_doc_key::INDEXES) {
+        //         Some(indexes_obj) => match indexes_obj {
+        //             Bson::Document(index_doc) => {
+        //                 if index_already_exists(index_doc.borrow(), key_name) {
+        //                     return Err(DbErr::IndexAlreadyExists(key_name.clone()));
+        //                 }
+        //
+        //                 unimplemented!()
+        //             }
+        //
+        //             _ => {
+        //                 panic!("unexpected: indexes object is not a Document");
+        //             }
+        //
+        //         },
+        //
+        //         None => {
+        //             // create indexes
+        //             let mut doc = doc!();
+        //
+        //             let root_pid = session.alloc_page_id()?;
+        //             let options_doc = merge_options_into_default(root_pid, options)?;
+        //             doc.insert(key_name.clone(), Bson::Document(options_doc));
+        //
+        //             meta_doc.set_indexes(doc);
+        //         }
+        //
+        //     }
+        // }
+        //
+        // let key_col = Bson::from(col_id);
+        //
+        // let meta_source = DbContext::get_meta_source(session)?;
+        // let inserted = DbContext::update_by_root_pid(
+        //     session, 0, meta_source.meta_pid,
+        //     &key_col, meta_doc.doc_ref()
+        // )?;
+        // if !inserted {
+        //     panic!("update failed");
+        // }
+        //
+        // Ok(())
     }
 
     #[inline]
@@ -617,59 +605,57 @@ impl DbContext {
     }
 
     /// query: None for findAll
-    pub fn find(&mut self, col_id: u32, query: Option<Document>, session_id: Option<&ObjectId>) -> DbResult<DbHandle> {
+    pub fn find(&mut self, col_spec: &CollectionSpecification, query: Option<Document>, session_id: Option<&ObjectId>) -> DbResult<DbHandle> {
         let session = self.get_session_by_id(session_id)?;
-        DbContext::find_internal(session, col_id, query)
+        DbContext::find_internal(session, col_spec, query)
     }
 
-    fn find_internal(session: &dyn Session, col_id: u32, query: Option<Document>) -> DbResult<DbHandle> {
-        let meta_source = DbContext::get_meta_source(session)?;
-        let collection_meta = DbContext::find_collection_root_pid_by_id(
-            session, 0,
-            meta_source.meta_pid, col_id
-        )?;
+    fn find_internal<'a, 'b>(session: &'a dyn Session, col_spec: &'b CollectionSpecification, query: Option<Document>) -> DbResult<DbHandle<'a>> {
+        // let meta_source = DbContext::get_meta_source(session)?;
+        // let collection_meta = DbContext::find_collection_root_pid_by_id(
+        //     session, 0,
+        //     meta_source.meta_pid, col_id
+        // )?;
 
         let subprogram = match query {
             Some(query) => SubProgram::compile_query(
-                &collection_meta,
-                collection_meta.doc_ref(),
+                col_spec,
                 &query,
                 true
             ),
-            None => SubProgram::compile_query_all(&collection_meta, true),
+            None => SubProgram::compile_query_all(col_spec, true),
         }?;
 
         let handle = DbContext::make_handle(session, subprogram);
         Ok(handle)
     }
 
-    pub fn update_many(&mut self, col_id: u32, query: Option<&Document>, update: &Document, session_id: Option<&ObjectId>) -> DbResult<usize> {
+    pub fn update_many(&mut self, col_spec: &CollectionSpecification, query: Option<&Document>, update: &Document, session_id: Option<&ObjectId>) -> DbResult<usize> {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(session, DbContext::internal_update(session, col_id, query, update, true));
+        let result = try_db_op!(session, DbContext::internal_update(session, col_spec, query, update, true));
 
         Ok(result)
     }
 
-    pub fn update_one(&mut self, col_id: u32, query: Option<&Document>, update: &Document, session_id: Option<&ObjectId>) -> DbResult<usize> {
+    pub fn update_one(&mut self, col_spec: &CollectionSpecification, query: Option<&Document>, update: &Document, session_id: Option<&ObjectId>) -> DbResult<usize> {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(session, DbContext::internal_update(session, col_id, query, update, false));
+        let result = try_db_op!(session, DbContext::internal_update(session, col_spec, query, update, false));
 
         Ok(result)
     }
 
-    fn internal_update(session: &dyn Session, col_id: u32, query: Option<&Document>, update: &Document, is_many: bool) -> DbResult<usize> {
-        let meta_source = DbContext::get_meta_source(session)?;
-        let collection_meta = DbContext::find_collection_root_pid_by_id(
-            session, 0,
-            meta_source.meta_pid, col_id
+    fn internal_update(session: &dyn Session, col_spec: &CollectionSpecification, query: Option<&Document>, update: &Document, is_many: bool) -> DbResult<usize> {
+        let subprogram = SubProgram::compile_update(
+            col_spec,
+            query,
+            update,
+            true,
+            is_many,
         )?;
-
-        let subprogram = SubProgram::compile_update(&collection_meta, query, update,
-                                                    true, is_many)?;
 
         let mut vm = VM::new(session, Box::new(subprogram));
         vm.execute()?;
@@ -677,71 +663,78 @@ impl DbContext {
         Ok(vm.r2 as usize)
     }
 
-    pub fn drop_collection(&mut self, col_id: u32, session_id: Option<&ObjectId>) -> DbResult<()> {
+    pub fn drop_collection(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<()> {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
-        try_db_op!(session, DbContext::internal_drop(session, col_id));
+        try_db_op!(session, DbContext::internal_drop(session, name));
 
         Ok(())
     }
 
-    fn internal_drop(session: &dyn Session, col_id: u32) -> DbResult<()> {
+    fn internal_drop(session: &dyn Session, name: &str) -> DbResult<()> {
         let meta_source = DbContext::get_meta_source(session)?;
-        let collection_meta = DbContext::find_collection_root_pid_by_id(
-            session, 0, meta_source.meta_pid, col_id
-        )?;
-        delete_all_helper::delete_all(session, collection_meta)?;
+        let collection_meta = DbContext::internal_get_collection_id_by_name(session, name)?;
+        delete_all_helper::delete_all(session, &collection_meta)?;
 
         let mut btree_wrapper = BTreePageDeleteWrapper::new(
             session, meta_source.meta_pid);
 
-        let pkey = Bson::from(col_id);
+        let pkey = Bson::from(name);
         btree_wrapper.delete_item(&pkey)?;
 
         DbContext::update_meta_source(session, &meta_source)
     }
 
-    pub fn delete(&mut self, col_id: u32, query: Document, is_many: bool, session_id: Option<&ObjectId>) -> DbResult<usize> {
+    pub fn delete(&mut self, col_name: &str, query: Document, is_many: bool, session_id: Option<&ObjectId>) -> DbResult<usize> {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(session, DbContext::internal_delete_by_query(session, col_id, query, is_many));
+        let result = try_db_op!(session, DbContext::internal_delete_by_query(session, col_name, query, is_many));
 
         Ok(result)
     }
 
-    fn internal_delete(session: &dyn Session, col_id: u32, primary_keys: &[Bson]) -> DbResult<usize> {
+    fn internal_delete(session: &dyn Session, col_name: &str, primary_keys: &[Bson]) -> DbResult<usize> {
         for pkey in primary_keys {
-            let _ = DbContext::internal_delete_by_pkey(session, col_id, pkey)?;
+            let _ = DbContext::internal_delete_by_pkey(session, col_name, pkey)?;
         }
 
         Ok(primary_keys.len())
     }
 
-    fn internal_delete_by_query(session: &dyn Session, col_id: u32, query: Document, is_many: bool) -> DbResult<usize> {
+    fn internal_delete_by_query(session: &dyn Session, col_name: &str, query: Document, is_many: bool) -> DbResult<usize> {
         let primary_keys = DbContext::get_primary_keys_by_query(
-            session, col_id, Some(query), is_many)?;
-        DbContext::internal_delete(session, col_id, &primary_keys)
+            session,
+            col_name,
+            Some(query),
+            is_many,
+        )?;
+        DbContext::internal_delete(session, col_name, &primary_keys)
     }
 
-    fn internal_delete_all(session: &dyn Session, col_id: u32) -> DbResult<usize> {
+    fn internal_delete_all(session: &dyn Session, col_name: &str) -> DbResult<usize> {
         let primary_keys = DbContext::get_primary_keys_by_query(
-            session, col_id, None, true)?;
-        DbContext::internal_delete(session, col_id, &primary_keys)
+            session,
+            col_name,
+            None,
+            true,
+        )?;
+        DbContext::internal_delete(session, col_name, &primary_keys)
     }
 
-    pub fn delete_all(&mut self, col_id: u32, session_id: Option<&ObjectId>) -> DbResult<usize> {
+    pub fn delete_all(&mut self, col_name: &str, session_id: Option<&ObjectId>) -> DbResult<usize> {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(session, DbContext::internal_delete_all(session, col_id));
+        let result = try_db_op!(session, DbContext::internal_delete_all(session, col_name));
 
         Ok(result)
     }
 
-    fn get_primary_keys_by_query(session: &dyn Session, col_id: u32, query: Option<Document>, is_many: bool) -> DbResult<Vec<Bson>> {
-        let mut handle = DbContext::find_internal(session, col_id, query)?;
+    fn get_primary_keys_by_query(session: &dyn Session, col_name: &str, query: Option<Document>, is_many: bool) -> DbResult<Vec<Bson>> {
+        let col_spec = DbContext::internal_get_collection_id_by_name(session, col_name)?;
+        let mut handle = DbContext::find_internal(session, &col_spec, query)?;
         let mut buffer: Vec<Bson> = vec![];
 
         handle.step()?;
@@ -823,24 +816,23 @@ impl DbContext {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn delete_by_pkey(&mut self, col_id: u32, key: &Bson, session_id: Option<&ObjectId>) -> DbResult<Option<Rc<Document>>> {
+    pub(crate) fn delete_by_pkey(&mut self, col_name: &str, key: &Bson, session_id: Option<&ObjectId>) -> DbResult<Option<Rc<Document>>> {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
-        let result = try_db_op!(session, DbContext::internal_delete_by_pkey(session, col_id, key));
+        let result = try_db_op!(session, DbContext::internal_delete_by_pkey(session, col_name, key));
 
         Ok(result)
     }
 
-    fn internal_delete_by_pkey(session: &dyn Session, col_id: u32, key: &Bson) -> DbResult<Option<Rc<Document>>> {
-        let meta_source = DbContext::get_meta_source(session)?;
-        let collection_meta = DbContext::find_collection_root_pid_by_id(
-            session, 0, meta_source.meta_pid, col_id
+    fn internal_delete_by_pkey(session: &dyn Session, col_name: &str, key: &Bson) -> DbResult<Option<Rc<Document>>> {
+        let collection_meta = DbContext::internal_get_collection_id_by_name(
+            session, col_name,
         )?;
 
         let mut delete_wrapper = BTreePageDeleteWrapper::new(
             session,
-            collection_meta.root_pid() as u32,
+            collection_meta.info.root_pid as u32,
         );
         let result = delete_wrapper.delete_item(key)?;
         delete_wrapper.flush_pages()?;
@@ -857,19 +849,15 @@ impl DbContext {
         Ok(None)
     }
 
-    pub fn count(&mut self, col_id: u32, session_id: Option<&ObjectId>) -> DbResult<u64> {
+    pub fn count(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<u64> {
         let session = self.get_session_by_id(session_id)?;
-        DbContext::count_internal(session, col_id)
+        DbContext::count_internal(session, name)
     }
 
-    fn count_internal(session: &dyn Session, col_id: u32) -> DbResult<u64> {
-        let meta_source = DbContext::get_meta_source(session)?;
-        let collection_meta = DbContext::find_collection_root_pid_by_id(
-            session, 0, meta_source.meta_pid, col_id
-        )?;
-        counter_helper::count(session, collection_meta)
+    fn count_internal(session: &dyn Session, name: &str) -> DbResult<u64> {
+        let col_spec = DbContext::internal_get_collection_id_by_name(session, name)?;
+        counter_helper::count(session, &col_spec)
     }
-
 
     pub(crate) fn query_all_meta(&mut self, session_id: Option<&ObjectId>) -> DbResult<Vec<Document>> {
         let session = self.get_session_by_id(session_id)?;
@@ -879,11 +867,20 @@ impl DbContext {
     fn query_all_meta_internal(session: &dyn Session) -> DbResult<Vec<Document>> {
         let meta_src = DbContext::get_meta_source(session)?;
 
-        let collection_meta = MetaDocEntry::new(0, "<meta>".into(), meta_src.meta_pid);
+        let col_spec = CollectionSpecification {
+            _id: "<meta>".into(),
+            collection_type: CollectionType::Collection,
+            info: CollectionSpecificationInfo {
+                uuid: None,
+                create_at: DateTime::now(),
+                root_pid: meta_src.meta_pid,
+            },
+            indexes: HashMap::new(),
+        };
 
         let subprogram = SubProgram::compile_query_all(
-            &collection_meta,
-            true)?;
+            &col_spec, true,
+        )?;
 
         let mut handle = DbContext::make_handle(session, subprogram);
         handle.step()?;

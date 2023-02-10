@@ -1,5 +1,6 @@
 use std::fmt;
 use bson::{Bson, Document};
+use crate::collection_info::CollectionSpecification;
 use crate::DbResult;
 use crate::meta_doc_helper::{MetaDocEntry, meta_doc_key};
 use super::op::DbOp;
@@ -22,14 +23,17 @@ impl SubProgram {
         }
     }
 
-    pub(crate) fn compile_query(entry: &MetaDocEntry, meta_doc: &Document, query: &Document,
-                                skip_annotation: bool) -> DbResult<SubProgram> {
-        let _indexes = meta_doc.get(meta_doc_key::INDEXES);
+    pub(crate) fn compile_query(
+        col_spec: &CollectionSpecification,
+        query: &Document,
+        skip_annotation: bool,
+    ) -> DbResult<SubProgram> {
+        // let _indexes = meta_doc.get(meta_doc_key::INDEXES);
         // let _tuples = doc_to_tuples(doc);
 
         let mut codegen = Codegen::new(skip_annotation);
 
-        codegen.emit_open_read(entry.root_pid());
+        codegen.emit_open_read(col_spec.info.root_pid);
 
         codegen.emit_query_layout(
             query,
@@ -44,11 +48,15 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_update(entry: &MetaDocEntry, query: Option<&Document>, update: &Document,
-                                 skip_annotation: bool, is_many: bool) -> DbResult<SubProgram> {
+    pub(crate) fn compile_update(
+        col_spec: &CollectionSpecification,
+        query: Option<&Document>,
+        update: &Document,
+        skip_annotation: bool, is_many: bool,
+    ) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation);
 
-        codegen.emit_open_write(entry.root_pid());
+        codegen.emit_open_write(col_spec.info.root_pid);
 
         codegen.emit_query_layout(
             query.unwrap(),
@@ -64,13 +72,13 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_query_all(entry: &MetaDocEntry, skip_annotation: bool) -> DbResult<SubProgram> {
+    pub(crate) fn compile_query_all(col_spec: &CollectionSpecification, skip_annotation: bool) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation);
         let result_label = codegen.new_label();
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
 
-        codegen.emit_open_read(entry.root_pid());
+        codegen.emit_open_read(col_spec.info.root_pid);
 
         codegen.emit_goto(DbOp::Rewind, close_label);
 
@@ -317,15 +325,31 @@ impl fmt::Display for SubProgram {
 
 #[cfg(test)]
 mod tests {
-    use bson::doc;
+    use std::collections::HashMap;
+    use bson::{DateTime, doc};
     use polodb_line_diff::assert_eq;
+    use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
     use crate::vm::SubProgram;
     use crate::meta_doc_helper::MetaDocEntry;
 
+    fn new_spec<T: Into<String>>(name: T, root_pid: u32) -> CollectionSpecification {
+        CollectionSpecification {
+            _id: name.into(),
+            collection_type: CollectionType::Collection,
+            info: CollectionSpecificationInfo {
+                uuid: None,
+                create_at: DateTime::now(),
+                root_pid,
+            },
+            indexes: HashMap::new(),
+        }
+    }
+
     #[test]
     fn print_program() {
-        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query_all(&meta_entry, false).unwrap();
+        // let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
+        let col_spec = new_spec("test", 100);
+        let program = SubProgram::compile_query_all(&col_spec, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = "Program:
@@ -352,13 +376,12 @@ mod tests {
 
     #[test]
     fn print_query() {
-        let meta_doc = doc! {};
         let test_doc = doc! {
             "name": "Vincent Chan",
             "age": 32,
         };
-        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, false).unwrap();
+        let col_spec = new_spec("test", 100);
+        let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -410,13 +433,12 @@ mod tests {
 
     #[test]
     fn print_query_by_primary_key() {
-        let meta_doc = doc! {};
+        let col_spec = new_spec("test", 100);
         let test_doc = doc! {
             "_id": 6,
             "age": 32,
         };
-        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, false).unwrap();
+        let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -468,7 +490,7 @@ mod tests {
 
     #[test]
     fn query_by_logic_and() {
-        let meta_doc = doc! {};
+        let col_spec = new_spec("test", 100);
         let test_doc = doc! {
             "$and": [
                 doc! {
@@ -479,8 +501,7 @@ mod tests {
                 },
             ],
         };
-        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, false).unwrap();
+        let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -532,7 +553,7 @@ mod tests {
 
     #[test]
     fn print_logic_or() {
-        let meta_doc = doc!();
+        let col_spec = new_spec("test", 100);
         let test_doc = doc! {
             "$or": [
                 doc! {
@@ -543,8 +564,7 @@ mod tests {
                 },
             ],
         };
-        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, false).unwrap();
+        let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -606,7 +626,7 @@ mod tests {
 
     #[test]
     fn print_complex_print() {
-        let meta_doc = doc! {};
+        let col_spec = new_spec("test", 100);
         let test_doc = doc! {
             "age": doc! {
                 "$gt": 3,
@@ -616,7 +636,7 @@ mod tests {
             },
         };
         let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let program = SubProgram::compile_query(&meta_entry, &meta_doc, &test_doc, false).unwrap();
+        let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -667,7 +687,7 @@ mod tests {
 
     #[test]
     fn print_update() {
-        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
+        let col_spec = new_spec("test", 100);
         let query_doc = doc! {
             "_id": doc! {
                 "$gt": 3
@@ -693,9 +713,12 @@ mod tests {
                 "hello1": "hello2",
             },
         };
-        let program = SubProgram::compile_update(&meta_entry,
-                                                 Some(&query_doc), &update_doc,
-                                                 false, true).unwrap();
+        let program = SubProgram::compile_update(
+            &col_spec,
+            Some(&query_doc),
+            &update_doc,
+            false, true
+        ).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
