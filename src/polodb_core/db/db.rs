@@ -513,22 +513,23 @@ impl DatabaseInner {
     }
 
     fn delete_one(&mut self, col_name: &str, query: Document, session_id: Option<&ObjectId>) -> DbResult<DeleteResult> {
-        let meta_opt = self.get_collection_meta_by_name(col_name, false, session_id)?;
-        let deleted_count = match meta_opt {
-            Some(col_spec) => {
-                let count = self.ctx.delete(
-                    col_name,
-                    query,
-                    false,
-                    session_id,
-                )?;
-                count as u64
-            }
-            None => 0
-        };
-        Ok(DeleteResult {
-            deleted_count,
-        })
+        let test_count = self.ctx.delete(
+            col_name,
+            query,
+            false,
+            session_id,
+        );
+
+        match test_count {
+            Ok(count) => Ok(DeleteResult {
+                deleted_count: count as u64,
+            }),
+            Err(DbErr::CollectionNotFound(_)) => Ok(DeleteResult {
+                deleted_count: 0,
+            }),
+            Err(err) => Err(err),
+        }
+
     }
 
     fn delete_many(&mut self, col_name: &str, query: Document, session_id: Option<&ObjectId>) -> DbResult<DeleteResult> {
