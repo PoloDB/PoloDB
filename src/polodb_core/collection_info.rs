@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use bson::{Binary, Bson, DateTime, Document};
+use bson::{Binary, DateTime, Document};
 use serde::{Deserialize, Serialize};
-use crate::DbErr;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

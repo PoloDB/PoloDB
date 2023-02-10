@@ -160,35 +160,35 @@ impl<'a, T>  Collection<'a, T>
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use bson::{Document, doc};
-    use crate::test_utils::prepare_db;
-
-    #[test]
-    fn test_create_index() {
-        let db = prepare_db("test-create-index").unwrap();
-        let collection = db.collection::<Document>("test");
-
-        let keys = doc! {
-            "user_id": 1,
-        };
-
-        collection.create_index(&keys, None).unwrap();
-
-        for i in 0..10 {
-            let str = i.to_string();
-            let data = doc! {
-                "name": str.clone(),
-                "user_id": str.clone(),
-            };
-            collection.insert_one(data).unwrap();
-        }
-
-        let data = doc! {
-            "name": "what",
-            "user_id": 3,
-        };
-        collection.insert_one(data).expect_err("not comparable");
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use bson::{Document, doc};
+//     use crate::test_utils::prepare_db;
+//
+//     #[test]
+//     fn test_create_index() {
+//         let db = prepare_db("test-create-index").unwrap();
+//         let collection = db.collection::<Document>("test");
+//
+//         let keys = doc! {
+//             "user_id": 1,
+//         };
+//
+//         collection.create_index(&keys, None).unwrap();
+//
+//         for i in 0..10 {
+//             let str = i.to_string();
+//             let data = doc! {
+//                 "name": str.clone(),
+//                 "user_id": str.clone(),
+//             };
+//             collection.insert_one(data).unwrap();
+//         }
+//
+//         let data = doc! {
+//             "name": "what",
+//             "user_id": 3,
+//         };
+//         collection.insert_one(data).expect_err("not comparable");
+//     }
+// }

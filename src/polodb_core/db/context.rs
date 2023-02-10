@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::rc::Rc;
-use bson::{Document, Bson, doc, bson, DateTime, Binary};
+use bson::{Document, Bson, DateTime, Binary};
 use serde::Serialize;
 use super::db::DbResult;
 use crate::page::header_page_wrapper;
@@ -12,7 +12,7 @@ use crate::TransactionType;
 use crate::Config;
 use crate::vm::{SubProgram, VM, VmState};
 use crate::meta_doc_helper::meta_doc_key;
-use crate::index_ctx::{IndexCtx, merge_options_into_default};
+// use crate::index_ctx::{IndexCtx, merge_options_into_default};
 use crate::btree::*;
 use crate::transaction::TransactionState;
 use crate::backend::memory::MemoryBackend;
@@ -132,14 +132,14 @@ impl DbContext {
         Ok(id)
     }
 
-    pub fn get_collection_meta_by_name(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<CollectionSpecification> {
-        let session = self.get_session_by_id(session_id)?;
-        session.auto_start_transaction(TransactionType::Read)?;
-
-        let result = try_db_op!(session, DbContext::internal_get_collection_id_by_name(session, name));
-
-        Ok(result)
-    }
+    // pub fn get_collection_meta_by_name(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<CollectionSpecification> {
+    //     let session = self.get_session_by_id(session_id)?;
+    //     session.auto_start_transaction(TransactionType::Read)?;
+    //
+    //     let result = try_db_op!(session, DbContext::internal_get_collection_id_by_name(session, name));
+    //
+    //     Ok(result)
+    // }
 
     fn internal_get_collection_id_by_name(session: &dyn Session, name: &str) -> DbResult<CollectionSpecification> {
         let meta_source = DbContext::get_meta_source(session)?;
