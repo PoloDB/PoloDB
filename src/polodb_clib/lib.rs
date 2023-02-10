@@ -219,7 +219,7 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::PageMagicMismatch(_) => 22,
         DbErr::ItemSizeGreaterThanExpected => 23,
         DbErr::CollectionNotFound(_) => 24,
-        DbErr::CollectionIdNotFound(_) => 25,
+        // DbErr::CollectionIdNotFound(_) => 25,
         DbErr::MetaPageIdError => 26,
         DbErr::CannotWriteDbWithoutTransaction => 27,
         DbErr::StartTransactionInAnotherTransaction => 28,

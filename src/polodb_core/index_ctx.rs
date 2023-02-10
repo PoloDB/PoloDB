@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 use hashbrown::HashMap;
 use bson::{Document, Bson, doc};
-use crate::meta_doc_helper::{meta_doc_key, MetaDocEntry};
+use crate::meta_doc_helper::meta_doc_key;
 use crate::DbResult;
 use crate::error::{DbErr, mk_field_name_type_unexpected};
 use crate::btree::{BTreePageInsertWrapper, InsertBackwardItem, BTreePageDeleteWrapper};
@@ -40,15 +40,15 @@ impl IndexCtx {
         unimplemented!()
     }
 
-    pub fn merge_to_meta_doc(&self, collection_meta: &mut MetaDocEntry) {
-        let mut new_back_doc = doc!();
-        for (key, entry) in &self.key_to_entry {
-            let index_meta_doc = entry.to_doc();
-            new_back_doc.insert(key.clone(), Bson::Document(index_meta_doc));
-        }
-
-        collection_meta.set_indexes(new_back_doc);
-    }
+    // pub fn merge_to_meta_doc(&self, collection_meta: &mut MetaDocEntry) {
+    //     let mut new_back_doc = doc!();
+    //     for (key, entry) in &self.key_to_entry {
+    //         let index_meta_doc = entry.to_doc();
+    //         new_back_doc.insert(key.clone(), Bson::Document(index_meta_doc));
+    //     }
+    //
+    //     collection_meta.set_indexes(new_back_doc);
+    // }
 
     pub fn insert_index_by_content(&mut self, doc: &Document, primary_key: &Bson, is_ctx_changed: &mut bool, page_handler: &dyn Session) -> DbResult<()> {
         for (key, entry) in &mut self.key_to_entry {

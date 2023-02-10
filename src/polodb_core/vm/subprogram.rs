@@ -2,7 +2,6 @@ use std::fmt;
 use bson::{Bson, Document};
 use crate::collection_info::CollectionSpecification;
 use crate::DbResult;
-use crate::meta_doc_helper::{MetaDocEntry, meta_doc_key};
 use super::op::DbOp;
 use super::label::LabelSlot;
 use crate::vm::codegen::Codegen;
@@ -330,7 +329,6 @@ mod tests {
     use polodb_line_diff::assert_eq;
     use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
     use crate::vm::SubProgram;
-    use crate::meta_doc_helper::MetaDocEntry;
 
     fn new_spec<T: Into<String>>(name: T, root_pid: u32) -> CollectionSpecification {
         CollectionSpecification {
@@ -635,7 +633,6 @@ mod tests {
                 "$in": [ 1, 2 ],
             },
         };
-        let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
         let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
