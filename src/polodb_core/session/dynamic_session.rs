@@ -6,14 +6,10 @@ use bson::oid::ObjectId;
 use crate::data_ticket::DataTicket;
 use crate::{DbErr, DbResult, TransactionType};
 use crate::backend::AutoStartResult;
-use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::page::RawPage;
 use crate::session::{BaseSession, Session};
-use crate::session::data_page_allocator::DataPageAllocator;
 use crate::session::session::SessionInner;
-
-const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
 struct DynamicSessionInner {
     id: ObjectId,
@@ -21,7 +17,6 @@ struct DynamicSessionInner {
     base_session: BaseSession,
     page_map: Option<BTreeMap<u32, RawPage>>,
     page_size: NonZeroU32,
-    data_page_allocator: DataPageAllocator,
     db_size: u64,
     init_block_count: u64,
 }
@@ -39,7 +34,6 @@ impl DynamicSessionInner {
             base_session,
             page_map: None,
             page_size,
-            data_page_allocator: DataPageAllocator::new(),
             db_size,
             init_block_count,
         }
@@ -50,7 +44,6 @@ impl DynamicSessionInner {
             return Err(DbErr::StartTransactionInAnotherTransaction);
         }
         self.page_map = Some(BTreeMap::new());
-        self.data_page_allocator.start_transaction();
         Ok(())
     }
 
@@ -74,7 +67,6 @@ impl DynamicSessionInner {
             self.base_session.commit()?;
             self.page_map = None;  // clear the map after commited
             self.version = self.base_session.version();
-            self.data_page_allocator.commit();
         }
 
         Ok(())
@@ -85,15 +77,7 @@ impl DynamicSessionInner {
             return Err(DbErr::NoTransactionStarted);
         }
         self.page_map = None;
-        self.data_page_allocator.rollback();
         Ok(())
-    }
-
-    #[inline]
-    fn force_distribute_new_data_page_wrapper(&mut self) -> DbResult<DataPageWrapper> {
-        let new_pid = self.alloc_page_id()?;
-        let new_wrapper = DataPageWrapper::init(new_pid, self.page_size);
-        Ok(new_wrapper)
     }
 }
 
@@ -119,33 +103,6 @@ impl SessionInner for DynamicSessionInner {
     }
 
     // TODO: refactor with session
-    fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper> {
-        let data_size = data_size + 2;  // preserve 2 bytes
-        let try_result = self.data_page_allocator.try_allocate_data_page(data_size);
-        if let Some((pid, _)) = try_result {
-            let raw_page = self.read_page(pid)?;
-            let wrapper = DataPageWrapper::from_raw(raw_page);
-            return Ok(wrapper);
-        }
-        let wrapper = self.force_distribute_new_data_page_wrapper()?;
-        return Ok(wrapper);
-    }
-
-    // TODO: refactor with session
-    fn return_data_page_wrapper(&mut self, wrapper: DataPageWrapper) {
-        let remain_size = wrapper.remain_size();
-        if remain_size < PRESERVE_WRAPPER_MIN_REMAIN_SIZE {
-            return;
-        }
-
-        if wrapper.bar_len() >= (u16::MAX as u32) / 2 {  // len too large
-            return;
-        }
-
-        self.data_page_allocator.add_tuple(wrapper.pid(), remain_size);
-    }
-
-    // TODO: refactor with session
     fn actual_alloc_page_id(&mut self) -> DbResult<u32> {
         let first_page = self.get_first_page()?;
         let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
@@ -163,17 +120,6 @@ impl SessionInner for DynamicSessionInner {
         crate::polo_log!("alloc new page_id : {}", null_page_bar);
 
         Ok(null_page_bar)
-    }
-
-    // TODO: refactor with session
-    fn free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
-        self.internal_free_pages(pages)?;
-
-        for pid in pages {
-            self.data_page_allocator.free_page(*pid);
-        }
-
-        Ok(())
     }
 
     fn page_size(&self) -> NonZeroU32 {

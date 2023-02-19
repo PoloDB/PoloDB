@@ -6,15 +6,11 @@ use crate::backend::{AutoStartResult, Backend};
 use crate::{Config, DbErr, DbResult, TransactionType};
 use crate::data_ticket::DataTicket;
 use crate::dump::JournalDump;
-use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::page::RawPage;
 use crate::transaction::TransactionState;
 use super::session::{Session, SessionInner};
-use super::data_page_allocator::DataPageAllocator;
 use super::pagecache::PageCache;
-
-const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
 #[derive(Clone)]
 pub(crate) struct BaseSession {
@@ -175,8 +171,6 @@ struct BaseSessionInner {
     pub page_size:       NonZeroU32,
     page_cache:          PageCache,
 
-    data_page_allocator: DataPageAllocator,
-
     transaction_state:   TransactionState,
 
     config:              Arc<Config>,
@@ -194,8 +188,6 @@ impl BaseSessionInner {
             page_size,
             page_cache,
 
-            data_page_allocator: DataPageAllocator::new(),
-
             transaction_state: TransactionState::NoTrans,
 
             config,
@@ -209,13 +201,6 @@ impl BaseSessionInner {
 
     fn remove_session(&mut self, sid: &ObjectId) -> DbResult<()> {
         self.backend.remove_session(sid)
-    }
-
-    #[inline]
-    fn force_distribute_new_data_page_wrapper(&mut self) -> DbResult<DataPageWrapper> {
-        let new_pid = self.alloc_page_id()?;
-        let new_wrapper = DataPageWrapper::init(new_pid, self.page_size);
-        Ok(new_wrapper)
     }
 
     // for test
@@ -241,7 +226,6 @@ impl BaseSessionInner {
 
     fn upgrade_read_transaction_to_write(&mut self) -> DbResult<()> {
         self.backend.upgrade_read_transaction_to_write()?;
-        self.data_page_allocator.start_transaction();
         Ok(())
     }
 
@@ -270,15 +254,11 @@ impl BaseSessionInner {
 
     fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
         self.backend.start_transaction(ty)?;
-        if ty == TransactionType::Write {
-            self.data_page_allocator.start_transaction();
-        }
         Ok(())
     }
 
     fn commit(&mut self) -> DbResult<()> {
         self.backend.commit()?;
-        self.data_page_allocator.commit();
         self.version += 1;
         Ok(())
     }
@@ -329,7 +309,6 @@ impl BaseSessionInner {
     // cleat it
     fn rollback(&mut self) -> DbResult<()> {
         self.backend.rollback()?;
-        self.data_page_allocator.rollback();
         self.page_cache = PageCache::new_default(self.page_size);
         Ok(())
     }
@@ -395,31 +374,6 @@ impl SessionInner for BaseSessionInner {
         self.pipeline_write_page_main(page)
     }
 
-    fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper> {
-        let data_size = data_size + 2;  // preserve 2 bytes
-        let try_result = self.data_page_allocator.try_allocate_data_page(data_size);
-        if let Some((pid, _)) = try_result {
-            let raw_page = self.read_page(pid)?;
-            let wrapper = DataPageWrapper::from_raw(raw_page);
-            return Ok(wrapper);
-        }
-        let wrapper = self.force_distribute_new_data_page_wrapper()?;
-        return Ok(wrapper);
-    }
-
-    fn return_data_page_wrapper(&mut self, wrapper: DataPageWrapper) {
-        let remain_size = wrapper.remain_size();
-        if remain_size < PRESERVE_WRAPPER_MIN_REMAIN_SIZE {
-            return;
-        }
-
-        if wrapper.bar_len() >= (u16::MAX as u32) / 2 {  // len too large
-            return;
-        }
-
-        self.data_page_allocator.add_tuple(wrapper.pid(), remain_size);
-    }
-
     fn actual_alloc_page_id(&mut self) -> DbResult<u32> {
         let first_page = self.get_first_page()?;
         let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
@@ -437,16 +391,6 @@ impl SessionInner for BaseSessionInner {
         crate::polo_log!("alloc new page_id : {}", null_page_bar);
 
         Ok(null_page_bar)
-    }
-
-    fn free_pages(&mut self, pages: &[u32]) -> DbResult<()> {
-        self.internal_free_pages(pages)?;
-
-        for pid in pages {
-            self.data_page_allocator.free_page(*pid);
-        }
-
-        Ok(())
     }
 
     fn page_size(&self) -> NonZeroU32 {

@@ -9,6 +9,9 @@ use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::page::large_data_page_wrapper::LargeDataPageWrapper;
 use crate::page::{FreeListDataWrapper, header_page_wrapper, RawPage};
+use crate::page::data_allocator_wrapper::DataAllocatorWrapper;
+
+const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
 pub(crate) trait Session {
     fn read_page(&self, page_id: u32) -> DbResult<RawPage>;
@@ -33,12 +36,71 @@ pub(crate) trait Session {
 pub(crate) trait SessionInner {
     fn read_page(&mut self, page_id: u32) -> DbResult<RawPage>;
     fn write_page(&mut self, page: &RawPage) -> DbResult<()>;
-    fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper>;
-    fn return_data_page_wrapper(&mut self, wrapper: DataPageWrapper);
-    fn actual_alloc_page_id(&mut self) -> DbResult<u32>;
-    fn free_pages(&mut self, pages: &[u32]) -> DbResult<()>;
 
-    fn free_page(&mut self, pid: u32) -> DbResult<()> {
+    fn get_data_allocator_wrapper(&mut self) -> DbResult<DataAllocatorWrapper> where Self: Sized {
+        let first_page = self.get_first_page()?;
+        let header_page = HeaderPageWrapper::from_raw_page(first_page);
+        let data_allocator_pid = header_page.get_data_allocator();
+        if data_allocator_pid == 0 {
+            let new_pid = self.alloc_page_id()?;
+            let allocator = DataAllocatorWrapper::new(new_pid, self.page_size());
+            Ok(allocator)
+        } else {
+            let page = self.read_page(data_allocator_pid)?;
+            let wrapper = DataAllocatorWrapper::from_raw_page(page);
+            Ok(wrapper)
+        }
+    }
+
+    fn distribute_data_page_wrapper(&mut self, data_size: u32) -> DbResult<DataPageWrapper> where Self: Sized {
+        let data_size = data_size + 2;  // preserve 2 bytes
+        let mut data_allocator = self.get_data_allocator_wrapper()?;
+
+        let try_result = data_allocator.try_allocate_data_page(data_size);
+        if let Some((result_pid, _)) = try_result {
+            let data_allocator_page = data_allocator.to_raw();
+            self.write_page(&data_allocator_page)?;
+
+            let raw_page = self.read_page(result_pid)?;
+            let wrapper = DataPageWrapper::from_raw(raw_page);
+            return Ok(wrapper);
+        }
+
+        let wrapper = self.force_distribute_new_data_page_wrapper()?;
+        return Ok(wrapper);
+    }
+
+    fn return_data_page_wrapper(&mut self, wrapper: DataPageWrapper) -> DbResult<()> where Self: Sized {
+        let remain_size = wrapper.remain_size();
+        if remain_size < PRESERVE_WRAPPER_MIN_REMAIN_SIZE {
+            return Ok(());
+        }
+
+        if wrapper.bar_len() >= (u16::MAX as u32) / 2 {  // len too large
+            return Ok(());
+        }
+
+        let mut data_allocator = self.get_data_allocator_wrapper()?;
+        data_allocator.push(wrapper.pid(), remain_size);
+
+        let data_allocator_page = data_allocator.to_raw();
+        self.write_page(&data_allocator_page)
+    }
+
+    fn force_distribute_new_data_page_wrapper(&mut self) -> DbResult<DataPageWrapper> where Self: Sized {
+        let new_pid = self.alloc_page_id()?;
+        let new_wrapper = DataPageWrapper::init(new_pid, self.page_size());
+        Ok(new_wrapper)
+    }
+
+    fn actual_alloc_page_id(&mut self) -> DbResult<u32>;
+
+    fn free_pages(&mut self, pages: &[u32]) -> DbResult<()> where Self: Sized {
+        self.internal_free_pages(pages)?;
+        Ok(())
+    }
+
+    fn free_page(&mut self, pid: u32) -> DbResult<()> where Self: Sized {
         self.free_pages(&[pid])
     }
 
@@ -80,7 +142,7 @@ pub(crate) trait SessionInner {
 
         self.write_page(wrapper.borrow_page())?;
 
-        self.return_data_page_wrapper(wrapper);
+        self.return_data_page_wrapper(wrapper)?;
 
         Ok(DataTicket {
             pid,
