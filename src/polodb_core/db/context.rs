@@ -2,7 +2,6 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
-use std::rc::Rc;
 use bson::{Document, Bson, DateTime, Binary};
 use serde::Serialize;
 use super::db::DbResult;
@@ -802,7 +801,7 @@ impl DbContext {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn delete_by_pkey(&mut self, col_name: &str, key: &Bson, session_id: Option<&ObjectId>) -> DbResult<Option<Rc<Document>>> {
+    pub(crate) fn delete_by_pkey(&mut self, col_name: &str, key: &Bson, session_id: Option<&ObjectId>) -> DbResult<Option<Document>> {
         let session = self.get_session_by_id(session_id)?;
         session.auto_start_transaction(TransactionType::Write)?;
 
@@ -811,7 +810,7 @@ impl DbContext {
         Ok(result)
     }
 
-    fn internal_delete_by_pkey(session: &dyn Session, col_name: &str, key: &Bson) -> DbResult<Option<Rc<Document>>> {
+    fn internal_delete_by_pkey(session: &dyn Session, col_name: &str, key: &Bson) -> DbResult<Option<Document>> {
         let collection_meta = DbContext::internal_get_collection_id_by_name(
             session, col_name,
         )?;

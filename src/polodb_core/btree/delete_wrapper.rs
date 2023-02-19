@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use std::borrow::BorrowMut;
 use std::collections::BTreeSet;
 use hashbrown::HashMap;
@@ -64,7 +63,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
     // case 2: NOT on leaf
     //         - replace it with item on leaf
     //         - delete item on leaf
-    pub fn delete_item(&mut self, id: &Bson) -> DbResult<Option<Rc<Document>>> {
+    pub fn delete_item(&mut self, id: &Bson) -> DbResult<Option<Document>> {
         let backward_item_opt = self.delete_item_on_subtree(0, self.base.root_page_id, id)?;
         match backward_item_opt {
             Some(backward_item) => {
@@ -376,12 +375,12 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         Ok(())
     }
 
-    fn erase_item(&mut self, item: &DataTicket) -> DbResult<Rc<Document>> {
+    fn erase_item(&mut self, item: &DataTicket) -> DbResult<Document> {
         let bytes = self.base.session.free_data_ticket(&item)?;
         debug_assert!(!bytes.is_empty(), "bytes is empty");
         let mut my_ref: &[u8] = bytes.as_ref();
         let doc = crate::doc_serializer::deserialize(&mut my_ref)?;
-        Ok(Rc::new(doc))
+        Ok(doc)
     }
 
     #[inline]
