@@ -75,6 +75,25 @@ impl BaseSession {
         let session = self.inner.as_ref().lock().unwrap();
         session.version
     }
+
+    pub fn db_size(&self) -> u64 {
+        let session = self.inner.as_ref().lock().unwrap();
+        session.db_size()
+    }
+
+    pub fn init_block_count(&self) -> u64 {
+        let session = self.inner.as_ref().lock().unwrap();
+        session.config.init_block_count.get()
+    }
+
+    pub fn set_db_size(&self, db_size: u64) -> DbResult<()> {
+        let mut session = self.inner.as_ref().lock().unwrap();
+        if session.backend.db_size() == db_size {
+            return Ok(())
+        }
+        session.backend.set_db_size(db_size)?;
+        Ok(())
+    }
 }
 
 impl Session for BaseSession {
@@ -224,6 +243,11 @@ impl BaseSessionInner {
         self.backend.upgrade_read_transaction_to_write()?;
         self.data_page_allocator.start_transaction();
         Ok(())
+    }
+
+    #[inline]
+    pub fn db_size(&self) -> u64 {
+        self.backend.db_size()
     }
 
     #[inline]
