@@ -58,11 +58,6 @@ macro_rules! try_db_op {
     }
 }
 
-#[inline]
-fn index_already_exists(index_doc: &Document, key: &str) -> bool {
-    index_doc.get(key).is_some()
-}
-
 /**
  * API for all platforms
  */
@@ -401,7 +396,7 @@ impl DbContext {
         Ok(())
     }
 
-    fn internal_create_index(session: &dyn Session, col_id: u32, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+    fn internal_create_index(_session: &dyn Session, _col_id: u32, _keys: &Document, _options: Option<&Document>) -> DbResult<()> {
         unimplemented!()
         // let meta_source = DbContext::get_meta_source(session)?;
         // let mut meta_doc = DbContext::find_collection_root_pid_by_id(

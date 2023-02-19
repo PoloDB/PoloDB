@@ -652,12 +652,22 @@ impl JournalManager {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
+    use std::path::PathBuf;
     use crate::page::RawPage;
     use crate::TransactionType;
     use crate::backend::file::journal_manager::JournalManager;
-    use crate::test_utils::mk_journal_path;
+    use std::env;
 
     static TEST_PAGE_LEN: u32 = 100;
+
+    fn mk_journal_path(db_name: &str) -> PathBuf {
+        let mut journal_path = env::temp_dir();
+
+        let journal_filename = String::from(db_name) + ".db.journal";
+        journal_path.push(journal_filename);
+
+        journal_path
+    }
 
     fn make_raw_page(page_id: u32) -> RawPage {
         let mut page = RawPage::new(

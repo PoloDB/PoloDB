@@ -69,7 +69,7 @@ pub enum CollectionType {
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
-    use bson::{bson, Bson, DateTime};
+    use bson::DateTime;
     use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
 
     #[test]
