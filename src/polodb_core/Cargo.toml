@@ -23,7 +23,7 @@ getrandom = { version = "0.2.3", features = ["js"] }
 byteorder = "1.4.3"
 num_enum = "0.5.4"
 serde = { version = "1.0.125", features = ["rc"] }
-uuid = { version = "1.3.0", features= ["atomic", "v1", "wasm-bindgen", "js", "getrandom"] }
+uuid = { version = "1.3.0", features= ["atomic", "v1", "v4", "wasm-bindgen", "js", "getrandom"] }
 
 [dev-dependencies]
 polodb_line_diff = { path = "../polodb_line_diff" }

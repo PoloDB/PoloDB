@@ -69,16 +69,22 @@ pub enum CollectionType {
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
-    use bson::DateTime;
+    use bson::{Binary, DateTime};
+    use bson::spec::BinarySubtype;
     use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
 
     #[test]
     fn test_serial() {
+        let u = uuid::Uuid::new_v4();
         let spec = CollectionSpecification {
             _id: "test".to_string(),
             collection_type: CollectionType::Collection,
             info: CollectionSpecificationInfo {
-                uuid: None,
+                uuid: Some(Binary {
+                    subtype: BinarySubtype::Uuid,
+                    bytes: u.as_bytes().to_vec(),
+                }),
+
                 create_at: DateTime::now(),
                 root_pid:1
             },
@@ -86,6 +92,9 @@ mod test {
         };
         let doc = bson::to_document(&spec).unwrap();
         assert_eq!(doc.get("_id").unwrap().as_str().unwrap(), "test");
+
+        let bytes = bson::to_vec(&doc).unwrap();
+        assert_eq!(bytes.len(), 123);
     }
 
 }
