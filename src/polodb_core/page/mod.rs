@@ -11,15 +11,15 @@ use std::io::{Seek, SeekFrom, Write, Read};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
 use std::num::NonZeroU32;
-use crate::DbResult;
-use crate::error::{DbErr};
 
 #[repr(u8)]
 pub(crate) enum PageType {
+    #[allow(dead_code)]
     Undefined = 0,
 
     BTreeNode,
 
+    #[allow(dead_code)]
     OverflowData,
 
     Data,
@@ -34,27 +34,6 @@ impl PageType {
 
     pub fn to_magic(self) -> [u8; 2] {
         [0xFF, self as u8]
-    }
-
-    #[allow(dead_code)]
-    pub fn from_magic(magic: [u8; 2]) -> DbResult<PageType> {
-        if magic[0] != 0xFF {
-            return Err(DbErr::UnexpectedPageHeader);
-        }
-
-        match magic[1] {
-            0 => Ok(PageType::Undefined),
-
-            1 => Ok(PageType::BTreeNode),
-
-            2 => Ok(PageType::OverflowData),
-
-            3 => Ok(PageType::Data),
-
-            4 => Ok(PageType::LargeData),
-
-            _ => Err(DbErr::UnexpectedPageType)
-        }
     }
 
 }
