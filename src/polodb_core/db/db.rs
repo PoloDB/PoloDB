@@ -38,11 +38,7 @@ pub(super) fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, 
 ///
 /// API wrapper for Rust-level
 ///
-/// [open]: #method.open
-/// [create_collection]: #method.create_collection
-/// [collection]: #method.collection
-///
-/// Use [open] API to open a database. A main database file will be
+/// Use [`Database::open_file`] API to open a database. A main database file will be
 /// generated in the path user provided.
 ///
 /// When you own an instance of a Database, the instance holds a file
@@ -50,42 +46,10 @@ pub(super) fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, 
 /// the handle of the file will be released.
 ///
 /// # Collection
-/// A [Collection](./struct.Collection.html) is a dataset of a kind of data.
-/// You can use [create_collection] to create a data collection.
-/// To obtain an exist collection, use [collection],
+/// A [`Collection`] is a dataset of a kind of data.
+/// You can use [`Database::create_collection`] to create a data collection.
+/// To obtain an exist collection, use [`Database::collection`],
 ///
-/// # Session
-///
-/// A [`ClientSession`] represents a logical session used for ordering sequential
-/// operations.
-///
-/// You an manually start a transaction by [`ClientSession::start_transaction`] method.
-/// If you don't start it manually, a transaction will be automatically started
-/// in your every operation.
-///
-/// # Example
-///
-/// ```rust
-/// use polodb_core::Database;
-/// use polodb_core::bson::{Document, doc};
-///
-/// # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db");
-/// let db = Database::open_file(db_path).unwrap();
-///
-/// let mut session = db.start_session().unwrap();
-/// session.start_transaction(None).unwrap();
-///
-/// let collection = db.collection::<Document>("books");
-///
-/// let docs = vec![
-///     doc! { "title": "1984", "author": "George Orwell" },
-///     doc! { "title": "Animal Farm", "author": "George Orwell" },
-///     doc! { "title": "The Great Gatsby", "author": "F. Scott Fitzgerald" },
-/// ];
-/// collection.insert_many_with_session(docs, &mut session).unwrap();
-///
-/// session.commit_transaction().unwrap();
-/// ```
 pub struct Database {
     inner: Mutex<DatabaseInner>,
 }

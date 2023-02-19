@@ -12,9 +12,7 @@
 //!
 //! # Usage
 //!
-//! [Database]: ./db/struct.Database.html
-//!
-//! The [Database] structure provides all the API to get access to the DB file.
+//! The [`Database`] structure provides all the API to get access to the DB file.
 //!
 //! ## Open a local file
 //!
@@ -68,6 +66,39 @@
 //!     doc! { "title": "The Great Gatsby", "author": "F. Scott Fitzgerald" },
 //! ];
 //! collection.insert_many(docs).unwrap();
+//! ```
+//!
+//! # Session
+//!
+//! A [`ClientSession`] represents a logical session used for ordering sequential
+//! operations.
+//!
+//! You an manually start a transaction by [`ClientSession::start_transaction`] method.
+//! If you don't start it manually, a transaction will be automatically started
+//! in your every operation.
+//!
+//! ## Example
+//!
+//! ```rust
+//! use polodb_core::Database;
+//! use polodb_core::bson::{Document, doc};
+//!
+//! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db");
+//! let db = Database::open_file(db_path).unwrap();
+//!
+//! let mut session = db.start_session().unwrap();
+//! session.start_transaction(None).unwrap();
+//!
+//! let collection = db.collection::<Document>("books");
+//!
+//! let docs = vec![
+//!     doc! { "title": "1984", "author": "George Orwell" },
+//!     doc! { "title": "Animal Farm", "author": "George Orwell" },
+//!     doc! { "title": "The Great Gatsby", "author": "F. Scott Fitzgerald" },
+//! ];
+//! collection.insert_many_with_session(docs, &mut session).unwrap();
+//!
+//! session.commit_transaction().unwrap();
 //! ```
 
 extern crate core;
