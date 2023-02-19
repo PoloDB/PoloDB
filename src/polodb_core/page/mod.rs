@@ -3,6 +3,7 @@ pub(crate) mod header_page_wrapper;
 pub(crate) mod data_page_wrapper;
 pub(crate) mod free_list_data_wrapper;
 pub(crate) mod large_data_page_wrapper;
+pub(crate) mod data_allocator_wrapper;
 
 pub(crate) use free_list_data_wrapper::FreeListDataWrapper;
 
@@ -27,6 +28,8 @@ pub(crate) enum PageType {
     FreeList,
 
     LargeData,
+
+    DataAllocator,
 
 }
 
