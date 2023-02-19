@@ -79,9 +79,8 @@ mod error;
 mod cursor;
 mod session;
 
-pub mod db;
+mod db;
 mod data_ticket;
-mod index_ctx;
 mod meta_doc_helper;
 pub mod dump;
 mod config;
@@ -91,13 +90,14 @@ mod transaction;
 mod doc_serializer;
 mod bson_utils;
 pub mod results;
-#[cfg(not(target_arch = "wasm32"))]
-pub mod test_utils;
 pub mod commands;
 mod data_structures;
 mod collection_info;
 
-pub use db::{Database, DbResult};
+#[cfg(not(target_arch = "wasm32"))]
+pub mod test_utils;
+
+pub use db::{Database, Collection, DbResult};
 pub use config::Config;
 pub use transaction::TransactionType;
 pub use db::db_handle::DbHandle;
