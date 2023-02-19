@@ -6,9 +6,11 @@ pub(crate) mod large_data_page_wrapper;
 
 pub(crate) use free_list_data_wrapper::FreeListDataWrapper;
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::{Seek, SeekFrom, Write, Read};
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
 use std::num::NonZeroU32;
-use std::io::{Seek, SeekFrom, Write, Read};
 use crate::DbResult;
 use crate::error::{DbErr};
 
@@ -163,12 +165,14 @@ impl RawPage {
         u64::from_be_bytes(buffer)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn sync_to_file(&self, file: &mut File, offset: u64) -> std::io::Result<()> {
         file.seek(SeekFrom::Start(offset))?;
         file.write_all(self.data.as_slice())?;
         Ok(())
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn read_from_file(&mut self, file: &mut File, offset: u64) -> std::io::Result<()> {
         file.seek(SeekFrom::Start(offset))?;
         file.read_exact(self.data.as_mut_slice())?;
