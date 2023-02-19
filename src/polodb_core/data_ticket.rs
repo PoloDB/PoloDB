@@ -24,7 +24,7 @@ impl DataTicket {
     pub fn large_ticket(pid: u32) -> DataTicket {
         DataTicket {
             pid,
-            index: u16::max_value(),
+            index: u16::MAX,
         }
     }
 
