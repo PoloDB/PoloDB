@@ -54,11 +54,12 @@ pub(super) fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, 
 /// You can use [create_collection] to create a data collection.
 /// To obtain an exist collection, use [collection],
 ///
-/// # Transaction
+/// # Session
 ///
-/// [start_transaction]: #method.start_transaction
+/// A [`ClientSession`] represents a logical session used for ordering sequential
+/// operations.
 ///
-/// You an manually start a transaction by [start_transaction] method.
+/// You an manually start a transaction by [`ClientSession::start_transaction`] method.
 /// If you don't start it manually, a transaction will be automatically started
 /// in your every operation.
 ///
@@ -70,6 +71,10 @@ pub(super) fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, 
 ///
 /// # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db");
 /// let db = Database::open_file(db_path).unwrap();
+///
+/// let mut session = db.start_session().unwrap();
+/// session.start_transaction(None).unwrap();
+///
 /// let collection = db.collection::<Document>("books");
 ///
 /// let docs = vec![
@@ -77,7 +82,9 @@ pub(super) fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, 
 ///     doc! { "title": "Animal Farm", "author": "George Orwell" },
 ///     doc! { "title": "The Great Gatsby", "author": "F. Scott Fitzgerald" },
 /// ];
-/// collection.insert_many(docs).unwrap();
+/// collection.insert_many_with_session(docs, &mut session).unwrap();
+///
+/// session.commit_transaction().unwrap();
 /// ```
 pub struct Database {
     inner: Mutex<DatabaseInner>,

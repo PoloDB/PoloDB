@@ -1,4 +1,4 @@
-use polodb_core::Database;
+use polodb_core::{Database, DbErr};
 use polodb_core::bson::{Document, doc};
 
 mod common;
@@ -30,4 +30,27 @@ fn test_transaction_commit() {
         let doc = collection.find_many(doc! {}).unwrap();
         assert_eq!(doc.len(), 10);
     });
+}
+
+#[test]
+fn test_session_outdated() {
+    let db = prepare_db("test-session-outdate").unwrap();
+    let col = db.collection::<Document>("test");
+
+    let mut session = db.start_session().unwrap();
+    session.start_transaction(None).unwrap();
+
+    col.insert_one(doc! {
+        "name": "Vincent",
+    }).unwrap();
+
+    col.insert_one_with_session(doc! {
+        "name": "Vincent",
+    }, &mut session).unwrap();
+
+    let result = session.commit_transaction();
+    assert!(match result {
+        Err(DbErr::SessionOutdated) => true,
+        _ => false,
+    })
 }
