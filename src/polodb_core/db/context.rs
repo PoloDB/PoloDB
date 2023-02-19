@@ -893,31 +893,46 @@ impl DbContext {
         Ok(result)
     }
 
-    pub fn start_transaction(&mut self, ty: Option<TransactionType>, _session_id: Option<&ObjectId>) -> DbResult<()> {
-        match ty {
-            Some(ty) => {
-                self.base_session.start_transaction(ty)?;
-                self.base_session.set_transaction_state(TransactionState::User);
-            }
+    pub fn start_transaction(&mut self, ty: Option<TransactionType>, session_id: Option<&ObjectId>) -> DbResult<()> {
+        if session_id.is_none() {
+            match ty {
+                Some(ty) => {
+                    self.base_session.start_transaction(ty)?;
+                    self.base_session.set_transaction_state(TransactionState::User);
+                }
 
-            None => {
-                self.base_session.start_transaction(TransactionType::Read)?;
-                self.base_session.set_transaction_state(TransactionState::UserAuto);
-            }
+                None => {
+                    self.base_session.start_transaction(TransactionType::Read)?;
+                    self.base_session.set_transaction_state(TransactionState::UserAuto);
+                }
 
+            }
+        } else {
+            let session = self.get_session_by_id(session_id)?;
+            session.start_transaction(ty.unwrap_or(TransactionType::Read))?;
         }
         Ok(())
     }
 
-    pub fn commit(&mut self, _session_id: Option<&ObjectId>) -> DbResult<()> {
-        self.base_session.commit()?;
-        self.base_session.set_transaction_state(TransactionState::NoTrans);
+    pub fn commit(&mut self, session_id: Option<&ObjectId>) -> DbResult<()> {
+        if session_id.is_none() {
+            self.base_session.commit()?;
+            self.base_session.set_transaction_state(TransactionState::NoTrans);
+        } else {
+            let session = self.get_session_by_id(session_id)?;
+            session.commit()?;
+        }
         Ok(())
     }
 
-    pub fn rollback(&mut self, _session_id: Option<&ObjectId>) -> DbResult<()> {
-        self.base_session.rollback()?;
-        self.base_session.set_transaction_state(TransactionState::NoTrans);
+    pub fn rollback(&mut self, session_id: Option<&ObjectId>) -> DbResult<()> {
+        if session_id.is_none() {
+            self.base_session.rollback()?;
+            self.base_session.set_transaction_state(TransactionState::NoTrans);
+        } else {
+            let session = self.get_session_by_id(session_id)?;
+            session.rollback()?;
+        }
         Ok(())
     }
 
