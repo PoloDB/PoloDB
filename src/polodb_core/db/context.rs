@@ -6,7 +6,6 @@ use std::rc::Rc;
 use bson::{Document, Bson, DateTime, Binary};
 use serde::Serialize;
 use super::db::DbResult;
-use crate::page::header_page_wrapper;
 use crate::error::DbErr;
 use crate::TransactionType;
 use crate::Config;
@@ -71,7 +70,6 @@ pub(crate) struct DbContext {
 
 #[derive(Debug, Clone, Copy)]
 pub struct MetaSource {
-    pub meta_id_counter: u32,
     pub meta_pid: u32,
 }
 
@@ -214,11 +212,9 @@ impl DbContext {
     fn get_meta_source(session: &dyn Session) -> DbResult<MetaSource> {
         let head_page = session.read_page(0)?;
         DbContext::check_first_page_valid(&head_page)?;
-        let head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
-        let meta_id_counter = head_page_wrapper.get_meta_id_counter();
+        let head_page_wrapper = HeaderPageWrapper::from_raw_page(head_page);
         let meta_pid = head_page_wrapper.get_meta_page_id();
         Ok(MetaSource {
-            meta_id_counter,
             meta_pid,
         })
     }
@@ -328,18 +324,13 @@ impl DbContext {
             meta_source.meta_pid = new_root_id;
         }
 
-        meta_source.meta_id_counter += 1;
-
-        DbContext::update_meta_source(session, &meta_source)?;
-
         Ok(spec)
     }
 
     fn update_meta_source(session: &dyn Session, meta_source: &MetaSource) -> DbResult<()> {
         let head_page = session.read_page(0)?;
-        let mut head_page_wrapper = header_page_wrapper::HeaderPageWrapper::from_raw_page(head_page);
+        let mut head_page_wrapper = HeaderPageWrapper::from_raw_page(head_page);
         head_page_wrapper.set_meta_page_id(meta_source.meta_pid);
-        head_page_wrapper.set_meta_id_counter(meta_source.meta_id_counter);
         session.write_page(&head_page_wrapper.0)
     }
 
