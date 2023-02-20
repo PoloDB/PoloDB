@@ -166,6 +166,11 @@ impl Session for DynamicSession {
         inner.store_doc(doc)
     }
 
+    fn store_data_in_storage(&self, data: &[u8]) -> DbResult<DataTicket> {
+        let mut inner = self.inner.lock()?;
+        inner.store_data_in_storage(data)
+    }
+
     fn alloc_page_id(&self) -> DbResult<u32> {
         let mut inner = self.inner.lock()?;
         inner.alloc_page_id()
@@ -181,9 +186,14 @@ impl Session for DynamicSession {
         inner.free_data_ticket(data_ticket)
     }
 
-    fn get_doc_from_ticket(&self, data_ticket: &DataTicket) -> DbResult<Option<Document>> {
+    fn get_doc_from_ticket(&self, data_ticket: &DataTicket) -> DbResult<Document> {
         let mut inner = self.inner.lock()?;
         inner.get_doc_from_ticket(data_ticket)
+    }
+
+    fn get_data_from_storage(&self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> {
+        let mut inner = self.inner.lock()?;
+        inner.get_data_from_storage(data_ticket)
     }
 
     // dynamic session must start transaction manually

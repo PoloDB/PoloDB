@@ -65,7 +65,7 @@ impl DataAllocatorWrapper {
         result
     }
 
-    pub fn to_raw(&mut self) -> RawPage {
+    pub fn generate_page(&mut self) -> RawPage {
         self.sort();
 
         let mut raw_page = RawPage::new(self.page_id, self.page_size);

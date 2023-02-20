@@ -155,7 +155,7 @@ impl DbContext {
         match result {
             SearchKeyResult::Node(node_index) => {
                 let item = &btree_node.content[node_index];
-                let doc = session.get_doc_from_ticket(&item.data_ticket)?.unwrap();
+                let doc = session.get_doc_from_ticket(&item.data_ticket)?;
                 let entry = bson::from_document::<CollectionSpecification>(doc)?;
                 Ok(entry)
             }

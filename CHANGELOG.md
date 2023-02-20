@@ -1,4 +1,8 @@
 
+# 3.5.0
+
+- New KV storage engine
+
 # 3.4.0
 
 - Implement `ClientSession`

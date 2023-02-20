@@ -5,6 +5,7 @@ mod delete_wrapper;
 pub mod counter_helper;
 pub(crate) mod delete_all_helper;
 mod vli;
+mod btree_v2;
 
 pub(crate) use delete_wrapper::BTreePageDeleteWrapper;
 pub(crate) use insert_wrapper::{BTreePageInsertWrapper, InsertBackwardItem, InsertResult};
@@ -257,7 +258,7 @@ impl BTreeNode {
 
     fn parse_complex_data_item(page: &RawPage, begin_offset: u32, session: &dyn Session) -> DbResult<BTreeNodeDataItem> {
         let data_ticket = BTreeNode::parse_data_item_ticket(page, begin_offset);
-        let doc = session.get_doc_from_ticket(&data_ticket)?.unwrap();
+        let doc = session.get_doc_from_ticket(&data_ticket)?;
         let pkey = doc.get("_id").unwrap().into();
         Ok(BTreeNodeDataItem {
             key: pkey,
