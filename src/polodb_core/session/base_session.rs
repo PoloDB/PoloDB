@@ -113,6 +113,11 @@ impl Session for BaseSession {
         session.store_doc(doc)
     }
 
+    fn store_data_in_storage(&self, data: &[u8]) -> DbResult<DataTicket> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.store_data_in_storage(data)
+    }
+
     fn alloc_page_id(&self) -> DbResult<u32> {
         let mut session = self.inner.as_ref().lock()?;
         session.alloc_page_id()
@@ -128,9 +133,14 @@ impl Session for BaseSession {
         session.free_data_ticket(data_ticket)
     }
 
-    fn get_doc_from_ticket(&self, data_ticket: &DataTicket) -> DbResult<Option<Document>> {
+    fn get_doc_from_ticket(&self, data_ticket: &DataTicket) -> DbResult<Document> {
         let mut session = self.inner.as_ref().lock()?;
         session.get_doc_from_ticket(data_ticket)
+    }
+
+    fn get_data_from_storage(&self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> {
+        let mut session = self.inner.as_ref().lock()?;
+        session.get_data_from_storage(data_ticket)
     }
 
     fn auto_start_transaction(&self, ty: TransactionType) -> DbResult<AutoStartResult> {

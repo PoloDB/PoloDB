@@ -115,7 +115,7 @@ impl<'a> VM<'a> {
         cursor.reset(self.page_handler)?;
         if cursor.has_next() {
             let item = cursor.peek().unwrap();
-            let doc = self.page_handler.get_doc_from_ticket(&item)?.unwrap();
+            let doc = self.page_handler.get_doc_from_ticket(&item)?;
             self.stack.push(Bson::Document(doc));
             is_empty.set(false);
         } else {
@@ -137,12 +137,8 @@ impl<'a> VM<'a> {
 
         let ticket = cursor.peek().unwrap();
         let doc = self.page_handler.get_doc_from_ticket(&ticket)?;
-        if let Some(doc) = doc {
-            self.stack.push(Bson::Document(doc));
-            Ok(true)
-        } else {
-            panic!("unexpected: item with key '{}' has been deleted, pid: {}, index: {}", op, ticket.pid, ticket.index);
-        }
+        self.stack.push(Bson::Document(doc));
+        Ok(true)
     }
 
     fn next(&mut self) -> DbResult<()> {
@@ -150,7 +146,7 @@ impl<'a> VM<'a> {
         let _ = cursor.next(self.page_handler)?;
         match cursor.peek() {
             Some(ticket) => {
-                let doc = self.page_handler.get_doc_from_ticket(&ticket)?.unwrap();
+                let doc = self.page_handler.get_doc_from_ticket(&ticket)?;
                 self.stack.push(Bson::Document(doc));
 
                 debug_assert!(self.stack.len() <= 64, "stack too large: {}", self.stack.len());

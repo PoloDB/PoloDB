@@ -22,13 +22,15 @@ pub(crate) trait Session {
     fn write_page(&self, page: &RawPage) -> DbResult<()>;
     fn page_size(&self) -> NonZeroU32;
     fn store_doc(&self, doc: &Document) -> DbResult<DataTicket>;
+    fn store_data_in_storage(&self, data: &[u8]) -> DbResult<DataTicket>;
     fn alloc_page_id(&self) -> DbResult<u32>;
     fn free_pages(&self, pages: &[u32]) -> DbResult<()>;
     fn free_page(&self, pid: u32) -> DbResult<()> {
         self.free_pages(&[pid])
     }
     fn free_data_ticket(&self, data_ticket: &DataTicket) -> DbResult<Vec<u8>>;
-    fn get_doc_from_ticket(&self, data_ticket: &DataTicket) -> DbResult<Option<Document>>;
+    fn get_doc_from_ticket(&self, data_ticket: &DataTicket) -> DbResult<Document>;
+    fn get_data_from_storage(&self, data_ticket: &DataTicket) -> DbResult<Vec<u8>>;
     fn auto_start_transaction(&self, ty: TransactionType) -> DbResult<AutoStartResult>;
     fn auto_commit(&self) -> DbResult<()>;
     fn auto_rollback(&self) -> DbResult<()>;
@@ -62,7 +64,7 @@ pub(crate) trait SessionInner {
 
         let try_result = data_allocator.try_allocate_data_page(data_size);
         if let Some((result_pid, _)) = try_result {
-            let data_allocator_page = data_allocator.to_raw();
+            let data_allocator_page = data_allocator.generate_page();
             self.write_page(&data_allocator_page)?;
 
             let raw_page = self.read_page(result_pid)?;
@@ -87,7 +89,7 @@ pub(crate) trait SessionInner {
         let mut data_allocator = self.get_data_allocator_wrapper()?;
         data_allocator.push(wrapper.pid(), remain_size);
 
-        let data_allocator_page = data_allocator.to_raw();
+        let data_allocator_page = data_allocator.generate_page();
         self.write_page(&data_allocator_page)
     }
 
@@ -132,17 +134,21 @@ pub(crate) trait SessionInner {
         let mut bytes = Vec::with_capacity(512);
         crate::doc_serializer::serialize(doc, &mut bytes)?;
 
-        if bytes.len() >= self.page_size().get() as usize / 2 {
-            return store_large_data(self, &bytes);
+        self.store_data_in_storage(&bytes)
+    }
+
+    fn store_data_in_storage(&mut self, data: &[u8]) -> DbResult<DataTicket> where Self: Sized {
+        if data.len() >= self.page_size().get() as usize / 2 {
+            return store_large_data(self, data);
         }
 
-        let mut wrapper = self.distribute_data_page_wrapper(bytes.len() as u32)?;
+        let mut wrapper = self.distribute_data_page_wrapper(data.len() as u32)?;
         let index = wrapper.bar_len() as u16;
         let pid = wrapper.pid();
-        if (wrapper.remain_size() as usize) < bytes.len() {
-            panic!("page size not enough: {}, bytes: {}", wrapper.remain_size(), bytes.len());
+        if (wrapper.remain_size() as usize) < data.len() {
+            panic!("page size not enough: {}, bytes: {}", wrapper.remain_size(), data.len());
         }
-        wrapper.put(&bytes);
+        wrapper.put(&data);
 
         self.write_page(wrapper.borrow_page())?;
 
@@ -182,23 +188,26 @@ pub(crate) trait SessionInner {
         Ok(bytes)
     }
 
-    fn get_doc_from_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Option<Document>> {
-        if data_ticket.is_large_data() {
-            return self.get_doc_from_large_page(data_ticket.pid);
-        }
-        let page = self.read_page(data_ticket.pid)?;
-        let wrapper = DataPageWrapper::from_raw(page.as_ref().clone());
-        let bytes = wrapper.get(data_ticket.index as u32);
-        if let Some(bytes) = bytes {
-            let mut my_ref: &[u8] = bytes;
-            let bytes: &mut &[u8] = &mut my_ref;
-            let doc = crate::doc_serializer::deserialize(bytes)?;
-            return Ok(Some(doc));
-        }
-        Ok(None)
+    fn get_doc_from_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Document> {
+        let bytes = self.get_data_from_storage(data_ticket)?;
+        let mut my_ref: &[u8] = &bytes;
+        let bytes: &mut &[u8] = &mut my_ref;
+        let doc = crate::doc_serializer::deserialize(bytes)?;
+        return Ok(doc);
     }
 
-    fn get_doc_from_large_page(&mut self, pid: u32) -> DbResult<Option<Document>> {
+    fn get_data_from_storage(&mut self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> {
+        if data_ticket.is_large_data() {
+            self.get_doc_from_large_page(data_ticket.pid)
+        } else {
+            let page = self.read_page(data_ticket.pid)?;
+            let wrapper = DataPageWrapper::from_raw(page.as_ref().clone());
+            let bytes = wrapper.get(data_ticket.index as u32).unwrap().to_vec();
+            Ok(bytes)
+        }
+    }
+
+    fn get_doc_from_large_page(&mut self, pid: u32) -> DbResult<Vec<u8>> {
         let mut bytes: Vec<u8> = Vec::with_capacity(self.page_size().get() as usize);
 
         let mut next_pid = pid;
@@ -210,9 +219,7 @@ pub(crate) trait SessionInner {
             next_pid = wrapper.next_pid();
         }
 
-        let mut my_ref: &[u8] = bytes.as_ref();
-        let doc = crate::doc_serializer::deserialize(&mut my_ref)?;
-        Ok(Some(doc))
+        Ok(bytes)
     }
 
     fn internal_free_pages(&mut self, pages: &[u32]) -> DbResult<()> where Self: Sized {
@@ -359,7 +366,7 @@ fn try_get_free_page_id(session: &mut impl SessionInner) -> DbResult<Option<u32>
     Ok(Some(result))
 }
 
-fn store_large_data(session: &mut impl SessionInner, bytes: &Vec<u8>) -> DbResult<DataTicket> {
+fn store_large_data(session: &mut impl SessionInner, bytes: &[u8]) -> DbResult<DataTicket> {
     let mut remain: i64 = bytes.len() as i64;
     let mut pages: Vec<LargeDataPageWrapper> = Vec::new();
     while remain > 0 {

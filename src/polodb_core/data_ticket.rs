@@ -29,7 +29,7 @@ impl DataTicket {
     }
 
     pub fn is_large_data(&self) -> bool {
-        return self.index == u16::max_value();
+        return self.index == u16::MAX;
     }
 
     pub fn from_bytes(bytes: &[u8]) -> DataTicket {
