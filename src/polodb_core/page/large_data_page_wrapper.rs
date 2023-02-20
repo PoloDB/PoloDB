@@ -8,7 +8,7 @@ use crate::page::{RawPage, PageType};
  * Offset 8: data begin
  */
 pub(crate) struct LargeDataPageWrapper {
-    page: RawPage
+    page: RawPage,
 }
 
 impl LargeDataPageWrapper {

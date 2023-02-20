@@ -20,10 +20,10 @@ impl DbSnapshot {
         }
     }
 
-    pub fn read_page(&self, page_id: u32) -> Option<RawPage> {
+    pub fn read_page(&self, page_id: u32) -> Option<Arc<RawPage>> {
         self.page_map
             .get(&page_id)
-            .map(|page_ref| page_ref.as_ref().clone())
+            .map(|page_ref| page_ref.clone())
     }
 
     #[inline]
@@ -60,10 +60,10 @@ impl DbSnapshotDraft {
         }
     }
 
-    pub fn read_page(&self, page_id: u32) -> Option<RawPage> {
+    pub fn read_page(&self, page_id: u32) -> Option<Arc<RawPage>> {
         self.page_map_draft
             .get(&page_id)
-            .map(|page_ref| page_ref.as_ref().clone())
+            .map(|page_ref| page_ref.clone())
     }
 
     pub fn write_page(&mut self, page: &RawPage) {

@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::cmp::min;
+use std::sync::Arc;
 use std::num::NonZeroU32;
 use bson::Document;
 use crate::data_ticket::DataTicket;
@@ -14,7 +15,10 @@ use crate::page::data_allocator_wrapper::DataAllocatorWrapper;
 const PRESERVE_WRAPPER_MIN_REMAIN_SIZE: u32 = 16;
 
 pub(crate) trait Session {
-    fn read_page(&self, page_id: u32) -> DbResult<RawPage>;
+    /// use Arc here because PoloDB will heavily rely on
+    /// the page cache, use Arc to share the same memory
+    /// with the cache.
+    fn read_page(&self, page_id: u32) -> DbResult<Arc<RawPage>>;
     fn write_page(&self, page: &RawPage) -> DbResult<()>;
     fn page_size(&self) -> NonZeroU32;
     fn store_doc(&self, doc: &Document) -> DbResult<DataTicket>;
@@ -34,12 +38,12 @@ pub(crate) trait Session {
 }
 
 pub(crate) trait SessionInner {
-    fn read_page(&mut self, page_id: u32) -> DbResult<RawPage>;
+    fn read_page(&mut self, page_id: u32) -> DbResult<Arc<RawPage>>;
     fn write_page(&mut self, page: &RawPage) -> DbResult<()>;
 
     fn get_data_allocator_wrapper(&mut self) -> DbResult<DataAllocatorWrapper> where Self: Sized {
         let first_page = self.get_first_page()?;
-        let header_page = HeaderPageWrapper::from_raw_page(first_page);
+        let header_page = HeaderPageWrapper::from_raw_page(first_page.as_ref().clone());
         let data_allocator_pid = header_page.get_data_allocator();
         if data_allocator_pid == 0 {
             let new_pid = self.alloc_page_id()?;
@@ -47,7 +51,7 @@ pub(crate) trait SessionInner {
             Ok(allocator)
         } else {
             let page = self.read_page(data_allocator_pid)?;
-            let wrapper = DataAllocatorWrapper::from_raw_page(page);
+            let wrapper = DataAllocatorWrapper::from_raw_page(page.as_ref());
             Ok(wrapper)
         }
     }
@@ -62,7 +66,7 @@ pub(crate) trait SessionInner {
             self.write_page(&data_allocator_page)?;
 
             let raw_page = self.read_page(result_pid)?;
-            let wrapper = DataPageWrapper::from_raw(raw_page);
+            let wrapper = DataPageWrapper::from_raw(raw_page.as_ref().clone());
             return Ok(wrapper);
         }
 
@@ -155,7 +159,7 @@ pub(crate) trait SessionInner {
         self.write_page(&page)
     }
 
-    fn get_first_page(&mut self) -> Result<RawPage, DbErr> {
+    fn get_first_page(&mut self) -> Result<Arc<RawPage>, DbErr> {
         self.read_page(0)
     }
 
@@ -167,7 +171,7 @@ pub(crate) trait SessionInner {
         }
 
         let page = self.read_page(data_ticket.pid)?;
-        let mut wrapper = DataPageWrapper::from_raw(page);
+        let mut wrapper = DataPageWrapper::from_raw(page.as_ref().clone());
         let bytes = wrapper.get(data_ticket.index as u32).unwrap().to_vec();
         wrapper.remove(data_ticket.index as u32);
         if wrapper.is_empty() {
@@ -183,7 +187,7 @@ pub(crate) trait SessionInner {
             return self.get_doc_from_large_page(data_ticket.pid);
         }
         let page = self.read_page(data_ticket.pid)?;
-        let wrapper = DataPageWrapper::from_raw(page);
+        let wrapper = DataPageWrapper::from_raw(page.as_ref().clone());
         let bytes = wrapper.get(data_ticket.index as u32);
         if let Some(bytes) = bytes {
             let mut my_ref: &[u8] = bytes;
@@ -201,7 +205,7 @@ pub(crate) trait SessionInner {
 
         while next_pid != 0 {
             let page = self.read_page(next_pid)?;
-            let wrapper = LargeDataPageWrapper::from_raw(page);
+            let wrapper = LargeDataPageWrapper::from_raw(page.as_ref().clone());
             wrapper.write_to_buffer(&mut bytes);
             next_pid = wrapper.next_pid();
         }
@@ -217,7 +221,7 @@ pub(crate) trait SessionInner {
         }
 
         let first_page = self.read_page(0)?;
-        let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
+        let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page.as_ref().clone());
         let free_list_pid = first_page_wrapper.get_free_list_page_id();
         if free_list_pid != 0 {
             let cell = Cell::new(free_list_pid);
@@ -257,7 +261,7 @@ pub(crate) trait SessionInner {
             FreeListDataWrapper::init(current_free_page_id, self.page_size())
         } else {
             let raw_page = self.read_page(current_free_page_id)?;
-            FreeListDataWrapper::from_raw(raw_page)
+            FreeListDataWrapper::from_raw(raw_page.as_ref().clone())
         };
 
         if let Some(next_pid) = next_pid {
@@ -303,7 +307,7 @@ fn free_large_data_page(session: &mut impl SessionInner, pid: u32) -> DbResult<V
         free_pid.push(next_pid);
 
         let page = session.read_page(next_pid)?;
-        let wrapper = LargeDataPageWrapper::from_raw(page);
+        let wrapper = LargeDataPageWrapper::from_raw(page.as_ref().clone());
         wrapper.write_to_buffer(&mut result);
         next_pid = wrapper.next_pid();
     }
@@ -314,7 +318,7 @@ fn free_large_data_page(session: &mut impl SessionInner, pid: u32) -> DbResult<V
 
 fn get_free_page_id_from_external_page(session: &mut impl SessionInner, free_list_page_id: u32, free_and_next: &Cell<i64>) -> DbResult<u32> {
     let raw_page = session.read_page(free_list_page_id)?;
-    let mut free_list_page_wrapper = FreeListDataWrapper::from_raw(raw_page);
+    let mut free_list_page_wrapper = FreeListDataWrapper::from_raw(raw_page.as_ref().clone());
     let pid = free_list_page_wrapper.consume_a_free_page();
     if free_list_page_wrapper.size() == 0 {
         let next_pid = free_list_page_wrapper.next_pid();
@@ -329,7 +333,7 @@ fn get_free_page_id_from_external_page(session: &mut impl SessionInner, free_lis
 
 fn try_get_free_page_id(session: &mut impl SessionInner) -> DbResult<Option<u32>> {
     let first_page = session.get_first_page()?;
-    let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
+    let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page.as_ref().clone());
 
     let free_list_page_id = first_page_wrapper.get_free_list_page_id();
     if free_list_page_id != 0 {
@@ -354,7 +358,6 @@ fn try_get_free_page_id(session: &mut impl SessionInner) -> DbResult<Option<u32>
 
     Ok(Some(result))
 }
-
 
 fn store_large_data(session: &mut impl SessionInner, bytes: &Vec<u8>) -> DbResult<DataTicket> {
     let mut remain: i64 = bytes.len() as i64;

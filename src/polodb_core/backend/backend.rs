@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use bson::oid::ObjectId;
 use crate::DbResult;
 use crate::page::RawPage;
@@ -9,7 +10,7 @@ pub(crate) struct AutoStartResult {
 }
 
 pub(crate) trait Backend {
-    fn read_page(&self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<RawPage>;
+    fn read_page(&self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<Arc<RawPage>>;
     fn write_page(&mut self, page: &RawPage, session_id: Option<&ObjectId>) -> DbResult<()>;
     fn commit(&mut self) -> DbResult<()>;
     fn db_size(&self) -> u64;

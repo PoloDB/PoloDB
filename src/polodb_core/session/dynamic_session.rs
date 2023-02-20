@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
-use std::sync::Mutex;
+use std::sync::{Mutex, Arc};
 use bson::Document;
 use bson::oid::ObjectId;
 use crate::data_ticket::DataTicket;
@@ -15,7 +15,7 @@ struct DynamicSessionInner {
     id: ObjectId,
     version: usize,
     base_session: BaseSession,
-    page_map: Option<BTreeMap<u32, RawPage>>,
+    page_map: Option<BTreeMap<u32, Arc<RawPage>>>,
     page_size: NonZeroU32,
     db_size: u64,
     init_block_count: u64,
@@ -82,7 +82,7 @@ impl DynamicSessionInner {
 }
 
 impl SessionInner for DynamicSessionInner {
-    fn read_page(&mut self, page_id: u32) -> DbResult<RawPage> {
+    fn read_page(&mut self, page_id: u32) -> DbResult<Arc<RawPage>> {
         let page_map = self.page_map.as_ref().ok_or(DbErr::NoTransactionStarted)?;
         match page_map.get(&page_id) {
             Some(page) => Ok(page.clone()),
@@ -98,14 +98,14 @@ impl SessionInner for DynamicSessionInner {
 
     fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
         let page_map = self.page_map.as_mut().ok_or(DbErr::NoTransactionStarted)?;
-        page_map.insert(page.page_id, page.clone());
+        page_map.insert(page.page_id, Arc::new(page.clone()));
         Ok(())
     }
 
     // TODO: refactor with session
     fn actual_alloc_page_id(&mut self) -> DbResult<u32> {
         let first_page = self.get_first_page()?;
-        let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
+        let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page.as_ref().clone());
 
         let null_page_bar = first_page_wrapper.get_null_page_bar();
         first_page_wrapper.set_null_page_bar(null_page_bar + 1);
@@ -146,7 +146,7 @@ impl DynamicSession {
 }
 
 impl Session for DynamicSession {
-    fn read_page(&self, page_id: u32) -> DbResult<RawPage> {
+    fn read_page(&self, page_id: u32) -> DbResult<Arc<RawPage>> {
         let mut inner = self.inner.lock()?;
         inner.read_page(page_id)
     }

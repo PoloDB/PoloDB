@@ -113,10 +113,10 @@ impl FileBackend {
         })
     }
 
-    fn force_write_first_block(file: &mut File, page_size: NonZeroU32) -> std::io::Result<RawPage> {
+    fn force_write_first_block(file: &mut File, page_size: NonZeroU32) -> std::io::Result<Arc<RawPage>> {
         let wrapper = HeaderPageWrapper::init(0, page_size);
         wrapper.0.sync_to_file(file, 0)?;
-        Ok(wrapper.0)
+        Ok(Arc::new(wrapper.0))
     }
 
     fn init_db(file: &mut File, page_size: NonZeroU32, init_block_count: NonZeroU64, check_db_version: bool) -> DbResult<InitDbResult> {
@@ -160,7 +160,7 @@ impl FileBackend {
 
     /// 1. Read the page from the journal
     /// 2. Read the page from the main file
-    fn read_page_main(&self, page_id: u32) -> DbResult<RawPage> {
+    fn read_page_main(&self, page_id: u32) -> DbResult<Arc<RawPage>> {
         if let Some(page) = self.journal_manager.read_page_main(page_id)? {
             return Ok(page);
         }
@@ -168,7 +168,7 @@ impl FileBackend {
         self.read_page_from_main_file(page_id)
     }
 
-    fn read_page_from_main_file(&self, page_id: u32) -> DbResult<RawPage> {
+    fn read_page_from_main_file(&self, page_id: u32) -> DbResult<Arc<RawPage>> {
         let offset = (page_id as u64) * (self.page_size.get() as u64);
         let mut result = RawPage::new(page_id, self.page_size);
         let mut main_file = self.file.borrow_mut();
@@ -179,13 +179,13 @@ impl FileBackend {
             result.read_from_file(&mut main_file, offset)?;
         }
 
-        Ok(result)
+        Ok(Arc::new(result))
     }
 }
 
 impl Backend for FileBackend {
 
-    fn read_page(&self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<RawPage> {
+    fn read_page(&self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<Arc<RawPage>> {
         match session_id {
             Some(session_id) => {
                 let state = self.state_map

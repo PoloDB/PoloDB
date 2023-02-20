@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::io::{Seek, Write, SeekFrom, Read};
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use getrandom::getrandom;
 use crc64fast::Digest;
 use crate::data_structures::trans_map::TransMap;
@@ -419,11 +420,11 @@ impl JournalManager {
         Ok(())
     }
 
-    pub(crate) fn read_page_main(&self, page_id: u32) -> std::io::Result<Option<RawPage>> {
+    pub(crate) fn read_page_main(&self, page_id: u32) -> std::io::Result<Option<Arc<RawPage>>> {
         self.read_page(page_id, self.transaction_state.as_ref())
     }
 
-    pub(crate) fn read_page(&self, page_id: u32, state: Option<&TransactionState>) -> std::io::Result<Option<RawPage>> {
+    pub(crate) fn read_page(&self, page_id: u32, state: Option<&TransactionState>) -> std::io::Result<Option<Arc<RawPage>>> {
         let offset = match state {
 
             // currently in transaction state
@@ -460,7 +461,7 @@ impl JournalManager {
 
         crate::polo_log!("read page from journal, page_id: {}, data_offset:\t\t0x{:0>8X}", page_id, offset);
 
-        Ok(Some(result))
+        Ok(Some(Arc::new(result)))
     }
 
     pub(crate) fn checkpoint_journal(&mut self, db_file: &mut File) -> DbResult<()> {

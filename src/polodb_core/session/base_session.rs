@@ -56,7 +56,7 @@ impl BaseSession {
         session.remove_session(sid)
     }
 
-    pub fn pipeline_read_page(&self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<RawPage> {
+    pub fn pipeline_read_page(&self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<Arc<RawPage>> {
         let mut session = self.inner.as_ref().lock()?;
         session.pipeline_read_page(page_id, session_id)
     }
@@ -93,7 +93,7 @@ impl BaseSession {
 }
 
 impl Session for BaseSession {
-    fn read_page(&self, page_id: u32) -> DbResult<RawPage> {
+    fn read_page(&self, page_id: u32) -> DbResult<Arc<RawPage>> {
         let mut session = self.inner.as_ref().lock()?;
         session.read_page(page_id)
     }
@@ -207,7 +207,7 @@ impl BaseSessionInner {
     #[allow(dead_code)]
     fn first_page_free_list_pid_and_size(&mut self) -> DbResult<(u32, u32)> {
         let first_page = self.read_page(0)?;
-        let first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
+        let first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page.as_ref().clone());
 
         let pid = first_page_wrapper.get_free_list_page_id();
         let size = first_page_wrapper.get_free_list_size();
@@ -215,7 +215,7 @@ impl BaseSessionInner {
     }
 
     #[inline]
-    pub fn get_first_page(&mut self) -> Result<RawPage, DbErr> {
+    pub fn get_first_page(&mut self) -> Result<Arc<RawPage>, DbErr> {
         self.read_page(0)
     }
 
@@ -323,7 +323,7 @@ impl BaseSessionInner {
     ///
     /// Otherwise, the page will read from the main session,
     /// which contains cached pages.
-    fn pipeline_read_page(&mut self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<RawPage> {
+    fn pipeline_read_page(&mut self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<Arc<RawPage>> {
         match session_id {
             Some(_) => self.backend.read_page(page_id, session_id),
             None => self.pipeline_read_page_main(page_id)
@@ -333,7 +333,7 @@ impl BaseSessionInner {
     /// 1. read from page_cache, if none
     /// 2. read from journal, if none
     /// 3. read from main db
-    fn pipeline_read_page_main(&mut self, page_id: u32) -> DbResult<RawPage> {
+    fn pipeline_read_page_main(&mut self, page_id: u32) -> DbResult<Arc<RawPage>> {
         if let Some(page) = self.page_cache.get_from_cache(page_id) {
             return Ok(page);
         }
@@ -366,7 +366,7 @@ impl BaseSessionInner {
 }
 
 impl SessionInner for BaseSessionInner {
-    fn read_page(&mut self, page_id: u32) -> DbResult<RawPage> {
+    fn read_page(&mut self, page_id: u32) -> DbResult<Arc<RawPage>> {
         self.pipeline_read_page_main(page_id)
     }
 
@@ -376,7 +376,7 @@ impl SessionInner for BaseSessionInner {
 
     fn actual_alloc_page_id(&mut self) -> DbResult<u32> {
         let first_page = self.get_first_page()?;
-        let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
+        let mut first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page.as_ref().clone());
 
         let null_page_bar = first_page_wrapper.get_null_page_bar();
         first_page_wrapper.set_null_page_bar(null_page_bar + 1);
