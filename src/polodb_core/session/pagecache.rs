@@ -1,6 +1,7 @@
 use std::num::{NonZeroU32, NonZeroUsize};
 use lru::LruCache;
 use std::alloc::{alloc, dealloc, Layout};
+use std::sync::Arc;
 use crate::page::RawPage;
 
 pub(crate) struct PageCache {
@@ -34,7 +35,7 @@ impl PageCache {
         }
     }
 
-    pub(crate) fn get_from_cache(&mut self, page_id: u32) -> Option<RawPage> {
+    pub(crate) fn get_from_cache(&mut self, page_id: u32) -> Option<Arc<RawPage>> {
         let index = match self.lru_map.get(&page_id) {
             Some(index) => index,
             None => return None,
@@ -44,7 +45,7 @@ impl PageCache {
         unsafe {
             result.copy_from_ptr(self.data.add(offset as usize));
         }
-        Some(result)
+        Some(Arc::new(result))
     }
 
     #[inline]

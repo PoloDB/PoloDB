@@ -211,7 +211,7 @@ impl DbContext {
     fn get_meta_source(session: &dyn Session) -> DbResult<MetaSource> {
         let head_page = session.read_page(0)?;
         DbContext::check_first_page_valid(&head_page)?;
-        let head_page_wrapper = HeaderPageWrapper::from_raw_page(head_page);
+        let head_page_wrapper = HeaderPageWrapper::from_raw_page(head_page.as_ref().clone());
         let meta_pid = head_page_wrapper.get_meta_page_id();
         Ok(MetaSource {
             meta_pid,
@@ -328,7 +328,7 @@ impl DbContext {
 
     fn update_meta_source(session: &dyn Session, meta_source: &MetaSource) -> DbResult<()> {
         let head_page = session.read_page(0)?;
-        let mut head_page_wrapper = HeaderPageWrapper::from_raw_page(head_page);
+        let mut head_page_wrapper = HeaderPageWrapper::from_raw_page(head_page.as_ref().clone());
         head_page_wrapper.set_meta_page_id(meta_source.meta_pid);
         session.write_page(&head_page_wrapper.0)
     }
@@ -936,7 +936,7 @@ impl DbContext {
 
     pub fn dump(&mut self) -> DbResult<FullDump> {
         let first_page = self.base_session.read_page(0)?;
-        let first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page);
+        let first_page_wrapper = HeaderPageWrapper::from_raw_page(first_page.as_ref().clone());
         let version = first_page_wrapper.get_version();
         let meta_pid = first_page_wrapper.get_meta_page_id();
         let free_list_pid = first_page_wrapper.get_free_list_page_id();
@@ -964,7 +964,7 @@ impl DbContext {
 
         for index in 0..page_count {
             let raw_page = self.base_session.read_page(index as u32)?;
-            result.push(dump_page(raw_page)?);
+            result.push(dump_page(raw_page.as_ref().clone())?);
         }
 
         Ok(result)

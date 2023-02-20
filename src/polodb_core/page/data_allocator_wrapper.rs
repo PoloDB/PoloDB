@@ -19,7 +19,7 @@ impl DataAllocatorWrapper {
     /// Offset 2 (2 bytes): data len
     /// Offset 4 (4 bytes): next page id(preserved)
     /// Offset 8: data begin
-    pub fn from_raw_page(page: RawPage) -> DataAllocatorWrapper {
+    pub fn from_raw_page(page: &RawPage) -> DataAllocatorWrapper {
         let data_len = page.get_u16(2) as u32;
 
         let mut free_pages = Vec::with_capacity(data_len as usize);

@@ -1,4 +1,5 @@
 use std::num::{NonZeroU32, NonZeroU64};
+use std::sync::Arc;
 use bson::oid::ObjectId;
 use hashbrown::HashMap;
 use crate::backend::Backend;
@@ -65,7 +66,7 @@ impl MemoryBackend {
         self.transaction = None;
     }
 
-    fn read_page_main(&self, page_id: u32) -> DbResult<RawPage> {
+    fn read_page_main(&self, page_id: u32) -> DbResult<Arc<RawPage>> {
         if let Some(transaction) = &self.transaction {
             if let Some(page) = transaction.draft.read_page(page_id) {
                 return Ok(page);
@@ -78,7 +79,8 @@ impl MemoryBackend {
             let page_size = self.page_size.get() as u64;
             let db_file_size = self.db_size();
             if (page_id as u64) * page_size < db_file_size {
-                return Ok(RawPage::new(page_id, self.page_size));
+                let null_page = RawPage::new(page_id, self.page_size);
+                return Ok(Arc::new(null_page));
             }
         }
 
@@ -88,7 +90,7 @@ impl MemoryBackend {
 }
 
 impl Backend for MemoryBackend {
-    fn read_page(&self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<RawPage> {
+    fn read_page(&self, page_id: u32, session_id: Option<&ObjectId>) -> DbResult<Arc<RawPage>> {
         match session_id {
             Some(session_id) => {
                 // read the page from the state
@@ -101,7 +103,8 @@ impl Backend for MemoryBackend {
                     let page_size = self.page_size.get() as u64;
                     let db_file_size = state.draft.db_file_size();
                     if (page_id as u64) * page_size < db_file_size {
-                        return Ok(RawPage::new(page_id, self.page_size));
+                        let null_page = RawPage::new(page_id, self.page_size);
+                        return Ok(Arc::new(null_page));
                     }
                 }
 
