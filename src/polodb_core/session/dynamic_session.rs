@@ -76,7 +76,7 @@ impl DynamicSessionInner {
         if self.page_map.is_none() {
             return Err(DbErr::NoTransactionStarted);
         }
-        self.page_map = None;
+        self.page_map = Some(BTreeMap::new());
         Ok(())
     }
 }
