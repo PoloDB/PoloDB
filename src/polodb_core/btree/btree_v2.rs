@@ -495,9 +495,34 @@ impl BTreePageDelegateWithKey {
         self.remain_size
     }
 
-    #[inline]
     pub fn generate_page(&self) -> DbResult<RawPage> {
-        unimplemented!()
+        assert!(self.remain_size >= 0);
+        let mut delegate = BTreePageDelegate {
+            page_id: self.page_id,
+            parent_id: self.parent_id,
+            page_size: self.page_size,
+            remain_size: self.remain_size,
+            right_pid: self.right_pid,
+            content: Vec::with_capacity(self.content.len()),
+        };
+
+        for item in &self.content {
+            let mut key_bytes = Vec::<u8>::new();
+
+            serialize_key(&item.key, &mut key_bytes)?;
+
+            let item_without_key = BTreeDataItem {
+                left_pid: item.left_pid,
+                key_ty: item.key.element_type() as u8,
+                key_len: 0,
+                key_content: key_bytes,
+                payload: item.payload.clone(),
+            };
+
+            delegate.content.push(item_without_key);
+        }
+
+        delegate.generate_page()
     }
 
     #[inline]

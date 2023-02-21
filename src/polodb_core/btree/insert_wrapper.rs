@@ -1,14 +1,11 @@
-use std::io::Write;
-use bson::{Document, Bson};
-use byteorder::WriteBytesExt;
+use bson::Document;
 use crate::btree::btree_v2::{BTreeDataItem, BTreeDataItemWithKey, BTreePageDelegate, BTreePageDelegateWithKey, serialize_key};
-use crate::btree::vli;
 use crate::DbResult;
 use crate::page::RawPage;
-use super::{BTreeNode, BTreeNodeDataItem, SearchKeyResult};
 use crate::error::DbErr;
 use crate::data_ticket::DataTicket;
 use crate::session::Session;
+use super::SearchKeyResult;
 use super::wrapper_base::BTreePageWrapperBase;
 
 pub(crate) struct InsertBackwardItem {
@@ -24,7 +21,7 @@ impl InsertBackwardItem {
 
     pub(crate) fn write_to_page(&self, session: &dyn Session, new_page_id: u32, left_pid: u32) -> DbResult<RawPage> {
         let page_size = session.page_size();
-        let mut result = RawPage::new(new_page_id, page_size);
+        let result = RawPage::new(new_page_id, page_size);
 
         let delegate = BTreePageDelegate::from_page(&result, 0)?;
         let mut delegate_with_key = BTreePageDelegateWithKey::read_from_session(
