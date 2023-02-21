@@ -76,10 +76,10 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
     fn find_min_element_in_subtree(&mut self, subtree_pid: u32, parent_pid: u32) -> DbResult<BTreeDataItemWithKey> {
         let btree_node = self.get_btree_by_pid(subtree_pid, parent_pid)?;
         if btree_node.is_leaf() {
-            let first = btree_node.content[0].clone();
+            let first = btree_node.get_item(0).clone();
             Ok(first)
         } else {
-            let next_pid = btree_node.content[0].left_pid;
+            let next_pid = btree_node.get_item(0).left_pid;
             self.find_min_element_in_subtree(next_pid, subtree_pid)
         }
     }
@@ -100,22 +100,22 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                     return Ok(None)  // not found
                 }
 
-                let page_id = current_btree_node.content[idx].left_pid;
+                let page_id = current_btree_node.get_item(idx).left_pid;
                 let backward_item_opt = self.delete_item_on_subtree(pid, page_id, id)?;  // recursively delete
 
                 if let Some(backward_item) = backward_item_opt {
-                    let mut current_item_size = current_btree_node.content.len();
+                    let mut current_item_size = current_btree_node.len();
 
                     if !self.is_content_size_satisfied(backward_item.child_size) {
                         if backward_item.is_leaf {
                             let borrow_ok = self.try_borrow_brothers(idx, &mut current_btree_node)?;
                             if !borrow_ok {
-                                if current_btree_node.content.len() == 1 {
+                                if current_btree_node.len() == 1 {
                                     let _opt = self.try_merge_head(current_btree_node)?;
                                     debug_assert!(_opt);
                                 } else {
                                     self.merge_leaves(idx, &mut current_btree_node)?;
-                                    current_item_size = current_btree_node.content.len();
+                                    current_item_size = current_btree_node.len();
                                     self.write_btree(current_btree_node)?;
                                 }
                             } else {
@@ -123,7 +123,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                             }
                         } else {
                             // let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
-                            if current_btree_node.content.len() == 1 {
+                            if current_btree_node.len() == 1 {
                                 let _opt = self.try_merge_head(current_btree_node)?;
                                 debug_assert!(_opt);
                             }
@@ -147,13 +147,13 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                     let backward_item = self.delete_item_on_leaf(current_btree_node, idx)?;
                     Ok(Some(backward_item))
                 } else {
-                    let deleted_ticket = current_btree_node.content[idx].payload.clone();
+                    let deleted_ticket = current_btree_node.get_item(idx).payload.clone();
 
                     let current_pid = current_btree_node.page_id();
                     let subtree_pid = current_btree_node.get_right_pid(idx);
                     let next_item = self.find_min_element_in_subtree(subtree_pid, current_pid)?;
-                    current_btree_node.content[idx] = next_item.clone();
-                    let mut current_item_size = current_btree_node.content.len();
+                    current_btree_node.update_content(idx, next_item.clone());
+                    let mut current_item_size = current_btree_node.len();
                     self.write_btree(current_btree_node)?;
 
                     let backward_opt = self.delete_item_on_subtree(current_pid, subtree_pid, &next_item.key)?;
@@ -167,12 +167,12 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                                         // self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
                                         // current_item_size = current_btree_node.content.len();
 
-                                        if current_btree_node.content.len() == 1 {
+                                        if current_btree_node.len() == 1 {
                                             let _opt = self.try_merge_head(current_btree_node)?;
                                             debug_assert!(_opt);
                                         } else {
                                             self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
-                                            current_item_size = current_btree_node.content.len();
+                                            current_item_size = current_btree_node.len();
                                             self.write_btree(current_btree_node)?;
                                         }
                                     } else {
@@ -180,7 +180,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                                     }
                                 } else {
                                     let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
-                                    if current_btree_node.content.len() == 1 {
+                                    if current_btree_node.len() == 1 {
                                         let _opt = self.try_merge_head(current_btree_node)?;
                                         debug_assert!(_opt);
                                     }
@@ -209,11 +209,11 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         let right_node = self.get_btree_by_pid(right_pid, parent_btree_node.page_id())?;
 
         // TODO: use bytes to determine
-        if left_node.content.len() + right_node.content.len() + 1 > self.base.item_size as usize {
+        if left_node.len() + right_node.len() + 1 > self.base.item_size as usize {
             return Ok(false);
         }
 
-        let center_node = parent_btree_node.content[0].clone();
+        let center_node = parent_btree_node.get_item(0).clone();
         // move
         let new_node = BTreePageDelegateWithKey::merge_with_center(
             parent_btree_node.page_id(),
@@ -401,11 +401,11 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
     // }
 
     fn delete_item_on_leaf(&mut self, mut btree_node: BTreePageDelegateWithKey, index: usize) -> DbResult<DeleteBackwardItem> {
-        let deleted_ticket = btree_node.content[index].payload.clone();
+        let deleted_ticket = btree_node.get_item(index).payload.clone();
 
-        btree_node.content.remove(index);
+        btree_node.remove_item(index);
 
-        let remain_content_len = btree_node.content.len();
+        let remain_content_len = btree_node.len();
 
         self.base.write_btree_node(&btree_node)?;
 
