@@ -232,11 +232,7 @@ impl BTreeDataItemWithKey {
 
         result += match self.key_data_ticket {
             Some(_) => 6,
-            None => {
-                let mut key_bytes = Vec::new();
-                serialize_key(&self.key, &mut key_bytes).unwrap();
-                key_bytes.len() as i32
-            }
+            None => measure_key_size(&self.key).unwrap() as i32,
         };
 
         result += 6;  // payload size
@@ -567,6 +563,38 @@ impl BTreePageDelegateWithKey {
     pub(crate) fn is_leaf(&self) -> bool {
         self.content[0].left_pid == 0
     }
+}
+
+struct KeySizeMeasure {
+    size: usize,
+}
+
+impl KeySizeMeasure {
+    fn new() -> KeySizeMeasure {
+        KeySizeMeasure { size: 0 }
+    }
+
+    #[inline]
+    fn size(&self) -> usize {
+        self.size
+    }
+}
+
+impl Write for KeySizeMeasure {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.size += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+pub fn measure_key_size(key: &Bson) -> DbResult<usize> {
+    let mut mesure = KeySizeMeasure::new();
+    serialize_key(key, &mut mesure)?;
+    Ok(mesure.size())
 }
 
 pub fn serialize_key<W: Write>(key: &Bson, writer: &mut W) -> DbResult<()> {
