@@ -217,13 +217,32 @@ impl BTreePageDelegate {
 
 #[derive(Clone)]
 pub(crate) struct BTreeDataItemWithKey {
-    pub left_pid:   u32,
-    pub key:        Bson,
+    pub left_pid:        u32,
+    pub key:             Bson,
     pub key_data_ticket: Option<DataTicket>,  // is Some() only if key is bigger than 254
-    pub payload:    DataTicket,
+    pub payload:         DataTicket,
 }
 
 impl BTreeDataItemWithKey {
+    fn bytes_size(&self) -> i32 {
+        let mut result: i32 = 0;
+
+        result += 2;  // left pid
+        result += 2;  // key meta
+
+        result += match self.key_data_ticket {
+            Some(_) => 6,
+            None => {
+                let mut key_bytes = Vec::new();
+                serialize_key(&self.key, &mut key_bytes).unwrap();
+                key_bytes.len() as i32
+            }
+        };
+
+        result += 6;  // payload size
+
+        result
+    }
 
     fn from_item(item: &BTreeDataItem, session: &dyn Session) -> DbResult<BTreeDataItemWithKey> {
         let (key_bytes, key_data_ticket) = if item.key_len == 255 {
@@ -252,7 +271,7 @@ pub(crate) struct BTreePageDelegateWithKey {
     page_size:     NonZeroU32,
     remain_size:   i32,  // can be negative
     pub right_pid: u32,
-    pub content:   Vec<BTreeDataItemWithKey>,
+    content:   Vec<BTreeDataItemWithKey>,
 }
 
 pub(crate) struct PageDivisionResult {
@@ -324,13 +343,20 @@ impl BTreePageDelegateWithKey {
         Ok(SearchKeyResult::Index(std::cmp::max(low, high) as usize))
     }
 
-    pub fn insert(&mut self, _index: usize, _item: BTreeDataItemWithKey) {
-        unimplemented!()
+    pub fn insert(&mut self, index: usize, item: BTreeDataItemWithKey) {
+        let item_size = item.bytes_size();
+        self.remain_size -= item_size + 2;
+
+        self.content.insert(index, item);
     }
 
-    pub fn update_content(&mut self, _index: usize, _item: BTreeDataItemWithKey) {
+    pub fn update_content(&mut self, index: usize, item: BTreeDataItemWithKey) {
         // make sure the size of the key is the same
-        unimplemented!()
+        let old_item_size = self.content[index].bytes_size();
+        let new_item_size = item.bytes_size();
+        assert_eq!(old_item_size, new_item_size);
+
+        self.content[index] = item;
     }
 
     pub fn divide_in_the_middle(&self, session: &dyn Session, right_page_pid: u32) -> DbResult<PageDivisionResult> {
@@ -410,6 +436,18 @@ impl BTreePageDelegateWithKey {
 
     pub fn get_left_pid(&self, index: usize) -> u32 {
         self.content[index].left_pid
+    }
+
+    #[inline]
+    pub fn get_item(&self, index: usize) -> &BTreeDataItemWithKey {
+        &self.content[index]
+    }
+
+    pub fn remove_item(&mut self, index: usize) {
+        self.content.remove(index);
+        if self.content.is_empty() {
+            self.right_pid = 0;
+        }
     }
 
     pub fn merge_with_center(
