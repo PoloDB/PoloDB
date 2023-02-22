@@ -22,6 +22,11 @@ pub struct BTreePageDeleteWrapper<'a> {
     cache_btree:    HashMap<u32, Box<BTreeNode>>,
 }
 
+enum IdOrNode {
+    IdAndParent(u32, u32), // (id, parent)
+    Node(BTreePageDelegateWithKey),
+}
+
 impl<'a> BTreePageDeleteWrapper<'a>  {
 
     pub(crate) fn new(session: &dyn Session, root_page_id: u32) -> BTreePageDeleteWrapper {
@@ -62,7 +67,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
     //         - replace it with item on leaf
     //         - delete item on leaf
     pub fn delete_item(&mut self, id: &Bson) -> DbResult<Option<Document>> {
-        let backward_item_opt = self.delete_item_on_subtree(0, self.base.root_page_id, id)?;
+        let backward_item_opt = self.delete_item_on_subtree(IdOrNode::IdAndParent(self.base.root_page_id, 0), id)?;
         match backward_item_opt {
             Some(backward_item) => {
                 let item = self.erase_item(&backward_item.deleted_ticket)?;
@@ -84,8 +89,13 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         }
     }
 
-    fn delete_item_on_subtree(&mut self, parent_pid: u32, pid: u32, id: &Bson) -> DbResult<Option<DeleteBackwardItem>> {
-        let mut current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
+    fn delete_item_on_subtree(&mut self, id_or_node: IdOrNode, id: &Bson) -> DbResult<Option<DeleteBackwardItem>> {
+        let mut current_btree_node = match id_or_node {
+            IdOrNode::IdAndParent(pid, parent_pid) => self.get_btree_by_pid(pid, parent_pid)?,
+            IdOrNode::Node(node) => node,
+        };
+        let pid = current_btree_node.page_id();
+        let parent_pid = current_btree_node.parent_id();
 
         if current_btree_node.is_empty() {
             if parent_pid == 0 {  // it's a root node
@@ -99,106 +109,165 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                 if current_btree_node.is_leaf() {  // is leaf
                     return Ok(None)  // not found
                 }
+                let page_id = current_btree_node.get_left_pid(idx);
+                let backward_item_opt = self.delete_item_on_subtree(IdOrNode::IdAndParent(page_id, pid), id)?;  // recursively delete
 
-                let page_id = current_btree_node.get_item(idx).left_pid;
-                let backward_item_opt = self.delete_item_on_subtree(pid, page_id, id)?;  // recursively delete
-
-                if let Some(backward_item) = backward_item_opt {
-                    let mut current_item_size = current_btree_node.len();
-
-                    if !self.is_content_size_satisfied(backward_item.child_size) {
-                        if backward_item.is_leaf {
-                            let borrow_ok = self.try_borrow_brothers(idx, &mut current_btree_node)?;
-                            if !borrow_ok {
-                                if current_btree_node.len() == 1 {
-                                    let _opt = self.try_merge_head(current_btree_node)?;
-                                    debug_assert!(_opt);
-                                } else {
-                                    self.merge_leaves(idx, &mut current_btree_node)?;
-                                    current_item_size = current_btree_node.len();
-                                    self.write_btree(current_btree_node)?;
-                                }
-                            } else {
-                                self.write_btree(current_btree_node)?;
-                            }
-                        } else {
-                            // let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
-                            if current_btree_node.len() == 1 {
-                                let _opt = self.try_merge_head(current_btree_node)?;
-                                debug_assert!(_opt);
-                            }
-                        }
-                    }
-                    return Ok(Some(DeleteBackwardItem {
-                        is_leaf: false,
-                        child_size: current_item_size,
-                        deleted_ticket: backward_item.deleted_ticket,
-                    }))
+                if backward_item_opt.is_none() {
+                    return Ok(None);
                 }
 
-                Ok(None)
-            }
+                let backward_item = backward_item_opt.unwrap();
 
-            // find the target node
-            // use next to replace itself
-            // then remove next
+                if backward_item.is_leaf {
+                    // if we reach here, it's saying we deleted an item on the leaf
+                    // and this node is a parent of a leaf.
+                    // We can check if it's possible to merge this leaf with other leaves
+                    unimplemented!()
+                }
+
+                Ok(Some(DeleteBackwardItem {
+                    is_leaf: false,
+                    child_size: current_btree_node.len(),
+                    deleted_ticket: backward_item.deleted_ticket,
+                }))
+            },
             SearchKeyResult::Node(idx) => {
-                if current_btree_node.is_leaf() {
-                    let backward_item = self.delete_item_on_leaf(current_btree_node, idx)?;
-                    Ok(Some(backward_item))
+                // look at the left and the right child
+                let left_pid = current_btree_node.get_left_pid(idx);
+                let right_pid = current_btree_node.get_right_pid(idx);
+
+                let left_node = self.get_btree_by_pid(left_pid, pid)?;
+                let right_node = self.get_btree_by_pid(right_pid, pid)?;
+
+                let (winner_node, _is_left) = if left_node.len() >= right_node.len() {
+                    (left_node, true)
                 } else {
-                    let deleted_ticket = current_btree_node.get_item(idx).payload.clone();
+                    (right_node, false)
+                };
 
-                    let current_pid = current_btree_node.page_id();
-                    let subtree_pid = current_btree_node.get_right_pid(idx);
-                    let next_item = self.find_min_element_in_subtree(subtree_pid, current_pid)?;
-                    current_btree_node.update_content(idx, next_item.clone());
-                    let mut current_item_size = current_btree_node.len();
-                    self.write_btree(current_btree_node)?;
+                let backward_item_opt = self.delete_item_on_subtree(
+                    IdOrNode::Node(winner_node), id,
+                )?;  // recursively delete
 
-                    let backward_opt = self.delete_item_on_subtree(current_pid, subtree_pid, &next_item.key)?;
-                    match backward_opt {
-                        Some(backward_item) => {
-                            if !self.is_content_size_satisfied(backward_item.child_size) {
-                                if backward_item.is_leaf {  // borrow or merge leaves
-                                    let mut current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
-                                    let borrow_ok = self.try_borrow_brothers(idx + 1, current_btree_node.borrow_mut())?;
-                                    if !borrow_ok {
-                                        // self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
-                                        // current_item_size = current_btree_node.content.len();
-
-                                        if current_btree_node.len() == 1 {
-                                            let _opt = self.try_merge_head(current_btree_node)?;
-                                            debug_assert!(_opt);
-                                        } else {
-                                            self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
-                                            current_item_size = current_btree_node.len();
-                                            self.write_btree(current_btree_node)?;
-                                        }
-                                    } else {
-                                        self.write_btree(current_btree_node)?;
-                                    }
-                                } else {
-                                    let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
-                                    if current_btree_node.len() == 1 {
-                                        let _opt = self.try_merge_head(current_btree_node)?;
-                                        debug_assert!(_opt);
-                                    }
-                                }
-                            }
-
-                            Ok(Some(DeleteBackwardItem {
-                                is_leaf: false,
-                                child_size: current_item_size,
-                                deleted_ticket,
-                            }))
-                        }
-
-                        None => Ok(None),
-                    }
+                if backward_item_opt.is_none() {
+                    return Ok(None);
                 }
-            }
+
+                let backward_item = backward_item_opt.unwrap();
+                if backward_item.is_leaf {
+                    // if we reach here, it's saying that this node is the parent of a leaf
+                    unimplemented!()
+                } else {
+                    unimplemented!()
+                }
+            },
         }
+
+        // match search_result {
+        //     SearchKeyResult::Index(idx) => {
+        //         if current_btree_node.is_leaf() {  // is leaf
+        //             return Ok(None)  // not found
+        //         }
+        //
+        //         let page_id = current_btree_node.get_item(idx).left_pid;
+        //         let backward_item_opt = self.delete_item_on_subtree(pid, page_id, id)?;  // recursively delete
+        //
+        //         if let Some(backward_item) = backward_item_opt {
+        //             let mut current_item_size = current_btree_node.len();
+        //
+        //             if !self.is_content_size_satisfied(backward_item.child_size) {
+        //                 if backward_item.is_leaf {
+        //                     let borrow_ok = self.try_borrow_brothers(idx, &mut current_btree_node)?;
+        //                     if !borrow_ok {
+        //                         if current_btree_node.len() == 1 {
+        //                             let _opt = self.try_merge_head(current_btree_node)?;
+        //                             debug_assert!(_opt);
+        //                         } else {
+        //                             self.merge_leaves(idx, &mut current_btree_node)?;
+        //                             current_item_size = current_btree_node.len();
+        //                             self.write_btree(current_btree_node)?;
+        //                         }
+        //                     } else {
+        //                         self.write_btree(current_btree_node)?;
+        //                     }
+        //                 } else {
+        //                     // let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
+        //                     if current_btree_node.len() == 1 {
+        //                         let _opt = self.try_merge_head(current_btree_node)?;
+        //                         debug_assert!(_opt);
+        //                     }
+        //                 }
+        //             }
+        //             return Ok(Some(DeleteBackwardItem {
+        //                 is_leaf: false,
+        //                 child_size: current_item_size,
+        //                 deleted_ticket: backward_item.deleted_ticket,
+        //             }))
+        //         }
+        //
+        //         Ok(None)
+        //     }
+        //
+        //     // find the target node
+        //     // use next to replace itself
+        //     // then remove next
+        //     SearchKeyResult::Node(idx) => {
+        //         if current_btree_node.is_leaf() {
+        //             let backward_item = self.delete_item_on_leaf(current_btree_node, idx)?;
+        //             Ok(Some(backward_item))
+        //         } else {
+        //             let deleted_ticket = current_btree_node.get_item(idx).payload.clone();
+        //
+        //             let current_pid = current_btree_node.page_id();
+        //             let subtree_pid = current_btree_node.get_right_pid(idx);
+        //             let next_item = self.find_min_element_in_subtree(subtree_pid, current_pid)?;
+        //             current_btree_node.update_content(idx, next_item.clone());
+        //             let mut current_item_size = current_btree_node.len();
+        //             self.write_btree(current_btree_node)?;
+        //
+        //             let backward_opt = self.delete_item_on_subtree(current_pid, subtree_pid, &next_item.key)?;
+        //             match backward_opt {
+        //                 Some(backward_item) => {
+        //                     if !self.is_content_size_satisfied(backward_item.child_size) {
+        //                         if backward_item.is_leaf {  // borrow or merge leaves
+        //                             let mut current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
+        //                             let borrow_ok = self.try_borrow_brothers(idx + 1, current_btree_node.borrow_mut())?;
+        //                             if !borrow_ok {
+        //                                 // self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
+        //                                 // current_item_size = current_btree_node.content.len();
+        //
+        //                                 if current_btree_node.len() == 1 {
+        //                                     let _opt = self.try_merge_head(current_btree_node)?;
+        //                                     debug_assert!(_opt);
+        //                                 } else {
+        //                                     self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
+        //                                     current_item_size = current_btree_node.len();
+        //                                     self.write_btree(current_btree_node)?;
+        //                                 }
+        //                             } else {
+        //                                 self.write_btree(current_btree_node)?;
+        //                             }
+        //                         } else {
+        //                             let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
+        //                             if current_btree_node.len() == 1 {
+        //                                 let _opt = self.try_merge_head(current_btree_node)?;
+        //                                 debug_assert!(_opt);
+        //                             }
+        //                         }
+        //                     }
+        //
+        //                     Ok(Some(DeleteBackwardItem {
+        //                         is_leaf: false,
+        //                         child_size: current_item_size,
+        //                         deleted_ticket,
+        //                     }))
+        //                 }
+        //
+        //                 None => Ok(None),
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     fn try_merge_head(&mut self, parent_btree_node: BTreePageDelegateWithKey) -> DbResult<bool> {
