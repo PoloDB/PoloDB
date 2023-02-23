@@ -11,9 +11,9 @@ use crate::data_ticket::DataTicket;
 use crate::session::Session;
 
 struct DeleteBackwardItem {
-    is_leaf:        bool,
-    child_size:     usize,
-    deleted_ticket: DataTicket,
+    is_leaf:           bool,
+    child_remain_size: i32,
+    deleted_ticket:    DataTicket,
 }
 
 pub struct BTreePageDeleteWrapper<'a> {
@@ -43,7 +43,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         self.base.get_node(pid, parent_pid)
     }
 
-    fn write_btree(&mut self, node: BTreePageDelegateWithKey) -> DbResult<()> {
+    fn write_btree(&mut self, node: &BTreePageDelegateWithKey) -> DbResult<()> {
         let page = node.generate_page()?;
         self.base.session.write_page(&page)
     }
@@ -105,9 +105,10 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         }
         let search_result = current_btree_node.search(id)?;
         match search_result {
-            SearchKeyResult::Index(idx) => {
-                if current_btree_node.is_leaf() {  // is leaf
-                    return Ok(None)  // not found
+            SearchKeyResult::Index(idx) => {  // The node to delete is on the left of `idx`
+                if current_btree_node.is_leaf() {
+                    // There is nothing on the left, so nothing is deleted
+                    return Ok(None);
                 }
                 let page_id = current_btree_node.get_left_pid(idx);
                 let backward_item_opt = self.delete_item_on_subtree(IdOrNode::IdAndParent(page_id, pid), id)?;  // recursively delete
@@ -118,48 +119,124 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
 
                 let backward_item = backward_item_opt.unwrap();
 
-                if backward_item.is_leaf {
-                    // if we reach here, it's saying we deleted an item on the leaf
-                    // and this node is a parent of a leaf.
-                    // We can check if it's possible to merge this leaf with other leaves
-                    unimplemented!()
+                if BTreePageDeleteWrapper::remain_size_too_large(&current_btree_node, backward_item.child_remain_size) {
+                    if backward_item.is_leaf {
+                        // if we reach here, it's saying we deleted an item on the leaf
+                        // and this node is a parent of a leaf.
+                        // We can check if it's possible to merge this leaf with other leaves
+                        let borrow_ok = self.try_borrow_brothers(idx, &mut current_btree_node)?;
+
+                        if borrow_ok {
+                            self.write_btree(&current_btree_node)?;
+                        } else if current_btree_node.len() == 1 {
+                            let new_node_opt = self.try_merge_head(current_btree_node)?;
+                            let new_node = new_node_opt.unwrap();
+                            return Ok(Some(DeleteBackwardItem {
+                                is_leaf: true,
+                                child_remain_size: new_node.remain_size(),
+                                deleted_ticket: backward_item.deleted_ticket,
+                            }));
+                        } else {
+                            // merge leaves
+                            self.merge_leaves(idx, &mut current_btree_node)?;
+                            self.write_btree(&current_btree_node)?;
+                            return Ok(Some(DeleteBackwardItem {
+                                is_leaf: false,
+                                child_remain_size: current_btree_node.remain_size(),
+                                deleted_ticket: backward_item.deleted_ticket,
+                            }));
+                        };
+                    } else if current_btree_node.len() == 1 {
+                        // merge the children
+                        let new_node_opt = self.try_merge_head(current_btree_node)?;
+                        let new_node = new_node_opt.unwrap();
+                        return Ok(Some(DeleteBackwardItem {
+                            is_leaf: false,
+                            child_remain_size: new_node.remain_size(),
+                            deleted_ticket: backward_item.deleted_ticket,
+                        }))
+                    }
                 }
 
                 Ok(Some(DeleteBackwardItem {
                     is_leaf: false,
-                    child_size: current_btree_node.len(),
+                    child_remain_size: current_btree_node.remain_size(),
                     deleted_ticket: backward_item.deleted_ticket,
                 }))
             },
             SearchKeyResult::Node(idx) => {
-                // look at the left and the right child
-                let left_pid = current_btree_node.get_left_pid(idx);
-                let right_pid = current_btree_node.get_right_pid(idx);
-
-                let left_node = self.get_btree_by_pid(left_pid, pid)?;
-                let right_node = self.get_btree_by_pid(right_pid, pid)?;
-
-                let (winner_node, _is_left) = if left_node.len() >= right_node.len() {
-                    (left_node, true)
-                } else {
-                    (right_node, false)
-                };
-
-                let backward_item_opt = self.delete_item_on_subtree(
-                    IdOrNode::Node(winner_node), id,
-                )?;  // recursively delete
-
-                if backward_item_opt.is_none() {
-                    return Ok(None);
+                if current_btree_node.is_leaf() {
+                    let backward_item = self.delete_item_on_leaf(current_btree_node, idx)?;
+                    return Ok(Some(backward_item));
                 }
 
-                let backward_item = backward_item_opt.unwrap();
-                if backward_item.is_leaf {
-                    // if we reach here, it's saying that this node is the parent of a leaf
-                    unimplemented!()
-                } else {
-                    unimplemented!()
+                let deleted_ticket = current_btree_node.get_item(idx).payload.clone();
+
+                let current_pid = current_btree_node.page_id();
+                let subtree_pid = current_btree_node.get_right_pid(idx);
+                let next_item = self.find_min_element_in_subtree(subtree_pid, current_pid)?;
+                current_btree_node.update_content(idx, next_item.clone());
+                let mut current_item_size = current_btree_node.len();
+                self.write_btree(&current_btree_node)?;
+
+                let backward_opt = self.delete_item_on_subtree(
+                    IdOrNode::IdAndParent(subtree_pid, current_pid),
+                    &next_item.key,
+                )?;
+
+                if backward_opt.is_none() {
+                    return Ok(Some(DeleteBackwardItem {
+                        is_leaf: false,
+                        child_remain_size: current_btree_node.remain_size(),
+                        deleted_ticket,
+                    }));
                 }
+
+                let backward_item = backward_opt.unwrap();
+
+                if BTreePageDeleteWrapper::remain_size_too_large(&current_btree_node, backward_item.child_remain_size) {
+                    if backward_item.is_leaf {  // borrow or merge leaves
+                        let mut current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
+                        let borrow_ok = self.try_borrow_brothers(idx + 1, current_btree_node.borrow_mut())?;
+                        if !borrow_ok {
+                            // self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
+                            // current_item_size = current_btree_node.content.len();
+
+                            if current_btree_node.len() == 1 {
+                                let head_opt = self.try_merge_head(current_btree_node)?;
+                                let head = head_opt.unwrap();
+                                return Ok(Some(DeleteBackwardItem {
+                                    is_leaf: true,
+                                    child_remain_size: head.remain_size(),
+                                    deleted_ticket,
+                                }))
+                            } else {
+                                self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
+                                current_item_size = current_btree_node.len();
+                                self.write_btree(&current_btree_node)?;
+                            }
+                        } else {
+                            self.write_btree(&current_btree_node)?;
+                        }
+                    } else {
+                        let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
+                        if current_btree_node.len() == 1 {
+                            let head_opt = self.try_merge_head(current_btree_node)?;
+                            let head = head_opt.unwrap();
+                            return Ok(Some(DeleteBackwardItem {
+                                is_leaf: false,
+                                child_remain_size: head.remain_size(),
+                                deleted_ticket,
+                            }));
+                        }
+                    }
+                }
+
+                Ok(Some(DeleteBackwardItem {
+                    is_leaf: false,
+                    child_remain_size: current_btree_node.remain_size(),
+                    deleted_ticket,
+                }))
             },
         }
 
@@ -270,16 +347,23 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         // }
     }
 
-    fn try_merge_head(&mut self, parent_btree_node: BTreePageDelegateWithKey) -> DbResult<bool> {
+    fn remain_size_too_large(btree_node: &BTreePageDelegateWithKey, remain_size: i32) -> bool {
+        let storage_size = btree_node.storage_size();
+        let quarter = (storage_size * 3 / 4) as i32;
+        remain_size > quarter
+    }
+
+    fn try_merge_head(&mut self, parent_btree_node: BTreePageDelegateWithKey) -> DbResult<Option<BTreePageDelegateWithKey>> {
         let left_pid = parent_btree_node.get_left_pid(0);
         let right_pid = parent_btree_node.get_right_pid(0);
 
         let left_node = self.get_btree_by_pid(left_pid, parent_btree_node.page_id())?;
         let right_node = self.get_btree_by_pid(right_pid, parent_btree_node.page_id())?;
 
-        // TODO: use bytes to determine
-        if left_node.len() + right_node.len() + 1 > self.base.item_size as usize {
-            return Ok(false);
+        let one_item_byte_size = parent_btree_node.get_item(0).bytes_size();
+
+        if left_node.bytes_size() + right_node.bytes_size() + one_item_byte_size + 2 > parent_btree_node.storage_size() as i32 {
+            return Ok(None);
         }
 
         let center_node = parent_btree_node.get_item(0).clone();
@@ -294,151 +378,166 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         )?;
         self.base.session.free_pages(&[left_pid, right_pid])?;
 
-        self.write_btree(new_node)?;
+        self.write_btree(&new_node)?;
 
-        Ok(true)
+        Ok(Some(new_node))
     }
 
+    /// If a node needs to borrows, it's saying that
+    /// The remain size of this node is too large.
+    ///
+    /// node_idx: is the left index of current_node
     fn try_borrow_brothers(&mut self, node_idx: usize, current_btree_node: &mut BTreePageDelegateWithKey) -> DbResult<bool> {
-        unimplemented!()
-        // let current_pid = current_btree_node.page_id();
-        //
-        // // node_idx's element on current_btree_node is deleted
-        // // node on [node_idx] is borrowed
-        // let subtree_pid = current_btree_node.get_left_pid(node_idx); // subtree need to shift
-        //
-        // let (left_opt, right_opt) = self.get_brothers_id(&current_btree_node, node_idx);
-        //
-        // let left_node_opt = match left_opt {
-        //     Some(pid) => Some(self.get_btree_by_pid(pid, current_pid)?),
-        //     None => None,
-        // };
-        // let right_node_opt = match right_opt {
-        //     Some(pid) => Some(self.get_btree_by_pid(pid, current_pid)?),
-        //     None => None,
-        // };
-        //
-        // // get max size brother to balance
-        // let (max_brother_size, is_brother_right) = match (&left_node_opt, &right_node_opt) {
-        //     (Some(node), None) => (node.content.len(), false),
-        //     (None, Some(node)) => (node.content.len(), true),
-        //     (Some(node1), Some(node2)) => {
-        //         if node1.content.len() < node2.content.len() {
-        //             (node2.content.len(), true)
-        //         } else {
-        //             (node1.content.len(), false)
-        //         }
-        //     },
-        //     (None, None) => {
-        //         panic!("no brother nodes, pid: {}", subtree_pid)
-        //     },
-        // };
-        //
-        // let mut subtree_node = self.get_btree_by_pid(subtree_pid, current_pid)?;
-        //
-        // // if max_brother_size satisfies the number, shift one item the middle child
-        // // if NOT, merge the brother the the middle child
-        // if self.is_content_size_satisfied(max_brother_size) {
-        //     let replace_item = if is_brother_right { // middle <-(item)- right
-        //         let mut shift_node = right_node_opt.unwrap();
-        //         let right_item = shift_node.shift_head();
-        //
-        //         subtree_node.insert_back(current_btree_node.content[node_idx].clone(), 0);
-        //
-        //         self.write_btree(shift_node)?;
-        //         self.write_btree(subtree_node)?;
-        //
-        //         right_item
-        //     } else {  // left -(item)-> middle
-        //         let mut shift_node = left_node_opt.unwrap();
-        //         let (left_last_content, _) = shift_node.shift_last();
-        //
-        //         subtree_node.insert_head(current_btree_node.content[node_idx].clone());
-        //
-        //         self.write_btree(shift_node)?;
-        //         self.write_btree(subtree_node)?;
-        //
-        //         left_last_content
-        //     };
-        //
-        //     // shift complete
-        //     current_btree_node.content[node_idx] = replace_item;
-        //
-        //     return Ok(true);
-        // }
-        //
-        // Ok(false)
+        let current_pid = current_btree_node.page_id();
+
+        // node_idx's element on current_btree_node is deleted
+        // node on [node_idx] is borrowed
+        let subtree_pid = current_btree_node.get_left_pid(node_idx); // subtree need to shift
+
+        let (left_opt, right_opt) = self.get_brothers_id(&current_btree_node, node_idx);
+
+        let left_node_opt = match left_opt {
+            Some(pid) => Some(self.get_btree_by_pid(pid, current_pid)?),
+            None => None,
+        };
+        let right_node_opt = match right_opt {
+            Some(pid) => Some(self.get_btree_by_pid(pid, current_pid)?),
+            None => None,
+        };
+
+        // get max size brother to balance
+        // The bigger node remain size should be smaller
+        let (bigger_node_remain_size, is_right) = match (&left_node_opt, &right_node_opt) {
+            (Some(node), None) => (node.remain_size(), false),
+            (None, Some(node)) => (node.remain_size(), true),
+            (Some(node1), Some(node2)) => {
+                if node1.bytes_size() < node2.bytes_size() {
+                    (node2.remain_size(), true)
+                } else {
+                    (node1.remain_size(), false)
+                }
+            },
+            (None, None) => {
+                panic!("no brother nodes, pid: {}", subtree_pid)
+            },
+        };
+
+        let mut subtree_node = self.get_btree_by_pid(subtree_pid, current_pid)?;
+
+        // If max_brother_size satisfies the number, shift one item the middle child.
+        // Otherwise, merge the brother the the middle child
+        // if !BTreePageDeleteWrapper::remain_size_too_large(current_btree_node, max_brother_size) {
+        let replace_item = if is_right { // middle <-(item)- right
+            let mut shift_node = right_node_opt.unwrap();
+            let right_item = shift_node.shift_head();
+            let shift_node_bytes_size = right_item.bytes_size();
+
+            // If this brother becomes too small after borrowing the node,
+            // the balancing is not worth. Give up and return.
+            if BTreePageDeleteWrapper::remain_size_too_large(current_btree_node, bigger_node_remain_size + shift_node_bytes_size + 2) {
+                return Ok(false);
+            }
+
+            subtree_node.insert_back(current_btree_node.get_item(node_idx).clone(), 0);
+
+            self.write_btree(&shift_node)?;
+            self.write_btree(&subtree_node)?;
+
+            right_item
+        } else {  // left -(item)-> middle
+            let mut shift_node = left_node_opt.unwrap();
+            let (left_last_content, _) = shift_node.shift_last();
+            let shift_node_bytes_size = left_last_content.bytes_size();
+
+            // If this brother becomes too small after borrowing the node,
+            // the balancing is not worth. Give up and return.
+            if BTreePageDeleteWrapper::remain_size_too_large(current_btree_node, bigger_node_remain_size + shift_node_bytes_size + 2) {
+                return Ok(false);
+            }
+
+            subtree_node.insert_head(current_btree_node.get_item(node_idx).clone());
+
+            self.write_btree(&shift_node)?;
+            self.write_btree(&subtree_node)?;
+
+            left_last_content
+        };
+
+        // shift complete
+        current_btree_node.update_content(node_idx, replace_item);
+
+        return Ok(true);
     }
 
     // merge the nth elements of the current_btree_node
     fn merge_leaves(&mut self, node_idx: usize, current_btree_node: &mut BTreePageDelegateWithKey) -> DbResult<()> {
-        unimplemented!()
-        // debug_assert!(current_btree_node.content.len() > 1);
-        //
-        // let current_pid = current_btree_node.page_id();
-        // let subtree_pid = current_btree_node.get_left_pid(node_idx);  // subtree need to shift
-        //
-        // let (left_opt, right_opt) = self.get_brothers_id(&current_btree_node, node_idx);
-        //
-        // let left_node_opt = match left_opt {
-        //     Some(pid) => Some(self.get_btree_by_pid(pid, current_pid)?),
-        //     None => None,
-        // };
-        // let right_node_opt = match right_opt {
-        //     Some(pid) => Some(self.get_btree_by_pid(pid, current_pid)?),
-        //     None => None,
-        // };
-        //
-        // // get min size brother to merge
-        // let is_brother_right = match (&left_node_opt, &right_node_opt) {
-        //     (Some(_), None) => false,
-        //
-        //     (None, Some(_)) => true,
-        //
-        //     (Some(node1), Some(node2)) =>
-        //         node1.content.len() > node2.content.len(),
-        //
-        //     (None, None) => {
-        //         panic!("no brother nodes, pid: {}", subtree_pid)
-        //     },
-        //
-        // };
-        //
-        // let mut subtree_node = self.get_btree_by_pid(subtree_pid, current_pid)?;
-        // if !is_brother_right {  // left
-        //     let mut left_node = left_node_opt.unwrap();
-        //
-        //     left_node.content.push(current_btree_node.content[node_idx - 1].clone());
-        //     left_node.content.extend_from_slice(&subtree_node.content);
-        //     left_node.indexes.extend_from_slice(&subtree_node.indexes);
-        //
-        //     current_btree_node.content.remove(node_idx - 1);
-        //     current_btree_node.indexes.remove(node_idx);
-        //
-        //     debug_assert_eq!(current_btree_node.indexes[node_idx], subtree_node.pid);
-        //
-        //     self.base.session.free_page(subtree_node.pid)?;
-        //
-        //     self.write_btree(left_node)?;
-        // } else {  // right
-        //     let right_node = right_node_opt.unwrap();
-        //
-        //     subtree_node.content.push(current_btree_node.content[node_idx].clone());
-        //     subtree_node.content.extend_from_slice(&right_node.content);
-        //
-        //     subtree_node.indexes.extend_from_slice(&right_node.indexes);
-        //
-        //     debug_assert_eq!(current_btree_node.indexes[node_idx + 1], right_node.pid);
-        //
-        //     current_btree_node.content.remove(node_idx);
-        //     current_btree_node.indexes.remove(node_idx + 1);
-        //
-        //     self.base.session.free_page(right_node.pid)?;
-        //
-        //     self.write_btree(subtree_node)?;
-        // }
-        //
-        // Ok(())
+        assert!(current_btree_node.len() > 1);
+
+        let current_pid = current_btree_node.page_id();
+        let subtree_pid = current_btree_node.get_left_pid(node_idx);  // subtree need to shift
+
+        let (left_opt, right_opt) = self.get_brothers_id(&current_btree_node, node_idx);
+
+        let left_node_opt = match left_opt {
+            Some(pid) => Some(self.get_btree_by_pid(pid, current_pid)?),
+            None => None,
+        };
+        let right_node_opt = match right_opt {
+            Some(pid) => Some(self.get_btree_by_pid(pid, current_pid)?),
+            None => None,
+        };
+
+        // get min size brother to merge
+        let is_brother_right = match (&left_node_opt, &right_node_opt) {
+            (Some(_), None) => false,
+
+            (None, Some(_)) => true,
+
+            (Some(node1), Some(node2)) =>
+                node1.bytes_size() > node2.bytes_size(),
+
+            (None, None) => {
+                panic!("no brother nodes, pid: {}", subtree_pid)
+            },
+
+        };
+
+        let mut subtree_node = self.get_btree_by_pid(subtree_pid, current_pid)?;
+        if !is_brother_right {  // left
+            let mut left_node = left_node_opt.unwrap();
+
+            left_node.push(current_btree_node.get_item(node_idx - 1).clone());
+            left_node.merge_left_leave(&subtree_node);
+
+            current_btree_node.get_item_mut(node_idx).left_pid = left_node.page_id();
+            current_btree_node.remove_item(node_idx - 1);
+
+            self.base.session.free_page(subtree_pid)?;
+
+            self.write_btree(&left_node)?;
+        } else {  // right
+            let right_node = right_node_opt.unwrap();
+
+            subtree_node.push(current_btree_node.get_item(node_idx).clone());
+            subtree_node.merge_left_leave(&right_node);
+
+            // subtree_node.content.push(current_btree_node.content[node_idx].clone());
+            // subtree_node.content.extend_from_slice(&right_node.content);
+            //
+            // subtree_node.indexes.extend_from_slice(&right_node.indexes);
+            //
+            // assert_eq!(current_btree_node.indexes[node_idx + 1], right_node.pid);
+
+            current_btree_node.remove_item(node_idx);
+            // set left pid for the new node
+            current_btree_node.get_item_mut(node_idx).left_pid = subtree_pid;
+
+            self.base.session.free_page(right_node.page_id())?;
+
+            self.write_btree(&subtree_node)?;
+        }
+
+        Ok(())
     }
 
     fn erase_item(&mut self, item: &DataTicket) -> DbResult<Document> {
@@ -449,38 +548,39 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         Ok(doc)
     }
 
-    #[inline]
-    fn is_content_size_satisfied(&self, size: usize) -> bool {
-        let item_size = self.base.item_size as usize;
-        size >= (item_size + 1) / 2 - 1
-    }
-
-    // fn get_brothers_id(&self, btree_node: &BTreePageDelegateWithKey, node_idx: usize) -> (Option<u32>, Option<u32>) {
-    //     if node_idx == 0 {
-    //         let pid = btree_node.get_right_pid(0);
-    //         (None, Some(pid))
-    //     } else if node_idx >= btree_node.indexes.len() - 1 {
-    //         let pid = btree_node.indexes[node_idx - 1];
-    //         (Some(pid), None)
-    //     } else {
-    //         let left_pid = btree_node.indexes[node_idx - 1];
-    //         let right_pid = btree_node.indexes[node_idx + 1];
-    //         (Some(left_pid), Some(right_pid))
-    //     }
+    // #[inline]
+    // fn is_content_size_satisfied(&self, size: usize) -> bool {
+    //     let item_size = self.base.item_size as usize;
+    //     size >= (item_size + 1) / 2 - 1
     // }
+
+    /// node_idx: is the left pid
+    fn get_brothers_id(&self, btree_node: &BTreePageDelegateWithKey, node_idx: usize) -> (Option<u32>, Option<u32>) {
+        if node_idx == 0 {
+            let pid = btree_node.get_right_pid(node_idx);
+            (None, Some(pid))
+        } else if node_idx == btree_node.len() {
+            let pid = btree_node.get_left_pid(node_idx - 1);
+            (Some(pid), None)
+        } else {
+            let left_pid = btree_node.get_left_pid(node_idx - 1);
+            let right_pid = btree_node.get_right_pid(node_idx + 1);
+            (Some(left_pid), Some(right_pid))
+        }
+    }
 
     fn delete_item_on_leaf(&mut self, mut btree_node: BTreePageDelegateWithKey, index: usize) -> DbResult<DeleteBackwardItem> {
         let deleted_ticket = btree_node.get_item(index).payload.clone();
 
         btree_node.remove_item(index);
 
-        let remain_content_len = btree_node.len();
+        let remain_size = btree_node.remain_size();
 
         self.base.write_btree_node(&btree_node)?;
 
         Ok(DeleteBackwardItem {
             is_leaf: true,
-            child_size: remain_content_len,
+            child_remain_size: remain_size,
             deleted_ticket,
         })
     }

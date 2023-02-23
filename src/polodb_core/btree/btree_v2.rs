@@ -100,6 +100,18 @@ impl BTreePageDelegate {
     const HEADER_SIZE: usize = 16;
 
     pub fn from_page(raw_page: &RawPage, parent_id: u32) -> DbResult<BTreePageDelegate> {
+        if raw_page.data[0] == 0 && raw_page.data[1] == 0 {  // it's an empty page
+            let remain_size = raw_page.len() as i32 - (BTreePageDelegate::HEADER_SIZE) as i32;
+            return Ok(BTreePageDelegate {
+                page_id: raw_page.page_id,
+                parent_id,
+                page_size: NonZeroU32::new(raw_page.len()).unwrap(),
+                remain_size,
+                right_pid: 0,
+                content: vec![],
+            });
+        }
+
         let page_size = NonZeroU32::new(raw_page.data.len() as u32).unwrap();
         let item_size = raw_page.get_u16(2);
         let remain_size = raw_page.get_u16(4) as i32;
@@ -205,11 +217,6 @@ impl BTreePageDelegate {
     }
 
     #[inline]
-    pub fn storage_size(&self) -> usize {
-        self.page_size.get() as usize - BTreePageDelegate::HEADER_SIZE
-    }
-
-    #[inline]
     pub fn set_right_pid(&mut self, right_pid: u32) {
         self.right_pid = right_pid;
     }
@@ -224,7 +231,7 @@ pub(crate) struct BTreeDataItemWithKey {
 }
 
 impl BTreeDataItemWithKey {
-    fn bytes_size(&self) -> i32 {
+    pub fn bytes_size(&self) -> i32 {
         let mut result: i32 = 0;
 
         result += 2;  // left pid
@@ -258,7 +265,6 @@ impl BTreeDataItemWithKey {
             payload: item.payload.clone(),
         })
     }
-
 }
 
 pub(crate) struct BTreePageDelegateWithKey {
@@ -291,6 +297,16 @@ impl BTreePageDelegateWithKey {
     #[inline]
     pub fn page_size(&self) -> NonZeroU32 {
         self.page_size
+    }
+
+    #[inline]
+    pub fn storage_size(&self) -> usize {
+        self.page_size.get() as usize - BTreePageDelegate::HEADER_SIZE
+    }
+
+    #[inline]
+    pub fn bytes_size(&self) -> i32 {
+        (self.storage_size() as i32) - self.remain_size
     }
 
     pub fn read_from_session(base: BTreePageDelegate, session: &dyn Session) -> DbResult<BTreePageDelegateWithKey> {
@@ -344,6 +360,17 @@ impl BTreePageDelegateWithKey {
         self.remain_size -= item_size + 2;
 
         self.content.insert(index, item);
+    }
+
+    #[inline]
+    pub fn push(&mut self, item: BTreeDataItemWithKey) {
+        self.insert(self.len(), item);
+    }
+
+    pub fn merge_left_leave(&mut self, right: &BTreePageDelegateWithKey) {
+        for item in &right.content {
+            self.push(item.clone());
+        }
     }
 
     pub fn update_content(&mut self, index: usize, item: BTreeDataItemWithKey) {
@@ -431,12 +458,20 @@ impl BTreePageDelegateWithKey {
     }
 
     pub fn get_left_pid(&self, index: usize) -> u32 {
+        if index == self.content.len() {
+            return self.right_pid
+        }
         self.content[index].left_pid
     }
 
     #[inline]
     pub fn get_item(&self, index: usize) -> &BTreeDataItemWithKey {
         &self.content[index]
+    }
+
+    #[inline]
+    pub fn get_item_mut(&mut self, index: usize) -> &mut BTreeDataItemWithKey {
+        &mut self.content[index]
     }
 
     pub fn remove_item(&mut self, index: usize) {
