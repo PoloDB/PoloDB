@@ -123,8 +123,9 @@ impl BTreePageDelegate {
 
         for i in 0..item_size {
             let offset = (BTreePageDelegate::HEADER_SIZE + (i * 2) as usize) as u16;
+            let top_bar = raw_page.get_u16(offset as u32);
 
-            let data = BTreeDataItem::from_bytes(&raw_page.data[(offset as usize)..(bottom_bar as usize)])?;
+            let data = BTreeDataItem::from_bytes(&raw_page.data[(top_bar as usize)..(bottom_bar as usize)])?;
             content.push(data);
 
             bottom_bar = offset;
@@ -163,10 +164,10 @@ impl BTreePageDelegate {
             item.write_bytes(&mut bytes)?;
             let bytes_size = bytes.len() as u16;
 
-            result.seek(byte_bar_offset);
-            result.put_u16(bytes_size);
-
             bottom_offset -= bytes_size as u32;
+
+            result.seek(byte_bar_offset);
+            result.put_u16(bottom_offset as u16);
 
             result.seek(bottom_offset as u32);
             result.put(&bytes);
@@ -583,7 +584,7 @@ impl BTreePageDelegateWithKey {
             let item_without_key = BTreeDataItem {
                 left_pid: item.left_pid,
                 key_ty: item.key.element_type() as u8,
-                key_len: 0,
+                key_len: key_bytes.len() as u8,
                 key_content: key_bytes,
                 payload: item.payload.clone(),
             };
