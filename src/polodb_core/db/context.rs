@@ -140,13 +140,8 @@ impl DbContext {
 
     fn internal_get_collection_id_by_name_with_pid(session: &dyn Session, parent_pid: u32, root_pid: u32, name: &str) -> DbResult<CollectionSpecification> {
         let raw_page = session.read_page(root_pid)?;
-        let item_size = DbContext::item_size(session);
-        let btree_node = BTreeNode::from_raw(
-            &raw_page,
-            parent_pid,
-            item_size,
-            session
-        )?;
+        let delegate = BTreePageDelegate::from_page(raw_page.as_ref(), parent_pid)?;
+        let btree_node = BTreePageDelegateWithKey::read_from_session(delegate, session)?;
         let key = Bson::from(name);
         if btree_node.is_empty() {
             return Err(DbErr::CollectionNotFound(name.to_string()));
@@ -154,14 +149,14 @@ impl DbContext {
         let result = btree_node.search(&key)?;
         match result {
             SearchKeyResult::Node(node_index) => {
-                let item = &btree_node.content[node_index];
-                let doc = session.get_doc_from_ticket(&item.data_ticket)?;
+                let item = btree_node.get_item(node_index);
+                let doc = session.get_doc_from_ticket(&item.payload)?;
                 let entry = bson::from_document::<CollectionSpecification>(doc)?;
                 Ok(entry)
             }
 
             SearchKeyResult::Index(child_index) => {
-                let next_pid = btree_node.indexes[child_index];
+                let next_pid = btree_node.get_left_pid(child_index);
                 if next_pid == 0 {
                     return Err(DbErr::CollectionNotFound(name.to_string()));
                 }
@@ -333,13 +328,8 @@ impl DbContext {
         session.write_page(&head_page_wrapper.0)
     }
 
-    #[inline]
-    fn item_size(session: &dyn Session) -> u32 {
-        (session.page_size().get() - HEADER_SIZE) / ITEM_SIZE
-    }
-
     pub(crate) fn make_handle(session: &dyn Session, program: SubProgram) -> DbHandle {
-        let vm = VM::new(session, Box::new(program));
+        let vm = VM::new(session, program);
         DbHandle::new(vm)
     }
 
@@ -642,7 +632,7 @@ impl DbContext {
             is_many,
         )?;
 
-        let mut vm = VM::new(session, Box::new(subprogram));
+        let mut vm = VM::new(session, subprogram);
         vm.execute()?;
 
         Ok(vm.r2 as usize)
@@ -743,28 +733,20 @@ impl DbContext {
 
     fn update_by_root_pid(session: &dyn Session, parent_pid: u32, root_pid: u32, key: &Bson, doc: &Document) -> DbResult<bool> {
         let page = session.read_page(root_pid)?;
-        let item_size = DbContext::item_size(session);
-        let page_size = session.page_size();
-        let btree_node = BTreeNode::from_raw(
-            &page,
-            parent_pid,
-            item_size,
-            session
-        )?;
+        let delegate = BTreePageDelegate::from_page(page.as_ref(), parent_pid)?;
+        let mut btree_node = BTreePageDelegateWithKey::read_from_session(delegate, session)?;
 
         let search_result = btree_node.search(key)?;
         match search_result {
             SearchKeyResult::Node(idx) => {
-                session.free_data_ticket(&btree_node.content[idx].data_ticket)?;
+                let item = btree_node.get_item(idx);
+                session.free_data_ticket(&item.payload)?;
 
                 let new_ticket = session.store_doc(doc)?;
-                let new_btree_node = btree_node.clone_with_content(idx, BTreeNodeDataItem {
-                    key: key.clone(),
-                    data_ticket: new_ticket,
-                });
 
-                let mut page = RawPage::new(btree_node.pid, page_size);
-                new_btree_node.to_raw(&mut page)?;
+                btree_node.update_payload(idx, new_ticket);
+
+                let page = btree_node.generate_page()?;
 
                 session.write_page(&page)?;
 
@@ -772,7 +754,7 @@ impl DbContext {
             }
 
             SearchKeyResult::Index(idx) => {
-                let next_pid = btree_node.indexes[idx];
+                let next_pid = btree_node.get_left_pid(idx);
                 if next_pid == 0 {
                     return Ok(false);
                 }

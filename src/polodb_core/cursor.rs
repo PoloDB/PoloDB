@@ -1,50 +1,54 @@
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::collections::LinkedList;
 use bson::{Document, Bson};
-use crate::page::RawPage;
-use crate::btree::*;
+use crate::btree::{BTreePageDelegate, BTreePageDelegateWithKey, SearchKeyResult};
 use crate::DbResult;
 use crate::data_ticket::DataTicket;
 use crate::session::Session;
 
 #[derive(Clone)]
 struct CursorItem {
-    node:         Rc<BTreeNode>,
+    node:         Arc<Mutex<BTreePageDelegateWithKey>>,
     index:        usize,  // pointer point to the current node
 }
 
 impl CursorItem {
 
-    #[inline]
-    fn clone_with_new_node(&self, new_node: Rc<BTreeNode>) -> CursorItem {
+    fn new(node: BTreePageDelegateWithKey, index: usize) -> CursorItem {
         CursorItem {
-            node: new_node,
-            index: self.index,
+            node: Arc::new(Mutex::new(node)),
+            index,
         }
     }
+
+    // #[inline]
+    // fn clone_with_new_node(&self, new_node: Arc<BTreePageDelegateWithKey>) -> CursorItem {
+    //     CursorItem {
+    //         node: new_node,
+    //         index: self.index,
+    //     }
+    // }
 
 }
 
 pub(crate) struct Cursor {
     root_pid:           u32,
-    item_size:          u32,
     btree_stack:        LinkedList<CursorItem>,
     current:            Option<Document>,
 }
 
 impl Cursor {
 
-    pub fn new(item_size: u32, root_pid: u32) -> Cursor {
+    pub fn new(root_pid: u32) -> Cursor {
         Cursor {
             root_pid,
-            item_size,
             btree_stack: LinkedList::new(),
             current: None,
         }
     }
 
     pub fn reset(&mut self, page_handler: &dyn Session) -> DbResult<()> {
-        self.mk_initial_btree(page_handler, self.root_pid, self.item_size)?;
+        self.mk_initial_btree(page_handler, self.root_pid)?;
 
         if self.btree_stack.is_empty() {
             return Ok(());
@@ -55,20 +59,16 @@ impl Cursor {
         Ok(())
     }
 
-    pub fn reset_by_pkey(&mut self, page_handler: &dyn Session, pkey: &Bson) -> DbResult<bool> {
+    pub fn reset_by_pkey(&mut self, session: &dyn Session, pkey: &Bson) -> DbResult<bool> {
         self.btree_stack.clear();
 
         let mut current_pid = self.root_pid;
-        let item_size = self.item_size;
 
         // recursively find the item
         while current_pid > 0 {
-            let btree_page = page_handler.read_page(current_pid)?;
-            let btree_node = BTreeNode::from_raw(
-                &btree_page, 0,
-                item_size,
-                page_handler
-            )?;
+            let btree_page = session.read_page(current_pid)?;
+            let delegate = BTreePageDelegate::from_page(btree_page.as_ref(), 0)?;
+            let btree_node = BTreePageDelegateWithKey::read_from_session(delegate, session)?;
 
             if btree_node.is_empty() {
                 return Ok(false);
@@ -77,23 +77,17 @@ impl Cursor {
             let search_result = btree_node.search(pkey)?;
             match search_result {
                 SearchKeyResult::Node(index) => {
-                    self.btree_stack.push_back(CursorItem {
-                        node: Rc::new(btree_node),
-                        index,
-                    });
+                    self.btree_stack.push_back(CursorItem::new(btree_node, index));
                     return Ok(true)
                 }
 
                 SearchKeyResult::Index(index) => {
-                    let next_pid = btree_node.indexes[index];
+                    let next_pid = btree_node.get_left_pid(index);
                     if next_pid == 0 {
                         return Ok(false);
                     }
 
-                    self.btree_stack.push_back(CursorItem {
-                        node: Rc::new(btree_node),
-                        index
-                    });
+                    self.btree_stack.push_back(CursorItem::new(btree_node, index));
 
                     current_pid = next_pid;
                 }
@@ -104,49 +98,44 @@ impl Cursor {
         Ok(false)
     }
 
-    fn mk_initial_btree(&mut self, page_handler: &dyn Session, root_page_id: u32, item_size: u32) -> DbResult<()> {
+    fn mk_initial_btree(&mut self, session: &dyn Session, root_page_id: u32) -> DbResult<()> {
         self.btree_stack.clear();
 
-        let btree_page = page_handler.read_page(root_page_id)?;
-        let btree_node = BTreeNode::from_raw(
-            &btree_page, 0,
-            item_size,
-            page_handler
-        )?;
+        let btree_page = session.read_page(root_page_id)?;
+        let delegate = BTreePageDelegate::from_page(btree_page.as_ref(), 0)?;
+        let btree_node = BTreePageDelegateWithKey::read_from_session(delegate, session)?;
 
-        if !btree_node.content.is_empty() {
-            self.btree_stack.push_back(CursorItem {
-                node: Rc::new(btree_node),
-                index: 0,
-            });
+        if !btree_node.is_empty() {
+            self.btree_stack.push_back(CursorItem::new(btree_node, 0));
         }
 
         Ok(())
     }
 
-    fn push_all_left_nodes(&mut self, page_handler: &dyn Session) -> DbResult<()> {
+    fn push_all_left_nodes(&mut self, session: &dyn Session) -> DbResult<()> {
         if self.btree_stack.is_empty() {
             return Ok(());
         }
         let mut top = self.btree_stack.back().unwrap().clone();
-        let mut left_pid = top.node.indexes[top.index];
+        let pid = {
+            let btree_node = top.node.lock().unwrap();
+            btree_node.page_id()
+        };
+        let mut left_pid = {
+            let btree_node = top.node.lock().unwrap();
+            btree_node.get_left_pid(top.index)
+        };
 
         while left_pid != 0 {
-            let btree_page = page_handler.read_page(left_pid)?;
-            let btree_node = BTreeNode::from_raw(
-                &btree_page,
-                top.node.pid,
-                self.item_size,
-                page_handler
-            )?;
+            let btree_page = session.read_page(left_pid)?;
+            let delegate = BTreePageDelegate::from_page(btree_page.as_ref(), pid)?;
+            let btree_node = BTreePageDelegateWithKey::read_from_session(delegate, session)?;
 
-            self.btree_stack.push_back(CursorItem {
-                node: Rc::new(btree_node),
-                index: 0,
-            });
+            self.btree_stack.push_back(CursorItem::new(btree_node, 0));
 
             top = self.btree_stack.back().unwrap().clone();
-            left_pid = top.node.indexes[top.index];
+            let top_content = top.node.lock()?;
+            left_pid = top_content.get_left_pid(top.index);
         }
 
         Ok(())
@@ -158,39 +147,37 @@ impl Cursor {
         }
 
         let top = self.btree_stack.back().unwrap();
+        let top_content = top.node.lock().unwrap();
 
-        debug_assert!(!top.node.content.is_empty(), "top node content is empty, page_id: {}", top.node.pid);
+        assert!(!top_content.is_empty(), "top node content is empty, page_id: {}", top_content.page_id());
 
-        let ticket = top.node.content[top.index].data_ticket.clone();
+        let ticket = top_content.get_item(top.index).payload.clone();
         Some(ticket)
     }
 
-    pub fn update_current(&mut self, page_handler: &dyn Session, doc: &Document) -> DbResult<()> {
+    pub fn update_current(&mut self, session: &dyn Session, doc: &Document) -> DbResult<()> {
         let top = self.btree_stack.pop_back().unwrap();
 
-        page_handler.free_data_ticket(&top.node.content[top.index].data_ticket)?;
-        let key = doc.get("_id").unwrap();
-        let new_ticket = page_handler.store_doc(doc)?;
-        let new_btree_node: BTreeNode = top.node.clone_with_content(
-            top.index,
-            BTreeNodeDataItem {
-                key: key.into(),
-                data_ticket: new_ticket,
-            });
+        {
+            let mut content = top.node.lock()?;
 
-        self.btree_stack.push_back(
-            top.clone_with_new_node(Rc::new(new_btree_node)));
+            session.free_data_ticket(&content.get_item(top.index).payload)?;
+            let new_ticket = session.store_doc(doc)?;
+            content.update_payload(top.index, new_ticket);
+        }
 
-        self.sync_top_btree_node(page_handler)
+        self.btree_stack.push_back(top);
+
+        self.sync_top_btree_node(session)
     }
 
-    fn sync_top_btree_node(&mut self, page_handler: &dyn Session) -> DbResult<()> {
+    fn sync_top_btree_node(&mut self, session: &dyn Session) -> DbResult<()> {
         let top = self.btree_stack.back().unwrap();
+        let top_content = top.node.lock()?;
 
-        let mut page = RawPage::new(top.node.pid, page_handler.page_size());
-        top.node.to_raw(&mut page)?;
+        let page = top_content.generate_page()?;
 
-        page_handler.write_page(&page)
+        session.write_page(&page)
     }
 
     #[inline]
@@ -198,43 +185,48 @@ impl Cursor {
         !self.btree_stack.is_empty()
     }
 
-    pub fn next(&mut self, page_handler: &dyn Session) -> DbResult<Option<Document>> {
+    pub fn next(&mut self, session: &dyn Session) -> DbResult<Option<Document>> {
         if self.btree_stack.is_empty() {
             return Ok(None);
         }
 
-        let top = self.btree_stack.pop_back().unwrap();
-        let result_ticket = &top.node.content[top.index].data_ticket;
-        let result = page_handler.get_doc_from_ticket(&result_ticket)?;
+        let result = {  // <- lock
+            let top = self.btree_stack.pop_back().unwrap();
+            let top_content = top.node.lock()?;
+            let result_ticket = &top_content.get_item(top.index).payload;
+            let result = session.get_doc_from_ticket(&result_ticket)?;
 
-        let next_index = top.index + 1;
+            let next_index = top.index + 1;
 
-        if next_index >= top.node.content.len() {  // right most index
-            let right_most_index = top.node.indexes[next_index];
+            if next_index >= top_content.len() {  // right most index
+                let right_most_index = top_content.get_left_pid(next_index);
 
-            if right_most_index != 0 {
-                self.btree_stack.push_back(CursorItem {
-                    node: top.node.clone(),
-                    index: next_index,
-                });
+                if right_most_index != 0 {
+                    self.btree_stack.push_back(CursorItem {
+                        node: top.node.clone(),
+                        index: next_index,
+                    });
 
-                self.push_all_left_nodes(page_handler)?;
+                    self.push_all_left_nodes(session)?;
+
+                    return Ok(Some(result));
+                }
+
+                // pop
+                self.pop_all_right_most_item();
 
                 return Ok(Some(result));
             }
 
-            // pop
-            self.pop_all_right_most_item();
+            self.btree_stack.push_back(CursorItem {
+                node: top.node.clone(),
+                index: next_index,
+            });
 
-            return Ok(Some(result));
-        }
+            result
+        };
 
-        self.btree_stack.push_back(CursorItem {
-            node: top.node.clone(),
-            index: next_index,
-        });
-
-        self.push_all_left_nodes(page_handler)?;
+        self.push_all_left_nodes(session)?;
 
         self.current = Some(result.clone());
         Ok(Some(result))
@@ -247,7 +239,10 @@ impl Cursor {
 
         let mut top = self.btree_stack.back().unwrap();
 
-        while top.index >= top.node.content.len() {
+        while top.index >= {
+            let top_content = top.node.lock().unwrap();
+            top_content.len()
+        } {
             self.btree_stack.pop_back();
 
             if self.btree_stack.is_empty() {

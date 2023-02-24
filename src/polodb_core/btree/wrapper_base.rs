@@ -1,18 +1,11 @@
-use std::num::NonZeroU32;
 use crate::btree::btree_v2::BTreePageDelegateWithKey;
 use crate::DbResult;
 use crate::session::Session;
-use super::{HEADER_SIZE, ITEM_SIZE};
 use super::btree_v2::BTreePageDelegate;
 
 pub(super) struct BTreePageWrapperBase<'a> {
     pub(super) session:       &'a dyn Session,
     pub(super) root_page_id:       u32,
-    pub(super) item_size:          u32,
-}
-
-pub fn cal_item_size(page_size: NonZeroU32) -> u32 {
-    (page_size.get() - HEADER_SIZE) / ITEM_SIZE
 }
 
 impl<'a> BTreePageWrapperBase<'a> {
@@ -20,12 +13,9 @@ impl<'a> BTreePageWrapperBase<'a> {
     pub(super) fn new(session: &dyn Session, root_page_id: u32) -> BTreePageWrapperBase {
         debug_assert_ne!(root_page_id, 0, "page id is zero");
 
-        let item_size = cal_item_size(session.page_size());
-
         BTreePageWrapperBase {
             session,
             root_page_id,
-            item_size
         }
     }
 

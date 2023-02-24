@@ -128,7 +128,7 @@ impl BTreePageDelegate {
             let data = BTreeDataItem::from_bytes(&raw_page.data[(top_bar as usize)..(bottom_bar as usize)])?;
             content.push(data);
 
-            bottom_bar = offset;
+            bottom_bar = top_bar;
         }
 
         Ok(BTreePageDelegate {
@@ -205,10 +205,12 @@ impl BTreePageDelegate {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn remain_size(&self) -> i32 {
         self.remain_size
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.content.len()
     }
@@ -381,6 +383,10 @@ impl BTreePageDelegateWithKey {
         assert_eq!(old_item_size, new_item_size);
 
         self.content[index] = item;
+    }
+
+    pub fn update_payload(&mut self, index: usize, payload: DataTicket) {
+        self.content[index].payload = payload;
     }
 
     pub fn divide_in_the_middle(&self, session: &dyn Session, right_page_pid: u32) -> DbResult<PageDivisionResult> {
@@ -593,6 +599,21 @@ impl BTreePageDelegateWithKey {
         }
 
         delegate.generate_page()
+    }
+
+    pub fn children_pid(&self) -> Vec<u32> {
+        if self.content.is_empty() {
+            return vec![];
+        };
+
+        let mut result = Vec::with_capacity(self.content.len() + 1);
+
+        for item in &self.content {
+            result.push(item.left_pid)
+        }
+        result.push(self.right_pid);
+
+        result
     }
 
     #[inline]

@@ -101,6 +101,7 @@ impl RawPage {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn put_u8(&mut self, data: u8) {
         self.data[self.pos as usize] = data;
         self.pos += 1;
