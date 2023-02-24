@@ -225,32 +225,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
     }
 
     fn divide_and_return_backward(&mut self, btree_page_delegate: BTreePageDelegateWithKey) -> DbResult<InsertResult> {
-        // let middle_index = btree_page_delegate.len() / 2;
-
-        // // use current page block to store left
-        // let left = {
-        //     let content = btree_node.content[0..middle_index].to_vec();
-        //     let indexes = btree_node.indexes[0..=middle_index].to_vec();
-        //     BTreeNode {
-        //         parent_pid:  btree_node.parent_pid,
-        //         pid:         btree_node.pid,
-        //         content,
-        //         indexes,
-        //     }
-        // };
-        //
         let right_page_id = self.0.session.alloc_page_id()?;
-        // // alloc new page to store right
-        // let right = {
-        //     let content = btree_node.content[(middle_index + 1)..].to_vec();
-        //     let indexes = btree_node.indexes[(middle_index + 1)..].to_vec();
-        //     BTreeNode {
-        //         parent_pid:  btree_node.pid,
-        //         pid:         right_page_id,
-        //         content,
-        //         indexes,
-        //     }
-        // };
 
         let result = btree_page_delegate.divide_in_the_middle(
             self.0.session, right_page_id,

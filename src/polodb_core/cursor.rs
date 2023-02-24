@@ -150,6 +150,9 @@ impl Cursor {
         let top = self.btree_stack.back().unwrap();
         let top_content = top.node.lock().unwrap();
 
+        if top_content.is_empty() {
+            panic!("AAA");
+        }
         assert!(!top_content.is_empty(), "top node content is empty, page_id: {}", top_content.page_id());
 
         let ticket = top_content.get_item(top.index).payload.clone();

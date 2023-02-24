@@ -671,11 +671,15 @@ impl DbContext {
     }
 
     fn internal_delete(session: &dyn Session, col_name: &str, primary_keys: &[Bson]) -> DbResult<usize> {
+        let mut count: usize = 0;
         for pkey in primary_keys {
-            let _ = DbContext::internal_delete_by_pkey(session, col_name, pkey)?;
+            let delete_result = DbContext::internal_delete_by_pkey(session, col_name, pkey)?;
+            if delete_result.is_some() {
+                count += 1;
+            }
         }
 
-        Ok(primary_keys.len())
+        Ok(count)
     }
 
     fn internal_delete_by_query(session: &dyn Session, col_name: &str, query: Document, is_many: bool) -> DbResult<usize> {
