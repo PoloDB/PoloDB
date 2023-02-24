@@ -37,11 +37,6 @@ pub struct BTreePageDeleteWrapper<'a> {
     cache_btree:    HashMap<u32, BTreePageDelegateWithKey>,
 }
 
-enum IdOrNode {
-    IdAndParent(u32, u32), // (id, parent)
-    Node(BTreePageDelegateWithKey),
-}
-
 impl<'a> BTreePageDeleteWrapper<'a>  {
 
     pub(crate) fn new(session: &dyn Session, root_page_id: u32) -> BTreePageDeleteWrapper {
@@ -80,7 +75,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
     //         - replace it with item on leaf
     //         - delete item on leaf
     pub fn delete_item(&mut self, id: &Bson) -> DbResult<Option<Document>> {
-        let backward_item_opt = self.delete_item_on_subtree(IdOrNode::IdAndParent(self.base.root_page_id, 0), id)?;
+        let backward_item_opt = self.delete_item_on_subtree(self.base.root_page_id, 0, id)?;
         match backward_item_opt {
             Some(backward_item) => {
                 let item = self.erase_item(&backward_item.deleted_content)?;
@@ -102,13 +97,8 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         }
     }
 
-    fn delete_item_on_subtree(&mut self, id_or_node: IdOrNode, id: &Bson) -> DbResult<Option<DeleteBackwardItem>> {
-        let mut current_btree_node = match id_or_node {
-            IdOrNode::IdAndParent(pid, parent_pid) => self.get_btree_by_pid(pid, parent_pid)?,
-            IdOrNode::Node(node) => node,
-        };
-        let pid = current_btree_node.page_id();
-        let parent_pid = current_btree_node.parent_id();
+    fn delete_item_on_subtree(&mut self, pid: u32, parent_pid: u32, id: &Bson) -> DbResult<Option<DeleteBackwardItem>> {
+        let mut current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
 
         if current_btree_node.is_empty() {
             if parent_pid == 0 {  // it's a root node
@@ -124,7 +114,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                     return Ok(None);
                 }
                 let page_id = current_btree_node.get_left_pid(idx);
-                let backward_item_opt = self.delete_item_on_subtree(IdOrNode::IdAndParent(page_id, pid), id)?;  // recursively delete
+                let backward_item_opt = self.delete_item_on_subtree(page_id, pid, id)?;  // recursively delete
 
                 if backward_item_opt.is_none() {
                     return Ok(None);
@@ -192,8 +182,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                 self.write_btree(&current_btree_node)?;
 
                 let backward_opt = self.delete_item_on_subtree(
-                    IdOrNode::IdAndParent(subtree_pid, current_pid),
-                    &next_item.key,
+                    subtree_pid, current_pid, &next_item.key,
                 )?;
 
                 if backward_opt.is_none() {
@@ -334,7 +323,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         // if !BTreePageDeleteWrapper::remain_size_too_large(current_btree_node, max_brother_size) {
         let replace_item = if is_right { // middle <-(item)- right
             let mut shift_node = right_node_opt.unwrap();
-            let right_item = shift_node.shift_head();
+            let mut right_item = shift_node.shift_head();
             let shift_node_bytes_size = right_item.bytes_size();
 
             // If this brother becomes too small after borrowing the node,
@@ -343,7 +332,10 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                 return Ok(false);
             }
 
-            subtree_node.insert_back(current_btree_node.get_item(node_idx).clone(), 0);
+            let mut middle_item = current_btree_node.get_item(node_idx).clone();
+            right_item.left_pid = middle_item.left_pid;
+            middle_item.left_pid = 0;
+            subtree_node.insert_back(middle_item, 0);
 
             self.write_btree(&shift_node)?;
             self.write_btree(&subtree_node)?;
@@ -351,7 +343,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
             right_item
         } else {  // left -(item)-> middle
             let mut shift_node = left_node_opt.unwrap();
-            let (left_last_content, _) = shift_node.shift_last();
+            let (mut left_last_content, _) = shift_node.shift_last();
             let shift_node_bytes_size = left_last_content.bytes_size();
 
             // If this brother becomes too small after borrowing the node,
@@ -360,7 +352,10 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                 return Ok(false);
             }
 
-            subtree_node.insert_head(current_btree_node.get_item(node_idx).clone());
+            let mut middle_item = current_btree_node.get_item(node_idx).clone();
+            left_last_content.left_pid = middle_item.left_pid;
+            middle_item.left_pid = 0;
+            subtree_node.insert_head(middle_item);
 
             self.write_btree(&shift_node)?;
             self.write_btree(&subtree_node)?;

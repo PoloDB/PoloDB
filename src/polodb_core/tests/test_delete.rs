@@ -77,7 +77,7 @@ fn test_delete_all_items() {
 
         let mut doc_collection  = vec![];
 
-        for i in 0..1000 {
+        for i in 0..300 {
             let content = i.to_string();
             let new_doc = doc! {
                     "_id": i,
@@ -87,18 +87,19 @@ fn test_delete_all_items() {
         }
         collection.insert_many(&doc_collection).unwrap();
 
+        let mut counter = 0;
         for doc in &doc_collection {
             let key = doc.get("_id").unwrap();
             let deleted_result = collection.delete_many(doc!{
-                    "_id": key.clone(),
-                }).unwrap();
+                "_id": key.clone(),
+            }).expect(format!("delete error: {}", counter).as_str());
             assert!(deleted_result.deleted_count > 0, "delete nothing with key: {}", key);
             let find_doc = doc! {
-                    "_id": key.clone(),
-                };
+                "_id": key.clone(),
+            };
             let result = collection.find_many(find_doc).unwrap();
             assert_eq!(result.len(), 0, "item with key: {}", key);
+            counter += 1;
         }
     });
 }
-

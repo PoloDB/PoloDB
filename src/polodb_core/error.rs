@@ -45,6 +45,7 @@ pub struct UnexpectedHeader {
     pub expected_header: [u8; 2],
 }
 
+#[allow(dead_code)]
 pub(crate) fn mk_unexpected_header_for_btree_page(page_id: u32, actual: &[u8], expected: &[u8]) -> DbErr {
     let mut actual_header: [u8; 2] = [0; 2];
     let mut expected_header: [u8; 2] = [0; 2];

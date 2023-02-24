@@ -30,22 +30,6 @@ pub(crate) struct BTreeDataItem {
 
 impl BTreeDataItem {
 
-    const MAX_SIZE: usize = 266;
-
-    pub fn buffer_size(&self) -> u32 {
-        let mut result = 4 + 1 + 1;
-
-        if self.key_len == 255 {  // key is stored in data storage
-            result += 6;
-        } else {
-            result += self.key_len as u32;
-        }
-
-        result += 6;
-
-        result
-    }
-
     pub fn from_bytes(mut bytes: &[u8]) -> DbResult<BTreeDataItem> {
         let left_pid = bytes.read_u32::<BigEndian>()?;
         let key_ty = bytes.read_u8()?;
@@ -151,7 +135,7 @@ impl BTreePageDelegate {
         result.put_u16(self.content.len() as u16);
 
         // remain size
-        assert!(self.remain_size > 0 && self.remain_size <= u16::MAX as i32);
+        assert!(self.remain_size >= 0 && self.remain_size <= u16::MAX as i32, "remain size: {}", self.remain_size);
         result.put_u16(self.remain_size as u16);
 
         result.put_u32(self.right_pid);
@@ -179,32 +163,6 @@ impl BTreePageDelegate {
         Ok(result)
     }
 
-    pub fn insert(&mut self, index: usize, item: BTreeDataItem) {
-        let mut bytes = Vec::<u8>::new();
-        item.write_bytes(&mut bytes).unwrap();
-
-        let byte_len = bytes.len() as i32;
-
-        self.remain_size -= byte_len + 2;
-
-        self.content.insert(index, item);
-    }
-
-    pub fn remove(&mut self, index: usize) {
-        let item = self.content.remove(index);
-
-        let mut bytes = Vec::<u8>::new();
-        item.write_bytes(&mut bytes).unwrap();
-
-        let byte_len = bytes.len() as i32;
-
-        self.remain_size += byte_len + 2;
-    }
-
-    pub fn get(&self, index: usize) -> &BTreeDataItem {
-        &self.content[index]
-    }
-
     #[inline]
     #[allow(dead_code)]
     pub fn remain_size(&self) -> i32 {
@@ -218,11 +176,6 @@ impl BTreePageDelegate {
 
     pub fn is_empty(&self) -> bool {
         self.content.is_empty()
-    }
-
-    #[inline]
-    pub fn set_right_pid(&mut self, right_pid: u32) {
-        self.right_pid = right_pid;
     }
 }
 
@@ -366,6 +319,18 @@ impl BTreePageDelegateWithKey {
         self.content.insert(index, item);
     }
 
+    pub fn remove_item(&mut self, index: usize) {
+        let item = &self.content[index];
+        let item_bytes_size = item.bytes_size();
+
+        self.content.remove(index);
+        if self.content.is_empty() {
+            self.right_pid = 0;
+        }
+
+        self.remain_size += item_bytes_size + 2;
+    }
+
     #[inline]
     pub fn push(&mut self, item: BTreeDataItemWithKey) {
         self.insert(self.len(), item);
@@ -407,13 +372,11 @@ impl BTreePageDelegateWithKey {
 
             let mut left_delegate = BTreePageDelegateWithKey::read_from_session(left_base, session)?;
 
-            let mut index: usize = 0;
             for item in &self.content[0..middle_index] {
-                left_delegate.insert(0, item.clone());
-                index += 1;
+                left_delegate.push(item.clone());
             }
 
-            left_delegate.set_right_pid(index - 1, middle_item.left_pid);
+            left_delegate.set_right_pid(left_delegate.len() - 1, middle_item.left_pid);
 
             left_delegate
         };
@@ -432,7 +395,7 @@ impl BTreePageDelegateWithKey {
 
             let mut index: usize = 0;
             for item in &self.content[(middle_index + 1)..] {
-                right_delegate.insert(0, item.clone());
+                right_delegate.push(item.clone());
                 index += 1;
             }
 
@@ -483,13 +446,6 @@ impl BTreePageDelegateWithKey {
         &mut self.content[index]
     }
 
-    pub fn remove_item(&mut self, index: usize) {
-        self.content.remove(index);
-        if self.content.is_empty() {
-            self.right_pid = 0;
-        }
-    }
-
     pub fn merge_with_center(
         page_id: u32,
         parent_id: u32,
@@ -509,14 +465,14 @@ impl BTreePageDelegateWithKey {
         };
 
         for item in &left.content {
-            result.content.push(item.clone());
+            result.push(item.clone());
         }
 
         center.left_pid = left.right_pid;
-        result.content.push(center);
+        result.push(center);
 
         for item in &right.content {
-            result.content.push(item.clone());
+            result.push(item.clone());
         }
         result.right_pid = right.right_pid;
 
@@ -524,37 +480,37 @@ impl BTreePageDelegateWithKey {
     }
 
     pub fn shift_head(&mut self) -> BTreeDataItemWithKey {
-        if self.content.is_empty() {
+        if self.is_empty() {
             panic!("btree content is empty, pid: {}", self.page_id);
         }
 
         let first_content  = self.content[0].clone();
 
-        self.content.remove(0);
+        self.remove_item(0);
 
         first_content
     }
 
     pub fn shift_last(&mut self) -> (BTreeDataItemWithKey, u32) {
-        if self.content.is_empty() {
+        if self.is_empty() {
             panic!("btree content is empty, pid: {}", self.page_id);
         }
 
         let last_index = self.right_pid;
         let last_content = self.content.last().unwrap().clone();
 
-        self.content.remove(self.content.len() - 1);
+        self.remove_item(self.len() - 1);
 
         (last_content, last_index)
     }
 
     pub fn insert_head(&mut self, item: BTreeDataItemWithKey) {
-        self.content.insert(0, item);
+        self.insert(0, item);
     }
 
     pub fn insert_back(&mut self, mut item: BTreeDataItemWithKey, right_pid: u32) {
         item.left_pid = self.right_pid;
-        self.content.push(item);
+        self.push(item);
         self.right_pid = right_pid;
     }
 

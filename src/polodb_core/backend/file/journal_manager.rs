@@ -313,12 +313,12 @@ impl JournalManager {
         Ok(())
     }
 
-    fn merge_transaction_state(&mut self) -> TransactionType {
+    fn merge_transaction_state(&mut self) -> (TransactionType, u32) {
         let state = self.transaction_state.take().unwrap();
         self.db_file_size = state.db_file_size;
         self.count = state.frame_count;
         self.offset_map = state.offset_map.commit();
-        state.ty
+        (state.ty, state.frame_count)
     }
 
     pub(super) fn expand_db_size(&mut self, size: u64) -> DbResult<()> {
@@ -555,8 +555,8 @@ impl JournalManager {
             return Err(DbErr::CannotWriteDbWithoutTransaction);
         }
 
-        let transaction_ty = self.merge_transaction_state();
-        if transaction_ty == TransactionType::Write {
+        let (transaction_ty, frame_count) = self.merge_transaction_state();
+        if transaction_ty == TransactionType::Write && frame_count > 0 {
             self.update_last_frame()?;
         }
         {
