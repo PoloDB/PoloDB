@@ -1,5 +1,5 @@
 use bson::Document;
-use crate::btree::btree_v2::{BTreeDataItem, BTreeDataItemWithKey, BTreePageDelegate, BTreePageDelegateWithKey, serialize_key};
+use crate::btree::btree_v2::{BTreeDataItemWithKey, BTreePageDelegate, BTreePageDelegateWithKey, serialize_key};
 use crate::DbResult;
 use crate::page::RawPage;
 use crate::error::DbErr;
@@ -123,32 +123,32 @@ impl<'a> BTreePageInsertWrapper<'a> {
         })
     }
 
-    fn doc_to_node_data_item(&mut self, left_pid: u32, doc: &Document) -> DbResult<BTreeDataItem> {
-        let pkey = doc.get("_id").unwrap();
-
-        let mut key_bytes = Vec::<u8>::new();
-        serialize_key(pkey, &mut key_bytes)?;
-
-        let (key_len, key_content) = if key_bytes.len() > 254 {
-            let key_data_ticket = self.0.session.store_data_in_storage(&key_bytes)?;
-            let key_bytes = key_data_ticket.to_bytes().to_vec();
-            (255 as u8, key_bytes)
-        } else {
-            (key_bytes.len() as u8, key_bytes)
-        };
-
-        let key_ty = pkey.element_type() as u8;
-
-        let payload = self.store_doc(doc)?;
-
-        Ok(BTreeDataItem {
-            left_pid,
-            key_ty,
-            key_len,
-            key_content,
-            payload,
-        })
-    }
+    // fn doc_to_node_data_item(&mut self, left_pid: u32, doc: &Document) -> DbResult<BTreeDataItem> {
+    //     let pkey = doc.get("_id").unwrap();
+    //
+    //     let mut key_bytes = Vec::<u8>::new();
+    //     serialize_key(pkey, &mut key_bytes)?;
+    //
+    //     let (key_len, key_content) = if key_bytes.len() > 254 {
+    //         let key_data_ticket = self.0.session.store_data_in_storage(&key_bytes)?;
+    //         let key_bytes = key_data_ticket.to_bytes().to_vec();
+    //         (255 as u8, key_bytes)
+    //     } else {
+    //         (key_bytes.len() as u8, key_bytes)
+    //     };
+    //
+    //     let key_ty = pkey.element_type() as u8;
+    //
+    //     let payload = self.store_doc(doc)?;
+    //
+    //     Ok(BTreeDataItem {
+    //         left_pid,
+    //         key_ty,
+    //         key_len,
+    //         key_content,
+    //         payload,
+    //     })
+    // }
 
     pub(crate) fn insert_item_to_page(
         &mut self,
@@ -205,7 +205,7 @@ impl<'a> BTreePageInsertWrapper<'a> {
                     let tmp = self.insert_item_to_page(left_pid, pid, doc, false, replace)?;
                     if let Some(backward_item) = tmp.backward_item {
                         btree_node.insert(index, backward_item.content);
-                        btree_node.set_right_pid(index + 1, backward_item.right_pid);
+                        btree_node.set_right_pid(index, backward_item.right_pid);
                     }
                 }
             }

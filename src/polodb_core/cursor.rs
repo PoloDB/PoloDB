@@ -21,14 +21,15 @@ impl CursorItem {
         }
     }
 
-    // #[inline]
-    // fn clone_with_new_node(&self, new_node: Arc<BTreePageDelegateWithKey>) -> CursorItem {
-    //     CursorItem {
-    //         node: new_node,
-    //         index: self.index,
-    //     }
-    // }
+    fn done(&self) -> bool {
+        let node_inner = self.node.lock().unwrap();
+        self.index >= node_inner.len()
+    }
 
+    fn right_pid(&self) -> u32 {
+        let node_inner = self.node.lock().unwrap();
+        node_inner.right_pid
+    }
 }
 
 pub(crate) struct Cursor {
@@ -190,41 +191,40 @@ impl Cursor {
             return Ok(None);
         }
 
-        let result = {  // <- lock
-            let top = self.btree_stack.pop_back().unwrap();
+        let top = self.btree_stack.pop_back().unwrap();
+        let (result, top_content_len) = {
             let top_content = top.node.lock()?;
             let result_ticket = &top_content.get_item(top.index).payload;
-            let result = session.get_doc_from_ticket(&result_ticket)?;
+            let result = session.get_doc_from_ticket(result_ticket)?;
+            (result, top_content.len())
+        };
 
-            let next_index = top.index + 1;
+        let next_index = top.index + 1;
 
-            if next_index >= top_content.len() {  // right most index
-                let right_most_index = top_content.get_left_pid(next_index);
+        if next_index >= top_content_len {  // right most index
+            let right_most_index = top.right_pid();
 
-                if right_most_index != 0 {
-                    self.btree_stack.push_back(CursorItem {
-                        node: top.node.clone(),
-                        index: next_index,
-                    });
+            if right_most_index != 0 {
+                self.btree_stack.push_back(CursorItem {
+                    node: top.node.clone(),
+                    index: next_index,
+                });
 
-                    self.push_all_left_nodes(session)?;
-
-                    return Ok(Some(result));
-                }
-
-                // pop
-                self.pop_all_right_most_item();
+                self.push_all_left_nodes(session)?;
 
                 return Ok(Some(result));
             }
 
-            self.btree_stack.push_back(CursorItem {
-                node: top.node.clone(),
-                index: next_index,
-            });
+            // pop
+            self.pop_all_right_most_item();
 
-            result
-        };
+            return Ok(Some(result));
+        }
+
+        self.btree_stack.push_back(CursorItem {
+            node: top.node.clone(),
+            index: next_index,
+        });
 
         self.push_all_left_nodes(session)?;
 
@@ -239,10 +239,7 @@ impl Cursor {
 
         let mut top = self.btree_stack.back().unwrap();
 
-        while top.index >= {
-            let top_content = top.node.lock().unwrap();
-            top_content.len()
-        } {
+        while top.done() {
             self.btree_stack.pop_back();
 
             if self.btree_stack.is_empty() {

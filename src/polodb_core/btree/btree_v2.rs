@@ -165,6 +165,7 @@ impl BTreePageDelegate {
             let bytes_size = bytes.len() as u16;
 
             bottom_offset -= bytes_size as u32;
+            assert!(bottom_offset > byte_bar_offset);
 
             result.seek(byte_bar_offset);
             result.put_u16(bottom_offset as u16);
@@ -237,7 +238,7 @@ impl BTreeDataItemWithKey {
     pub fn bytes_size(&self) -> i32 {
         let mut result: i32 = 0;
 
-        result += 2;  // left pid
+        result += 4;  // left pid
         result += 2;  // key meta
 
         result += match self.key_data_ticket {
@@ -391,7 +392,7 @@ impl BTreePageDelegateWithKey {
 
     pub fn divide_in_the_middle(&self, session: &dyn Session, right_page_pid: u32) -> DbResult<PageDivisionResult> {
         let middle_index = self.len() / 2;
-        let middle_item = self.content[middle_index].clone();
+        let mut middle_item = self.content[middle_index].clone();
 
         // use current page block to store left
         let left = {
@@ -440,6 +441,7 @@ impl BTreePageDelegateWithKey {
             right_delegate
         };
 
+        middle_item.left_pid = left.page_id;
         Ok(PageDivisionResult {
             left,
             right,

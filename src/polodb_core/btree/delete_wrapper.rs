@@ -9,10 +9,26 @@ use crate::DbResult;
 use crate::data_ticket::DataTicket;
 use crate::session::Session;
 
+struct DeletedContent {
+    key_ticket: Option<DataTicket>,
+    payload: DataTicket,
+}
+
+impl DeletedContent {
+
+    fn from_data_item(item: &BTreeDataItemWithKey) -> DeletedContent {
+        DeletedContent {
+            key_ticket: item.key_data_ticket.clone(),
+            payload: item.payload.clone(),
+        }
+    }
+
+}
+
 struct DeleteBackwardItem {
     is_leaf:           bool,
     child_remain_size: i32,
-    deleted_ticket:    DataTicket,
+    deleted_content:   DeletedContent,
 }
 
 pub struct BTreePageDeleteWrapper<'a> {
@@ -67,7 +83,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         let backward_item_opt = self.delete_item_on_subtree(IdOrNode::IdAndParent(self.base.root_page_id, 0), id)?;
         match backward_item_opt {
             Some(backward_item) => {
-                let item = self.erase_item(&backward_item.deleted_ticket)?;
+                let item = self.erase_item(&backward_item.deleted_content)?;
                 Ok(Some(item))
             }
 
@@ -131,7 +147,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                             return Ok(Some(DeleteBackwardItem {
                                 is_leaf: true,
                                 child_remain_size: new_node.remain_size(),
-                                deleted_ticket: backward_item.deleted_ticket,
+                                deleted_content: backward_item.deleted_content,
                             }));
                         } else {
                             // merge leaves
@@ -140,7 +156,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                             return Ok(Some(DeleteBackwardItem {
                                 is_leaf: false,
                                 child_remain_size: current_btree_node.remain_size(),
-                                deleted_ticket: backward_item.deleted_ticket,
+                                deleted_content: backward_item.deleted_content,
                             }));
                         };
                     } else if current_btree_node.len() == 1 {
@@ -150,7 +166,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                         return Ok(Some(DeleteBackwardItem {
                             is_leaf: false,
                             child_remain_size: new_node.remain_size(),
-                            deleted_ticket: backward_item.deleted_ticket,
+                            deleted_content: backward_item.deleted_content,
                         }))
                     }
                 }
@@ -158,7 +174,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                 Ok(Some(DeleteBackwardItem {
                     is_leaf: false,
                     child_remain_size: current_btree_node.remain_size(),
-                    deleted_ticket: backward_item.deleted_ticket,
+                    deleted_content: backward_item.deleted_content,
                 }))
             },
             SearchKeyResult::Node(idx) => {
@@ -167,7 +183,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                     return Ok(Some(backward_item));
                 }
 
-                let deleted_ticket = current_btree_node.get_item(idx).payload.clone();
+                let deleted_content = DeletedContent::from_data_item(current_btree_node.get_item(idx));
 
                 let current_pid = current_btree_node.page_id();
                 let subtree_pid = current_btree_node.get_right_pid(idx);
@@ -184,7 +200,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                     return Ok(Some(DeleteBackwardItem {
                         is_leaf: false,
                         child_remain_size: current_btree_node.remain_size(),
-                        deleted_ticket,
+                        deleted_content,
                     }));
                 }
 
@@ -204,7 +220,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                                 return Ok(Some(DeleteBackwardItem {
                                     is_leaf: true,
                                     child_remain_size: head.remain_size(),
-                                    deleted_ticket,
+                                    deleted_content,
                                 }))
                             } else {
                                 self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
@@ -221,7 +237,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                             return Ok(Some(DeleteBackwardItem {
                                 is_leaf: false,
                                 child_remain_size: head.remain_size(),
-                                deleted_ticket,
+                                deleted_content,
                             }));
                         }
                     }
@@ -230,7 +246,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                 Ok(Some(DeleteBackwardItem {
                     is_leaf: false,
                     child_remain_size: current_btree_node.remain_size(),
-                    deleted_ticket,
+                    deleted_content,
                 }))
             },
         }
@@ -429,9 +445,12 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         Ok(())
     }
 
-    fn erase_item(&mut self, item: &DataTicket) -> DbResult<Document> {
-        let bytes = self.base.session.free_data_ticket(&item)?;
-        debug_assert!(!bytes.is_empty(), "bytes is empty");
+    fn erase_item(&mut self, item: &DeletedContent) -> DbResult<Document> {
+        if let Some(key_ticket) = &item.key_ticket {
+            self.base.session.free_data_ticket(key_ticket)?;
+        }
+        let bytes = self.base.session.free_data_ticket(&item.payload)?;
+        assert!(!bytes.is_empty(), "bytes is empty");
         let mut my_ref: &[u8] = bytes.as_ref();
         let doc = crate::doc_serializer::deserialize(&mut my_ref)?;
         Ok(doc)
@@ -459,7 +478,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
     }
 
     fn delete_item_on_leaf(&mut self, mut btree_node: BTreePageDelegateWithKey, index: usize) -> DbResult<DeleteBackwardItem> {
-        let deleted_ticket = btree_node.get_item(index).payload.clone();
+        let deleted_content = DeletedContent::from_data_item(btree_node.get_item(index));
 
         btree_node.remove_item(index);
 
@@ -470,8 +489,16 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         Ok(DeleteBackwardItem {
             is_leaf: true,
             child_remain_size: remain_size,
-            deleted_ticket,
+            deleted_content,
         })
+    }
+
+    pub(crate) fn indeed_delete_item_on_btree(session: &dyn Session, item: &BTreeDataItemWithKey) -> DbResult<()> {
+        if let Some(key_data_ticket) = &item.key_data_ticket {
+            session.free_data_ticket(key_data_ticket)?;
+        }
+        session.free_data_ticket(&item.payload)?;
+        Ok(())
     }
 
 }

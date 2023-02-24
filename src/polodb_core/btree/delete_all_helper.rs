@@ -1,4 +1,5 @@
 use crate::btree::btree_v2::{BTreePageDelegate, BTreePageDelegateWithKey};
+use crate::btree::BTreePageDeleteWrapper;
 use crate::DbResult;
 use crate::collection_info::CollectionSpecification;
 use crate::session::Session;
@@ -19,7 +20,7 @@ fn delete_all_by_btree_pid(session: &dyn Session, parent_id: u32, pid: u32) -> D
     let children_pid = btree_node.children_pid();
 
     for index in 0..btree_node.len() {
-        session.free_data_ticket(&btree_node.get_item(index).payload)?;
+        BTreePageDeleteWrapper::indeed_delete_item_on_btree(session, btree_node.get_item(index))?;
     }
 
     for child_pid in children_pid {
