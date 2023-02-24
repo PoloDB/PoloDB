@@ -20,8 +20,8 @@ fn test_create_collection_and_find_all() {
         let all = test_collection.find_many(None).unwrap();
 
         let second = test_collection.find_one(doc! {
-                "content": "1",
-            }).unwrap().unwrap();
+            "content": "1",
+        }).unwrap().unwrap();
         assert_eq!(second.get("content").unwrap().as_str().unwrap(), "1");
         assert!(second.get("content").is_some());
 
