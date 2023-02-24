@@ -10,7 +10,6 @@ use std::cmp::Ordering;
 use bson::Bson;
 use op::DbOp;
 use crate::cursor::Cursor;
-use crate::btree::{HEADER_SIZE, ITEM_SIZE};
 use crate::{TransactionType, DbResult, DbErr};
 use crate::error::{CannotApplyOperationForTypes, mk_field_name_type_unexpected, mk_unexpected_type_for_op};
 use std::cell::Cell;
@@ -43,12 +42,12 @@ pub struct VM<'a> {
     pub(crate) state:    VmState,
     pc:                  *const u8,
     r0:                  i32,  // usually the logic register
-    r1:                  Option<Box<Cursor>>,
+    r1:                  Option<Cursor>,
     pub(crate) r2:       i64,  // usually the counter
     r3:                  usize,
     page_handler:        &'a dyn Session,
     stack:               Vec<Bson>,
-    pub(crate) program:  Box<SubProgram>,
+    pub(crate) program:  SubProgram,
     rollback_on_drop:    bool,
 }
 
@@ -68,7 +67,7 @@ fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> DbResult<bool> {
 
 impl<'a> VM<'a> {
 
-    pub(crate) fn new(page_handler: &dyn Session, program: Box<SubProgram>) -> VM {
+    pub(crate) fn new(page_handler: &dyn Session, program: SubProgram) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         VM {
@@ -85,11 +84,6 @@ impl<'a> VM<'a> {
         }
     }
 
-    #[inline]
-    fn item_size(&self) -> u32 {
-        (self.page_handler.page_size().get() - HEADER_SIZE) / ITEM_SIZE
-    }
-
     fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
         let result = self.page_handler.auto_start_transaction(ty)?;
         if result.auto_start {
@@ -100,13 +94,13 @@ impl<'a> VM<'a> {
 
     fn open_read(&mut self, root_pid: u32) -> DbResult<()> {
         self.auto_start_transaction(TransactionType::Read)?;
-        self.r1 = Some(Box::new(Cursor::new(self.item_size(), root_pid)));
+        self.r1 = Some(Cursor::new(root_pid));
         Ok(())
     }
 
     fn open_write(&mut self, root_pid: u32) -> DbResult<()> {
         self.auto_start_transaction(TransactionType::Write)?;
-        self.r1 = Some(Box::new(Cursor::new(self.item_size(), root_pid)));
+        self.r1 = Some(Cursor::new(root_pid));
         Ok(())
     }
 
