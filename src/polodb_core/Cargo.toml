@@ -1,6 +1,6 @@
 [package]
 name = "polodb_core"
-version = "3.4.0"
+version = "3.5.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 license = "MIT"
 edition = "2018"
