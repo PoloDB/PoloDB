@@ -500,6 +500,7 @@ impl BTreePageDelegateWithKey {
         let last_content = self.content.last().unwrap().clone();
 
         self.remove_item(self.len() - 1);
+        self.right_pid = last_content.left_pid;
 
         (last_content, last_index)
     }
