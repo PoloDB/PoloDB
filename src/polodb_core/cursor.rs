@@ -129,6 +129,7 @@ impl Cursor {
 
         while left_pid != 0 {
             let btree_page = session.read_page(left_pid)?;
+            assert_ne!(pid, left_pid);
             let delegate = BTreePageDelegate::from_page(btree_page.as_ref(), pid)?;
             let btree_node = BTreePageDelegateWithKey::read_from_session(delegate, session)?;
 
