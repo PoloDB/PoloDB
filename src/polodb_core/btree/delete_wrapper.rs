@@ -1,4 +1,3 @@
-use std::borrow::BorrowMut;
 use std::collections::BTreeSet;
 use hashbrown::HashMap;
 use bson::{Bson, Document};
@@ -26,6 +25,7 @@ impl DeletedContent {
 }
 
 struct DeleteBackwardItem {
+    #[allow(dead_code)]
     is_leaf:           bool,
     child_remain_size: i32,
     deleted_content:   DeletedContent,
@@ -117,48 +117,16 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                 let backward_item_opt = self.delete_item_on_subtree(page_id, pid, id)?;  // recursively delete
 
                 if backward_item_opt.is_none() {
+                    // Nothing is deleted, return out
                     return Ok(None);
                 }
 
+                // Something is deleted on the left branch,
+                // the b-tree needs to be re-balance.
                 let backward_item = backward_item_opt.unwrap();
 
                 if BTreePageDeleteWrapper::remain_size_too_large(&current_btree_node, backward_item.child_remain_size) {
-                    if backward_item.is_leaf {
-                        // if we reach here, it's saying we deleted an item on the leaf
-                        // and this node is a parent of a leaf.
-                        // We can check if it's possible to merge this leaf with other leaves
-                        let borrow_ok = self.try_borrow_brothers(idx, &mut current_btree_node)?;
-
-                        if borrow_ok {
-                            self.write_btree(&current_btree_node)?;
-                        } else if current_btree_node.len() == 1 {
-                            let new_node_opt = self.try_merge_head(current_btree_node)?;
-                            let new_node = new_node_opt.unwrap();
-                            return Ok(Some(DeleteBackwardItem {
-                                is_leaf: true,
-                                child_remain_size: new_node.remain_size(),
-                                deleted_content: backward_item.deleted_content,
-                            }));
-                        } else {
-                            // merge leaves
-                            self.merge_leaves(idx, &mut current_btree_node)?;
-                            self.write_btree(&current_btree_node)?;
-                            return Ok(Some(DeleteBackwardItem {
-                                is_leaf: false,
-                                child_remain_size: current_btree_node.remain_size(),
-                                deleted_content: backward_item.deleted_content,
-                            }));
-                        };
-                    } else if current_btree_node.len() == 1 {
-                        // merge the children
-                        let new_node_opt = self.try_merge_head(current_btree_node)?;
-                        let new_node = new_node_opt.unwrap();
-                        return Ok(Some(DeleteBackwardItem {
-                            is_leaf: false,
-                            child_remain_size: new_node.remain_size(),
-                            deleted_content: backward_item.deleted_content,
-                        }))
-                    }
+                    return self.re_balance_left_branch(current_btree_node, backward_item, idx);
                 }
 
                 Ok(Some(DeleteBackwardItem {
@@ -196,40 +164,40 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                 let backward_item = backward_opt.unwrap();
 
                 if BTreePageDeleteWrapper::remain_size_too_large(&current_btree_node, backward_item.child_remain_size) {
-                    if backward_item.is_leaf {  // borrow or merge leaves
-                        let mut current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
-                        let borrow_ok = self.try_borrow_brothers(idx + 1, current_btree_node.borrow_mut())?;
-                        if !borrow_ok {
-                            // self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
-                            // current_item_size = current_btree_node.content.len();
-
-                            if current_btree_node.len() == 1 {
-                                let head_opt = self.try_merge_head(current_btree_node)?;
-                                let head = head_opt.unwrap();
-                                return Ok(Some(DeleteBackwardItem {
-                                    is_leaf: true,
-                                    child_remain_size: head.remain_size(),
-                                    deleted_content,
-                                }))
-                            } else {
-                                self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
-                                self.write_btree(&current_btree_node)?;
-                            }
-                        } else {
-                            self.write_btree(&current_btree_node)?;
-                        }
-                    } else {
-                        let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
-                        if current_btree_node.len() == 1 {
-                            let head_opt = self.try_merge_head(current_btree_node)?;
-                            let head = head_opt.unwrap();
-                            return Ok(Some(DeleteBackwardItem {
-                                is_leaf: false,
-                                child_remain_size: head.remain_size(),
-                                deleted_content,
-                            }));
-                        }
-                    }
+                    return self.re_balance_left_branch(current_btree_node, backward_item, idx + 1);
+                    // if backward_item.is_leaf {  // borrow or merge leaves
+                    //     let borrow_ok = self.try_borrow_brothers(idx + 1, current_btree_node.borrow_mut())?;
+                    //     if !borrow_ok {
+                    //         // self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
+                    //         // current_item_size = current_btree_node.content.len();
+                    //
+                    //         if current_btree_node.len() == 1 {
+                    //             let head_opt = self.try_merge_head(current_btree_node)?;
+                    //             let head = head_opt.unwrap();
+                    //             return Ok(Some(DeleteBackwardItem {
+                    //                 is_leaf: true,
+                    //                 child_remain_size: head.remain_size(),
+                    //                 deleted_content,
+                    //             }))
+                    //         } else {
+                    //             self.merge_leaves(idx + 1, current_btree_node.borrow_mut())?;
+                    //             self.write_btree(&current_btree_node)?;
+                    //         }
+                    //     } else {
+                    //         self.write_btree(&current_btree_node)?;
+                    //     }
+                    // } else {
+                    //     let current_btree_node = self.get_btree_by_pid(pid, parent_pid)?;
+                    //     if current_btree_node.len() == 1 {
+                    //         let head_opt = self.try_merge_head(current_btree_node)?;
+                    //         let head = head_opt.unwrap();
+                    //         return Ok(Some(DeleteBackwardItem {
+                    //             is_leaf: false,
+                    //             child_remain_size: head.remain_size(),
+                    //             deleted_content,
+                    //         }));
+                    //     }
+                    // }
                 }
 
                 Ok(Some(DeleteBackwardItem {
@@ -239,6 +207,52 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                 }))
             },
         }
+    }
+
+    /// Condition: current branch is not a leaf
+    fn re_balance_left_branch(&mut self, mut current_btree_node: BTreePageDelegateWithKey, backward_item: DeleteBackwardItem, idx: usize) -> DbResult<Option<DeleteBackwardItem>> {
+        if current_btree_node.parent_id() == 0 && current_btree_node.len() == 1 {
+            // merge the children
+            let new_node_opt = self.try_merge_head(current_btree_node)?;
+            let new_node = new_node_opt.unwrap();
+            return Ok(Some(DeleteBackwardItem {
+                is_leaf: false,
+                child_remain_size: new_node.remain_size(),
+                deleted_content: backward_item.deleted_content,
+            }));
+        }
+
+        // if we reach here, it's saying we deleted an item on the leaf
+        // and this node is a parent of a leaf.
+        // We can check if it's possible to merge this leaf with other leaves
+        let borrow_ok = self.try_borrow_brothers(idx, &mut current_btree_node)?;
+
+        if borrow_ok {
+            self.write_btree(&current_btree_node)?;
+        } else if current_btree_node.len() == 1 {
+            let new_node_opt = self.try_merge_head(current_btree_node)?;
+            let new_node = new_node_opt.unwrap();
+            return Ok(Some(DeleteBackwardItem {
+                is_leaf: true,
+                child_remain_size: new_node.remain_size(),
+                deleted_content: backward_item.deleted_content,
+            }));
+        } else {
+            // merge leaves
+            self.merge_leaves(idx, &mut current_btree_node)?;
+            self.write_btree(&current_btree_node)?;
+            return Ok(Some(DeleteBackwardItem {
+                is_leaf: false,
+                child_remain_size: current_btree_node.remain_size(),
+                deleted_content: backward_item.deleted_content,
+            }));
+        };
+
+        Ok(Some(DeleteBackwardItem {
+            is_leaf: false,
+            child_remain_size: current_btree_node.remain_size(),
+            deleted_content: backward_item.deleted_content,
+        }))
     }
 
     fn remain_size_too_large(btree_node: &BTreePageDelegateWithKey, remain_size: i32) -> bool {
@@ -332,10 +346,11 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
                 return Ok(false);
             }
 
-            let mut middle_item = current_btree_node.get_item(node_idx).clone();
-            right_item.left_pid = middle_item.left_pid;
-            middle_item.left_pid = 0;
-            subtree_node.insert_back(middle_item, 0);
+            let middle_item = current_btree_node.get_item(node_idx).clone();
+            let original_left_pid_of_right = right_item.left_pid;  // remember the original left
+            right_item.left_pid = middle_item.left_pid;  // point to the subtree node
+
+            subtree_node.insert_back(middle_item, original_left_pid_of_right);
 
             self.write_btree(&shift_node)?;
             self.write_btree(&subtree_node)?;
@@ -343,7 +358,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
             right_item
         } else {  // left -(item)-> middle
             let mut shift_node = left_node_opt.unwrap();
-            let (mut left_last_content, _) = shift_node.shift_last();
+            let (mut left_last_content, last_right_pid) = shift_node.shift_last();
             let shift_node_bytes_size = left_last_content.bytes_size();
 
             // If this brother becomes too small after borrowing the node,
@@ -354,7 +369,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
 
             let mut middle_item = current_btree_node.get_item(node_idx).clone();
             left_last_content.left_pid = middle_item.left_pid;
-            middle_item.left_pid = 0;
+            middle_item.left_pid = last_right_pid;
             subtree_node.insert_head(middle_item);
 
             self.write_btree(&shift_node)?;
@@ -396,10 +411,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
             (Some(node1), Some(node2)) =>
                 node1.bytes_size() > node2.bytes_size(),
 
-            (None, None) => {
-                panic!("no brother nodes, pid: {}", subtree_pid)
-            },
-
+            (None, None) => panic!("no brother nodes, pid: {}", subtree_pid),
         };
 
         let mut subtree_node = self.get_btree_by_pid(subtree_pid, current_pid)?;
