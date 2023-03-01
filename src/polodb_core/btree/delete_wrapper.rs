@@ -213,13 +213,14 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
     fn re_balance_left_branch(&mut self, mut current_btree_node: BTreePageDelegateWithKey, backward_item: DeleteBackwardItem, idx: usize) -> DbResult<Option<DeleteBackwardItem>> {
         if current_btree_node.parent_id() == 0 && current_btree_node.len() == 1 {
             // merge the children
-            let new_node_opt = self.try_merge_head(current_btree_node)?;
-            let new_node = new_node_opt.unwrap();
-            return Ok(Some(DeleteBackwardItem {
-                is_leaf: false,
-                child_remain_size: new_node.remain_size(),
-                deleted_content: backward_item.deleted_content,
-            }));
+            let new_node_opt = self.try_merge_head(&current_btree_node)?;
+            if let Some(new_node) = &new_node_opt {
+                return Ok(Some(DeleteBackwardItem {
+                    is_leaf: false,
+                    child_remain_size: new_node.remain_size(),
+                    deleted_content: backward_item.deleted_content,
+                }));
+            }
         }
 
         // if we reach here, it's saying we deleted an item on the leaf
@@ -229,15 +230,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
 
         if borrow_ok {
             self.write_btree(&current_btree_node)?;
-        } else if current_btree_node.len() == 1 {
-            let new_node_opt = self.try_merge_head(current_btree_node)?;
-            let new_node = new_node_opt.unwrap();
-            return Ok(Some(DeleteBackwardItem {
-                is_leaf: true,
-                child_remain_size: new_node.remain_size(),
-                deleted_content: backward_item.deleted_content,
-            }));
-        } else {
+        } else if backward_item.is_leaf {
             // merge leaves
             self.merge_leaves(idx, &mut current_btree_node)?;
             self.write_btree(&current_btree_node)?;
@@ -261,7 +254,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         remain_size > quarter
     }
 
-    fn try_merge_head(&mut self, parent_btree_node: BTreePageDelegateWithKey) -> DbResult<Option<BTreePageDelegateWithKey>> {
+    fn try_merge_head(&mut self, parent_btree_node: &BTreePageDelegateWithKey) -> DbResult<Option<BTreePageDelegateWithKey>> {
         let left_pid = parent_btree_node.get_left_pid(0);
         let right_pid = parent_btree_node.get_right_pid(0);
 
@@ -418,7 +411,9 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         if !is_brother_right {  // left
             let mut left_node = left_node_opt.unwrap();
 
-            left_node.push(current_btree_node.get_item(node_idx - 1).clone());
+            let mut clone = current_btree_node.get_item(node_idx - 1).clone();
+            clone.left_pid = 0;
+            left_node.push(clone);
             left_node.merge_left_leave(&subtree_node);
 
             current_btree_node.get_item_mut(node_idx).left_pid = left_node.page_id();
@@ -430,7 +425,9 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         } else {  // right
             let right_node = right_node_opt.unwrap();
 
-            subtree_node.push(current_btree_node.get_item(node_idx).clone());
+            let mut clone = current_btree_node.get_item(node_idx).clone();
+            clone.left_pid = 0;
+            subtree_node.push(clone);
             subtree_node.merge_left_leave(&right_node);
 
             // subtree_node.content.push(current_btree_node.content[node_idx].clone());

@@ -77,7 +77,7 @@ fn test_delete_all_items() {
 
         let mut doc_collection  = vec![];
 
-        for i in 0..300 {
+        for i in 0..1000 {
             let content = i.to_string();
             let new_doc = doc! {
                     "_id": i,

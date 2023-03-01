@@ -122,3 +122,27 @@ fn test_very_large_binary() {
         assert_eq!(&binary.bytes, &origin_data);
     });
 }
+
+// #[test]
+// fn test_insert_after_delete() {
+//     vec![
+//         prepare_db("test-insert-after-delete").unwrap(),
+//         Database::open_memory().unwrap(),
+//     ].iter().for_each(|db| {
+//
+//         let collection = db.collection::<Document>("test");
+//
+//         let mut doc_collection  = vec![];
+//
+//         for i in 0..1000 {
+//             let content = i.to_string();
+//             let new_doc = doc! {
+//                     "_id": i,
+//                     "content": content,
+//                 };
+//             doc_collection.push(new_doc);
+//         }
+//         collection.insert_many(&doc_collection).unwrap();
+//
+//     });
+// }
