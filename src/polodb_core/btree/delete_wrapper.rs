@@ -459,7 +459,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
         let bytes = self.base.session.free_data_ticket(&item.payload)?;
         assert!(!bytes.is_empty(), "bytes is empty");
         let mut my_ref: &[u8] = bytes.as_ref();
-        let doc = crate::doc_serializer::deserialize(&mut my_ref)?;
+        let doc = bson::from_slice(&mut my_ref)?;
         Ok(doc)
     }
 

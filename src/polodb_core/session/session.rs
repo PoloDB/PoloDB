@@ -131,9 +131,7 @@ pub(crate) trait SessionInner {
     }
 
     fn store_doc(&mut self, doc: &Document) -> DbResult<DataTicket> where Self: Sized {
-        let mut bytes = Vec::with_capacity(512);
-        crate::doc_serializer::serialize(doc, &mut bytes)?;
-
+        let bytes = bson::to_vec(doc)?;
         self.store_data_in_storage(&bytes)
     }
 
@@ -190,9 +188,7 @@ pub(crate) trait SessionInner {
 
     fn get_doc_from_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Document> {
         let bytes = self.get_data_from_storage(data_ticket)?;
-        let mut my_ref: &[u8] = &bytes;
-        let bytes: &mut &[u8] = &mut my_ref;
-        let doc = crate::doc_serializer::deserialize(bytes)?;
+        let doc = bson::from_slice(&bytes)?;
         return Ok(doc);
     }
 
