@@ -193,9 +193,7 @@ impl Codegen {
         F: FnOnce(&mut Codegen) -> DbResult<()> {
 
         if let Some(id_value) = query.get("_id") {
-            if crate::bson_utils::is_valid_key_type(id_value) {
-                return self.emit_query_layout_has_pkey(id_value.clone(), query, result_callback);
-            }
+            return self.emit_query_layout_has_pkey(id_value.clone(), query, result_callback);
         }
 
         let compare_label = self.new_label();
