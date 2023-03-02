@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::num::NonZeroU32;
 use bson::Document;
 use crate::data_ticket::DataTicket;
-use crate::{DbErr, DbResult, TransactionType};
+use crate::{DbErr, DbResult, Metrics, TransactionType};
 use crate::backend::AutoStartResult;
 use crate::page::data_page_wrapper::DataPageWrapper;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
@@ -42,6 +42,7 @@ pub(crate) trait Session {
 pub(crate) trait SessionInner {
     fn read_page(&mut self, page_id: u32) -> DbResult<Arc<RawPage>>;
     fn write_page(&mut self, page: &RawPage) -> DbResult<()>;
+    fn metrics(&self) -> &Metrics;
 
     fn get_data_allocator_wrapper(&mut self) -> DbResult<DataAllocatorWrapper> where Self: Sized {
         let first_page = self.get_first_page()?;
@@ -96,6 +97,10 @@ pub(crate) trait SessionInner {
     fn force_distribute_new_data_page_wrapper(&mut self) -> DbResult<DataPageWrapper> where Self: Sized {
         let new_pid = self.alloc_page_id()?;
         let new_wrapper = DataPageWrapper::init(new_pid, self.page_size());
+
+        let metrics = self.metrics();
+        metrics.add_data_page(new_wrapper.remain_size());
+
         Ok(new_wrapper)
     }
 
@@ -141,16 +146,24 @@ pub(crate) trait SessionInner {
         }
 
         let mut wrapper = self.distribute_data_page_wrapper(data.len() as u32)?;
+        let original_remain_size = wrapper.remain_size();
+
         let index = wrapper.bar_len() as u16;
         let pid = wrapper.pid();
+
         if (wrapper.remain_size() as usize) < data.len() {
             panic!("page size not enough: {}, bytes: {}", wrapper.remain_size(), data.len());
         }
+
         wrapper.put(&data);
+
+        let used_size = original_remain_size - wrapper.remain_size();
 
         self.write_page(wrapper.borrow_page())?;
 
         self.return_data_page_wrapper(wrapper)?;
+
+        self.metrics().use_space_in_data_page(used_size);
 
         Ok(DataTicket {
             pid,

@@ -18,6 +18,7 @@ use crate::db::collection::Collection;
 use crate::dump::FullDump;
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 use crate::commands::*;
+use crate::metrics::Metrics;
 
 pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 
@@ -102,6 +103,12 @@ impl Database {
         Ok(Database {
             inner: Mutex::new(inner)
         })
+    }
+
+    /// Return the metrics object of the database
+    pub fn metrics(&self) -> Metrics {
+        let inner = self.inner.lock().unwrap();
+        inner.ctx.metrics()
     }
 
     /// Creates a new collection in the database with the given `name`.

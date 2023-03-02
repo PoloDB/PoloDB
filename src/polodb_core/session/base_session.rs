@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use bson::Document;
 use bson::oid::ObjectId;
 use crate::backend::{AutoStartResult, Backend};
-use crate::{Config, DbErr, DbResult, TransactionType};
+use crate::{Config, DbErr, DbResult, Metrics, TransactionType};
 use crate::data_ticket::DataTicket;
 use crate::dump::JournalDump;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
@@ -19,8 +19,18 @@ pub(crate) struct BaseSession {
 
 impl BaseSession {
 
-    pub fn new(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<BaseSession> {
-        let inner = BaseSessionInner::new(backend, page_size, config)?;
+    pub fn new(
+        backend: Box<dyn Backend + Send>,
+        page_size: NonZeroU32,
+        config: Arc<Config>,
+        metrics: Metrics,
+    ) -> DbResult<BaseSession> {
+        let inner = BaseSessionInner::new(
+            backend,
+            page_size,
+            config,
+            metrics,
+        )?;
         Ok(BaseSession {
             inner: Arc::new(Mutex::new(inner)),
         })
@@ -185,11 +195,18 @@ struct BaseSessionInner {
 
     config:              Arc<Config>,
 
+    metrics:             Metrics,
+
 }
 
 impl BaseSessionInner {
 
-    fn new(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<BaseSessionInner> {
+    fn new(
+        backend: Box<dyn Backend + Send>,
+        page_size: NonZeroU32,
+        config: Arc<Config>,
+        metrics: Metrics,
+    ) -> DbResult<BaseSessionInner> {
         let page_cache = PageCache::new_default(page_size);
 
         Ok(BaseSessionInner {
@@ -202,6 +219,7 @@ impl BaseSessionInner {
 
             config,
 
+            metrics,
         })
     }
 
@@ -382,6 +400,10 @@ impl SessionInner for BaseSessionInner {
 
     fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
         self.pipeline_write_page_main(page)
+    }
+
+    fn metrics(&self) -> &Metrics {
+        &self.metrics
     }
 
     fn actual_alloc_page_id(&mut self) -> DbResult<u32> {

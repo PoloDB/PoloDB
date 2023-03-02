@@ -165,6 +165,31 @@ fn test_insert_after_delete() {
 }
 
 #[test]
+fn test_data_used_ratio() {
+    let db = Database::open_memory().unwrap();
+    let metrics = db.metrics();
+    metrics.enable();
+
+    let collection = db.collection::<Document>("test");
+
+    let mut doc_collection  = vec![];
+
+    for i in 0..1000 {
+        let content = i.to_string();
+        let new_doc = doc! {
+                    "_id": content.clone(),
+                    "content": content,
+                };
+        doc_collection.push(new_doc);
+    }
+    collection.insert_many(&doc_collection).unwrap();
+
+    let metrics_data = metrics.data();
+    let ratio = metrics_data.data_used_ratio();
+    println!("ratio: {}", ratio);
+}
+
+#[test]
 fn test_insert_different_types_as_key() {
     let db = Database::open_memory().unwrap();
     let collection = db.collection::<Document>("test");
