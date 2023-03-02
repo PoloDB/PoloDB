@@ -211,6 +211,7 @@ impl<'a> BTreePageDeleteWrapper<'a>  {
 
     /// Condition: current branch is not a leaf
     fn re_balance_left_branch(&mut self, mut current_btree_node: BTreePageDelegateWithKey, backward_item: DeleteBackwardItem, idx: usize) -> DbResult<Option<DeleteBackwardItem>> {
+        assert!(!current_btree_node.is_leaf());
         if current_btree_node.parent_id() == 0 && current_btree_node.len() == 1 {
             // merge the children
             let new_node_opt = self.try_merge_head(&current_btree_node)?;

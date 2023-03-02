@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
+use bson::Document;
 use serde::{Deserialize, Serialize};
 use polodb_core::Database;
 use polodb_core::bson::{doc, Bson};
@@ -123,26 +124,41 @@ fn test_very_large_binary() {
     });
 }
 
-// #[test]
-// fn test_insert_after_delete() {
-//     vec![
-//         prepare_db("test-insert-after-delete").unwrap(),
-//         Database::open_memory().unwrap(),
-//     ].iter().for_each(|db| {
-//
-//         let collection = db.collection::<Document>("test");
-//
-//         let mut doc_collection  = vec![];
-//
-//         for i in 0..1000 {
-//             let content = i.to_string();
-//             let new_doc = doc! {
-//                     "_id": i,
-//                     "content": content,
-//                 };
-//             doc_collection.push(new_doc);
-//         }
-//         collection.insert_many(&doc_collection).unwrap();
-//
-//     });
-// }
+#[test]
+fn test_insert_after_delete() {
+    vec![
+        prepare_db("test-insert-after-delete").unwrap(),
+        Database::open_memory().unwrap(),
+    ].iter().for_each(|db| {
+
+        let collection = db.collection::<Document>("test");
+
+        let mut doc_collection  = vec![];
+
+        for i in 0..1000 {
+            let content = i.to_string();
+            let new_doc = doc! {
+                    "_id": content.clone(),
+                    "content": content,
+                };
+            doc_collection.push(new_doc);
+        }
+        collection.insert_many(&doc_collection).unwrap();
+
+        let result = collection.delete_one(doc! {
+            "_id": "500",
+        }).unwrap();
+        assert_eq!(result.deleted_count, 1);
+
+        collection.insert_one(doc! {
+            "_id": "500",
+            "content": "Hello World",
+        }).unwrap();
+
+        let one = collection.find_one(doc! {
+            "_id": "500",
+        }).unwrap().unwrap();
+
+        assert_eq!(one.get("content").unwrap().as_str().unwrap(), "Hello World");
+    });
+}
