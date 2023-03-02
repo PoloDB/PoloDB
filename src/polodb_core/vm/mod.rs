@@ -45,7 +45,7 @@ pub struct VM<'a> {
     r1:                  Option<Cursor>,
     pub(crate) r2:       i64,  // usually the counter
     r3:                  usize,
-    page_handler:        &'a dyn Session,
+    session:             &'a dyn Session,
     stack:               Vec<Bson>,
     pub(crate) program:  SubProgram,
     rollback_on_drop:    bool,
@@ -77,7 +77,7 @@ impl<'a> VM<'a> {
             r1: None,
             r2: 0,
             r3: 0,
-            page_handler,
+            session: page_handler,
             stack,
             program,
             rollback_on_drop: false,
@@ -85,7 +85,7 @@ impl<'a> VM<'a> {
     }
 
     fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        let result = self.page_handler.auto_start_transaction(ty)?;
+        let result = self.session.auto_start_transaction(ty)?;
         if result.auto_start {
             self.rollback_on_drop = true;
         }
@@ -106,10 +106,10 @@ impl<'a> VM<'a> {
 
     fn reset_cursor(&mut self, is_empty: &Cell<bool>) -> DbResult<()> {
         let cursor = self.r1.as_mut().unwrap();
-        cursor.reset(self.page_handler)?;
+        cursor.reset(self.session)?;
         if cursor.has_next() {
             let item = cursor.peek().unwrap();
-            let doc = self.page_handler.get_doc_from_ticket(&item)?;
+            let doc = self.session.get_doc_from_ticket(&item)?;
             self.stack.push(Bson::Document(doc));
             is_empty.set(false);
         } else {
@@ -124,23 +124,23 @@ impl<'a> VM<'a> {
         let top_index = self.stack.len() - 1;
         let op = &self.stack[top_index];
 
-        let result = cursor.reset_by_pkey(self.page_handler, op)?;
+        let result = cursor.reset_by_pkey(self.session, op)?;
         if !result {
             return Ok(false);
         }
 
         let ticket = cursor.peek().unwrap();
-        let doc = self.page_handler.get_doc_from_ticket(&ticket)?;
+        let doc = self.session.get_doc_from_ticket(&ticket)?;
         self.stack.push(Bson::Document(doc));
         Ok(true)
     }
 
     fn next(&mut self) -> DbResult<()> {
         let cursor = self.r1.as_mut().unwrap();
-        let _ = cursor.next(self.page_handler)?;
+        let _ = cursor.next(self.session)?;
         match cursor.peek() {
             Some(ticket) => {
-                let doc = self.page_handler.get_doc_from_ticket(&ticket)?;
+                let doc = self.session.get_doc_from_ticket(&ticket)?;
                 self.stack.push(Bson::Document(doc));
 
                 debug_assert!(self.stack.len() <= 64, "stack too large: {}", self.stack.len());
@@ -536,7 +536,7 @@ impl<'a> VM<'a> {
 
                         let doc = top_value.as_document().unwrap();
 
-                        self.r1.as_mut().unwrap().update_current(self.page_handler, doc)?;
+                        self.r1.as_mut().unwrap().update_current(self.session, doc)?;
 
                         self.pc = self.pc.add(1);
                     }
@@ -617,7 +617,7 @@ impl<'a> VM<'a> {
                     DbOp::Close => {
                         self.r1 = None;
                         if self.rollback_on_drop {
-                            self.page_handler.auto_commit()?;
+                            self.session.auto_commit()?;
                             self.rollback_on_drop = false;
                         }
 
@@ -647,7 +647,7 @@ impl<'a> VM<'a> {
     }
 
     pub(crate) fn commit_and_close(mut self) -> DbResult<()> {
-        self.page_handler.auto_commit()?;
+        self.session.auto_commit()?;
         self.rollback_on_drop = false;
         Ok(())
     }
@@ -662,7 +662,7 @@ impl<'a> Drop for VM<'a> {
 
     fn drop(&mut self) {
         if self.rollback_on_drop {
-            let _result = self.page_handler.rollback();
+            let _result = self.session.rollback();
             #[cfg(debug_assertions)]
             if let Err(err) = _result {
                 panic!("rollback fatal: {}", err);
