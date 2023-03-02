@@ -126,6 +126,7 @@ mod collection_info;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod test_utils;
+mod metrics;
 
 pub use db::{Database, Collection, DbResult};
 pub use config::Config;
@@ -133,5 +134,6 @@ pub use transaction::TransactionType;
 pub use db::db_handle::DbHandle;
 pub use error::DbErr;
 pub use session::ClientSession;
+pub use metrics::Metrics;
 
 pub extern crate bson;

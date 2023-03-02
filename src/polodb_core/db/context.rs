@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;
-use bson::{Document, Bson, DateTime, Binary};
+use bson::{Binary, Bson, DateTime, Document};
 use serde::Serialize;
 use super::db::DbResult;
 use crate::error::DbErr;
@@ -16,11 +16,11 @@ use crate::transaction::TransactionState;
 use crate::backend::memory::MemoryBackend;
 use crate::page::RawPage;
 use crate::db::db_handle::DbHandle;
-use crate::dump::{FullDump, PageDump, OverflowDataPageDump, DataPageDump, FreeListPageDump, BTreePageDump};
+use crate::dump::{BTreePageDump, DataPageDump, FreeListPageDump, FullDump, OverflowDataPageDump, PageDump};
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::backend::Backend;
 use crate::results::{InsertManyResult, InsertOneResult};
-use crate::session::{Session, BaseSession, DynamicSession};
+use crate::session::{BaseSession, DynamicSession, Session};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::backend::file::FileBackend;
 #[cfg(not(target_arch = "wasm32"))]
@@ -28,6 +28,7 @@ use std::path::Path;
 use bson::oid::ObjectId;
 use bson::spec::BinarySubtype;
 use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
+use crate::metrics::Metrics;
 
 macro_rules! try_multiple {
     ($err: expr, $action: expr) => {
@@ -63,6 +64,7 @@ pub(crate) struct DbContext {
     base_session: BaseSession,
     session_map:  hashbrown::HashMap<ObjectId, Box<dyn Session + Send>>,
     node_id:      [u8; 6],
+    metrics:      Metrics,
     #[allow(dead_code)]
     config:       Arc<Config>,
 }
@@ -91,7 +93,13 @@ impl DbContext {
     }
 
     fn open_with_backend(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<DbContext> {
-        let base_session = BaseSession::new(backend, page_size, config.clone())?;
+        let metrics = Metrics::new();
+        let base_session = BaseSession::new(
+            backend,
+            page_size,
+            config.clone(),
+            metrics.clone(),
+        )?;
         let session_map = hashbrown::HashMap::new();
 
         let mut node_id: [u8; 6] = [0; 6];
@@ -102,10 +110,15 @@ impl DbContext {
             // first_page,
             node_id,
             session_map,
+            metrics,
             config,
         };
 
         Ok(ctx)
+    }
+
+    pub fn metrics(&self) -> Metrics {
+        self.metrics.clone()
     }
 
     pub fn start_session(&mut self) -> DbResult<ObjectId> {
@@ -115,6 +128,7 @@ impl DbContext {
         let session = Box::new(DynamicSession::new(
             id.clone(),
             base_session,
+            self.metrics.clone_with_sid(id.clone()),
         ));
         let insert_result = self.session_map.insert(id, session);
         if insert_result.is_none() {

@@ -4,7 +4,7 @@ use std::sync::{Mutex, Arc};
 use bson::Document;
 use bson::oid::ObjectId;
 use crate::data_ticket::DataTicket;
-use crate::{DbErr, DbResult, TransactionType};
+use crate::{DbErr, DbResult, Metrics, TransactionType};
 use crate::backend::AutoStartResult;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::page::RawPage;
@@ -19,11 +19,12 @@ struct DynamicSessionInner {
     page_size: NonZeroU32,
     db_size: u64,
     init_block_count: u64,
+    metrics: Metrics,
 }
 
 impl DynamicSessionInner {
 
-    fn new(id: ObjectId, base_session: BaseSession) -> DynamicSessionInner {
+    fn new(id: ObjectId, base_session: BaseSession, metrics: Metrics) -> DynamicSessionInner {
         let page_size = base_session.page_size();
         let version = base_session.version();
         let db_size = base_session.db_size();
@@ -36,6 +37,7 @@ impl DynamicSessionInner {
             page_size,
             db_size,
             init_block_count,
+            metrics,
         }
     }
 
@@ -68,6 +70,8 @@ impl DynamicSessionInner {
             self.page_map = None;  // clear the map after commited
             self.version = self.base_session.version();
         }
+
+        self.metrics.commit();
 
         Ok(())
     }
@@ -102,6 +106,10 @@ impl SessionInner for DynamicSessionInner {
         Ok(())
     }
 
+    fn metrics(&self) -> &Metrics {
+        &self.metrics
+    }
+
     // TODO: refactor with session
     fn actual_alloc_page_id(&mut self) -> DbResult<u32> {
         let first_page = self.get_first_page()?;
@@ -133,10 +141,11 @@ pub(crate) struct DynamicSession {
 
 impl DynamicSession {
 
-    pub fn new(id: ObjectId, base_session: BaseSession) -> DynamicSession {
+    pub fn new(id: ObjectId, base_session: BaseSession, metrics: Metrics) -> DynamicSession {
         let inner = DynamicSessionInner::new(
             id,
             base_session,
+            metrics,
         );
         DynamicSession {
             inner: Mutex::new(inner),
@@ -224,5 +233,11 @@ impl Session for DynamicSession {
     fn rollback(&self) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.rollback()
+    }
+}
+
+impl Drop for DynamicSessionInner {
+    fn drop(&mut self) {
+        self.metrics.drop_session();
     }
 }
