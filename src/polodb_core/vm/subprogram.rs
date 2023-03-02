@@ -701,55 +701,75 @@ mod tests {
         let expect = r#"Program:
 
 0: OpenWrite(100)
-5: PushValue({ "$gt": 3 })
-10: FindByPrimaryKey(25)
-15: Goto(33)
+5: Rewind(30)
+10: Goto(197)
 
-20: Label(0)
-25: Pop
-26: Close
-27: Halt
+15: Label(1)
+20: Next(197)
 
-28: Label(1)
-33: PushValue("Alan Chan")
-38: SetField("name")
-43: Pop
-44: PushValue(1)
-49: IncField("age")
-54: Pop
-55: PushValue(3)
-60: MulField("age")
-65: Pop
-66: GetField("age", 126)
-75: PushValue(100)
-80: Less
-81: FalseJump(96)
-86: Goto(119)
+25: Label(5, "Close")
+30: Close
+31: Halt
 
-91: Label(4)
-96: Pop
-97: Pop
-98: PushValue(100)
-103: SetField("age")
-108: Pop
-109: Goto(126)
+32: Label(4, "Not this item")
+37: RecoverStackPos
+38: Pop
+39: Goto(20)
 
-114: Label(2)
-119: Pop
-120: Pop
+44: Label(3, "Get field failed")
+49: RecoverStackPos
+50: Pop
+51: Goto(20)
 
-121: Label(3)
-126: UnsetField("age")
-131: GetField("hello1", 156)
-140: SetField("hello2")
-145: Pop
-146: UnsetField("hello1")
+56: Label(2, "Result")
+61: PushValue("Alan Chan")
+66: SetField("name")
+71: Pop
+72: PushValue(1)
+77: IncField("age")
+82: Pop
+83: PushValue(3)
+88: MulField("age")
+93: Pop
+94: GetField("age", 154)
+103: PushValue(100)
+108: Less
+109: FalseJump(124)
+114: Goto(147)
 
-151: Label(5)
-156: UpdateCurrent
-157: Pop
-158: IncR2
-159: Goto(25)
+119: Label(8)
+124: Pop
+125: Pop
+126: PushValue(100)
+131: SetField("age")
+136: Pop
+137: Goto(154)
+
+142: Label(6)
+147: Pop
+148: Pop
+
+149: Label(7)
+154: UnsetField("age")
+159: GetField("hello1", 184)
+168: SetField("hello2")
+173: Pop
+174: UnsetField("hello1")
+
+179: Label(9)
+184: UpdateCurrent
+185: Pop
+186: IncR2
+187: Goto(20)
+
+192: Label(0, "Compare")
+197: SaveStackPos
+198: GetField("_id", 49)
+207: PushValue(3)
+212: Greater
+213: FalseJump(37)
+218: Pop2(2)
+223: Goto(61)
 "#;
         assert_eq!(expect, actual);
     }
