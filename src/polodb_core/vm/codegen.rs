@@ -1,4 +1,5 @@
 use bson::{Bson, Document, Array};
+use bson::spec::ElementType;
 use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
@@ -193,7 +194,9 @@ impl Codegen {
         F: FnOnce(&mut Codegen) -> DbResult<()> {
 
         if let Some(id_value) = query.get("_id") {
-            return self.emit_query_layout_has_pkey(id_value.clone(), query, result_callback);
+            if id_value.element_type() != ElementType::EmbeddedDocument {
+                return self.emit_query_layout_has_pkey(id_value.clone(), query, result_callback);
+            }
         }
 
         let compare_label = self.new_label();
