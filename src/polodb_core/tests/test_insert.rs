@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use bson::Document;
+use bson::spec::ElementType;
 use serde::{Deserialize, Serialize};
 use polodb_core::Database;
 use polodb_core::bson::{doc, Bson};
@@ -161,4 +162,24 @@ fn test_insert_after_delete() {
 
         assert_eq!(one.get("content").unwrap().as_str().unwrap(), "Hello World");
     });
+}
+
+#[test]
+fn test_insert_different_types_as_key() {
+    let db = Database::open_memory().unwrap();
+    let collection = db.collection::<Document>("test");
+
+    collection.insert_one(doc! {
+        "_id": 0,
+    }).unwrap();
+
+    collection.insert_one(doc! {
+        "_id": "0",
+    }).unwrap();
+
+    let result = collection.find_many(doc! {}).unwrap();
+    assert_eq!(result.len(), 2);
+
+    assert_eq!(result[0].get("_id").unwrap().element_type(), ElementType::String);
+    assert_eq!(result[1].get("_id").unwrap().element_type(), ElementType::Int32);
 }

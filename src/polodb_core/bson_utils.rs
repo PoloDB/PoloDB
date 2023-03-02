@@ -4,6 +4,12 @@ use bson::ser::Result as BsonResult;
 use std::cmp::Ordering;
 
 pub fn value_cmp(a: &Bson, b: &Bson) -> BsonResult<Ordering> {
+    let a_type = a.element_type() as u8;
+    let b_type = b.element_type() as u8;
+    if a_type != b_type {
+        return Ok(a_type.cmp(&b_type));
+    }
+
     match (a, b) {
         (Bson::Null, Bson::Null) => Ok(Ordering::Equal),
         (Bson::Int64(i1), Bson::Int64(i2)) => Ok(i1.cmp(i2)),
