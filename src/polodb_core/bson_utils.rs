@@ -4,11 +4,6 @@ use bson::ser::Result as BsonResult;
 use std::cmp::Ordering;
 
 pub fn value_cmp(a: &Bson, b: &Bson) -> BsonResult<Ordering> {
-    let a_type = a.element_type() as u8;
-    let b_type = b.element_type() as u8;
-    if a_type != b_type {
-        return Ok(a_type.cmp(&b_type));
-    }
 
     match (a, b) {
         (Bson::Null, Bson::Null) => Ok(Ordering::Equal),
@@ -24,7 +19,16 @@ pub fn value_cmp(a: &Bson, b: &Bson) -> BsonResult<Ordering> {
         },
         (Bson::String(str1), Bson::String(str2)) => Ok(str1.cmp(str2)),
         (Bson::ObjectId(oid1), Bson::ObjectId(oid2)) => Ok(oid1.cmp(oid2)),
-        _ => Err(BsonErr::InvalidCString("Unsupported types".to_string())),
+        _ => {
+            // compare the numeric type
+            let a_type = a.element_type() as u8;
+            let b_type = b.element_type() as u8;
+            if a_type != b_type {
+                return Ok(a_type.cmp(&b_type));
+            }
+
+            Err(BsonErr::InvalidCString("Unsupported types".to_string()))
+        },
     }
 }
 
