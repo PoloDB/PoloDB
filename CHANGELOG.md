@@ -2,6 +2,7 @@
 # 3.5.1
 
 - Allow insert different primary keys into one collection
+- Fix page lost in memory backend
 
 # 3.5.0
 

@@ -186,7 +186,7 @@ impl<K, V> TransMapDraft<K, V>
             TransMap::new_with_map(content)
         } else {
             let prev = self.base.clone();
-            if prev.inner.content.is_empty() {  // ignore this
+            if prev.inner.content.is_empty() && prev.inner.prev.is_none() {  // ignore this
                 TransMap::new_with_content(None, self.content)
             } else {
                 TransMap::new_with_content(Some(prev), self.content)
