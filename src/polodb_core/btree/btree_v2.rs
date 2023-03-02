@@ -343,10 +343,11 @@ impl BTreePageDelegateWithKey {
     }
 
     pub fn update_content(&mut self, index: usize, item: BTreeDataItemWithKey) {
-        // make sure the size of the key is the same
         let old_item_size = self.content[index].bytes_size();
         let new_item_size = item.bytes_size();
-        assert_eq!(old_item_size, new_item_size);
+
+        self.remain_size += old_item_size;
+        self.remain_size -= new_item_size;
 
         self.content[index] = item;
     }
