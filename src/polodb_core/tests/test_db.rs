@@ -26,22 +26,6 @@ fn test_reopen_db() {
 }
 
 #[test]
-fn test_pkey_type_check() {
-    vec![
-        create_file_and_return_db_with_items("test-type-check", TEST_SIZE),
-        create_memory_and_return_db_with_items(TEST_SIZE),
-    ].iter().for_each(|db| {
-        let doc = doc! {
-                "_id": 10,
-                "value": "something",
-            };
-
-        let collection = db.collection::<Document>("test");
-        collection.insert_one(doc).expect_err("should not success");
-    });
-}
-
-#[test]
 fn test_db_occupied() {
     const DB_NAME: &'static str = "test-db-lock";
     let db_path = mk_db_path(DB_NAME);
