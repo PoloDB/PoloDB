@@ -4,9 +4,11 @@ use bson::ser::Result as BsonResult;
 use std::cmp::Ordering;
 
 pub fn value_cmp(a: &Bson, b: &Bson) -> BsonResult<Ordering> {
-
     match (a, b) {
         (Bson::Null, Bson::Null) => Ok(Ordering::Equal),
+        (Bson::Undefined, Bson::Undefined) => Ok(Ordering::Equal),
+        (Bson::DateTime(d1), Bson::DateTime(d2)) => Ok(d1.cmp(d2)),
+        (Bson::Boolean(b1), Bson::Boolean(b2)) => Ok(b1.cmp(b2)),
         (Bson::Int64(i1), Bson::Int64(i2)) => Ok(i1.cmp(i2)),
         (Bson::Int32(i1), Bson::Int32(i2)) => Ok(i1.cmp(i2)),
         (Bson::Int64(i1), Bson::Int32(i2)) => {
@@ -17,6 +19,24 @@ pub fn value_cmp(a: &Bson, b: &Bson) -> BsonResult<Ordering> {
             let i1_64 = *i1 as i64;
             Ok(i1_64.cmp(i2))
         },
+        (Bson::Double(d1), Bson::Double(d2)) => Ok(d1.total_cmp(d2)),
+        (Bson::Double(d1), Bson::Int32(d2)) => {
+            let f = *d2 as f64;
+            Ok(d1.total_cmp(&f))
+        },
+        (Bson::Double(d1), Bson::Int64(d2)) => {
+            let f = *d2 as f64;
+            Ok(d1.total_cmp(&f))
+        },
+        (Bson::Int32(i1), Bson::Double(d2)) => {
+            let f = *i1 as f64;
+            Ok(f.total_cmp(d2))
+        }
+        (Bson::Int64(i1), Bson::Double(d2)) => {
+            let f = *i1 as f64;
+            Ok(f.total_cmp(d2))
+        }
+        (Bson::Binary(b1), Bson::Binary(b2)) => Ok(b1.bytes.cmp(&b2.bytes)),
         (Bson::String(str1), Bson::String(str2)) => Ok(str1.cmp(str2)),
         (Bson::ObjectId(oid1), Bson::ObjectId(oid2)) => Ok(oid1.cmp(oid2)),
         _ => {
@@ -30,13 +50,6 @@ pub fn value_cmp(a: &Bson, b: &Bson) -> BsonResult<Ordering> {
             Err(BsonErr::InvalidCString("Unsupported types".to_string()))
         },
     }
-}
-
-pub fn is_valid_key_type(value: &Bson) -> bool {
-    matches!(value, Bson::String(_) |
-                    Bson::Int64(_) |
-                    Bson::ObjectId(_) |
-                    Bson::Boolean(_))
 }
 
 #[cfg(test)]
