@@ -14,9 +14,12 @@ static TEST_SIZE: usize = 1000;
 #[test]
 fn test_multiple_find_one() {
     vec![
-        prepare_db("test-multiple-find-one").unwrap(),
-        Database::open_memory().unwrap(),
-    ].iter().for_each(|db| {
+        (prepare_db("test-multiple-find-one").unwrap(), true),
+        (Database::open_memory().unwrap(), false),
+    ].iter().for_each(|(db, is_file)| {
+        let metrics = db.metrics();
+        metrics.enable();
+
         {
             let collection = db.collection("config");
             let doc1 = doc! {
@@ -60,17 +63,25 @@ fn test_multiple_find_one() {
 
         let collection = db.collection::<Document>("config");
         let doc1 = collection.find_one(doc! {
-                "_id": "c1",
-            }).unwrap().unwrap();
+            "_id": "c1",
+        }).unwrap().unwrap();
 
         assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c1");
 
         let collection = db.collection::<Document>("config");
         let doc1 = collection.find_one(doc! {
-                "_id": "c2",
-            }).unwrap().unwrap();
+            "_id": "c2",
+        }).unwrap().unwrap();
 
         assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c22");
+
+        if *is_file {
+            let data = metrics.data();
+            assert!(data.page_hit_ratio() > 0.9);
+        } else {
+            let data = metrics.data();
+            assert_eq!(data.page_hit_ratio(), 0.0);
+        }
     });
 }
 

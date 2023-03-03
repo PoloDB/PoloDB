@@ -79,22 +79,30 @@ impl DbContext {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file(path: &Path, config: Config) -> DbResult<DbContext> {
+        let metrics = Metrics::new();
         let page_size = NonZeroU32::new(4096).unwrap();
 
         let config = Arc::new(config);
-        let backend = Box::new(FileBackend::open(path, page_size, config.clone())?);
-        DbContext::open_with_backend(backend, page_size, config)
+        let backend = Box::new(FileBackend::open(
+            path, page_size, config.clone(), metrics.clone(),
+        )?);
+        DbContext::open_with_backend(backend, page_size, config, metrics)
     }
 
     pub fn open_memory(config: Config) -> DbResult<DbContext> {
+        let metrics = Metrics::new();
         let page_size = NonZeroU32::new(4096).unwrap();
         let config = Arc::new(config);
         let backend = Box::new(MemoryBackend::new(page_size, config.init_block_count));
-        DbContext::open_with_backend(backend, page_size, config)
+        DbContext::open_with_backend(backend, page_size, config, metrics)
     }
 
-    fn open_with_backend(backend: Box<dyn Backend + Send>, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<DbContext> {
-        let metrics = Metrics::new();
+    fn open_with_backend(
+        backend: Box<dyn Backend + Send>,
+        page_size: NonZeroU32,
+        config: Arc<Config>,
+        metrics: Metrics,
+    ) -> DbResult<DbContext> {
         let base_session = BaseSession::new(
             backend,
             page_size,

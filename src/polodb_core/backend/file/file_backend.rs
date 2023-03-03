@@ -10,7 +10,7 @@ use super::journal_manager::JournalManager;
 use super::transaction_state::TransactionState;
 use super::pagecache::PageCache;
 use crate::backend::Backend;
-use crate::{DbResult, DbErr, Config};
+use crate::{DbResult, DbErr, Config, Metrics};
 use crate::page::RawPage;
 use crate::page::header_page_wrapper::{HeaderPageWrapper, DATABASE_VERSION};
 use crate::transaction::TransactionType;
@@ -23,6 +23,7 @@ pub(crate) struct FileBackend {
     config:          Arc<Config>,
     page_cache:      PageCache,
     state_map:       HashMap<ObjectId, TransactionState>,
+    metrics:         Metrics,
 }
 
 struct InitDbResult {
@@ -91,7 +92,12 @@ impl FileBackend {
         buf
     }
 
-    pub(crate) fn open(path: &Path, page_size: NonZeroU32, config: Arc<Config>) -> DbResult<FileBackend> {
+    pub(crate) fn open(
+        path: &Path,
+        page_size: NonZeroU32,
+        config: Arc<Config>,
+        metrics: Metrics,
+    ) -> DbResult<FileBackend> {
         let mut file = open_file_native(path)?;
 
         let init_result = FileBackend::init_db(
@@ -115,6 +121,7 @@ impl FileBackend {
             config,
             page_cache,
             state_map: HashMap::new(),
+            metrics,
         })
     }
 
@@ -166,7 +173,10 @@ impl FileBackend {
     /// 1. Read the page from the journal
     /// 2. Read the page from the main file
     fn read_page_main(&self, page_id: u32) -> DbResult<Arc<RawPage>> {
+        self.metrics.fetch_page();
+
         if let Some(page) = self.page_cache.get_from_cache(page_id) {
+            self.metrics.page_hit_cache();
             return Ok(page);
         }
 
