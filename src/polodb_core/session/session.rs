@@ -45,11 +45,24 @@ pub(crate) trait SessionInner {
     fn metrics(&self) -> &Metrics;
 
     fn get_data_allocator_wrapper(&mut self) -> DbResult<DataAllocatorWrapper> where Self: Sized {
-        let first_page = self.get_first_page()?;
-        let header_page = HeaderPageWrapper::from_raw_page(first_page.as_ref().clone());
+        let header_page = {
+            let first_page = self.get_first_page()?;
+            HeaderPageWrapper::from_raw_page(first_page.as_ref().clone())
+        };
         let data_allocator_pid = header_page.get_data_allocator();
         if data_allocator_pid == 0 {
             let new_pid = self.alloc_page_id()?;
+
+            // Notice: we can not use the variable `header_page` directly,
+            // because it's modified in `alloc_page_id`
+            let mut header_page = {
+                let first_page = self.get_first_page()?;
+                HeaderPageWrapper::from_raw_page(first_page.as_ref().clone())
+            };
+
+            header_page.set_data_allocator(new_pid);
+            self.write_page(&header_page.0)?;
+
             let allocator = DataAllocatorWrapper::new(new_pid, self.page_size());
             Ok(allocator)
         } else {
