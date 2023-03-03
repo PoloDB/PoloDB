@@ -437,7 +437,7 @@ mod test {
     use std::num::NonZeroU32;
     use std::sync::Arc;
     use crate::backend::file::FileBackend;
-    use crate::{Config, TransactionType};
+    use crate::{Config, Metrics, TransactionType};
     use crate::session::base_session::BaseSession;
     use crate::session::Session;
 
@@ -446,6 +446,7 @@ mod test {
 
     #[test]
     fn test_free_list() {
+        let metrics = Metrics::new();
         let mut db_path = env::temp_dir();
         let mut journal_path = env::temp_dir();
 
@@ -462,7 +463,8 @@ mod test {
         let config = Arc::new(Config::default());
         let backend = Box::new(FileBackend::open(db_path.as_ref(), page_size, config.clone()).unwrap());
         let base_session = BaseSession::new(
-            backend, page_size, config).unwrap();
+            backend, page_size, config, metrics,
+        ).unwrap();
         base_session.start_transaction(TransactionType::Write).unwrap();
 
         let (free_pid, free_size) = {
