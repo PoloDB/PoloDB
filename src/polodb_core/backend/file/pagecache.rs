@@ -1,10 +1,35 @@
 use std::num::{NonZeroU32, NonZeroUsize};
 use lru::LruCache;
 use std::alloc::{alloc, dealloc, Layout};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use crate::page::RawPage;
 
 pub(crate) struct PageCache {
+    inner: Mutex<PageCacheInner>,
+}
+
+impl PageCache {
+
+    pub fn new_default(page_size: NonZeroU32) -> PageCache {
+        let inner = PageCacheInner::new_default(page_size);
+        PageCache {
+            inner: Mutex::new(inner),
+        }
+    }
+
+    pub fn get_from_cache(&self, page_id: u32) -> Option<Arc<RawPage>> {
+        let mut inner = self.inner.lock().unwrap();
+        inner.get_from_cache(page_id)
+    }
+
+    pub fn insert_to_cache(&self, page: &RawPage) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.insert_to_cache(page)
+    }
+
+}
+
+struct PageCacheInner {
     page_count: usize,
     page_size:  NonZeroU32,
     layout:     Layout,
@@ -12,13 +37,15 @@ pub(crate) struct PageCache {
     lru_map:    LruCache<u32, u32>,
 }
 
-impl PageCache {
+unsafe impl Send for PageCacheInner {}
 
-    pub fn new_default(page_size: NonZeroU32) -> PageCache {
+impl PageCacheInner {
+
+    fn new_default(page_size: NonZeroU32) -> PageCacheInner {
         Self::new(1024, page_size)
     }
 
-    pub fn new(page_count: usize, page_size: NonZeroU32) -> PageCache {
+    fn new(page_count: usize, page_size: NonZeroU32) -> PageCacheInner {
         let cache_size = page_count * (page_size.get() as usize);
 
         let layout = Layout::from_size_align(cache_size, 8).unwrap();
@@ -26,7 +53,7 @@ impl PageCache {
             alloc(layout.clone()).cast()
         };
 
-        PageCache {
+        PageCacheInner {
             page_count,
             page_size,
             layout,
@@ -35,7 +62,7 @@ impl PageCache {
         }
     }
 
-    pub(crate) fn get_from_cache(&mut self, page_id: u32) -> Option<Arc<RawPage>> {
+    fn get_from_cache(&mut self, page_id: u32) -> Option<Arc<RawPage>> {
         let index = match self.lru_map.get(&page_id) {
             Some(index) => index,
             None => return None,
@@ -58,7 +85,7 @@ impl PageCache {
         }
     }
 
-    pub(crate) fn insert_to_cache(&mut self, page: &RawPage) {
+    fn insert_to_cache(&mut self, page: &RawPage) {
         match self.lru_map.get(&page.page_id) {
             Some(index) => {  // override
                 let offset = (*index as usize) * (self.page_size.get() as usize);
@@ -80,9 +107,7 @@ impl PageCache {
 
 }
 
-unsafe impl Send for PageCache {}
-
-impl Drop for PageCache {
+impl Drop for PageCacheInner {
 
     fn drop (&mut self) {
         let layout = self.layout.clone();

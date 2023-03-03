@@ -1,6 +1,5 @@
 mod client_session;
 mod session;
-mod pagecache;
 mod base_session;
 mod dynamic_session;
 
