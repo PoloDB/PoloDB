@@ -10,7 +10,6 @@ use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::page::RawPage;
 use crate::transaction::TransactionState;
 use super::session::{Session, SessionInner};
-use super::pagecache::PageCache;
 
 #[derive(Clone)]
 pub(crate) struct BaseSession {
@@ -189,7 +188,6 @@ struct BaseSessionInner {
     backend:             Box<dyn Backend + Send>,
 
     pub page_size:       NonZeroU32,
-    page_cache:          PageCache,
 
     transaction_state:   TransactionState,
 
@@ -207,13 +205,10 @@ impl BaseSessionInner {
         config: Arc<Config>,
         metrics: Metrics,
     ) -> DbResult<BaseSessionInner> {
-        let page_cache = PageCache::new_default(page_size);
-
         Ok(BaseSessionInner {
             version: 0,
             backend,
             page_size,
-            page_cache,
 
             transaction_state: TransactionState::NoTrans,
 
@@ -337,7 +332,6 @@ impl BaseSessionInner {
     // cleat it
     fn rollback(&mut self) -> DbResult<()> {
         self.backend.rollback()?;
-        self.page_cache = PageCache::new_default(self.page_size);
         Ok(())
     }
 
@@ -362,14 +356,7 @@ impl BaseSessionInner {
     /// 2. read from journal, if none
     /// 3. read from main db
     fn pipeline_read_page_main(&mut self, page_id: u32) -> DbResult<Arc<RawPage>> {
-        if let Some(page) = self.page_cache.get_from_cache(page_id) {
-            return Ok(page);
-        }
-
         let result = self.backend.read_page(page_id, None)?;
-
-        self.page_cache.insert_to_cache(&result);
-
         Ok(result)
     }
 
@@ -381,13 +368,8 @@ impl BaseSessionInner {
         }
     }
 
-    /// 1. write to journal, if success
-    ///    - 2. checkpoint journal, if full
-    /// 3. write to page_cache
     fn pipeline_write_page_main(&mut self, page: &RawPage) -> DbResult<()> {
         self.backend.write_page(page, None)?;
-
-        self.page_cache.insert_to_cache(page);
         Ok(())
     }
 

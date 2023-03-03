@@ -8,6 +8,7 @@ use bson::oid::ObjectId;
 use hashbrown::HashMap;
 use super::journal_manager::JournalManager;
 use super::transaction_state::TransactionState;
+use super::pagecache::PageCache;
 use crate::backend::Backend;
 use crate::{DbResult, DbErr, Config};
 use crate::page::RawPage;
@@ -20,6 +21,7 @@ pub(crate) struct FileBackend {
     page_size:       NonZeroU32,
     journal_manager: JournalManager,
     config:          Arc<Config>,
+    page_cache:      PageCache,
     state_map:       HashMap<ObjectId, TransactionState>,
 }
 
@@ -104,11 +106,14 @@ impl FileBackend {
             &journal_file_path, page_size, init_result.db_file_size
         )?;
 
+        let page_cache = PageCache::new_default(page_size);
+
         Ok(FileBackend {
             file: RefCell::new(file),
             page_size,
             journal_manager,
             config,
+            page_cache,
             state_map: HashMap::new(),
         })
     }
@@ -161,11 +166,21 @@ impl FileBackend {
     /// 1. Read the page from the journal
     /// 2. Read the page from the main file
     fn read_page_main(&self, page_id: u32) -> DbResult<Arc<RawPage>> {
-        if let Some(page) = self.journal_manager.read_page_main(page_id)? {
+        if let Some(page) = self.page_cache.get_from_cache(page_id) {
             return Ok(page);
         }
 
-        self.read_page_from_main_file(page_id)
+        let result = {
+            if let Some(page) = self.journal_manager.read_page_main(page_id)? {
+                return Ok(page);
+            }
+
+            self.read_page_from_main_file(page_id)?
+        };
+
+        self.page_cache.insert_to_cache(&result);
+
+        Ok(result)
     }
 
     fn read_page_from_main_file(&self, page_id: u32) -> DbResult<Arc<RawPage>> {
@@ -202,9 +217,13 @@ impl Backend for FileBackend {
 
     fn write_page(&mut self, page: &RawPage, session_id: Option<&ObjectId>) -> DbResult<()> {
         if session_id.is_some() {
-            unimplemented!()
+            unreachable!()
         }
-        self.journal_manager.append_raw_page(page)
+        self.journal_manager.append_raw_page(page)?;
+
+        self.page_cache.insert_to_cache(page);
+
+        Ok(())
     }
 
     /// 1. Write a mark to the journal
@@ -237,7 +256,9 @@ impl Backend for FileBackend {
     }
 
     fn rollback(&mut self) -> DbResult<()> {
-        self.journal_manager.rollback()
+        self.journal_manager.rollback()?;
+        self.page_cache = PageCache::new_default(self.page_size);
+        Ok(())
     }
 
     fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
