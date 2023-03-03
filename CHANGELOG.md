@@ -3,6 +3,7 @@
 
 - Allow insert different primary keys into one collection
 - Fix page lost in memory backend
+- Fix page allocation error
 
 # 3.5.0
 

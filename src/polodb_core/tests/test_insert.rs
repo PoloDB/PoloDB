@@ -187,6 +187,7 @@ fn test_data_used_ratio() {
     let metrics_data = metrics.data();
     let ratio = metrics_data.data_used_ratio();
     println!("ratio: {}", ratio);
+    assert!(ratio > 0.9);
 }
 
 #[test]
