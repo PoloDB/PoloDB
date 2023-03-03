@@ -9,6 +9,13 @@ pub(crate) struct PageCache {
 }
 
 impl PageCache {
+    #[allow(dead_code)]
+    pub fn new(page_count: usize, page_size: NonZeroU32) -> PageCache {
+        let inner = PageCacheInner::new(page_count, page_size);
+        PageCache {
+            inner: Mutex::new(inner),
+        }
+    }
 
     pub fn new_default(page_size: NonZeroU32) -> PageCache {
         let inner = PageCacheInner::new_default(page_size);
@@ -121,7 +128,7 @@ impl Drop for PageCacheInner {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroU32;
-    use crate::session::pagecache::PageCache;
+    use crate::backend::file::pagecache::PageCache;
     use crate::page::RawPage;
 
     fn make_raw_page(page_id: u32) -> RawPage {
@@ -140,7 +147,7 @@ mod tests {
 
     #[test]
     fn page_cache() {
-        let mut page_cache = PageCache::new(3, NonZeroU32::new(4096).unwrap());
+        let page_cache = PageCache::new(3, NonZeroU32::new(4096).unwrap());
 
         let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);
 

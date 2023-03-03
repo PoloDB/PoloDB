@@ -443,7 +443,12 @@ mod test {
 
         let page_size = NonZeroU32::new(4096).unwrap();
         let config = Arc::new(Config::default());
-        let backend = Box::new(FileBackend::open(db_path.as_ref(), page_size, config.clone()).unwrap());
+        let backend = Box::new(FileBackend::open(
+            db_path.as_ref(),
+            page_size,
+            config.clone(),
+            metrics.clone()
+        ).unwrap());
         let base_session = BaseSession::new(
             backend, page_size, config, metrics,
         ).unwrap();

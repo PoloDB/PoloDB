@@ -49,6 +49,16 @@ impl Metrics {
         self.inner.return_space_to_data_page(self.sid.as_ref(), used_size)
     }
 
+    #[inline]
+    pub(crate) fn fetch_page(&self) {
+        self.inner.fetch_page();
+    }
+
+    #[inline]
+    pub(crate) fn page_hit_cache(&self) {
+        self.inner.page_hit_cache();
+    }
+
     pub(crate) fn commit(&self) {
         self.inner.commit(self.sid.as_ref());
     }
@@ -162,6 +172,20 @@ impl MetricsInner {
         }
     }
 
+    pub(crate) fn fetch_page(&self) {
+        test_enable!(self);
+
+        let mut data_wrapper = self.data.lock().unwrap();
+        data_wrapper.data.page_fetch_count += 1;
+    }
+
+    pub(crate) fn page_hit_cache(&self) {
+        test_enable!(self);
+
+        let mut data_wrapper = self.data.lock().unwrap();
+        data_wrapper.data.page_hit_count += 1;
+    }
+
 }
 
 #[derive(Clone)]
@@ -169,12 +193,24 @@ pub struct MetricsData {
     pub data_page_count: usize,
     pub data_page_spaces: usize,
     pub data_page_used_bytes: usize,
+    pub page_fetch_count: usize,
+    pub page_hit_count:   usize,
 }
 
 impl MetricsData {
 
     pub fn data_used_ratio(&self) -> f64 {
+        if self.data_page_spaces == 0 {
+            return 0.0;
+        }
         (self.data_page_used_bytes as f64) / (self.data_page_spaces as f64)
+    }
+
+    pub fn page_hit_ratio(&self) -> f64 {
+        if self.page_fetch_count == 0 {
+            return 0.0;
+        }
+        (self.page_hit_count as f64) / (self.page_fetch_count as f64)
     }
 
 }
@@ -184,7 +220,9 @@ impl Default for MetricsData {
         MetricsData {
             data_page_count: 0,
             data_page_used_bytes: 0,
+            page_fetch_count: 0,
             data_page_spaces: 0,
+            page_hit_count: 0,
         }
     }
 }
