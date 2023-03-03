@@ -28,6 +28,7 @@ use std::path::Path;
 use bson::oid::ObjectId;
 use bson::spec::BinarySubtype;
 use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
+use crate::cursor::Cursor;
 use crate::metrics::Metrics;
 
 macro_rules! try_multiple {
@@ -138,47 +139,29 @@ impl DbContext {
         Ok(id)
     }
 
-    // pub fn get_collection_meta_by_name(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<CollectionSpecification> {
-    //     let session = self.get_session_by_id(session_id)?;
-    //     session.auto_start_transaction(TransactionType::Read)?;
-    //
-    //     let result = try_db_op!(session, DbContext::internal_get_collection_id_by_name(session, name));
-    //
-    //     Ok(result)
-    // }
-
     fn internal_get_collection_id_by_name(session: &dyn Session, name: &str) -> DbResult<CollectionSpecification> {
         let meta_source = DbContext::get_meta_source(session)?;
-        DbContext::internal_get_collection_id_by_name_with_pid(session, 0, meta_source.meta_pid, name)
+        DbContext::internal_get_collection_id_by_name_with_pid(session, meta_source.meta_pid, name)
     }
 
-    fn internal_get_collection_id_by_name_with_pid(session: &dyn Session, parent_pid: u32, root_pid: u32, name: &str) -> DbResult<CollectionSpecification> {
-        let raw_page = session.read_page(root_pid)?;
-        let delegate = BTreePageDelegate::from_page(raw_page.as_ref(), parent_pid)?;
-        let btree_node = BTreePageDelegateWithKey::read_from_session(delegate, session)?;
+    fn internal_get_collection_id_by_name_with_pid(session: &dyn Session, root_pid: u32, name: &str) -> DbResult<CollectionSpecification> {
+        let mut cursor = Cursor::new(root_pid);
         let key = Bson::from(name);
-        if btree_node.is_empty() {
+
+        let reset_result = cursor.reset_by_pkey(session, &key)?;
+        if !reset_result {
             return Err(DbErr::CollectionNotFound(name.to_string()));
         }
-        let result = btree_node.search(&key)?;
-        match result {
-            SearchKeyResult::Node(node_index) => {
-                let item = btree_node.get_item(node_index);
-                let doc = session.get_doc_from_ticket(&item.payload)?;
-                let entry = bson::from_document::<CollectionSpecification>(doc)?;
-                Ok(entry)
-            }
 
-            SearchKeyResult::Index(child_index) => {
-                let next_pid = btree_node.get_left_pid(child_index);
-                if next_pid == 0 {
-                    return Err(DbErr::CollectionNotFound(name.to_string()));
-                }
-
-                DbContext::internal_get_collection_id_by_name_with_pid(session, root_pid, next_pid, name)
-            }
-
+        let data_ticket_opt = cursor.peek_data();
+        if data_ticket_opt.is_none() {
+            return Err(DbErr::CollectionNotFound(name.to_string()));
         }
+
+        let data_ticket = data_ticket_opt.unwrap();
+        let doc = session.get_doc_from_ticket(&data_ticket)?;
+        let entry = bson::from_document::<CollectionSpecification>(doc)?;
+        Ok(entry)
     }
 
     pub fn get_collection_meta_by_name_advanced_auto(
@@ -347,40 +330,6 @@ impl DbContext {
         DbHandle::new(vm)
     }
 
-    // fn find_collection_root_pid_by_id(session: &dyn Session, parent_pid: u32, root_pid: u32, id: u32) -> DbResult<MetaDocEntry> {
-    //     let raw_page = session.read_page(root_pid)?;
-    //     let item_size = DbContext::item_size(session);
-    //     let btree_node = BTreeNode::from_raw(
-    //         &raw_page,
-    //         parent_pid,
-    //         item_size,
-    //         session
-    //     )?;
-    //     let key = Bson::from(id);
-    //     if btree_node.is_empty() {
-    //         return Err(DbErr::CollectionIdNotFound(id));
-    //     }
-    //     let result = btree_node.search(&key)?;
-    //     match result {
-    //         SearchKeyResult::Node(node_index) => {
-    //             let item = &btree_node.content[node_index];
-    //             let doc = session.get_doc_from_ticket(&item.data_ticket)?.unwrap();
-    //             let entry = MetaDocEntry::from_doc(doc);
-    //             Ok(entry)
-    //         }
-    //
-    //         SearchKeyResult::Index(child_index) => {
-    //             let next_pid = btree_node.indexes[child_index];
-    //             if next_pid == 0 {
-    //                 return Err(DbErr::CollectionIdNotFound(id));
-    //             }
-    //
-    //             DbContext::find_collection_root_pid_by_id(session, root_pid, next_pid, id)
-    //         }
-    //
-    //     }
-    // }
-
     pub fn create_index(&mut self, col_id: u32, keys: &Document, options: Option<&Document>, session_id: Option<&ObjectId>) -> DbResult<()> {
         let session = self.get_session_by_id(session_id)?;
         session .auto_start_transaction(TransactionType::Write)?;
@@ -538,9 +487,9 @@ impl DbContext {
             let doc = bson::to_document(&col_spec)?;
             let updated= DbContext::update_by_root_pid(
                 session,
-                0,
                 meta_source.meta_pid,
-                &key, &doc,
+                &key,
+                &doc,
             )?;
             if !updated {
                 panic!("unexpected: update meta page failed")
@@ -749,38 +698,18 @@ impl DbContext {
         Ok(buffer)
     }
 
-    fn update_by_root_pid(session: &dyn Session, parent_pid: u32, root_pid: u32, key: &Bson, doc: &Document) -> DbResult<bool> {
-        let page = session.read_page(root_pid)?;
-        let delegate = BTreePageDelegate::from_page(page.as_ref(), parent_pid)?;
-        let mut btree_node = BTreePageDelegateWithKey::read_from_session(delegate, session)?;
+    fn update_by_root_pid(session: &dyn Session, root_pid: u32, key: &Bson, doc: &Document) -> DbResult<bool> {
+        let mut cursor = Cursor::new(root_pid);
 
-        let search_result = btree_node.search(key)?;
-        match search_result {
-            SearchKeyResult::Node(idx) => {
-                let item = btree_node.get_item(idx);
-                session.free_data_ticket(&item.payload)?;
+        let reset_result = cursor.reset_by_pkey(session, key)?;
 
-                let new_ticket = session.store_doc(doc)?;
-
-                btree_node.update_payload(idx, new_ticket);
-
-                let page = btree_node.generate_page()?;
-
-                session.write_page(&page)?;
-
-                Ok(true)
-            }
-
-            SearchKeyResult::Index(idx) => {
-                let next_pid = btree_node.get_left_pid(idx);
-                if next_pid == 0 {
-                    return Ok(false);
-                }
-
-                DbContext::update_by_root_pid(session, root_pid, next_pid, key, doc)
-            }
-
+        if !reset_result {
+            return Ok(false);
         }
+
+        cursor.update_current(session, doc)?;
+
+        Ok(true)
     }
 
     fn handle_insert_backward_item(session: &dyn Session,

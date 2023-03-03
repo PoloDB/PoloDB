@@ -108,7 +108,7 @@ impl<'a> VM<'a> {
         let cursor = self.r1.as_mut().unwrap();
         cursor.reset(self.session)?;
         if cursor.has_next() {
-            let item = cursor.peek().unwrap();
+            let item = cursor.peek_data().unwrap();
             let doc = self.session.get_doc_from_ticket(&item)?;
             self.stack.push(Bson::Document(doc));
             is_empty.set(false);
@@ -129,7 +129,7 @@ impl<'a> VM<'a> {
             return Ok(false);
         }
 
-        let ticket = cursor.peek().unwrap();
+        let ticket = cursor.peek_data().unwrap();
         let doc = self.session.get_doc_from_ticket(&ticket)?;
         self.stack.push(Bson::Document(doc));
         Ok(true)
@@ -138,7 +138,7 @@ impl<'a> VM<'a> {
     fn next(&mut self) -> DbResult<()> {
         let cursor = self.r1.as_mut().unwrap();
         let _ = cursor.next(self.session)?;
-        match cursor.peek() {
+        match cursor.peek_data() {
             Some(ticket) => {
                 let doc = self.session.get_doc_from_ticket(&ticket)?;
                 self.stack.push(Bson::Document(doc));
