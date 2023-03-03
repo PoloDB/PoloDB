@@ -32,6 +32,12 @@ impl CursorItem {
     }
 }
 
+/// A cursor is a pointer pointing on
+/// a node on the btree. It stores all the
+/// context when iterating a btree.
+///
+/// A cursor is often used to iterate the btree.
+/// Also it can be used to find a node.
 pub(crate) struct Cursor {
     root_pid:           u32,
     btree_stack:        LinkedList<CursorItem>,
@@ -143,7 +149,7 @@ impl Cursor {
         Ok(())
     }
 
-    pub fn peek(&mut self) -> Option<DataTicket> {
+    pub fn peek_data(&mut self) -> Option<DataTicket> {
         if self.btree_stack.is_empty() {
             return None;
         }
@@ -151,9 +157,6 @@ impl Cursor {
         let top = self.btree_stack.back().unwrap();
         let top_content = top.node.lock().unwrap();
 
-        if top_content.is_empty() {
-            panic!("AAA");
-        }
         assert!(!top_content.is_empty(), "top node content is empty, page_id: {}", top_content.page_id());
 
         let ticket = top_content.get_item(top.index).payload.clone();
