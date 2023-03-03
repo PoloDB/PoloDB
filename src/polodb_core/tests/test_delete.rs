@@ -73,6 +73,9 @@ fn test_delete_all_items() {
         prepare_db("test-delete-all-items").unwrap(),
         Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
+        let metrics = db.metrics();
+        metrics.enable();
+
         let collection = db.collection::<Document>("test");
 
         let mut doc_collection  = vec![];
@@ -86,6 +89,7 @@ fn test_delete_all_items() {
             doc_collection.push(new_doc);
         }
         collection.insert_many(&doc_collection).unwrap();
+        let data_page_count = metrics.data().data_page_count;
 
         let mut counter = 0;
         for doc in &doc_collection {
@@ -101,5 +105,9 @@ fn test_delete_all_items() {
             assert_eq!(result.len(), 0, "item with key: {}", key);
             counter += 1;
         }
+
+        let deleted_metrics_data = metrics.data();
+        let deleted_data_page_count = deleted_metrics_data.data_page_count;
+        assert!(deleted_data_page_count < data_page_count);
     });
 }

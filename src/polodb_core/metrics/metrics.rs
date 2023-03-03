@@ -35,8 +35,18 @@ impl Metrics {
     }
 
     #[inline]
+    pub(crate) fn free_data_page(&self, remain_size: u32) {
+        self.inner.free_data_page(self.sid.as_ref(), remain_size)
+    }
+
+    #[inline]
     pub(crate) fn use_space_in_data_page(&self, used_size: u32) {
         self.inner.use_space_in_data_page(self.sid.as_ref(), used_size)
+    }
+
+    #[inline]
+    pub(crate) fn return_space_to_data_page(&self, used_size: u32) {
+        self.inner.return_space_to_data_page(self.sid.as_ref(), used_size)
     }
 
     pub(crate) fn commit(&self) {
@@ -96,6 +106,19 @@ impl MetricsInner {
         data.data_page_spaces += remain_size as usize;
     }
 
+    pub(crate) fn free_data_page(&self, sid: Option<&ObjectId>, remain_size: u32) {
+        test_enable!(self);
+
+        let mut data_wrapper = self.data.lock().unwrap();
+
+        let data = match sid {
+            Some(sid) => data_wrapper.session.get_mut(sid).unwrap(),
+            None => &mut data_wrapper.data,
+        };
+        data.data_page_count -= 1;
+        data.data_page_spaces -= remain_size as usize;
+    }
+
     pub(crate) fn use_space_in_data_page(&self, sid: Option<&ObjectId>,used_size: u32) {
         test_enable!(self);
 
@@ -106,6 +129,18 @@ impl MetricsInner {
             None => &mut data_wrapper.data,
         };
         data.data_page_used_bytes += used_size as usize;
+    }
+
+    pub(crate) fn return_space_to_data_page(&self, sid: Option<&ObjectId>, used_size: u32) {
+        test_enable!(self);
+
+        let mut data_wrapper = self.data.lock().unwrap();
+
+        let data = match sid {
+            Some(sid) => data_wrapper.session.get_mut(sid).unwrap(),
+            None => &mut data_wrapper.data,
+        };
+        data.data_page_used_bytes -= used_size as usize;
     }
 
     pub(crate) fn commit(&self, sid: Option<&ObjectId>) {

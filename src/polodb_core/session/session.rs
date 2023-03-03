@@ -195,6 +195,7 @@ pub(crate) trait SessionInner {
 
     fn free_data_ticket(&mut self, data_ticket: &DataTicket) -> DbResult<Vec<u8>> where Self: Sized {
         crate::polo_log!("free data ticket: {}", data_ticket);
+        let metrics = self.metrics().clone();
 
         if data_ticket.is_large_data() {
             return free_large_data_page(self, data_ticket.pid);
@@ -203,8 +204,13 @@ pub(crate) trait SessionInner {
         let page = self.read_page(data_ticket.pid)?;
         let mut wrapper = DataPageWrapper::from_raw(page.as_ref().clone());
         let bytes = wrapper.get(data_ticket.index as u32).unwrap().to_vec();
+
+        let original_remain_size = wrapper.remain_size();
         wrapper.remove(data_ticket.index as u32);
+        metrics.return_space_to_data_page(wrapper.remain_size() - original_remain_size);
+
         if wrapper.is_empty() {
+            metrics.free_data_page(wrapper.remain_size());
             self.free_page(data_ticket.pid)?;
         }
         let page = wrapper.consume_page();
