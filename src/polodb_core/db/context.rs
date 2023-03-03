@@ -25,6 +25,8 @@ use crate::session::{BaseSession, DynamicSession, Session};
 use crate::backend::file::FileBackend;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+#[cfg(target_arch = "wasm32")]
+use crate::backend::indexeddb::IndexedDbBackend;
 use bson::oid::ObjectId;
 use bson::spec::BinarySubtype;
 use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
@@ -86,6 +88,17 @@ impl DbContext {
         let backend = Box::new(FileBackend::open(
             path, page_size, config.clone(), metrics.clone(),
         )?);
+        DbContext::open_with_backend(backend, page_size, config, metrics)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn open_indexeddb(_name: &str, config: Config) -> DbResult<DbContext> {
+        let metrics = Metrics::new();
+        let page_size = NonZeroU32::new(4096).unwrap();
+        let config = Arc::new(config);
+        let backend = Box::new(IndexedDbBackend::open(
+            page_size, config.init_block_count
+        ));
         DbContext::open_with_backend(backend, page_size, config, metrics)
     }
 

@@ -79,6 +79,15 @@ impl Database {
         VERSION.into()
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub fn open_indexeddb(name: &str) -> DbResult<Database> {
+        let inner = DatabaseInner::open_indexeddb(name, Config::default())?;
+
+        Ok(Database {
+            inner: Mutex::new(inner),
+        })
+    }
+
     pub fn open_memory() -> DbResult<Database> {
         Database::open_memory_with_config(Config::default())
     }
@@ -273,6 +282,15 @@ impl DatabaseInner {
     #[cfg(not(target_arch = "wasm32"))]
     fn open_file_with_config<P: AsRef<Path>>(path: P, config: Config) -> DbResult<DatabaseInner>  {
         let ctx = DbContext::open_file(path.as_ref(), config)?;
+
+        Ok(DatabaseInner {
+            ctx,
+        })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn open_indexeddb(name: &str, config: Config) -> DbResult<DatabaseInner> {
+        let ctx = DbContext::open_indexeddb(name, config)?;
 
         Ok(DatabaseInner {
             ctx,

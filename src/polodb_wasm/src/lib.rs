@@ -8,9 +8,13 @@ pub struct DatabaseWrapper(Database);
 #[wasm_bindgen(js_class = Database)]
 impl DatabaseWrapper {
 
+    /// If a name is provided, the data will be synced to IndexedDB
     #[wasm_bindgen(constructor)]
-    pub fn new() -> Result<DatabaseWrapper, JsError> {
-        let db = Database::open_memory()?;
+    pub fn new(name: Option<String>) -> Result<DatabaseWrapper, JsError> {
+        let db = match name {
+            Some(name) => Database::open_indexeddb(name.as_str()),
+            None => Database::open_memory(),
+        }?;
         Ok(DatabaseWrapper(db))
     }
 
