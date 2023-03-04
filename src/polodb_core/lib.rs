@@ -128,7 +128,7 @@ mod collection_info;
 pub mod test_utils;
 mod metrics;
 
-pub use db::{Database, Collection, DbResult};
+pub use db::{Database, Collection, DbResult, IndexedDbContext};
 pub use config::Config;
 pub use transaction::TransactionType;
 pub use db::db_handle::DbHandle;

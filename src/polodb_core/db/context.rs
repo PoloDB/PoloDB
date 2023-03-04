@@ -92,12 +92,12 @@ impl DbContext {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(_name: &str, config: Config) -> DbResult<DbContext> {
+    pub fn open_indexeddb(ctx: crate::IndexedDbContext, config: Config) -> DbResult<DbContext> {
         let metrics = Metrics::new();
         let page_size = NonZeroU32::new(4096).unwrap();
         let config = Arc::new(config);
         let backend = Box::new(IndexedDbBackend::open(
-            page_size, config.init_block_count
+            ctx, page_size, config.init_block_count
         ));
         DbContext::open_with_backend(backend, page_size, config, metrics)
     }

@@ -60,11 +60,13 @@ impl RawPage {
         }
     }
 
+    #[allow(dead_code)]
     pub unsafe fn copy_from_ptr(&mut self, ptr: *const u8) {
         let target_ptr = self.data.as_mut_ptr();
         target_ptr.copy_from_nonoverlapping(ptr, self.data.len());
     }
 
+    #[allow(dead_code)]
     pub unsafe fn copy_to_ptr(&self, ptr: *mut u8) {
         let target_ptr = self.data.as_ptr();
         target_ptr.copy_to_nonoverlapping(ptr, self.data.len());

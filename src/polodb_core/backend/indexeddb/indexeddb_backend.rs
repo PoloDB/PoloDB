@@ -5,15 +5,20 @@ use crate::backend::Backend;
 use crate::backend::memory::MemoryBackend;
 use crate::{DbResult, TransactionType};
 use crate::page::RawPage;
+use crate::IndexedDbContext;
 
 pub(crate) struct IndexedDbBackend {
+    ctx: IndexedDbContext,
     mem: MemoryBackend,
 }
 
+unsafe impl Send for IndexedDbBackend {}
+
 impl IndexedDbBackend {
 
-    pub fn open(page_size: NonZeroU32, init_block_count: NonZeroU64) -> IndexedDbBackend {
+    pub fn open(ctx: IndexedDbContext, page_size: NonZeroU32, init_block_count: NonZeroU64) -> IndexedDbBackend {
         IndexedDbBackend {
+            ctx,
             mem: MemoryBackend::new(page_size, init_block_count),
         }
     }
@@ -30,7 +35,8 @@ impl Backend for IndexedDbBackend {
     }
 
     fn commit(&mut self) -> DbResult<()> {
-        self.mem.commit()
+        self.mem.commit()?;
+        Ok(())
     }
 
     fn db_size(&self) -> u64 {
