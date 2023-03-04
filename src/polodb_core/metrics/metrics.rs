@@ -9,6 +9,7 @@ pub struct Metrics {
     sid:   Option<ObjectId>,
 }
 
+#[allow(dead_code)]
 impl Metrics {
 
     pub(crate) fn new() -> Metrics {
@@ -89,6 +90,7 @@ macro_rules! test_enable {
     }
 }
 
+#[allow(dead_code)]
 impl MetricsInner {
 
     fn new() -> MetricsInner {

@@ -25,6 +25,19 @@ console_error_panic_hook = { version = "0.1.6", optional = true }
 # allocator, however.
 wee_alloc = { version = "0.4.5", optional = true }
 
+js-sys = "0.3.61"
+
+[dependencies.web-sys]
+version = "0.3.61"
+features = [
+    'Window',
+    "IdbDatabase",
+    "IdbFactory",
+    "IdbObjectStore",
+    "IdbOpenDbRequest",
+    "IdbTransaction",
+]
+
 [dev-dependencies]
 wasm-bindgen-test = "0.3.13"
 

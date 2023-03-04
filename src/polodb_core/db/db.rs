@@ -36,6 +36,11 @@ pub(super) fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, 
     Ok(())
 }
 
+pub struct IndexedDbContext {
+    pub name: String,
+    pub idb: web_sys::IdbDatabase,
+}
+
 ///
 /// API wrapper for Rust-level
 ///
@@ -80,8 +85,8 @@ impl Database {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(name: &str) -> DbResult<Database> {
-        let inner = DatabaseInner::open_indexeddb(name, Config::default())?;
+    pub fn open_indexeddb(ctx: IndexedDbContext) -> DbResult<Database> {
+        let inner = DatabaseInner::open_indexeddb(ctx, Config::default())?;
 
         Ok(Database {
             inner: Mutex::new(inner),
@@ -289,8 +294,8 @@ impl DatabaseInner {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(name: &str, config: Config) -> DbResult<DatabaseInner> {
-        let ctx = DbContext::open_indexeddb(name, config)?;
+    pub fn open_indexeddb(ctx: IndexedDbContext, config: Config) -> DbResult<DatabaseInner> {
+        let ctx = DbContext::open_indexeddb(ctx, config)?;
 
         Ok(DatabaseInner {
             ctx,
