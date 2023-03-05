@@ -1,4 +1,9 @@
 
+# 3.5.2
+
+- Re-license to MPL-2.0
+- Introduce WASM backend(WIP)
+
 # 3.5.1
 
 - Allow insert different primary keys into one collection
