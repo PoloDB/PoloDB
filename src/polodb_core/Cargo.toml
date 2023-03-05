@@ -2,7 +2,7 @@
 name = "polodb_core"
 version = "3.5.1"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
-license = "MIT"
+license = "MPL-2.0"
 edition = "2018"
 repository = "https://github.com/PoloDB/PoloDB"
 description = "An embedded document database"
