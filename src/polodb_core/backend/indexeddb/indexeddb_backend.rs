@@ -12,6 +12,7 @@ use crate::{DbResult, TransactionType};
 use crate::page::RawPage;
 use crate::IndexedDbContext;
 
+#[allow(dead_code)]
 pub(crate) struct IndexedDbBackend {
     ctx: IndexedDbContext,
     mem: MemoryBackend,
