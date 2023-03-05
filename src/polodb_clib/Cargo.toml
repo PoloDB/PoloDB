@@ -2,6 +2,7 @@
 name = "polodb_clib"
 version = "3.5.1"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
+license = "MPL-2.0"
 edition = "2018"
 
 [lib]
