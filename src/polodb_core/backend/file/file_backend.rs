@@ -25,7 +25,7 @@ pub(crate) struct FileBackend {
     file:            RefCell<File>,
     page_size:       NonZeroU32,
     journal_manager: JournalManager,
-    config:          Arc<Config>,
+    config:          Config,
     page_cache:      PageCache,
     state_map:       HashMap<ObjectId, TransactionState>,
     metrics:         Metrics,
@@ -100,7 +100,7 @@ impl FileBackend {
     pub(crate) fn open(
         path: &Path,
         page_size: NonZeroU32,
-        config: Arc<Config>,
+        config: Config,
         metrics: Metrics,
     ) -> DbResult<FileBackend> {
         let mut file = open_file_native(path)?;
@@ -108,7 +108,7 @@ impl FileBackend {
         let init_result = FileBackend::init_db(
             &mut file,
             page_size,
-            config.init_block_count,
+            NonZeroU64::new(config.get_init_block_count()).unwrap(),
             true
         )?;
 
@@ -172,7 +172,7 @@ impl FileBackend {
 
     #[inline]
     fn is_journal_full(&self) -> bool {
-        (self.journal_manager.len() as u64) >= self.config.journal_full_size
+        (self.journal_manager.len() as u64) >= self.config.get_journal_full_size()
     }
 
     /// 1. Read the page from the journal

@@ -26,7 +26,7 @@ impl BaseSession {
     pub fn new(
         backend: Box<dyn Backend + Send>,
         page_size: NonZeroU32,
-        config: Arc<Config>,
+        config: Config,
         metrics: Metrics,
     ) -> DbResult<BaseSession> {
         let inner = BaseSessionInner::new(
@@ -93,7 +93,7 @@ impl BaseSession {
 
     pub fn init_block_count(&self) -> u64 {
         let session = self.inner.as_ref().lock().unwrap();
-        session.config.init_block_count.get()
+        session.config.get_init_block_count()
     }
 
     pub fn set_db_size(&self, db_size: u64) -> DbResult<()> {
@@ -196,7 +196,7 @@ struct BaseSessionInner {
 
     transaction_state:   TransactionState,
 
-    config:              Arc<Config>,
+    config:              Config,
 
     metrics:             Metrics,
 
@@ -207,7 +207,7 @@ impl BaseSessionInner {
     fn new(
         backend: Box<dyn Backend + Send>,
         page_size: NonZeroU32,
-        config: Arc<Config>,
+        config: Config,
         metrics: Metrics,
     ) -> DbResult<BaseSessionInner> {
         Ok(BaseSessionInner {
@@ -401,7 +401,7 @@ impl SessionInner for BaseSessionInner {
         first_page_wrapper.set_null_page_bar(null_page_bar + 1);
 
         if (null_page_bar as u64) >= self.backend.db_size() {  // truncate file
-            let exceed_size = self.config.init_block_count.get() * (self.page_size.get() as u64);
+            let exceed_size = self.config.get_init_block_count() * (self.page_size.get() as u64);
             self.backend.set_db_size(exceed_size)?;
         }
 

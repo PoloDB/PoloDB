@@ -123,6 +123,7 @@ mod config;
 mod macros;
 mod backend;
 mod transaction;
+mod lsm;
 mod bson_utils;
 pub mod results;
 pub mod commands;
