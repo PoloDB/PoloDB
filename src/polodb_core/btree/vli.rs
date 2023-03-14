@@ -28,7 +28,7 @@ const BYTE_MARK3: u8 = 0b11100000;
 const BYTE_MARK5: u8 = 0b11111000;
 const NEG_FLAG:   u8 = 0b11111011;
 
-pub fn encode(writer: &mut dyn Write, num: i64) -> BsonResult<()> {
+pub fn encode<W: Write>(writer: &mut W, num: i64) -> BsonResult<()> {
     if num < 0 {
         writer.write_all(&[ NEG_FLAG ])?;
         return encode_u64(writer, (num * -1) as u64);
@@ -37,7 +37,7 @@ pub fn encode(writer: &mut dyn Write, num: i64) -> BsonResult<()> {
 }
 
 #[inline]
-fn encode_u64(writer: &mut dyn Write, num: u64) -> BsonResult<()> {
+fn encode_u64<W: Write>(writer: &mut W, num: u64) -> BsonResult<()> {
     if num <= 127 {
         writer.write_all(&[ (num as u8) ])?;
     } else if num <= 16383 {  // 2 bytes

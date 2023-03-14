@@ -4,3 +4,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 mod lsm_backend;
+mod lsm_kv;
+mod lsm_segment;
+mod lsm_snapshot;

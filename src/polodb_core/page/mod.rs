@@ -179,4 +179,20 @@ impl RawPage {
         self.data.len() as u32
     }
 
+    #[inline]
+    pub fn remain_size(&self) -> u32 {
+        self.data.len() as u32 - self.pos
+    }
+
+}
+
+impl Write for RawPage {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.put(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }

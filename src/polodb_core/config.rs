@@ -5,7 +5,7 @@
  */
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 #[derive(Clone)]
 pub struct Config {
@@ -22,6 +22,13 @@ impl Config {
         self.inner.journal_full_size.load(Ordering::Relaxed)
     }
 
+    pub fn get_lsm_page_size(&self) -> u32 {
+        self.inner.lsm_page_size.load(Ordering::Relaxed)
+    }
+
+    pub fn get_lsm_block_size(&self) -> u32 {
+        self.inner.lsm_block_size.load(Ordering::Relaxed)
+    }
 }
 
 impl Default for Config {
@@ -36,8 +43,10 @@ impl Default for Config {
 }
 
 struct ConfigInner {
-    pub init_block_count:  AtomicU64,
-    pub journal_full_size: AtomicU64,
+    init_block_count:  AtomicU64,
+    journal_full_size: AtomicU64,
+    lsm_page_size:     AtomicU32,
+    lsm_block_size:    AtomicU32,
 }
 
 impl Default for ConfigInner {
@@ -45,6 +54,8 @@ impl Default for ConfigInner {
         ConfigInner {
             init_block_count: AtomicU64::new(16),
             journal_full_size: AtomicU64::new(1000),
+            lsm_page_size: AtomicU32::new(4096),
+            lsm_block_size: AtomicU32::new(4 * 1024 * 1024),
         }
     }
 }
