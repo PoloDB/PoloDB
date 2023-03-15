@@ -422,7 +422,6 @@ mod test {
     use std::env;
     use std::collections::HashSet;
     use std::num::NonZeroU32;
-    use std::sync::Arc;
     use crate::backend::file::FileBackend;
     use crate::{Config, Metrics, TransactionType};
     use crate::session::base_session::BaseSession;
@@ -447,7 +446,7 @@ mod test {
         let _ = std::fs::remove_file(journal_path);
 
         let page_size = NonZeroU32::new(4096).unwrap();
-        let config = Arc::new(Config::default());
+        let config = Config::default();
         let backend = Box::new(FileBackend::open(
             db_path.as_ref(),
             page_size,
