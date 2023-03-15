@@ -164,6 +164,7 @@ pub enum DbErr {
     NoTransactionStarted,
     InvalidSession(Box<ObjectId>),
     SessionOutdated,
+    DbIsClosed,
 }
 
 impl DbErr {
@@ -261,6 +262,7 @@ impl fmt::Display for DbErr {
             DbErr::NoTransactionStarted => write!(f, "no transaction started"),
             DbErr::InvalidSession(sid) => write!(f, "invalid session: {}", sid),
             DbErr::SessionOutdated => write!(f, "session is outdated"),
+            DbErr::DbIsClosed => write!(f, "the database is closed"),
         }
     }
 

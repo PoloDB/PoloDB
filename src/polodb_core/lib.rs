@@ -141,5 +141,6 @@ pub use db::db_handle::DbHandle;
 pub use error::DbErr;
 pub use session::ClientSession;
 pub use metrics::Metrics;
+pub use lsm::LsmKv;
 
 pub extern crate bson;

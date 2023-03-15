@@ -10,8 +10,11 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Mutex;
 use byteorder::WriteBytesExt;
+use im::OrdMap;
 use crate::{Config, DbErr, DbResult};
-use crate::lsm::lsm_segment::{LsmSegment, SegValue};
+use crate::lsm::mem_table::MemTable;
+use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr, SegValue};
+use crate::lsm::lsm_snapshot::LsmSnapshot;
 use crate::page::RawPage;
 use super::lsm_meta::LsmMetaDelegate;
 
@@ -94,18 +97,23 @@ impl LsmFileBackend {
         })
     }
 
-    pub fn sync_latest_segment(&self, segment: &LsmSegment) -> DbResult<()> {
+    pub fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
-        inner.sync_latest_segment(segment)
+        inner.sync_latest_segment(segment, snapshot)
     }
 
+    pub fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        let mut inner = self.inner.lock()?;
+        inner.checkpoint_snapshot(snapshot)
+    }
 }
 
-struct FileWriter<'a> {
+struct FileWriter<'a, 'b> {
     file:                 &'a mut File,
     pid:                  u64,
     page_count_per_block: u64,
     page_buffer:          RawPage,
+    snapshot:             &'b mut LsmSnapshot,
     config:               Config,
 }
 
@@ -118,9 +126,9 @@ fn new_page_in_block(pid: u64, std_size: u32, id_in_block: u64, page_count_per_b
     RawPage::new(pid as u32, byte_size)
 }
 
-impl<'a> FileWriter<'a> {
+impl<'a, 'b> FileWriter<'a, 'b> {
 
-    fn open(file: &'a mut File, pid: u64, config: Config) -> FileWriter {
+    fn open(file: &'a mut File, pid: u64, snapshot: &'b mut LsmSnapshot, config: Config) -> FileWriter<'a, 'b> {
         let block_size = config.get_lsm_block_size();
         let page_size = config.get_lsm_page_size();
 
@@ -133,11 +141,16 @@ impl<'a> FileWriter<'a> {
             pid,
             page_count_per_block,
             page_buffer,
+            snapshot,
             config,
         }
     }
 
-    fn write_tuple(&mut self, key: &[u8], value: &SegValue) -> DbResult<()> {
+    fn write_tuple(&mut self, key: &[u8], value: &SegValue) -> DbResult<LsmTuplePtr> {
+        let pos = LsmTuplePtr {
+            pid: self.pid,
+            offset: self.page_buffer.pos(),
+        };
         match value {
             SegValue::OwnValue(insert_buffer) => {
                 self.write_u8(format::LSM_INSERT)?;
@@ -154,7 +167,7 @@ impl<'a> FileWriter<'a> {
                 self.write_all(key)?;
             }
         }
-        Ok(())
+        Ok(pos)
     }
 
     fn begin(&mut self) -> DbResult<()> {
@@ -166,15 +179,52 @@ impl<'a> FileWriter<'a> {
         Ok(())
     }
 
-    fn end(&mut self) -> DbResult<()> {
-        Ok(())
+    fn end(&mut self) -> DbResult<LsmTuplePtr> {
+        Ok(LsmTuplePtr {
+            pid: self.pid,
+            offset: self.page_buffer.pos(),
+        })
     }
 
+    fn enlarge_database_file(&mut self) -> std::io::Result<u64> {
+        let file_meta = self.file.metadata()?;
+        let current_size = file_meta.len();
+        let page_size = self.config.get_lsm_page_size();
+        let block_size = self.config.get_lsm_block_size();
+        let new_size = current_size + (block_size as u64);
+        self.file.set_len(new_size)?;
+
+        let new_page_id = current_size / (page_size as u64);
+        Ok(new_page_id)
+    }
+
+    /// 1. Write current page to the file
+    /// 2. Make the writer point to the new page
     fn next_page(&mut self) -> std::io::Result<()> {
-        let id_in_block = self.pid & self.page_count_per_block;
+        let id_in_block = self.pid % self.page_count_per_block;
+        let page_size = self.config.get_lsm_page_size();
         if id_in_block == self.page_count_per_block - 1 {  // last page int the block
+            // write all data to the current page
             self.file.write_all(&self.page_buffer.data)?;
-            unimplemented!()
+
+            let new_page_id = if self.snapshot.free_blocks.is_empty() {
+                self.enlarge_database_file()?
+            } else {
+                let block_id = self.snapshot.consume_free_blocks();
+                (block_id as u64) * self.page_count_per_block
+            };
+
+            let new_page_id_be = new_page_id.to_be_bytes();
+            self.file.write_all(&new_page_id_be)?;
+
+            self.pid = new_page_id;
+            let id_in_block = self.pid % self.page_count_per_block;
+            self.page_buffer = new_page_in_block(
+                self.pid,
+                page_size,
+                id_in_block,
+                self.page_count_per_block,
+            );
         } else {
             if id_in_block == 0 {
                 // preserve 4 bytes for prev pointer
@@ -182,8 +232,8 @@ impl<'a> FileWriter<'a> {
             }
             self.file.write_all(&self.page_buffer.data)?;
 
-            let page_size = self.config.get_lsm_page_size();
             self.pid += 1;
+            let id_in_block = self.pid % self.page_count_per_block;
             self.page_buffer = new_page_in_block(
                 self.pid,
                 page_size,
@@ -195,7 +245,7 @@ impl<'a> FileWriter<'a> {
     }
 }
 
-impl Write for FileWriter<'_> {
+impl Write for FileWriter<'_, '_> {
 
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let remain_size = self.page_buffer.remain_size() as usize;
@@ -219,7 +269,6 @@ impl Write for FileWriter<'_> {
 
 struct LsmFileBackendInner {
     file:    File,
-    pid_ptr: u64,
     config:  Config,
 }
 
@@ -233,7 +282,6 @@ impl LsmFileBackendInner {
 
         let mut result = LsmFileBackendInner {
             file,
-            pid_ptr: 2,
             config,
         };
 
@@ -268,20 +316,81 @@ impl LsmFileBackendInner {
         Ok(())
     }
 
-    fn sync_latest_segment(&mut self, segment: &LsmSegment) -> DbResult<()> {
+    fn sync_latest_segment(&mut self, mem_table: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let config = self.config.clone();
+        let start_pid = snapshot.pid_ptr;
+
         let mut writer = FileWriter::open(
             &mut self.file,
-            self.pid_ptr,
+            start_pid,
+            snapshot,
             config,
         );
 
         writer.begin()?;
 
-        for (key, value) in &segment.segments {
-            writer.write_tuple(&key, value)?;
+        let mut segments = OrdMap::<Vec<u8>, LsmTuplePtr>::new();
+
+        for (key, value) in &mem_table.segments {
+            let pos = writer.write_tuple(&key, value)?;
+            segments.insert(key.clone(), pos);
         }
 
-        writer.end()
+        let end_ptr = writer.end()?;
+
+        let im_seg = ImLsmSegment {
+            segments,
+            start_pid,
+            end_pid: end_ptr.pid,
+        };
+
+        snapshot.add_latest_segment(im_seg);
+        snapshot.pid_ptr = end_ptr.pid + 1;
+
+        Ok(())
+    }
+
+    fn checkpoint_snapshot(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        let meta_pid = snapshot.meta_pid as u64;
+        let next_meta_pid = snapshot.next_meta_pid();
+        let meta_page = self.read_page(meta_pid)?;
+
+        let mut delegate = LsmMetaDelegate(meta_page);
+        delegate.set_meta_id(snapshot.meta_id);
+        delegate.set_log_offset(snapshot.log_offset);
+
+        assert!(snapshot.levels.len() < u8::MAX as usize);
+        delegate.set_level_count(snapshot.levels.len() as u8);
+
+        delegate.begin_write_level();
+        for level in &snapshot.levels {
+            delegate.write_level(level);
+        }
+
+        // update pid and write page
+        delegate.0.page_id = next_meta_pid as u32;
+        self.write_page(&delegate.0)?;
+
+        // update snapshot after write page successfully
+        snapshot.meta_id += 1;
+        snapshot.meta_pid = next_meta_pid;
+        Ok(())
+    }
+
+    fn read_page(&mut self, pid: u64) -> DbResult<RawPage> {
+        let page_size = self.config.get_lsm_page_size();
+        let offset = (page_size as u64) * pid;
+
+        let mut result = RawPage::new(pid as u32, NonZeroU32::new(page_size).unwrap());
+        result.read_from_file(&mut self.file, offset)?;
+
+        Ok(result)
+    }
+
+    fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
+        let page_size = self.config.get_lsm_page_size();
+        let offset = (page_size as u64) * (page.page_id as u64);
+        page.sync_to_file(&mut self.file, offset)?;
+        Ok(())
     }
 }

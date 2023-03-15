@@ -175,6 +175,11 @@ impl RawPage {
     }
 
     #[inline]
+    pub fn pos(&mut self) -> u32 {
+        self.pos
+    }
+
+    #[inline]
     pub fn len(&self) -> u32 {
         self.data.len() as u32
     }

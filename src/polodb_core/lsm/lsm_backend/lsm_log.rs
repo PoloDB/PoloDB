@@ -40,6 +40,10 @@ impl LogTransactionState {
 
 }
 
+pub(crate) struct LsmCommitResult {
+    pub offset: u64,
+}
+
 pub(crate) struct LsmLog {
     inner: RefCell<LsmLogInner>
 }
@@ -68,7 +72,7 @@ impl LsmLog {
         inner.rollback()
     }
 
-    pub fn commit(&self) -> DbResult<()> {
+    pub fn commit(&self) -> DbResult<LsmCommitResult> {
         let mut inner = self.inner.borrow_mut();
         inner.commit()
     }
@@ -162,11 +166,12 @@ impl LsmLogInner {
     }
 
     pub fn rollback(&mut self) -> DbResult<()> {
+        self.file.set_len(self.offset)?;
         self.transaction = None;
         Ok(())
     }
 
-    pub fn commit(&mut self) -> DbResult<()> {
+    pub fn commit(&mut self) -> DbResult<LsmCommitResult> {
         if self.transaction.is_none() {
             return Err(DbErr::NoTransactionStarted);
         }
@@ -180,7 +185,10 @@ impl LsmLogInner {
         }
         self.transaction = None;
         self.file.flush()?;
-        Ok(())
+
+        Ok(LsmCommitResult {
+            offset: self.offset,
+        })
     }
 
 }

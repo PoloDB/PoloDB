@@ -7,3 +7,8 @@ mod lsm_backend;
 mod lsm_kv;
 mod lsm_segment;
 mod lsm_snapshot;
+mod mem_table;
+mod kv_cursor;
+
+pub use lsm_kv::LsmKv;
+pub use kv_cursor::KvCursor;
