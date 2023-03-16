@@ -5,14 +5,14 @@
  */
 
 use std::cmp::Ordering;
-use std::collections::LinkedList;
 use std::sync::{Arc, Mutex};
 use smallvec::{SmallVec, smallvec};
+use crate::lsm::lsm_tree::value_marker::LsmTreeValueMarker;
 
 const ORDER: usize = 8;
 
 struct DivideInfo<K: Ord + Clone, V: Clone> {
-    tuple: (K, V),
+    tuple: (K, LsmTreeValueMarker<V>),
     left: Arc<Mutex<TreeNode<K ,V>>>,
     right: Arc<Mutex<TreeNode<K ,V>>>,
 }
@@ -37,7 +37,7 @@ impl<K: Ord + Clone, V: Clone> DivideInfo<K, V> {
 
 enum TreeNodeInsertResult<K: Ord + Clone, V: Clone> {
     Normal,
-    LegacyValue(V),
+    LegacyValue(LsmTreeValueMarker<V>),
     Divide(Box<DivideInfo<K, V>>),
 }
 
@@ -53,6 +53,7 @@ impl<K: Ord + Clone, V: Clone> From<DivideInfo<K, V>> for TreeNodeInsertResult<K
 /// 1. Support cursor API
 /// 2. Support update in-place and incremental update
 /// 3. Does NOT support deletion
+#[derive(Clone)]
 pub(crate) struct LsmTree<K: Ord + Clone, V: Clone> {
     root: Arc<Mutex<TreeNode<K, V>>>,
 }
@@ -74,7 +75,7 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
 
         match result {
             TreeNodeInsertResult::Normal => None,
-            TreeNodeInsertResult::LegacyValue(val) => Some(val),
+            TreeNodeInsertResult::LegacyValue(val) => val.into(),
             TreeNodeInsertResult::Divide(divide_info) => {
                 let node = divide_info.generate_node();
 
@@ -85,8 +86,23 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         }
     }
 
+    pub fn delete_in_place(&mut self, key: &K) -> Option<V> {
+        let mut cursor = self.open_cursor();
+        let is_equal = cursor.seek(key);
+        if is_equal {
+            let old_val = cursor.update_inplace(LsmTreeValueMarker::Deleted);
+            old_val.into()
+        } else {
+            None
+        }
+    }
+
     pub fn open_cursor(&self) -> TreeCursor<K, V> {
         TreeCursor::new(self.root.clone())
+    }
+
+    pub fn len(&self) -> usize {
+        unimplemented!()
     }
 
 }
@@ -94,7 +110,7 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
 #[derive(Clone)]
 struct ItemTuple<K: Ord + Clone, V: Clone>{
     key: K,
-    value: V,
+    value: LsmTreeValueMarker<V>,
     left: Option<Arc<Mutex<TreeNode<K, V>>>>,
 }
 
@@ -151,6 +167,10 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
     }
 
     fn insert_in_place(&mut self, key: K, value: V) -> TreeNodeInsertResult<K, V> {
+        self.replace(key, LsmTreeValueMarker::Value(value))
+    }
+
+    fn replace(&mut self, key: K, value: LsmTreeValueMarker<V>) -> TreeNodeInsertResult<K, V> {
         let (index, is_equal) = self.find(&key);
         if is_equal {
             let prev = self.data[index].value.clone();
@@ -173,17 +193,17 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
             } else {
                 let insert_result = if index == self.data.len() {
                     let mut right_page = self.right.as_ref().expect("this is not a leaf").lock().unwrap();
-                    right_page.insert_in_place(key, value)
+                    right_page.replace(key, value)
                 } else {
                     let item = &self.data[index];
                     let mut right_page = item.left.as_ref().expect("this is not a leaf").lock().unwrap();
-                    right_page.insert_in_place(key, value)
+                    right_page.replace(key, value)
                 };
                 match insert_result {
                     TreeNodeInsertResult::Normal => insert_result,
                     TreeNodeInsertResult::LegacyValue(_) => insert_result,
                     TreeNodeInsertResult::Divide(divide_info) => {
-                        let new_item = ItemTuple {
+                        let new_item = ItemTuple::<K, V> {
                             key: divide_info.tuple.0,
                             value: divide_info.tuple.1,
                             left: Some(divide_info.left),
@@ -252,7 +272,7 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
 }
 
 pub(crate) struct TreeCursor<K: Ord + Clone, V: Clone> {
-    stack: LinkedList<Arc<Mutex<TreeNode<K, V>>>>,
+    stack: SmallVec<[Arc<Mutex<TreeNode<K, V>>>; 8]>,
     indexes: SmallVec<[usize; 8]>,
     done: bool,
 }
@@ -260,10 +280,8 @@ pub(crate) struct TreeCursor<K: Ord + Clone, V: Clone> {
 impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
 
     fn new(root: Arc<Mutex<TreeNode<K, V>>>) -> TreeCursor<K, V> {
-        let mut stack = LinkedList::new();
-        stack.push_back(root);
         let result = TreeCursor {
-            stack,
+            stack: smallvec![root],
             indexes: smallvec![0],
             done: false,
         };
@@ -275,7 +293,7 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
 
     fn go_to_left_most(&mut self) {
         loop {
-            let back = self.stack.back().expect("the stack is empty");
+            let back = self.stack.last().expect("the stack is empty");
             let left = {
                 let back_guard = back.lock().unwrap();
                 if back_guard.data.is_empty() {
@@ -289,13 +307,13 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
                     }
                 }
             };
-            self.stack.push_back(left);
+            self.stack.push(left);
             self.indexes.push(0);
         }
     }
 
     pub(crate) fn seek(&mut self, key: &K) -> bool {
-        let back = self.stack.back().expect("the stack is empty").clone();
+        let back = self.stack.last().expect("the stack is empty").clone();
 
         let (result, continue_) = {
             let back_guard = back.lock().unwrap();
@@ -311,12 +329,15 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
                 };
                 match child_opt {
                     Some(child) => {
-                        self.stack.push_back(child);
+                        self.stack.push(child);
                         *self.indexes.last_mut().unwrap() = index;
                         self.indexes.push(0);
                         (false, true)
                     }
-                    None => (false, false)
+                    None => {
+                        *self.indexes.last_mut().unwrap() = index;
+                        (false, false)
+                    }
                 }
             }
         };
@@ -329,14 +350,14 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
     }
 
     pub fn key(&self) -> K {
-        let back = self.stack.back().expect("the stack is empty");
+        let back = self.stack.last().expect("the stack is empty");
         let back_guard = back.lock().unwrap();
         let index = *self.indexes.last().unwrap();
         back_guard.data[index].key.clone()
     }
 
-    pub fn value(&self) -> V {
-        let back = self.stack.back().expect("the stack is empty");
+    pub fn value(&self) -> LsmTreeValueMarker<V> {
+        let back = self.stack.last().expect("the stack is empty");
         let back_guard = back.lock().unwrap();
         let index = *self.indexes.last().unwrap();
         back_guard.data[index].value.clone()
@@ -348,7 +369,7 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
 
     pub fn next(&mut self) {
         let direction = {
-            let back = self.stack.back().expect("the stack is empty");
+            let back = self.stack.last().expect("the stack is empty");
             let back_guard = back.lock().unwrap();
             if back_guard.is_leaf() {
                 *self.indexes.last_mut().unwrap() += 1;
@@ -376,7 +397,7 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
             }
             NextDirection::Other(right_page) => {
                 *self.indexes.last_mut().unwrap() += 1;
-                self.stack.push_back(right_page);
+                self.stack.push(right_page);
                 self.indexes.push(0);
                 self.go_to_left_most();
             }
@@ -386,12 +407,12 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
 
     fn handle_overflow(&mut self) {
         while self.stack.len() > 1 {
-            self.stack.pop_back().unwrap();
+            self.stack.pop();
             self.indexes.pop();
 
             let index = *self.indexes.last().unwrap();
 
-            let back = self.stack.back().unwrap();
+            let back = self.stack.last().unwrap();
             let back_guard = back.lock().unwrap();
             if index == back_guard.data.len() {
                 if self.stack.len() == 1 {
@@ -406,8 +427,17 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
     }
 
     #[inline]
-    fn done(&self) -> bool {
+    pub fn done(&self) -> bool {
         self.done
+    }
+
+    fn update_inplace(&self, value: LsmTreeValueMarker<V>) -> LsmTreeValueMarker<V> {
+        let index = *self.indexes.last().unwrap();
+        let back = self.stack.last().unwrap();
+        let mut back_guard = back.lock().unwrap();
+        let old_val = back_guard.data[index].value.clone();
+        back_guard.data[index].value = value;
+        old_val
     }
 
 }
@@ -432,7 +462,7 @@ mod tests {
         for i in 0..100 {
             let mut cursor = tree.open_cursor();
             cursor.seek(&i);
-            assert_eq!(cursor.value(), i);
+            assert_eq!(cursor.value().unwrap(), i);
         }
     }
 
@@ -447,7 +477,29 @@ mod tests {
         let mut cursor = tree.open_cursor();
         cursor.seek(&15);
 
-        assert_eq!(cursor.value(), 10);
+        assert_eq!(cursor.value().unwrap(), 20);
+
+        let mut cursor = tree.open_cursor();
+        cursor.seek(&5);
+
+        assert_eq!(cursor.value().unwrap(), 10);
+
+        let mut cursor = tree.open_cursor();
+        cursor.seek(&25);
+        assert_eq!(cursor.value().unwrap(), 30);
+    }
+
+    #[test]
+    fn test_cursor_2() {
+        let mut tree = LsmTree::new();
+        for i in 0..16 {
+            let i = i * 10;
+            tree.insert_in_place(i, i);
+        }
+
+        let mut cursor = tree.open_cursor();
+        cursor.seek(&15);
+        println!("value: {}", cursor.value());
     }
 
     #[test]

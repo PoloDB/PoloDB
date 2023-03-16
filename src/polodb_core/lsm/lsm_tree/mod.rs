@@ -4,5 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 mod lsm_tree;
+mod value_marker;
 
 pub(crate) use lsm_tree::LsmTree;
+pub(crate) use value_marker::LsmTreeValueMarker;

@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use im::OrdMap;
+use crate::lsm::lsm_tree::LsmTree;
 
 #[derive(Copy, Clone)]
 pub(crate) struct LsmTuplePtr {
@@ -40,7 +40,7 @@ impl SegValue {
 // Immutable segment
 #[derive(Clone)]
 pub(crate) struct ImLsmSegment {
-    pub segments:         OrdMap<Vec<u8>, LsmTuplePtr>,
+    pub segments:         LsmTree<Vec<u8>, LsmTuplePtr>,
     pub start_pid:        u64,
     pub end_pid:          u64,
 }

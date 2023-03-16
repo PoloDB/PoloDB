@@ -10,12 +10,12 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Mutex;
 use byteorder::WriteBytesExt;
-use im::OrdMap;
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::mem_table::MemTable;
 use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr, SegValue};
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use crate::page::RawPage;
+use crate::lsm::lsm_tree::LsmTree;
 use super::lsm_meta::LsmMetaDelegate;
 
 #[allow(unused)]
@@ -329,11 +329,18 @@ impl LsmFileBackendInner {
 
         writer.begin()?;
 
-        let mut segments = OrdMap::<Vec<u8>, LsmTuplePtr>::new();
+        let mut segments = LsmTree::<Vec<u8>, LsmTuplePtr>::new();
 
-        for (key, value) in &mem_table.segments {
-            let pos = writer.write_tuple(&key, value)?;
-            segments.insert(key.clone(), pos);
+        let mut mem_table_cursor = mem_table.segments.open_cursor();
+
+        while !mem_table_cursor.done() {
+            let key = mem_table_cursor.key();
+            let value = mem_table_cursor.value();
+            let pos = writer.write_tuple(&key, value.as_ref().unwrap())?;
+
+            segments.insert_in_place(key, pos);
+
+            mem_table_cursor.next();
         }
 
         let end_ptr = writer.end()?;

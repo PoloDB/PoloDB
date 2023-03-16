@@ -24,7 +24,6 @@ byteorder = "1.4.3"
 num_enum = "0.5.4"
 serde = { version = "1.0.125", features = ["rc"] }
 uuid = { version = "1.3.0", features = ["atomic", "v1", "v4", "wasm-bindgen", "js", "getrandom"] }
-im = "15.1.0"
 smallvec = { version = "1.10.0", features = ["union", "write", "const_new"] }
 
 [dependencies.web-sys]
