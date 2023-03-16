@@ -4,11 +4,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use super::lsm_segment::ImLsmSegment;
+use smallvec::{SmallVec, smallvec};
 
 #[derive(Clone)]
 pub(crate) struct LsmLevel {
     pub age:     u16,
-    pub content: Vec<ImLsmSegment>,
+    pub content: SmallVec<[ImLsmSegment; 4]>,
     pub len:     usize,
 }
 
@@ -17,7 +18,7 @@ impl LsmLevel {
     fn new() -> LsmLevel {
         LsmLevel {
             age: 0,
-            content: vec![],
+            content: smallvec![],
             len: 0,
         }
     }

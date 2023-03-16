@@ -7,6 +7,7 @@
 use std::cmp::Ordering;
 use std::collections::LinkedList;
 use std::sync::{Arc, Mutex};
+use smallvec::{SmallVec, smallvec};
 
 const ORDER: usize = 8;
 
@@ -252,7 +253,7 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
 
 pub(crate) struct TreeCursor<K: Ord + Clone, V: Clone> {
     stack: LinkedList<Arc<Mutex<TreeNode<K, V>>>>,
-    indexes: Vec<usize>,
+    indexes: SmallVec<[usize; 8]>,
     done: bool,
 }
 
@@ -263,7 +264,7 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
         stack.push_back(root);
         let result = TreeCursor {
             stack,
-            indexes: vec![0],
+            indexes: smallvec![0],
             done: false,
         };
 
