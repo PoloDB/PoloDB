@@ -4,22 +4,23 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use std::borrow::Borrow;
 use std::cmp::Ordering;
-use std::sync::{Arc, Mutex};
-use smallvec::{SmallVec, smallvec};
+use std::sync::{Arc, RwLock};
+use crate::lsm::lsm_tree::tree_cursor::TreeCursor;
 use crate::lsm::lsm_tree::value_marker::LsmTreeValueMarker;
 
 const ORDER: usize = 8;
 
 struct DivideInfo<K: Ord + Clone, V: Clone> {
     tuple: (K, LsmTreeValueMarker<V>),
-    left: Arc<Mutex<TreeNode<K ,V>>>,
-    right: Arc<Mutex<TreeNode<K ,V>>>,
+    left: Arc<RwLock<TreeNode<K ,V>>>,
+    right: Arc<RwLock<TreeNode<K ,V>>>,
 }
 
 impl<K: Ord + Clone, V: Clone> DivideInfo<K, V> {
 
-    fn generate_node(self) -> Arc<Mutex<TreeNode<K, V>>> {
+    fn generate_node(self) -> Arc<RwLock<TreeNode<K, V>>> {
         let mut raw = TreeNode::new();
 
         raw.data.push(ItemTuple {
@@ -30,7 +31,7 @@ impl<K: Ord + Clone, V: Clone> DivideInfo<K, V> {
 
         raw.right = Some(self.right);
 
-        Arc::new(Mutex::new(raw))
+        Arc::new(RwLock::new(raw))
     }
 
 }
@@ -55,7 +56,7 @@ impl<K: Ord + Clone, V: Clone> From<DivideInfo<K, V>> for TreeNodeInsertResult<K
 /// 3. Does NOT support deletion
 #[derive(Clone)]
 pub(crate) struct LsmTree<K: Ord + Clone, V: Clone> {
-    root: Arc<Mutex<TreeNode<K, V>>>,
+    root: Arc<RwLock<TreeNode<K, V>>>,
 }
 
 impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
@@ -63,14 +64,18 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
     pub fn new() -> LsmTree<K, V> {
         let empty = TreeNode::<K, V>::new();
         LsmTree {
-            root: Arc::new(Mutex::new(empty)),
+            root: Arc::new(RwLock::new(empty)),
         }
     }
 
     pub fn insert_in_place(&mut self, key: K, value: V) -> Option<V> {
+        self.update_in_place(key, LsmTreeValueMarker::Value(value))
+    }
+
+    fn update_in_place(&mut self, key: K, value: LsmTreeValueMarker<V>) -> Option<V> {
         let result = {
-            let mut root = self.root.lock().unwrap();
-            root.insert_in_place(key, value)
+            let mut root = self.root.write().unwrap();
+            root.replace(key, value)
         };
 
         match result {
@@ -86,7 +91,11 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         }
     }
 
-    pub fn delete_in_place(&mut self, key: &K) -> Option<V> {
+    pub fn delete_in_place<Q: ?Sized>(&mut self, key: &Q) -> Option<V>
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord,
+    {
         let mut cursor = self.open_cursor();
         let is_equal = cursor.seek(key);
         if is_equal {
@@ -97,26 +106,53 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         }
     }
 
+    pub fn delete_range_in_place(&mut self, start: &K, end: &K) {
+        assert!(start < end);
+
+        self.indeed_delete_range_in_place(start, end);
+
+        self.update_in_place(start.clone(), LsmTreeValueMarker::DeleteStart);
+        self.update_in_place(end.clone(), LsmTreeValueMarker::DeleteEnd);
+    }
+
+    fn indeed_delete_range_in_place(&mut self, start: &K, end: &K) {
+        let mut cursor = self.open_cursor();
+
+        cursor.seek(start);
+
+        while !cursor.done() {
+            let key = cursor.key().unwrap();
+            if &key > end {
+                break;
+            }
+
+            cursor.update_inplace(LsmTreeValueMarker::Deleted);
+
+            cursor.next();
+        }
+    }
+
     pub fn open_cursor(&self) -> TreeCursor<K, V> {
         TreeCursor::new(self.root.clone())
     }
 
     pub fn len(&self) -> usize {
-        unimplemented!()
+        let root_guard = self.root.read().unwrap();
+        root_guard.len()
     }
 
 }
 
 #[derive(Clone)]
-struct ItemTuple<K: Ord + Clone, V: Clone>{
-    key: K,
-    value: LsmTreeValueMarker<V>,
-    left: Option<Arc<Mutex<TreeNode<K, V>>>>,
+pub(super) struct ItemTuple<K: Ord + Clone, V: Clone>{
+    pub(super) key: K,
+    pub(super) value: LsmTreeValueMarker<V>,
+    pub(super) left: Option<Arc<RwLock<TreeNode<K, V>>>>,
 }
 
-struct TreeNode<K: Ord + Clone, V: Clone> {
-    data: Vec<ItemTuple<K, V>>,
-    right: Option<Arc<Mutex<TreeNode<K, V>>>>,
+pub(super) struct TreeNode<K: Ord + Clone, V: Clone> {
+    pub(super) data: Vec<ItemTuple<K, V>>,
+    pub(super) right: Option<Arc<RwLock<TreeNode<K, V>>>>,
 }
 
 impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
@@ -128,7 +164,38 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
         }
     }
 
-    fn find(&self, key: &K) -> (usize, bool) {
+    fn len(&self) -> usize {
+        let mut base = 0;
+
+        for item in &self.data {
+            if item.value.is_value() {
+                base += 1;
+            }
+        }
+
+        if self.is_leaf() {
+            return base;
+        }
+        for item in &self.data {
+            if let Some(left) = &item.left {
+                let left_guard = left.read().unwrap();
+                base += left_guard.len();
+            }
+        }
+
+        if let Some(right) = &self.right {
+            let right_guard = right.read().unwrap();
+            base += right_guard.len();
+        }
+
+        base
+    }
+
+    pub(super) fn find<Q: ?Sized>(&self, key: &Q) -> (usize, bool)
+    where
+        K: Borrow<Q> + Ord,
+        Q: Ord,
+    {
         if self.data.is_empty() {
             return (0, false);
         }
@@ -140,7 +207,7 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
             let middle = (low + high) / 2;
             let tuple = &self.data[middle as usize];
 
-            let cmp_result = key.cmp(&tuple.key);
+            let cmp_result = key.cmp(tuple.key.borrow());
 
             match cmp_result {
                 Ordering::Equal => {
@@ -162,7 +229,7 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
     }
 
     #[inline]
-    fn is_leaf(&self) -> bool {
+    pub(super) fn is_leaf(&self) -> bool {
         self.right.is_none()
     }
 
@@ -192,11 +259,11 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
                 }
             } else {
                 let insert_result = if index == self.data.len() {
-                    let mut right_page = self.right.as_ref().expect("this is not a leaf").lock().unwrap();
+                    let mut right_page = self.right.as_ref().expect("this is not a leaf").write().unwrap();
                     right_page.replace(key, value)
                 } else {
                     let item = &self.data[index];
-                    let mut right_page = item.left.as_ref().expect("this is not a leaf").lock().unwrap();
+                    let mut right_page = item.left.as_ref().expect("this is not a leaf").write().unwrap();
                     right_page.replace(key, value)
                 };
                 match insert_result {
@@ -245,7 +312,7 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
             let middle_item = &self.data[middle_index];
             raw.right = middle_item.left.clone();
 
-            Arc::new(Mutex::new(raw))
+            Arc::new(RwLock::new(raw))
         };
 
         let right_node = {
@@ -257,7 +324,7 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
 
             raw.right = self.right.clone();
 
-            Arc::new(Mutex::new(raw))
+            Arc::new(RwLock::new(raw))
         };
 
         let divide_info = DivideInfo {
@@ -269,182 +336,6 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
         divide_info.into()
     }
 
-}
-
-pub(crate) struct TreeCursor<K: Ord + Clone, V: Clone> {
-    stack: SmallVec<[Arc<Mutex<TreeNode<K, V>>>; 8]>,
-    indexes: SmallVec<[usize; 8]>,
-    done: bool,
-}
-
-impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
-
-    fn new(root: Arc<Mutex<TreeNode<K, V>>>) -> TreeCursor<K, V> {
-        let result = TreeCursor {
-            stack: smallvec![root],
-            indexes: smallvec![0],
-            done: false,
-        };
-
-        // result.go_to_left_most();
-
-        result
-    }
-
-    fn go_to_left_most(&mut self) {
-        loop {
-            let back = self.stack.last().expect("the stack is empty");
-            let left = {
-                let back_guard = back.lock().unwrap();
-                if back_guard.data.is_empty() {
-                    break;
-                }
-                let left_opt = back_guard.data[0].left.clone();
-                match left_opt {
-                    Some(left) => left,
-                    None => {
-                        break
-                    }
-                }
-            };
-            self.stack.push(left);
-            self.indexes.push(0);
-        }
-    }
-
-    pub(crate) fn seek(&mut self, key: &K) -> bool {
-        let back = self.stack.last().expect("the stack is empty").clone();
-
-        let (result, continue_) = {
-            let back_guard = back.lock().unwrap();
-            let (index, is_equal) = back_guard.find(key);
-            if is_equal {
-                *self.indexes.last_mut().unwrap() = index;
-                (true, false)
-            } else {
-                let child_opt = if index == back_guard.data.len() {
-                    back_guard.right.clone()
-                } else {
-                    back_guard.data[index].left.clone()
-                };
-                match child_opt {
-                    Some(child) => {
-                        self.stack.push(child);
-                        *self.indexes.last_mut().unwrap() = index;
-                        self.indexes.push(0);
-                        (false, true)
-                    }
-                    None => {
-                        *self.indexes.last_mut().unwrap() = index;
-                        (false, false)
-                    }
-                }
-            }
-        };
-
-        if continue_ {
-            self.seek(key)
-        } else {
-            result
-        }
-    }
-
-    pub fn key(&self) -> K {
-        let back = self.stack.last().expect("the stack is empty");
-        let back_guard = back.lock().unwrap();
-        let index = *self.indexes.last().unwrap();
-        back_guard.data[index].key.clone()
-    }
-
-    pub fn value(&self) -> LsmTreeValueMarker<V> {
-        let back = self.stack.last().expect("the stack is empty");
-        let back_guard = back.lock().unwrap();
-        let index = *self.indexes.last().unwrap();
-        back_guard.data[index].value.clone()
-    }
-
-    pub fn go_to_min(&mut self) {
-        self.go_to_left_most();
-    }
-
-    pub fn next(&mut self) {
-        let direction = {
-            let back = self.stack.last().expect("the stack is empty");
-            let back_guard = back.lock().unwrap();
-            if back_guard.is_leaf() {
-                *self.indexes.last_mut().unwrap() += 1;
-                let index = *self.indexes.last().unwrap();
-                let overflow = index >= back_guard.data.len();  // overflow
-                NextDirection::Leaf(overflow)
-            } else {
-                let index = *self.indexes.last().unwrap();
-                let right = if index == back_guard.data.len() - 1 {  // last
-                    let right = back_guard.right.as_ref().unwrap().clone();
-                    right
-                } else {
-                    let right = back_guard.data[index + 1].left.as_ref().unwrap().clone();
-                    right
-                };
-                NextDirection::Other(right)
-            }
-        };
-
-        match direction {
-            NextDirection::Leaf(is_overflow) => {
-                if is_overflow {
-                    self.handle_overflow();
-                }
-            }
-            NextDirection::Other(right_page) => {
-                *self.indexes.last_mut().unwrap() += 1;
-                self.stack.push(right_page);
-                self.indexes.push(0);
-                self.go_to_left_most();
-            }
-        }
-
-    }
-
-    fn handle_overflow(&mut self) {
-        while self.stack.len() > 1 {
-            self.stack.pop();
-            self.indexes.pop();
-
-            let index = *self.indexes.last().unwrap();
-
-            let back = self.stack.last().unwrap();
-            let back_guard = back.lock().unwrap();
-            if index == back_guard.data.len() {
-                if self.stack.len() == 1 {
-                    self.done = true;
-                    return;
-                }
-                continue
-            } else {
-                return;
-            }
-        }
-    }
-
-    #[inline]
-    pub fn done(&self) -> bool {
-        self.done
-    }
-
-    fn update_inplace(&self, value: LsmTreeValueMarker<V>) -> LsmTreeValueMarker<V> {
-        let index = *self.indexes.last().unwrap();
-        let back = self.stack.last().unwrap();
-        let mut back_guard = back.lock().unwrap();
-        let old_val = back_guard.data[index].value.clone();
-        back_guard.data[index].value = value;
-        old_val
-    }
-
-}
-
-enum NextDirection<K: Ord + Clone, V: Clone> {
-    Leaf(bool),  // is overflow
-    Other(Arc<Mutex<TreeNode<K, V>>>),  // next page
 }
 
 #[cfg(test)]
@@ -459,10 +350,12 @@ mod tests {
             tree.insert_in_place(i, i);
         }
 
+        assert_eq!(tree.len(), 100);
+
         for i in 0..100 {
             let mut cursor = tree.open_cursor();
             cursor.seek(&i);
-            assert_eq!(cursor.value().unwrap(), i);
+            assert_eq!(cursor.value().unwrap().unwrap(), i);
         }
     }
 
@@ -477,16 +370,16 @@ mod tests {
         let mut cursor = tree.open_cursor();
         cursor.seek(&15);
 
-        assert_eq!(cursor.value().unwrap(), 20);
+        assert_eq!(cursor.value().unwrap().unwrap(), 20);
 
         let mut cursor = tree.open_cursor();
         cursor.seek(&5);
 
-        assert_eq!(cursor.value().unwrap(), 10);
+        assert_eq!(cursor.value().unwrap().unwrap(), 10);
 
         let mut cursor = tree.open_cursor();
         cursor.seek(&25);
-        assert_eq!(cursor.value().unwrap(), 30);
+        assert_eq!(cursor.value().unwrap().unwrap(), 30);
     }
 
     #[test]
@@ -499,7 +392,7 @@ mod tests {
 
         let mut cursor = tree.open_cursor();
         cursor.seek(&15);
-        println!("value: {}", cursor.value());
+        println!("value: {}", cursor.value().unwrap());
     }
 
     #[test]
@@ -515,11 +408,57 @@ mod tests {
 
         for i in 0..100 {
             assert!(!cursor.done());
-            assert_eq!(cursor.key(), i);
+            assert_eq!(cursor.key().unwrap(), i);
             cursor.next();
         }
 
         assert!(cursor.done());
+    }
+
+    #[test]
+    fn test_delete() {
+        let mut tree = LsmTree::new();
+
+        for i in 0..100 {
+            tree.insert_in_place(i, i);
+        }
+
+        tree.delete_in_place(&50);
+
+        let mut cursor = tree.open_cursor();
+        cursor.seek(&50);
+
+        assert!(cursor.value().unwrap().is_deleted())
+    }
+
+    #[test]
+    fn test_delete_range() {
+        let mut tree = LsmTree::new();
+
+        for i in 0..10 {
+            tree.insert_in_place(i, i);
+        }
+
+        tree.delete_range_in_place(&2, &5);
+
+        let mut cursor = tree.open_cursor();
+        cursor.go_to_min();
+
+        assert_eq!(cursor.value().unwrap().unwrap(), 0);
+        cursor.next();
+        assert_eq!(cursor.value().unwrap().unwrap(), 1);
+        cursor.next();
+        assert!(cursor.value().unwrap().is_delete_start());  // 2
+        cursor.next();
+        assert!(cursor.value().unwrap().is_deleted());  // 3
+        cursor.next();
+        assert!(cursor.value().unwrap().is_deleted());  // 4
+        cursor.next();
+        assert!(cursor.value().unwrap().is_delete_end());  // 5
+        cursor.next();
+        assert_eq!(cursor.value().unwrap().unwrap(), 6);
+
+        assert_eq!(tree.len(),  6);
     }
 
 }

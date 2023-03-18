@@ -12,10 +12,10 @@ use std::sync::Mutex;
 use byteorder::WriteBytesExt;
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::mem_table::MemTable;
-use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr, SegValue};
+use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use crate::page::RawPage;
-use crate::lsm::lsm_tree::LsmTree;
+use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
 use super::lsm_meta::LsmMetaDelegate;
 
 #[allow(unused)]
@@ -146,13 +146,13 @@ impl<'a, 'b> FileWriter<'a, 'b> {
         }
     }
 
-    fn write_tuple(&mut self, key: &[u8], value: &SegValue) -> DbResult<LsmTuplePtr> {
+    fn write_tuple(&mut self, key: &[u8], value: LsmTreeValueMarker<&[u8]>) -> DbResult<LsmTuplePtr> {
         let pos = LsmTuplePtr {
             pid: self.pid,
             offset: self.page_buffer.pos(),
         };
         match value {
-            SegValue::OwnValue(insert_buffer) => {
+            LsmTreeValueMarker::Value(insert_buffer) => {
                 self.write_u8(format::LSM_INSERT)?;
                 crate::btree::vli::encode(self, key.len() as i64)?;
                 self.write_all(key)?;
@@ -161,8 +161,18 @@ impl<'a, 'b> FileWriter<'a, 'b> {
                 crate::btree::vli::encode(self, value_len as i64)?;
                 self.write_all(&insert_buffer)?;
             }
-            SegValue::Deleted => {
+            LsmTreeValueMarker::Deleted => {
                 self.write_u8(format::LSM_POINT_DELETE)?;
+                crate::btree::vli::encode(self, key.len() as i64)?;
+                self.write_all(key)?;
+            }
+            LsmTreeValueMarker::DeleteStart => {
+                self.write_u8(format::LSM_START_DELETE)?;
+                crate::btree::vli::encode(self, key.len() as i64)?;
+                self.write_all(key)?;
+            }
+            LsmTreeValueMarker::DeleteEnd => {
+                self.write_u8(format::LSM_END_DELETE)?;
                 crate::btree::vli::encode(self, key.len() as i64)?;
                 self.write_all(key)?;
             }
@@ -329,14 +339,13 @@ impl LsmFileBackendInner {
 
         writer.begin()?;
 
-        let mut segments = LsmTree::<Vec<u8>, LsmTuplePtr>::new();
+        let mut segments = LsmTree::<Box<[u8]>, LsmTuplePtr>::new();
 
         let mut mem_table_cursor = mem_table.segments.open_cursor();
 
         while !mem_table_cursor.done() {
-            let key = mem_table_cursor.key();
-            let value = mem_table_cursor.value();
-            let pos = writer.write_tuple(&key, value.as_ref().unwrap())?;
+            let (key, value) = mem_table_cursor.tuple().unwrap();
+            let pos = writer.write_tuple(key.as_ref(), value.as_ref())?;
 
             segments.insert_in_place(key, pos);
 

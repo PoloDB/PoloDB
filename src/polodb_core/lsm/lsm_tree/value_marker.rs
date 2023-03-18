@@ -6,22 +6,44 @@
 
 use std::fmt::{Display, Formatter};
 
-#[derive(Clone)]
-pub(crate) enum LsmTreeValueMarker<V: Clone> {
+pub(crate) enum LsmTreeValueMarker<V> {
     Deleted,
     DeleteStart,
     DeleteEnd,
     Value(V),
 }
 
-impl<V: Clone> LsmTreeValueMarker<V> {
+impl<V> LsmTreeValueMarker<V> {
 
-    pub fn as_ref(&self) -> LsmTreeValueMarker<&V> {
+    #[inline]
+    pub fn is_delete_start(&self) -> bool {
         match self {
-            LsmTreeValueMarker::Deleted => LsmTreeValueMarker::Deleted,
-            LsmTreeValueMarker::DeleteStart => LsmTreeValueMarker::DeleteStart,
-            LsmTreeValueMarker::DeleteEnd => LsmTreeValueMarker::DeleteEnd,
-            LsmTreeValueMarker::Value(v) => LsmTreeValueMarker::Value(&v),
+            LsmTreeValueMarker::DeleteStart => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn is_delete_end(&self) -> bool {
+        match self {
+            LsmTreeValueMarker::DeleteEnd => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn is_deleted(&self) -> bool {
+        match self {
+            LsmTreeValueMarker::Deleted => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn is_value(&self) -> bool {
+        match self {
+            LsmTreeValueMarker::Value(_) => true,
+            _ => false,
         }
     }
 
@@ -34,9 +56,36 @@ impl<V: Clone> LsmTreeValueMarker<V> {
         }
     }
 
+    pub fn as_ref<T: ?Sized>(&self) -> LsmTreeValueMarker<&T>
+    where
+        V: AsRef<T>
+    {
+        match self {
+            LsmTreeValueMarker::Deleted => LsmTreeValueMarker::Deleted,
+            LsmTreeValueMarker::DeleteStart => LsmTreeValueMarker::DeleteStart,
+            LsmTreeValueMarker::DeleteEnd => LsmTreeValueMarker::DeleteEnd,
+            LsmTreeValueMarker::Value(v) => {
+                LsmTreeValueMarker::Value(v.as_ref())
+            }
+        }
+    }
+
 }
 
-impl<V: Clone> Into<Option<V>> for LsmTreeValueMarker<V> {
+impl<V: Clone> Clone for LsmTreeValueMarker<V> {
+    fn clone(&self) -> Self {
+        match self {
+            LsmTreeValueMarker::Deleted => LsmTreeValueMarker::Deleted,
+            LsmTreeValueMarker::DeleteStart => LsmTreeValueMarker::DeleteStart,
+            LsmTreeValueMarker::DeleteEnd => LsmTreeValueMarker::DeleteEnd,
+            LsmTreeValueMarker::Value(value) => {
+                LsmTreeValueMarker::Value(value.clone())
+            }
+        }
+    }
+}
+
+impl<V> Into<Option<V>> for LsmTreeValueMarker<V> {
 
     fn into(self) -> Option<V> {
         match self {
@@ -47,7 +96,7 @@ impl<V: Clone> Into<Option<V>> for LsmTreeValueMarker<V> {
 
 }
 
-impl<T: Clone> Display for LsmTreeValueMarker<T> {
+impl<T> Display for LsmTreeValueMarker<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             LsmTreeValueMarker::Deleted => write!(f, "Deleted"),

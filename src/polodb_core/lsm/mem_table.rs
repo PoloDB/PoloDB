@@ -1,8 +1,7 @@
 use super::lsm_tree::LsmTree;
-use crate::lsm::lsm_segment::SegValue;
 
 pub(crate) struct MemTable {
-    pub segments:      LsmTree<Vec<u8>, SegValue>,
+    pub segments:      LsmTree<Box<[u8]>, Box<[u8]>>,
     store_bytes:       usize,
     left_segment_pid:  u64,
 }
@@ -18,7 +17,7 @@ impl MemTable {
     }
 
     pub fn put(&mut self, key: &[u8], value: &[u8]) {
-        let prev = self.segments.insert_in_place(key.into(), SegValue::OwnValue(value.into()));
+        let prev = self.segments.insert_in_place(key.into(), value.into());
 
         if let Some(prev) = prev {
             self.store_bytes -= prev.len();
@@ -33,7 +32,7 @@ impl MemTable {
     /// Store will not really delete the value
     /// But inert a flag
     pub fn delete(&mut self, key: &[u8]) {
-        let prev = self.segments.insert_in_place(key.into(), SegValue::Deleted);
+        let prev = self.segments.delete_in_place(key);
 
         if let Some(prev) = prev {
             self.store_bytes -= prev.len();

@@ -20,27 +20,10 @@ impl Default for LsmTuplePtr {
     }
 }
 
-#[derive(Clone)]
-pub(crate) enum SegValue {
-    Deleted,
-    OwnValue(Vec<u8>),
-}
-
-impl SegValue {
-
-    pub fn len(&self) -> usize {
-        match self {
-            SegValue::Deleted => 0,
-            SegValue::OwnValue(bytes) => bytes.len()
-        }
-    }
-
-}
-
 // Immutable segment
 #[derive(Clone)]
 pub(crate) struct ImLsmSegment {
-    pub segments:         LsmTree<Vec<u8>, LsmTuplePtr>,
+    pub segments:         LsmTree<Box<[u8]>, LsmTuplePtr>,
     pub start_pid:        u64,
     pub end_pid:          u64,
 }

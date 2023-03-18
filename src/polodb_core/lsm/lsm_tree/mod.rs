@@ -5,6 +5,7 @@
  */
 mod lsm_tree;
 mod value_marker;
+mod tree_cursor;
 
 pub(crate) use lsm_tree::LsmTree;
 pub(crate) use value_marker::LsmTreeValueMarker;
