@@ -8,4 +8,5 @@ mod value_marker;
 mod tree_cursor;
 
 pub(crate) use lsm_tree::LsmTree;
+pub(crate) use tree_cursor::TreeCursor;
 pub(crate) use value_marker::LsmTreeValueMarker;

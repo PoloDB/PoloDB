@@ -5,7 +5,7 @@
  */
 
 use std::borrow::Borrow;
-use std::cmp::Ordering;
+use std::cmp::{max, Ordering};
 use std::sync::{Arc, RwLock};
 use crate::lsm::lsm_tree::tree_cursor::TreeCursor;
 use crate::lsm::lsm_tree::value_marker::LsmTreeValueMarker;
@@ -97,8 +97,8 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         Q: Ord,
     {
         let mut cursor = self.open_cursor();
-        let is_equal = cursor.seek(key);
-        if is_equal {
+        let order = cursor.seek(key);
+        if order == Ordering::Equal {
             let old_val = cursor.update_inplace(LsmTreeValueMarker::Deleted);
             old_val.into()
         } else {
@@ -191,17 +191,19 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
         base
     }
 
-    pub(super) fn find<Q: ?Sized>(&self, key: &Q) -> (usize, bool)
+    /// Find the index of key
+    ///
+    /// - `use_greater`: if the 'key' is in the middle between two values,
+    ///                  use this flag to determine using greater one
+    pub(super) fn find<Q: ?Sized>(&self, key: &Q) -> (usize, Ordering)
     where
         K: Borrow<Q> + Ord,
         Q: Ord,
     {
-        if self.data.is_empty() {
-            return (0, false);
-        }
+        assert!(!self.data.is_empty());
 
-        let mut low: i32 = 0;
-        let mut high: i32 = (self.data.len() - 1) as i32;
+        let mut low: isize = 0;
+        let mut high: isize = (self.data.len() - 1) as isize;
 
         while low <= high {
             let middle = (low + high) / 2;
@@ -211,7 +213,7 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
 
             match cmp_result {
                 Ordering::Equal => {
-                    return (middle as usize, true);
+                    return (middle as usize, cmp_result);
                 }
 
                 Ordering::Less => {
@@ -225,7 +227,13 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
 
         }
 
-        (std::cmp::max(low, high) as usize, false)
+        let idx = max(low, high) as usize;
+        if idx >= self.data.len() {
+            (idx, Ordering::Greater)
+        } else {
+            let tuple = &self.data[idx as usize];
+            (idx, key.cmp(tuple.key.borrow()))
+        }
     }
 
     #[inline]
@@ -238,8 +246,17 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
     }
 
     fn replace(&mut self, key: K, value: LsmTreeValueMarker<V>) -> TreeNodeInsertResult<K, V> {
-        let (index, is_equal) = self.find(&key);
-        if is_equal {
+        if self.data.is_empty() {
+            self.data.push(ItemTuple {
+                key,
+                value,
+                left: None,
+            });
+            return TreeNodeInsertResult::Normal;
+        }
+        let (index, order) = self.find(&key);
+        if order == Ordering::Equal {
+            let index = index as usize;
             let prev = self.data[index].value.clone();
             self.data[index].value = value;
             TreeNodeInsertResult::LegacyValue(prev)
@@ -276,6 +293,7 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
                             left: Some(divide_info.left),
                         };
 
+                        let index = max(0, index) as usize;
                         self.data.insert(index, new_item);
 
                         if index == self.data.len() - 1 {  // is last
@@ -340,6 +358,7 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
 
 #[cfg(test)]
 mod tests {
+    use std::cmp::Ordering;
     use crate::lsm::lsm_tree::LsmTree;
 
     #[test]
@@ -368,18 +387,31 @@ mod tests {
         tree.insert_in_place(30, 30);
 
         let mut cursor = tree.open_cursor();
-        cursor.seek(&15);
+        let ord = cursor.seek(&15);
 
+        assert_eq!(ord, Ordering::Less);
         assert_eq!(cursor.value().unwrap().unwrap(), 20);
 
         let mut cursor = tree.open_cursor();
-        cursor.seek(&5);
+        let ord = cursor.seek(&5);
 
+        assert_eq!(ord, Ordering::Less);
         assert_eq!(cursor.value().unwrap().unwrap(), 10);
 
         let mut cursor = tree.open_cursor();
-        cursor.seek(&25);
+        let ord = cursor.seek(&25);
+
+        assert_eq!(ord, Ordering::Less);
         assert_eq!(cursor.value().unwrap().unwrap(), 30);
+
+        let mut cursor = tree.open_cursor();
+        let ord = cursor.seek(&35);
+
+        assert_eq!(ord, Ordering::Greater);
+        assert_eq!(cursor.value().unwrap().unwrap(), 30);
+
+        cursor.next();
+        assert!(cursor.done());
     }
 
     #[test]

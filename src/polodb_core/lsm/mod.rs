@@ -10,6 +10,7 @@ mod lsm_snapshot;
 mod mem_table;
 mod kv_cursor;
 mod lsm_tree;
+mod multi_cursor;
 
 pub use lsm_kv::LsmKv;
 pub use kv_cursor::KvCursor;

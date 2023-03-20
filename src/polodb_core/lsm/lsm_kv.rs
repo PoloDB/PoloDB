@@ -11,6 +11,7 @@ use crate::lsm::kv_cursor::KvCursor;
 use super::lsm_snapshot::LsmSnapshot;
 use super::lsm_backend::{LsmFileBackend, LsmLog};
 use crate::lsm::mem_table::MemTable;
+use crate::lsm::multi_cursor::MultiCursor;
 
 #[derive(Clone)]
 pub struct LsmKv {
@@ -27,7 +28,8 @@ impl LsmKv {
     }
 
     pub fn open_cursor(&self) -> KvCursor {
-        KvCursor::new(self.inner.clone())
+        let multi_cursor = self.inner.open_multi_cursor();
+        KvCursor::new(self.inner.clone(), multi_cursor)
     }
 
     pub fn start_transaction(&self) -> DbResult<()> {
@@ -80,6 +82,12 @@ impl LsmKvInner {
             mem_table: RefCell::new(None),
             config,
         })
+    }
+
+    fn open_multi_cursor(&self) -> MultiCursor {
+        let mut mem_table = self.mem_table.borrow_mut();
+        let mem_table_cursor = mem_table.as_mut().unwrap().segments.open_cursor();
+        MultiCursor::new(mem_table_cursor)
     }
 
     fn start_transaction(&self) -> DbResult<()> {
