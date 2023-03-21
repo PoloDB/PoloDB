@@ -68,6 +68,11 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         }
     }
 
+    pub fn clear(&mut self) {
+        let empty = TreeNode::<K, V>::new();
+        self.root = Arc::new(RwLock::new(empty));
+    }
+
     pub fn insert_in_place(&mut self, key: K, value: V) -> Option<V> {
         self.update_in_place(key, LsmTreeValueMarker::Value(value))
     }

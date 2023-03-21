@@ -1,7 +1,7 @@
 use super::lsm_tree::LsmTree;
 
 pub(crate) struct MemTable {
-    pub segments:      LsmTree<Box<[u8]>, Box<[u8]>>,
+    pub segments:      LsmTree<Box<[u8]>, Vec<u8>>,
     store_bytes:       usize,
     left_segment_pid:  u64,
 }

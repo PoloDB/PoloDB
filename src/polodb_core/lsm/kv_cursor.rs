@@ -27,9 +27,22 @@ impl KvCursor {
         }
     }
 
-    pub fn seek(&self, key: &[u8]) -> DbResult<()> {
+    pub fn seek<K>(&self, key: K) -> DbResult<()>
+    where
+        K: AsRef<[u8]>
+    {
         let mut cursor = self.inner.lock()?;
-        cursor.seek(key)
+        cursor.seek(key.as_ref())
+    }
+
+    pub fn value(&self) -> DbResult<Option<Vec<u8>>> {
+        let cursor = self.inner.lock()?;
+        cursor.value()
+    }
+
+    pub fn next(&self) -> DbResult<()> {
+        let mut cursor = self.inner.lock()?;
+        cursor.next()
     }
 
 }

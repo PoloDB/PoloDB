@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use crate::{Config, DbErr, DbResult};
@@ -20,7 +20,12 @@ pub struct LsmKv {
 
 impl LsmKv {
 
-    pub fn open_file(path: &Path, config: Config) -> DbResult<LsmKv> {
+    pub fn open_file(path: &Path) -> DbResult<LsmKv> {
+        let config = Config::default();
+        LsmKv::open_file_with_config(path, config)
+    }
+
+    pub fn open_file_with_config(path: &Path, config: Config) -> DbResult<LsmKv> {
         let inner = LsmKvInner::open_file(path, config)?;
         Ok(LsmKv {
             inner: Arc::new(inner),
@@ -32,20 +37,43 @@ impl LsmKv {
         KvCursor::new(self.inner.clone(), multi_cursor)
     }
 
-    pub fn start_transaction(&self) -> DbResult<()> {
-        self.inner.start_transaction()
-    }
-
-    pub fn rollback(&self) -> DbResult<()> {
-        self.inner.rollback()
-    }
-
-    pub fn put(&self, key: &[u8], value: &[u8]) -> DbResult<()> {
-        self.inner.put(key, value)
-    }
-
-    pub fn commit(&self) -> DbResult<()> {
+    pub fn put<K, V>(&self, key: K, value: V) -> DbResult<()>
+    where
+        K: AsRef<[u8]>,
+        V: AsRef<[u8]>,
+    {
+        self.inner.start_transaction()?;
+        self.inner.put(key.as_ref(), value.as_ref())?;
         self.inner.commit()
+    }
+
+    pub fn get<'a, K>(&self, key: K) -> DbResult<Option<Vec<u8>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        let cursor = self.open_cursor();
+        cursor.seek(key.as_ref())?;
+        let value = cursor.value()?;
+        let result = match value {
+            Some(bytes) => Some(bytes),
+            None => None,
+        };
+        Ok(result)
+    }
+
+    pub fn get_string<'a, K>(&self, key: K) -> DbResult<Option<String>>
+        where
+            K: AsRef<[u8]>,
+    {
+        let bytes = self.get(key)?;
+        let string = match bytes {
+            None => None,
+            Some(bytes) => {
+                let result = String::from_utf8(bytes)?;
+                Some(result)
+            }
+        };
+        Ok(string)
     }
 
 }
@@ -54,7 +82,8 @@ pub(crate) struct LsmKvInner {
     backend: Box<LsmFileBackend>,
     log: Option<LsmLog>,
     snapshot: Mutex<LsmSnapshot>,
-    mem_table: RefCell<Option<MemTable>>,
+    mem_table: RefCell<MemTable>,
+    in_transaction: Cell<bool>,
     config: Config,
 }
 
@@ -75,18 +104,20 @@ impl LsmKvInner {
         let log = LsmLog::open(log_file.as_path(), config.clone())?;
 
         let snapshot = LsmSnapshot::new();
+        let mem_table = MemTable::new(0);
         Ok(LsmKvInner {
             backend: Box::new(backend),
             log: Some(log),
             snapshot: Mutex::new(snapshot),
-            mem_table: RefCell::new(None),
+            mem_table: RefCell::new(mem_table),
+            in_transaction: Cell::new(false),
             config,
         })
     }
 
     fn open_multi_cursor(&self) -> MultiCursor {
-        let mut mem_table = self.mem_table.borrow_mut();
-        let mem_table_cursor = mem_table.as_mut().unwrap().segments.open_cursor();
+        let mem_table = self.mem_table.borrow();
+        let mem_table_cursor = mem_table.segments.open_cursor();
         MultiCursor::new(mem_table_cursor)
     }
 
@@ -95,46 +126,32 @@ impl LsmKvInner {
             log.start_transaction()?;
         }
 
-        {
-            let segment_pid = {
-                let snapshot = self.snapshot.lock()?;
-                snapshot.segment_pid()
-            };
-            let segment = MemTable::new(segment_pid);
-            let mut draft = self.mem_table.borrow_mut();
-            *draft = Some(segment);
-        }
-
-        Ok(())
-    }
-
-    fn rollback(&self) -> DbResult<()> {
-        if let Some(log) = &self.log {
-            log.rollback()?;
-        }
-
-        let mut segment = self.mem_table.borrow_mut();
-        *segment = None;
+        self.in_transaction.set(true);
 
         Ok(())
     }
 
     pub fn put(&self, key: &[u8], value: &[u8]) -> DbResult<()> {
+        if !self.in_transaction.get() {
+            return Err(DbErr::NoTransactionStarted);
+        }
+
         if let Some(log) = &self.log {
             log.put(key, value)?;
         }
 
         let mut segment = self.mem_table.borrow_mut();
-        if segment.is_none() {
-            return Err(DbErr::NoTransactionStarted);
-        }
 
-        segment.as_mut().unwrap().put(key, value);
+        segment.put(key, value);
 
         Ok(())
     }
 
     fn commit(&self) -> DbResult<()> {
+        if !self.in_transaction.get() {
+            return Err(DbErr::NoTransactionStarted);
+        }
+
         if let Some(log) = &self.log {
             let commit_result = log.commit()?;
             let mut snapshot = self.snapshot.lock()?;
@@ -142,21 +159,21 @@ impl LsmKvInner {
         }
 
         let mut mem_table = self.mem_table.borrow_mut();
-        if mem_table.is_none() {
-            return Err(DbErr::NoTransactionStarted);
-        }
-        let store_bytes = mem_table.as_ref().unwrap().store_bytes();
+
+        let store_bytes = mem_table.store_bytes();
         let block_size = self.config.get_lsm_block_size();
         if store_bytes > (block_size / 2) as usize {
             let mut snapshot = self.snapshot.lock()?;
             self.backend.sync_latest_segment(
-                mem_table.as_ref().unwrap(),
+                &mut mem_table,
                 &mut snapshot,
             )?;
             self.backend.checkpoint_snapshot(&mut snapshot)?;
+
+            mem_table.segments.clear();
         }
 
-        *mem_table = None;
+        self.in_transaction.set(false);
 
         Ok(())
     }
