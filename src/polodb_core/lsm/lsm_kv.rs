@@ -27,6 +27,20 @@ impl LsmKv {
 
     pub fn open_file_with_config(path: &Path, config: Config) -> DbResult<LsmKv> {
         let inner = LsmKvInner::open_file(path, config)?;
+        LsmKv::open_with_inner(inner)
+    }
+
+    pub fn open_memory() -> DbResult<LsmKv> {
+        LsmKv::open_memory_with_config(Config::default())
+    }
+
+    pub fn open_memory_with_config(config: Config) -> DbResult<LsmKv> {
+        let inner = LsmKvInner::open_with_backend(None, None, config)?;
+        LsmKv::open_with_inner(inner)
+    }
+
+    #[inline]
+    fn open_with_inner(inner: LsmKvInner) -> DbResult<LsmKv> {
         Ok(LsmKv {
             inner: Arc::new(inner),
         })
@@ -79,7 +93,7 @@ impl LsmKv {
 }
 
 pub(crate) struct LsmKvInner {
-    backend: Box<LsmFileBackend>,
+    backend: Option<Box<LsmFileBackend>>,
     log: Option<LsmLog>,
     snapshot: Mutex<LsmSnapshot>,
     mem_table: RefCell<MemTable>,
@@ -99,15 +113,21 @@ impl LsmKvInner {
 
     fn open_file(path: &Path, config: Config) -> DbResult<LsmKvInner> {
         let backend = LsmFileBackend::open(path, config.clone())?;
-
         let log_file = LsmKvInner::mk_log_path(path);
         let log = LsmLog::open(log_file.as_path(), config.clone())?;
+        LsmKvInner::open_with_backend(Some(Box::new(backend)), Some(log), config)
+    }
 
+    fn open_with_backend(
+        backend: Option<Box<LsmFileBackend>>,
+        log: Option<LsmLog>,
+        config: Config,
+    ) -> DbResult<LsmKvInner> {
         let snapshot = LsmSnapshot::new();
         let mem_table = MemTable::new(0);
         Ok(LsmKvInner {
-            backend: Box::new(backend),
-            log: Some(log),
+            backend,
+            log,
             snapshot: Mutex::new(snapshot),
             mem_table: RefCell::new(mem_table),
             in_transaction: Cell::new(false),
@@ -158,19 +178,21 @@ impl LsmKvInner {
             snapshot.log_offset = commit_result.offset;
         }
 
-        let mut mem_table = self.mem_table.borrow_mut();
+        if let Some(backend) = &self.backend {
+            let mut mem_table = self.mem_table.borrow_mut();
 
-        let store_bytes = mem_table.store_bytes();
-        let block_size = self.config.get_lsm_block_size();
-        if store_bytes > (block_size / 2) as usize {
-            let mut snapshot = self.snapshot.lock()?;
-            self.backend.sync_latest_segment(
-                &mut mem_table,
-                &mut snapshot,
-            )?;
-            self.backend.checkpoint_snapshot(&mut snapshot)?;
+            let store_bytes = mem_table.store_bytes();
+            let block_size = self.config.get_lsm_block_size();
+            if store_bytes > (block_size / 2) as usize {
+                let mut snapshot = self.snapshot.lock()?;
+                backend.sync_latest_segment(
+                    &mut mem_table,
+                    &mut snapshot,
+                )?;
+                backend.checkpoint_snapshot(&mut snapshot)?;
 
-            mem_table.segments.clear();
+                mem_table.segments.clear();
+            }
         }
 
         self.in_transaction.set(false);
