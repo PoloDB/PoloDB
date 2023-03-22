@@ -8,12 +8,13 @@ use std::cell::RefCell;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use byteorder::{ReadBytesExt, WriteBytesExt};
+use byteorder::WriteBytesExt;
 use crc64fast::Digest;
 use getrandom::getrandom;
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use crate::lsm::mem_table::MemTable;
+use memmap2::Mmap;
 
 static HEADER_DESP: &str       = "PoloDB Journal v0.4";
 const DATABASE_VERSION: [u8; 4] = [0, 0, 4, 0];
@@ -224,74 +225,102 @@ impl LsmLogInner {
         Ok(())
     }
 
-    // TODO: this is very slow
-    fn checksum_from(&mut self, from: u64, to: u64) -> DbResult<u64> {
-        let mut digest= Digest::new();
-
-        let mut buffer = vec![0u8; (to - from) as usize];
-
-        self.file.seek(SeekFrom::Start(from))?;
-        self.file.read_exact(&mut buffer)?;
-
-        digest.write(&buffer);
-
-        Ok(digest.sum64())
-    }
-
     pub fn update_mem_table_with_latest_log(&mut self, snapshot: &LsmSnapshot, mem_table: &mut MemTable) -> DbResult<()> {
-        let mut offset = snapshot.log_offset + DATA_BEGIN_OFFSET;
-        self.file.seek(SeekFrom::Start(offset))?;
+        let mut start_offset = (snapshot.log_offset + DATA_BEGIN_OFFSET) as usize;
+        let mut ptr = start_offset;
+        let mut reset = false;
 
-        let mut commands: Vec<LogCommand> = vec![];
+        {
+            let mut commands: Vec<LogCommand> = vec![];
 
-        loop {
-            let test_read = self.file.read_u8();
-            let flag = match test_read {
-                Ok(byte) => byte,
-                Err(_) => break,
+            let mmap = unsafe {
+                Mmap::map(&self.file)?
             };
 
+            while ptr < mmap.len() {
+                let flag = mmap[ptr];
+                ptr += 1;
 
-            if flag == format::COMMIT {
-                let current_pos = self.file.seek(SeekFrom::Current(0))?;
-                let checksum = self.checksum_from(offset, current_pos - 1)?;
-                self.file.seek(SeekFrom::Start(current_pos))?;
+                if flag == format::COMMIT {
+                    let checksum = crc64(&mmap[start_offset..(ptr - 1)]);
 
-                let mut checksum_be: [u8; 8] = [0; 8];
-                self.file.read_exact(&mut checksum_be)?;
-                let expect_checksum = u64::from_be_bytes(checksum_be);
-                if checksum != expect_checksum {
-                    self.file.set_len(offset)?;
-                    self.offset = offset;
-                    return Ok(());
+                    if ptr + 8 > mmap.len() {
+                        reset = true;
+                        break;
+                    }
+                    let mut checksum_be: [u8; 8] = [0; 8];
+                    checksum_be.copy_from_slice(&mmap[ptr..(ptr + 8)]);
+                    let expect_checksum = u64::from_be_bytes(checksum_be);
+                    ptr += 8;
+
+                    if checksum != expect_checksum {
+                        reset = true;
+                        break;
+                    }
+
+                    start_offset = ptr;
+
+                    LsmLogInner::flush_commands_to_mem_table(commands, mem_table);
+                    commands = vec![];
+                } else if flag == format::WRITE {
+                    let test_write = LsmLogInner::read_write_command(&mmap, &mut commands, &mut ptr);
+                    if test_write.is_err() {
+                        reset = true;
+                        break;
+                    }
+                } else if flag == format::DELETE {
+                    let test_delete = LsmLogInner::read_delete_command(
+                        &mmap,
+                        &mut commands,
+                        &mut ptr,
+                    );
+                    if test_delete.is_err() {
+                        reset = true;
+                        break;
+                    }
+                } else {  // unknown command
+                    reset = true;
+                    break;
                 }
-
-                offset = self.file.seek(SeekFrom::Current(0))?;
-
-                LsmLogInner::flush_commands_to_mem_table(commands, mem_table);
-                commands = vec![];
-            } else if flag == format::WRITE {
-                let key_len = crate::btree::vli::decode_u64(&mut self.file)?;
-                let mut key_buff = vec![0u8; key_len as usize];
-                self.file.read_exact(&mut key_buff)?;
-
-                let value_len = crate::btree::vli::decode_u64(&mut self.file)?;
-                let mut value_buff = vec![0u8; value_len as usize];
-                self.file.read_exact(&mut value_buff)?;
-
-                commands.push(LogCommand::Insert(key_buff.into_boxed_slice(), value_buff));
-            } else if flag == format::DELETE {
-                let key_len = crate::btree::vli::decode_u64(&mut self.file)?;
-                let mut key_buff = vec![0u8; key_len as usize];
-                self.file.read_exact(&mut key_buff)?;
-
-                commands.push(LogCommand::Delete(key_buff.into_boxed_slice()));
-            } else {  // unknown command
-                self.file.set_len(offset)?;
-                self.offset = offset;
-                return Ok(());
             }
         }
+
+        if reset {
+            self.file.set_len(start_offset as u64)?;
+            self.offset = self.file.seek(SeekFrom::End(0))?;
+        }
+
+        Ok(())
+    }
+
+    fn read_write_command(mmap: &Mmap, commands: &mut Vec<LogCommand>, ptr: &mut usize) -> DbResult<()> {
+        let mut remain = &mmap[*ptr..];
+
+        let key_len = crate::btree::vli::decode_u64(&mut remain)?;
+        let mut key_buff = vec![0u8; key_len as usize];
+        remain.read_exact(&mut key_buff)?;
+
+        let value_len = crate::btree::vli::decode_u64(&mut remain)?;
+        let mut value_buff = vec![0u8; value_len as usize];
+        remain.read_exact(&mut value_buff)?;
+
+        commands.push(LogCommand::Insert(key_buff.into_boxed_slice(), value_buff));
+
+        *ptr = remain.as_ptr() as usize - mmap.as_ptr() as usize;
+
+        Ok(())
+    }
+
+    fn read_delete_command(mmap: &Mmap, commands: &mut Vec<LogCommand>, ptr: &mut usize) -> DbResult<()> {
+        let mut remain = &mmap[*ptr..];
+
+        let key_len = crate::btree::vli::decode_u64(&mut remain)?;
+        let mut key_buff = vec![0u8; key_len as usize];
+        remain.read_exact(&mut key_buff)?;
+
+        commands.push(LogCommand::Delete(key_buff.into_boxed_slice()));
+
+        *ptr = remain.as_ptr() as usize - mmap.as_ptr() as usize;
 
         Ok(())
     }

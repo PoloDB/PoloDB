@@ -46,6 +46,9 @@ fn test_persist() {
         let db = LsmKv::open_file(db_path.as_path()).unwrap();
         let value = db.get_string("Hello").unwrap().unwrap();
         assert_eq!(value, "World");
+
+        let value = db.get_string("name").unwrap().unwrap();
+        assert_eq!(value, "Vincent");
     }
 }
 
