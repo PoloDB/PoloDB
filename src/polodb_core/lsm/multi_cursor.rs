@@ -5,6 +5,7 @@
  */
 use std::cmp::Ordering;
 use crate::DbResult;
+use crate::lsm::lsm_tree::LsmTreeValueMarker;
 use super::lsm_tree::TreeCursor;
 
 enum CursorRepr {
@@ -22,13 +23,19 @@ impl CursorRepr {
         }
     }
 
-    pub fn value(&self) -> DbResult<Option<Vec<u8>>> {
+    pub fn value(&self) -> DbResult<Option<LsmTreeValueMarker<Vec<u8>>>> {
         match self {
             CursorRepr::MemTableCursor(mem_table_cursor) => {
-                let result = mem_table_cursor
-                    .value()
-                    .map(|marker| { marker.into() })
-                    .flatten();
+                let result = mem_table_cursor.value();
+                Ok(result)
+            }
+        }
+    }
+
+    pub fn marker(&self) -> DbResult<Option<LsmTreeValueMarker<()>>> {
+        match self {
+            CursorRepr::MemTableCursor(mem_table_cursor) => {
+                let result = mem_table_cursor.marker();
                 Ok(result)
             }
         }
@@ -76,12 +83,27 @@ impl MultiCursor {
 
     pub fn value(&self) -> DbResult<Option<Vec<u8>>> {
         let top = self.cursors.first().unwrap();
-        top.value()
+        let val = top.value()?;
+        let buffer = val.map(| marker | { marker.unwrap() });
+        Ok(buffer)
     }
 
     pub fn next(&mut self) -> DbResult<()> {
-        let top = self.cursors.first_mut().unwrap();
-        top.next()
+        loop {
+            let top = self.cursors.first_mut().unwrap();
+            top.next()?;
+
+            let val = top.marker()?;
+            match val {
+                None => {
+                    return Ok(());
+                },
+                Some(LsmTreeValueMarker::Value(_)) => {
+                    return Ok(());
+                }
+                _ => ()
+            }
+        }
     }
 
 }

@@ -97,6 +97,11 @@ impl LsmFileBackend {
         })
     }
 
+    pub fn read_latest_snapshot(&self) -> DbResult<LsmSnapshot> {
+        let result = LsmSnapshot::new();
+        Ok(result)
+    }
+
     pub fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.sync_latest_segment(segment, snapshot)

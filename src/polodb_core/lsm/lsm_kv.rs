@@ -61,6 +61,15 @@ impl LsmKv {
         self.inner.commit()
     }
 
+    pub fn delete<K>(&self, key: K) -> DbResult<()>
+    where
+        K: AsRef<[u8]>
+    {
+        self.inner.start_transaction()?;
+        self.inner.delete(key.as_ref())?;
+        self.inner.commit()
+    }
+
     pub fn get<'a, K>(&self, key: K) -> DbResult<Option<Vec<u8>>>
     where
         K: AsRef<[u8]>,
@@ -123,8 +132,19 @@ impl LsmKvInner {
         log: Option<LsmLog>,
         config: Config,
     ) -> DbResult<LsmKvInner> {
-        let snapshot = LsmSnapshot::new();
-        let mem_table = MemTable::new(0);
+        let snapshot = match &backend {
+            Some(backend) => backend.read_latest_snapshot()?,
+            None => LsmSnapshot::new(),
+        };
+        let mut mem_table = MemTable::new(0);
+
+        if let Some(log) = &log {
+            log.update_mem_table_with_latest_log(
+                &snapshot,
+                &mut mem_table,
+            )?;
+        }
+
         Ok(LsmKvInner {
             backend,
             log,
@@ -163,6 +183,22 @@ impl LsmKvInner {
         let mut segment = self.mem_table.borrow_mut();
 
         segment.put(key, value);
+
+        Ok(())
+    }
+
+    pub fn delete(&self, key: &[u8]) -> DbResult<()> {
+        if !self.in_transaction.get() {
+            return Err(DbErr::NoTransactionStarted);
+        }
+
+        if let Some(log) = &self.log {
+            log.delete(key)?;
+        }
+
+        let mut segment = self.mem_table.borrow_mut();
+
+        segment.delete(key);
 
         Ok(())
     }

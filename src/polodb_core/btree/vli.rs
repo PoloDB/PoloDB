@@ -5,7 +5,8 @@
  */
 use bson::ser::Result as BsonResult;
 use bson::ser::Error as BsonErr;
-use std::io::Write;
+use std::io::{Read, Write};
+use byteorder::ReadBytesExt;
 
 // Extended from http://www.dlugosz.com/ZIP2/VLI.html
 
@@ -67,43 +68,34 @@ fn encode_u64<W: Write>(writer: &mut W, num: u64) -> BsonResult<()> {
     Ok(())
 }
 
-macro_rules! read_byte_plus {
-    ($bytes:ident, $ptr:ident) => {
-        {
-            let byte = $bytes[$ptr];
-            $ptr += 1;
-            byte
-        }
-    }
-}
-
 #[allow(dead_code)]
-pub fn decode(bytes: &[u8]) -> BsonResult<(i64, usize)> {
-    let mut ptr: usize = 0;
-    let first_byte = read_byte_plus!(bytes, ptr);
+pub fn decode<R: Read>(reader: &mut R) -> BsonResult<i64> {
+    let first_byte = reader.read_u8()?;
     if first_byte == NEG_FLAG {
-        let (tmp, size) = decode_u64(&bytes[1..])?;
-        return Ok(((tmp as i64) * -1, size + ptr))
+        let tmp = decode_u64(reader)?;
+        return Ok((tmp as i64) * -1)
     }
-    let (tmp, size) = decode_u64(bytes)?;
-    Ok((tmp as i64, size))
+    let tmp = decode_u64_with_first_byte(reader, first_byte)?;
+    Ok(tmp as i64)
 }
 
-pub fn decode_u64(bytes: &[u8]) -> BsonResult<(u64, usize)> {
-    let mut ptr: usize = 0;
-    let first_byte = read_byte_plus!(bytes, ptr);
+pub fn decode_u64<R: Read>(reader: &mut R) -> BsonResult<u64> {
+    let first_byte = reader.read_u8()?;
+    decode_u64_with_first_byte(reader, first_byte)
+}
 
+fn decode_u64_with_first_byte<R: Read>(reader: &mut R, first_byte: u8) -> BsonResult<u64> {
     if (first_byte & BYTE_MARK1) == 0 {  // 1 byte
-        return Ok((first_byte as u64, ptr))
+        return Ok(first_byte as u64)
     }
 
     if first_byte & BYTE_MARK2 == 0b10000000 {  // 2 bytes
-        let one_more = read_byte_plus!(bytes, ptr);
+        let one_more = reader.read_u8()?;
 
         let uint16: u16 = u16::from_be_bytes([
             first_byte & (!BYTE_MARK1), one_more
         ]);
-        return Ok((uint16 as u64, ptr))
+        return Ok(uint16 as u64)
     }
 
     if first_byte & BYTE_MARK3 == 0b11000000 {  // 3 bytes
@@ -112,10 +104,10 @@ pub fn decode_u64(bytes: &[u8]) -> BsonResult<(u64, usize)> {
 
         // tmp[0] is 0
         tmp[1] = first_byte & (!BYTE_MARK3);
-        tmp[2] = read_byte_plus!(bytes, ptr);
-        tmp[3] = read_byte_plus!(bytes, ptr);
+        tmp[2] = reader.read_u8()?;
+        tmp[3] = reader.read_u8()?;
 
-        return Ok((u32::from_be_bytes(tmp) as u64, ptr))
+        return Ok(u32::from_be_bytes(tmp) as u64)
     }
 
     match first_byte & BYTE_MARK5 {  // three arms
@@ -123,11 +115,11 @@ pub fn decode_u64(bytes: &[u8]) -> BsonResult<(u64, usize)> {
             let mut tmp: [u8; 4] = [0; 4];
 
             tmp[0] = first_byte & (!BYTE_MARK5);
-            tmp[1] = read_byte_plus!(bytes, ptr);
-            tmp[2] = read_byte_plus!(bytes, ptr);
-            tmp[3] = read_byte_plus!(bytes, ptr);
+            tmp[1] = reader.read_u8()?;
+            tmp[2] = reader.read_u8()?;
+            tmp[3] = reader.read_u8()?;
 
-            return Ok((u32::from_be_bytes(tmp) as u64, ptr))
+            return Ok(u32::from_be_bytes(tmp) as u64)
         }
 
         0b11101000 => {  // 5 bytes
@@ -135,10 +127,10 @@ pub fn decode_u64(bytes: &[u8]) -> BsonResult<(u64, usize)> {
 
             tmp[3] = first_byte & (!BYTE_MARK5);
             for i in 4..8 {
-                tmp[i] = read_byte_plus!(bytes, ptr);
+                tmp[i] = reader.read_u8()?;
             }
 
-            return Ok((u64::from_be_bytes(tmp), ptr))
+            return Ok(u64::from_be_bytes(tmp))
         }
 
         0b11110000 => {  // 8 bytes
@@ -146,10 +138,10 @@ pub fn decode_u64(bytes: &[u8]) -> BsonResult<(u64, usize)> {
 
             tmp[0] = first_byte & (!BYTE_MARK5);
             for i in 1..8 {
-                tmp[i] = read_byte_plus!(bytes, ptr);
+                tmp[i] = reader.read_u8()?;
             }
 
-            return Ok((u64::from_be_bytes(tmp), ptr))
+            return Ok(u64::from_be_bytes(tmp))
         }
 
         _ => ()
@@ -158,19 +150,19 @@ pub fn decode_u64(bytes: &[u8]) -> BsonResult<(u64, usize)> {
     if first_byte == 0b11111000 {  // 6 bytes
         let mut tmp: [u8; 8] = [0; 8];
         for i in 3..8 {
-            tmp[i] = read_byte_plus!(bytes, ptr);
+            tmp[i] = reader.read_u8()?;
         }
 
-        return Ok((u64::from_be_bytes(tmp), ptr));
+        return Ok(u64::from_be_bytes(tmp));
     }
 
     if first_byte == 0b11111001 {  // 9 bytes
         let mut tmp: [u8; 8] = [0; 8];
         for i in 0..8 {
-            tmp[i] = read_byte_plus!(bytes, ptr);
+            tmp[i] = reader.read_u8()?;
         }
 
-        return Ok((u64::from_be_bytes(tmp), ptr));
+        return Ok(u64::from_be_bytes(tmp));
     }
 
     Err(BsonErr::InvalidCString("DecodeIntUnknownByte".to_string()))
@@ -182,9 +174,11 @@ mod tests {
 
     #[test]
     fn test_legacy_negative() {
-        let n1 = vec![0xf9, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
-        assert_eq!(decode_u64(&n1).unwrap().0 as i64, -1);
-        assert_eq!(decode(&n1).unwrap().0, -1);
+        let n1: Vec<u8> = vec![0xf9, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+        let mut n: &[u8] = n1.as_ref();
+        assert_eq!(decode_u64(&mut n).unwrap() as i64, -1);
+        let mut n: &[u8] = n1.as_ref();
+        assert_eq!(decode(&mut n).unwrap(), -1);
     }
 
     #[test]
@@ -193,12 +187,14 @@ mod tests {
         encode(&mut bytes, -1).expect("encode error");
         assert_eq!(bytes.len(), 2);
 
+        let mut bytes_ref: &[u8] = bytes.as_ref();
+
         for i in -20000..-1 {
             let num = i as i64;
             let mut bytes = vec![];
             encode(&mut bytes, num).expect("encode error");
 
-            assert_eq!(decode(&bytes).unwrap().0, num);
+            assert_eq!(decode(&mut bytes_ref).unwrap(), num);
         }
     }
 
@@ -208,7 +204,8 @@ mod tests {
         let num: u64 = 1_606_801_056_488;
         encode_u64(&mut bytes, num).expect("encode error");
 
-        let (decode_num, _) = decode_u64(&bytes).unwrap();
+        let mut bytes_ref: &[u8] = bytes.as_ref();
+        let decode_num = decode_u64(&mut bytes_ref).unwrap();
         assert_eq!(decode_num, num);
     }
 
@@ -229,7 +226,8 @@ mod tests {
 
         assert_eq!(bytes.len(), 2);
 
-        let (decode_int, _) = decode_u64(&bytes).expect("decode err");
+        let mut bytes_ref: &[u8] = bytes.as_ref();
+        let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
 
         assert_eq!(decode_int, 256);
     }
@@ -244,7 +242,8 @@ mod tests {
 
         assert_eq!(bytes.len(), 3);
 
-        let (decode_int, _) = decode_u64(&bytes).expect("decode err");
+        let mut bytes_ref: &[u8] = bytes.as_ref();
+        let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
 
         assert_eq!(decode_int, num)
     }
@@ -259,7 +258,8 @@ mod tests {
 
         assert_eq!(bytes.len(), 4);
 
-        let (decode_int, _) = decode_u64(&bytes).expect("decode err");
+        let mut bytes_ref: &[u8] = bytes.as_ref();
+        let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
 
         assert_eq!(decode_int, num)
     }
@@ -274,7 +274,8 @@ mod tests {
 
         assert_eq!(bytes.len(), 5);
 
-        let (decode_int, _) = decode_u64(&bytes).expect("decode err");
+        let mut bytes_ref: &[u8] = bytes.as_ref();
+        let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
 
         assert_eq!(decode_int, num)
     }
@@ -289,7 +290,8 @@ mod tests {
 
         assert_eq!(bytes.len(), 6);
 
-        let (decode_int, _) = decode_u64(&bytes).expect("decode err");
+        let mut bytes_ref: &[u8] = bytes.as_ref();
+        let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
 
         assert_eq!(decode_int, num)
     }
@@ -304,7 +306,8 @@ mod tests {
 
         assert_eq!(bytes.len(), 8);
 
-        let (decode_int, _) = decode_u64(&bytes).expect("decode err");
+        let mut bytes_ref: &[u8] = bytes.as_ref();
+        let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
 
         assert_eq!(decode_int, num)
     }
@@ -319,7 +322,8 @@ mod tests {
 
         assert_eq!(bytes.len(), 9);
 
-        let (decode_int, _) = decode_u64(&bytes).expect("decode err");
+        let mut bytes_ref: &[u8] = bytes.as_ref();
+        let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
 
         assert_eq!(decode_int, num)
     }
