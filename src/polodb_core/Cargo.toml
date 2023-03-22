@@ -40,6 +40,7 @@ features = [
 
 [dev-dependencies]
 polodb_line_diff = { path = "../polodb_line_diff" }
+csv = "1.2.1"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["fileapi", "namedpipeapi"] }
