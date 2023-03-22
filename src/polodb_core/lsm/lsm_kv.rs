@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::kv_cursor::KvCursor;
+use crate::lsm::LsmMetrics;
 use super::lsm_snapshot::LsmSnapshot;
 use super::lsm_backend::{LsmFileBackend, LsmLog};
 use crate::lsm::mem_table::MemTable;
@@ -99,6 +100,10 @@ impl LsmKv {
         Ok(string)
     }
 
+    pub fn metrics(&self) -> LsmMetrics {
+        self.inner.metrics()
+    }
+
 }
 
 pub(crate) struct LsmKvInner {
@@ -107,6 +112,7 @@ pub(crate) struct LsmKvInner {
     snapshot: Mutex<LsmSnapshot>,
     mem_table: RefCell<MemTable>,
     in_transaction: Cell<bool>,
+    metrics: LsmMetrics,
     config: Config,
 }
 
@@ -151,8 +157,14 @@ impl LsmKvInner {
             snapshot: Mutex::new(snapshot),
             mem_table: RefCell::new(mem_table),
             in_transaction: Cell::new(false),
+            metrics: LsmMetrics::new(),
             config,
         })
+    }
+
+    #[inline]
+    fn metrics(&self) -> LsmMetrics {
+        self.metrics.clone()
     }
 
     fn open_multi_cursor(&self) -> MultiCursor {
@@ -228,6 +240,8 @@ impl LsmKvInner {
                 backend.checkpoint_snapshot(&mut snapshot)?;
 
                 mem_table.segments.clear();
+
+                self.metrics.add_sync_count();
             }
         }
 

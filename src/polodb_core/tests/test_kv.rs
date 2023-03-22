@@ -102,6 +102,8 @@ fn test_dataset() {
     let db_path = mk_db_path("test-kv-dataset");
     clean_path(db_path.as_path());
     let db = LsmKv::open_file(db_path.as_path()).unwrap();
+    let metrics = db.metrics();
+    metrics.enable();
 
     let mut rdr = csv::Reader::from_reader(&file);
 
@@ -115,4 +117,6 @@ fn test_dataset() {
 
         db.put(key, content).unwrap();
     }
+
+    println!("sync count: {}", metrics.sync_count());
 }
