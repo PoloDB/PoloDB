@@ -12,12 +12,14 @@ pub(crate) struct LsmTuplePtr {
 }
 
 impl Default for LsmTuplePtr {
+
     fn default() -> Self {
         LsmTuplePtr {
             pid: 0,
             offset: 0,
         }
     }
+
 }
 
 // Immutable segment

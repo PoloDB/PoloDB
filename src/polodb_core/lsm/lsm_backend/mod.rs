@@ -5,8 +5,18 @@
  */
 mod lsm_file_backend;
 mod file_lock;
-mod lsm_meta;
 mod lsm_log;
+mod file_writer;
 
 pub(crate) use lsm_file_backend::LsmFileBackend;
 pub(crate) use lsm_log::LsmLog;
+
+#[allow(unused)]
+pub(crate) mod format {
+    pub const LSM_START_DELETE: u8 = 0x01;
+    pub const LSM_END_DELETE: u8   = 0x02;
+    pub const LSM_POINT_DELETE: u8 = 0x03;
+    pub const LSM_INSERT: u8       = 0x04;
+    pub const LSM_SEPARATOR: u8    = 0x10;
+    pub const LSM_SYSTEMKEY: u8    = 0x20;
+}

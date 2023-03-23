@@ -118,5 +118,5 @@ fn test_dataset() {
         db.put(key, content).unwrap();
     }
 
-    println!("sync count: {}", metrics.sync_count());
+    assert_eq!(metrics.sync_count(), 1);
 }

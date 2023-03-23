@@ -6,10 +6,11 @@
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::kv_cursor::KvCursor;
 use crate::lsm::LsmMetrics;
-use super::lsm_snapshot::LsmSnapshot;
+use crate::lsm::lsm_snapshot::LsmSnapshot;
 use super::lsm_backend::{LsmFileBackend, LsmLog};
 use crate::lsm::mem_table::MemTable;
 use crate::lsm::multi_cursor::MultiCursor;
@@ -112,6 +113,9 @@ pub(crate) struct LsmKvInner {
     snapshot: Mutex<LsmSnapshot>,
     mem_table: RefCell<MemTable>,
     in_transaction: Cell<bool>,
+    /// Operation count after last sync,
+    /// including insert/delete
+    op_count: AtomicUsize,
     metrics: LsmMetrics,
     config: Config,
 }
@@ -157,6 +161,7 @@ impl LsmKvInner {
             snapshot: Mutex::new(snapshot),
             mem_table: RefCell::new(mem_table),
             in_transaction: Cell::new(false),
+            op_count: AtomicUsize::new(0),
             metrics: LsmMetrics::new(),
             config,
         })
@@ -196,6 +201,8 @@ impl LsmKvInner {
 
         segment.put(key, value);
 
+        self.op_count.fetch_add(1, Ordering::Relaxed);
+
         Ok(())
     }
 
@@ -211,6 +218,8 @@ impl LsmKvInner {
         let mut segment = self.mem_table.borrow_mut();
 
         segment.delete(key);
+
+        self.op_count.fetch_add(1, Ordering::Relaxed);
 
         Ok(())
     }
@@ -230,8 +239,7 @@ impl LsmKvInner {
             let mut mem_table = self.mem_table.borrow_mut();
 
             let store_bytes = mem_table.store_bytes();
-            let block_size = self.config.get_lsm_block_size();
-            if store_bytes > (block_size / 2) as usize {
+            if self.should_sync(store_bytes) {
                 let mut snapshot = self.snapshot.lock()?;
                 backend.sync_latest_segment(
                     &mut mem_table,
@@ -239,8 +247,13 @@ impl LsmKvInner {
                 )?;
                 backend.checkpoint_snapshot(&mut snapshot)?;
 
+                if let Some(log) = &self.log {
+                    log.shrink(&mut snapshot)?;
+                }
+
                 mem_table.segments.clear();
 
+                self.op_count.store(0, Ordering::Relaxed);
                 self.metrics.add_sync_count();
             }
         }
@@ -248,6 +261,16 @@ impl LsmKvInner {
         self.in_transaction.set(false);
 
         Ok(())
+    }
+
+    #[inline]
+    fn should_sync(&self, store_bytes: usize) -> bool {
+        if self.op_count.load(Ordering::Relaxed) >= 1000 {
+            return true;
+        }
+
+        let block_size = self.config.get_lsm_block_size();
+        return store_bytes > (block_size as usize);
     }
 
     pub(crate) fn meta_id(&self) -> u64 {

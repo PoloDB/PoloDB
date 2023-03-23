@@ -101,6 +101,10 @@ impl LsmLog {
         inner.update_mem_table_with_latest_log(snapshot, mem_table)
     }
 
+    pub fn shrink(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        let mut inner = self.inner.borrow_mut();
+        inner.shrink(snapshot)
+    }
 }
 
 fn generate_a_salt() -> u32 {
@@ -153,6 +157,15 @@ impl LsmLogInner {
         }
 
         Ok(result)
+    }
+
+    fn shrink(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        self.file.set_len(DATA_BEGIN_OFFSET)?;
+        self.offset = self.file.seek(SeekFrom::End(0))?;
+
+        snapshot.log_offset = 0;
+
+        Ok(())
     }
 
     /// name:       32 bytes

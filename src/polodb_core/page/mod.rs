@@ -184,11 +184,6 @@ impl RawPage {
         self.data.len() as u32
     }
 
-    #[inline]
-    pub fn remain_size(&self) -> u32 {
-        self.data.len() as u32 - self.pos
-    }
-
 }
 
 impl Write for RawPage {
