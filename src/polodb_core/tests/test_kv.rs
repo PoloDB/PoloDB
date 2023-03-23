@@ -101,22 +101,29 @@ fn test_dataset() {
 
     let db_path = mk_db_path("test-kv-dataset");
     clean_path(db_path.as_path());
-    let db = LsmKv::open_file(db_path.as_path()).unwrap();
-    let metrics = db.metrics();
-    metrics.enable();
 
-    let mut rdr = csv::Reader::from_reader(&file);
+    {
+        let db = LsmKv::open_file(db_path.as_path()).unwrap();
+        let metrics = db.metrics();
+        metrics.enable();
 
-    for result in rdr.records() {
-        // Notice that we need to provide a type hint for automatic
-        // deserialization.
-        let record = result.unwrap();
+        let mut rdr = csv::Reader::from_reader(&file);
 
-        let key = record.get(0).unwrap();
-        let content = format!("{:?}", record);
+        for result in rdr.records() {
+            // Notice that we need to provide a type hint for automatic
+            // deserialization.
+            let record = result.unwrap();
 
-        db.put(key, content).unwrap();
+            let key = record.get(0).unwrap();
+            let content = format!("{:?}", record);
+
+            db.put(key, content).unwrap();
+        }
+
+        assert_eq!(metrics.sync_count(), 1);
     }
 
-    assert_eq!(metrics.sync_count(), 1);
+
+    let db = LsmKv::open_file(db_path.as_path()).unwrap();
+    assert!(db.get("200100509").unwrap().is_some());
 }

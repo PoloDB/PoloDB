@@ -167,6 +167,7 @@ pub enum DbErr {
     SessionOutdated,
     DbIsClosed,
     FromUtf8Error(Box<FromUtf8Error>),
+    DataMalformed,
 }
 
 impl DbErr {
@@ -266,6 +267,7 @@ impl fmt::Display for DbErr {
             DbErr::SessionOutdated => write!(f, "session is outdated"),
             DbErr::DbIsClosed => write!(f, "the database is closed"),
             DbErr::FromUtf8Error(err) => write!(f, "{}", err),
+            DbErr::DataMalformed => write!(f, "data malformed"),
         }
     }
 

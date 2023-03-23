@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use std::sync::{Arc, Mutex, Weak};
-use crate::DbResult;
+use crate::{DbErr, DbResult};
 use crate::lsm::lsm_kv::LsmKvInner;
 use super::multi_cursor::MultiCursor;
 
@@ -36,8 +36,9 @@ impl KvCursor {
     }
 
     pub fn value(&self) -> DbResult<Option<Vec<u8>>> {
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let cursor = self.inner.lock()?;
-        cursor.value()
+        cursor.value(db.as_ref())
     }
 
     pub fn next(&self) -> DbResult<()> {

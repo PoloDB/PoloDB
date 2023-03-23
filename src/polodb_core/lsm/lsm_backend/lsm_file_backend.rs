@@ -5,23 +5,22 @@
  */
 
 use std::fs::File;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Mutex;
+use byteorder::ReadBytesExt;
 use memmap2::Mmap;
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::lsm_backend::file_writer::FileWriter;
+use crate::lsm::lsm_backend::format;
+use crate::lsm::lsm_backend::snapshot_reader::SnapshotReader;
 use crate::lsm::mem_table::MemTable;
 use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
 use crate::lsm::lsm_snapshot::{LsmMetaDelegate, LsmSnapshot};
 use crate::page::RawPage;
 use crate::lsm::lsm_tree::LsmTree;
-use crate::lsm::lsm_snapshot::lsm_meta::{
-    DB_FILE_SIZE_OFFSET,
-    LOG_OFFSET_OFFSET,
-    META_ID_OFFSET,
-};
+use crate::lsm::lsm_snapshot::lsm_meta::{META_ID_OFFSET};
 
 #[cfg(target_os = "windows")]
 mod winerror {
@@ -92,6 +91,11 @@ impl LsmFileBackend {
         })
     }
 
+    pub fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Vec<u8>> {
+        let mut inner = self.inner.lock()?;
+        inner.read_segment_by_ptr(ptr)
+    }
+
     pub fn read_latest_snapshot(&self) -> DbResult<LsmSnapshot> {
         let mut inner = self.inner.lock()?;
         inner.read_latest_snapshot()
@@ -146,6 +150,24 @@ impl LsmFileBackendInner {
         Ok(result)
     }
 
+    fn read_segment_by_ptr(&mut self, tuple: LsmTuplePtr) -> DbResult<Vec<u8>> {
+        let page_size = self.config.get_lsm_page_size();
+        let offset = (tuple.pid as u64) * (page_size as u64) + (tuple.offset as u64);
+        self.file.seek(SeekFrom::Start(offset))?;
+        let flag = self.file.read_u8()?;
+        assert_eq!(flag, format::LSM_INSERT);
+
+        let key_len = crate::btree::vli::decode_u64(&mut self.file)?;
+        self.file.seek(SeekFrom::Current(key_len as i64))?;
+
+        let value_len = crate::btree::vli::decode_u64(&mut self.file)?;
+
+        let mut buffer = vec![0u8; value_len as usize];
+        self.file.read_exact(&mut buffer)?;
+
+        Ok(buffer)
+    }
+
     fn read_latest_snapshot(&mut self) -> DbResult<LsmSnapshot> {
         let meta = self.file.metadata()?;
         if meta.len() == 0 { // new file
@@ -171,41 +193,16 @@ impl LsmFileBackendInner {
         let meta1 = u64::from_be_bytes(meta1_be);
         let meta2 = u64::from_be_bytes(meta2_be);
 
+        let reader = SnapshotReader::new(
+            &mmap,
+            page_size,
+        );
+
         if meta1 > meta2 {
-            LsmFileBackendInner::read_snapshot_from_page(
-                &mmap[0..(page_size as usize)],
-                0,
-                meta1,
-            )
+            reader.read_snapshot_from(0, meta1)
         } else {
-            let start = page_size as usize;
-            LsmFileBackendInner::read_snapshot_from_page(
-                &mmap[start..(start + page_size as usize)],
-                1,
-                meta2,
-            )
+            reader.read_snapshot_from(1, meta2)
         }
-    }
-
-    fn read_snapshot_from_page(slice: &[u8], meta_pid: u8, meta_id: u64) -> DbResult<LsmSnapshot> {
-        let mut db_file_size_be: [u8; 8] = [0; 8];
-        db_file_size_be.copy_from_slice(&slice[(DB_FILE_SIZE_OFFSET as usize)..((DB_FILE_SIZE_OFFSET + 8) as usize)]);
-        let db_file_size = u64::from_be_bytes(db_file_size_be);
-
-        let mut log_offset_be: [u8; 8] = [0; 8];
-        log_offset_be.copy_from_slice(&slice[(LOG_OFFSET_OFFSET as usize)..((LOG_OFFSET_OFFSET + 8) as usize)]);
-        let log_offset = u64::from_be_bytes(log_offset_be);
-
-        let result = LsmSnapshot {
-            meta_pid,
-            meta_id,
-            file_size: db_file_size,
-            log_offset,
-            free_segments: Vec::with_capacity(4),
-            levels: Vec::with_capacity(4),
-        };
-
-        Ok(result)
     }
 
     fn sync_latest_segment(&mut self, mem_table: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
@@ -227,6 +224,7 @@ impl LsmFileBackendInner {
         let mut segments = LsmTree::<Box<[u8]>, LsmTuplePtr>::new();
 
         let mut mem_table_cursor = mem_table.segments.open_cursor();
+        mem_table_cursor.go_to_min();
 
         while !mem_table_cursor.done() {
             let (key, value) = mem_table_cursor.tuple().unwrap();

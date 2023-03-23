@@ -77,7 +77,7 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         self.update_in_place(key, LsmTreeValueMarker::Value(value))
     }
 
-    fn update_in_place(&mut self, key: K, value: LsmTreeValueMarker<V>) -> Option<V> {
+    pub(crate) fn update_in_place(&mut self, key: K, value: LsmTreeValueMarker<V>) -> Option<V> {
         let result = {
             let mut root = self.root.write().unwrap();
             root.replace(key, value)
@@ -103,7 +103,7 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
     {
         let mut cursor = self.open_cursor();
         let order = cursor.seek(key);
-        if order == Ordering::Equal {
+        if let Some(Ordering::Equal) = order {
             let old_val = cursor.update_inplace(LsmTreeValueMarker::Deleted);
             old_val.into()
         } else {

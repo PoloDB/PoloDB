@@ -7,6 +7,7 @@ mod lsm_file_backend;
 mod file_lock;
 mod lsm_log;
 mod file_writer;
+mod snapshot_reader;
 
 pub(crate) use lsm_file_backend::LsmFileBackend;
 pub(crate) use lsm_log::LsmLog;

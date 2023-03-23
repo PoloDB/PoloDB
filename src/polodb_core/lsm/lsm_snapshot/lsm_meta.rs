@@ -12,7 +12,7 @@ pub(crate) const META_ID_OFFSET: u32 = 28;
 const PAGE_SIZE_OFFSET: u32   = 36;
 pub(crate) const DB_FILE_SIZE_OFFSET: u32  = 40;
 pub(crate) const LOG_OFFSET_OFFSET: u32  = 48;
-const LEVEL_COUNT_OFFSET: u32 = 56;
+pub(crate) const LEVEL_COUNT_OFFSET: u32 = 56;
 const LEVEL_BEGIN_OFFSET: u32 = 128;
 
 /// Offset 0 (28 bytes) : "PoloDB Format v4.0"

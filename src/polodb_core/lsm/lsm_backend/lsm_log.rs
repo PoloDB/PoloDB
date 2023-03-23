@@ -11,10 +11,10 @@ use std::path::{Path, PathBuf};
 use byteorder::WriteBytesExt;
 use crc64fast::Digest;
 use getrandom::getrandom;
+use memmap2::Mmap;
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use crate::lsm::mem_table::MemTable;
-use memmap2::Mmap;
 
 static HEADER_DESP: &str       = "PoloDB Journal v0.4";
 const DATABASE_VERSION: [u8; 4] = [0, 0, 4, 0];

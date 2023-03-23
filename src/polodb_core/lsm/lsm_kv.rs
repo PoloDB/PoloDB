@@ -9,11 +9,12 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::kv_cursor::KvCursor;
+use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::LsmMetrics;
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use super::lsm_backend::{LsmFileBackend, LsmLog};
 use crate::lsm::mem_table::MemTable;
-use crate::lsm::multi_cursor::MultiCursor;
+use crate::lsm::multi_cursor::{CursorRepr, MultiCursor};
 
 #[derive(Clone)]
 pub struct LsmKv {
@@ -117,10 +118,15 @@ pub(crate) struct LsmKvInner {
     /// including insert/delete
     op_count: AtomicUsize,
     metrics: LsmMetrics,
-    config: Config,
+    pub(crate) config: Config,
 }
 
 impl LsmKvInner {
+
+    pub(crate) fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Vec<u8>> {
+        let backend = self.backend.as_ref().expect("no file backend");
+        backend.read_segment_by_ptr(ptr)
+    }
 
     fn mk_log_path(db_path: &Path) -> PathBuf {
         let mut buf = db_path.to_path_buf();
@@ -175,7 +181,21 @@ impl LsmKvInner {
     fn open_multi_cursor(&self) -> MultiCursor {
         let mem_table = self.mem_table.borrow();
         let mem_table_cursor = mem_table.segments.open_cursor();
-        MultiCursor::new(mem_table_cursor)
+
+        let snapshot = self.snapshot.lock().unwrap();
+
+        let mut cursors: Vec<CursorRepr> = vec![
+            mem_table_cursor.into(),
+        ];
+
+        let level0 = &snapshot.levels[0];
+
+        for item in level0.content.iter().rev() {
+            let cursor = item.segments.open_cursor();
+            cursors.push(cursor.into());
+        }
+
+        MultiCursor::new(cursors)
     }
 
     fn start_transaction(&self) -> DbResult<()> {

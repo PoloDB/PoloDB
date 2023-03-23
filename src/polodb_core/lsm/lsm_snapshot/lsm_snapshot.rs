@@ -12,7 +12,6 @@ use crate::page::RawPage;
 pub(crate) struct LsmLevel {
     pub age:     u16,
     pub content: SmallVec<[ImLsmSegment; 4]>,
-    pub len:     usize,
 }
 
 impl LsmLevel {
@@ -21,7 +20,6 @@ impl LsmLevel {
         LsmLevel {
             age: 0,
             content: smallvec![],
-            len: 0,
         }
     }
 
@@ -40,8 +38,8 @@ pub(crate) struct LsmSnapshot {
     pub meta_id:     u64,
     pub file_size:   u64,
     pub log_offset:  u64,
-    pub free_segments: Vec<u32>,
     pub levels:      Vec<LsmLevel>,
+    pub free_segments: Vec<u32>,
 }
 
 impl LsmSnapshot {

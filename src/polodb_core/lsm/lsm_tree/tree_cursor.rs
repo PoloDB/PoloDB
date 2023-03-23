@@ -44,7 +44,7 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
         }
     }
 
-    pub(crate) fn seek<Q: ?Sized>(&mut self, key: &Q) -> Ordering
+    pub(crate) fn seek<Q: ?Sized>(&mut self, key: &Q) -> Option<Ordering>
     where
         K: Borrow<Q> + Ord,
         Q: Ord
@@ -58,7 +58,7 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
         self.internal_seek(key)
     }
 
-    fn internal_seek<Q: ?Sized>(&mut self, key: &Q) -> Ordering
+    fn internal_seek<Q: ?Sized>(&mut self, key: &Q) -> Option<Ordering>
     where
         K: Borrow<Q> + Ord,
         Q: Ord
@@ -67,10 +67,13 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
 
         let (result, continue_) = {
             let back_guard = back.read().unwrap();
+            if back_guard.data.is_empty() {
+                return None;
+            }
             let (index, order) = back_guard.find(key);
             if order == Ordering::Equal {
                 *self.indexes.last_mut().unwrap() = index as usize;
-                (order, false)
+                (Some(order), false)
             } else {
                 let child_opt = if index == back_guard.data.len() {
                     back_guard.right.clone()
@@ -82,12 +85,12 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
                         self.stack.push(child);
                         *self.indexes.last_mut().unwrap() = index;
                         self.indexes.push(0);
-                        (order, true)
+                        (Some(order), true)
                     }
                     None => {
                         let index = min(back_guard.data.len() - 1, index);
                         *self.indexes.last_mut().unwrap() = index;
-                        (order, false)
+                        (Some(order), false)
                     }
                 }
             }
