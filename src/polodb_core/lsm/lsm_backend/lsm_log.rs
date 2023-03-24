@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use byteorder::WriteBytesExt;
 use crc64fast::Digest;
 use getrandom::getrandom;
@@ -21,8 +22,8 @@ const DATABASE_VERSION: [u8; 4] = [0, 0, 4, 0];
 const DATA_BEGIN_OFFSET: u64 = 64;
 
 enum LogCommand {
-    Insert(Box<[u8]>, Vec<u8>),
-    Delete(Box<[u8]>)
+    Insert(Arc<[u8]>, Vec<u8>),
+    Delete(Arc<[u8]>)
 }
 
 #[allow(dead_code)]
@@ -317,7 +318,7 @@ impl LsmLogInner {
         let mut value_buff = vec![0u8; value_len as usize];
         remain.read_exact(&mut value_buff)?;
 
-        commands.push(LogCommand::Insert(key_buff.into_boxed_slice(), value_buff));
+        commands.push(LogCommand::Insert(key_buff.into(), value_buff));
 
         *ptr = remain.as_ptr() as usize - mmap.as_ptr() as usize;
 
@@ -331,7 +332,7 @@ impl LsmLogInner {
         let mut key_buff = vec![0u8; key_len as usize];
         remain.read_exact(&mut key_buff)?;
 
-        commands.push(LogCommand::Delete(key_buff.into_boxed_slice()));
+        commands.push(LogCommand::Delete(key_buff.into()));
 
         *ptr = remain.as_ptr() as usize - mmap.as_ptr() as usize;
 

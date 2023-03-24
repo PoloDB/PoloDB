@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use std::sync::Arc;
 use crate::lsm::lsm_tree::LsmTree;
 
 #[derive(Copy, Clone)]
@@ -25,7 +26,7 @@ impl Default for LsmTuplePtr {
 // Immutable segment
 #[derive(Clone)]
 pub(crate) struct ImLsmSegment {
-    pub segments:         LsmTree<Box<[u8]>, LsmTuplePtr>,
+    pub segments:         LsmTree<Arc<[u8]>, LsmTuplePtr>,
     pub start_pid:        u64,
     pub end_pid:          u64,
 }

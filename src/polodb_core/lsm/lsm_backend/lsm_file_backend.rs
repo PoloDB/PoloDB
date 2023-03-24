@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::num::NonZeroU32;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, Arc};
 use byteorder::ReadBytesExt;
 use memmap2::Mmap;
 use crate::{Config, DbErr, DbResult};
@@ -221,7 +221,7 @@ impl LsmFileBackendInner {
 
         writer.begin()?;
 
-        let mut segments = LsmTree::<Box<[u8]>, LsmTuplePtr>::new();
+        let mut segments = LsmTree::<Arc<[u8]>, LsmTuplePtr>::new();
 
         let mut mem_table_cursor = mem_table.segments.open_cursor();
         mem_table_cursor.go_to_min();

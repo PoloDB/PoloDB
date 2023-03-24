@@ -6,7 +6,7 @@
 use std::sync::{Arc, Mutex, Weak};
 use crate::{DbErr, DbResult};
 use crate::lsm::lsm_kv::LsmKvInner;
-use super::multi_cursor::MultiCursor;
+use crate::lsm::multi_cursor::MultiCursor;
 
 #[derive(Clone)]
 pub struct KvCursor {

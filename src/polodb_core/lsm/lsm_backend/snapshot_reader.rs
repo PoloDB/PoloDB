@@ -5,6 +5,7 @@
  */
 
 use std::io::Read;
+use std::sync::Arc;
 use byteorder::ReadBytesExt;
 use memmap2::Mmap;
 use smallvec::{SmallVec, smallvec};
@@ -121,7 +122,7 @@ impl<'a> SnapshotReader<'a> {
         let start_offset = (start_pid as usize) * (self.page_size as usize);
         let end_offset = (end_pid + 1) as usize * (self.page_size as usize);
         let mut segment_slice = &self.mmap[start_offset..end_offset];
-        let mut segments = LsmTree::new();
+        let mut segments: LsmTree<Arc<[u8]>, LsmTuplePtr> = LsmTree::new();
 
         for _ in 0..tuple_len {
             let global_offset = segment_slice.as_ptr() as usize - self.mmap.as_ptr() as usize;
@@ -140,7 +141,7 @@ impl<'a> SnapshotReader<'a> {
                     segment_slice = &segment_slice[(value_len as usize)..];
 
                     segments.insert_in_place(
-                        key_buffer.into_boxed_slice(),
+                        key_buffer.into(),
                         LsmTuplePtr {
                             pid: pid as u64,
                             offset: offset as u32,
@@ -149,19 +150,19 @@ impl<'a> SnapshotReader<'a> {
                 }
                 format::LSM_POINT_DELETE => {
                     segments.update_in_place(
-                        key_buffer.into_boxed_slice(),
+                        key_buffer.into(),
                         LsmTreeValueMarker::Deleted,
                     );
                 }
                 format::LSM_START_DELETE => {
                     segments.update_in_place(
-                        key_buffer.into_boxed_slice(),
+                        key_buffer.into(),
                         LsmTreeValueMarker::DeleteStart,
                     );
                 }
                 format::LSM_END_DELETE => {
                     segments.update_in_place(
-                        key_buffer.into_boxed_slice(),
+                        key_buffer.into(),
                         LsmTreeValueMarker::DeleteEnd,
                     );
                 }
