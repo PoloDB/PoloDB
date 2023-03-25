@@ -23,6 +23,13 @@ impl CursorRepr {
         }
     }
 
+    pub fn key(&self) -> Option<Arc<[u8]>> {
+        match self {
+            CursorRepr::MemTableCursor(cursor) => cursor.key(),
+            CursorRepr::SegTableCursor(cursor) => cursor.key(),
+        }
+    }
+
     pub fn value(&self, db: &LsmKvInner) -> DbResult<Option<LsmTreeValueMarker<Vec<u8>>>> {
         match self {
             CursorRepr::MemTableCursor(mem_table_cursor) => {
@@ -72,6 +79,20 @@ impl CursorRepr {
                 cursor.next();
                 Ok(())
             }
+        }
+    }
+
+    pub fn reset(&mut self) {
+        match self {
+            CursorRepr::MemTableCursor(cursor) => cursor.reset(),
+            CursorRepr::SegTableCursor(cursor) => cursor.reset(),
+        }
+    }
+
+    pub fn done(&self) -> bool {
+        match self {
+            CursorRepr::MemTableCursor(cursor) => cursor.done(),
+            CursorRepr::SegTableCursor(cursor) => cursor.done(),
         }
     }
 

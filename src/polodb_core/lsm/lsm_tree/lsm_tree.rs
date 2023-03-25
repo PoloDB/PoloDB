@@ -394,25 +394,25 @@ mod tests {
         let mut cursor = tree.open_cursor();
         let ord = cursor.seek(&15);
 
-        assert_eq!(ord, Ordering::Less);
+        assert_eq!(ord, Some(Ordering::Less));
         assert_eq!(cursor.value().unwrap().unwrap(), 20);
 
         let mut cursor = tree.open_cursor();
         let ord = cursor.seek(&5);
 
-        assert_eq!(ord, Ordering::Less);
+        assert_eq!(ord, Some(Ordering::Less));
         assert_eq!(cursor.value().unwrap().unwrap(), 10);
 
         let mut cursor = tree.open_cursor();
         let ord = cursor.seek(&25);
 
-        assert_eq!(ord, Ordering::Less);
+        assert_eq!(ord, Some(Ordering::Less));
         assert_eq!(cursor.value().unwrap().unwrap(), 30);
 
         let mut cursor = tree.open_cursor();
         let ord = cursor.seek(&35);
 
-        assert_eq!(ord, Ordering::Greater);
+        assert_eq!(ord, Some(Ordering::Greater));
         assert_eq!(cursor.value().unwrap().unwrap(), 30);
 
         cursor.next();

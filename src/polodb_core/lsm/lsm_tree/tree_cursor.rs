@@ -104,19 +104,33 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
     }
 
     pub fn key(&self) -> Option<K> {
-        self.stack.last().map(|back| {
-            let back_guard = back.read().unwrap();
-            let index = *self.indexes.last().unwrap();
-            back_guard.data[index].key.clone()
-        })
+        self.stack
+            .last()
+            .map(|back| {
+                let back_guard = back.read().unwrap();
+                let index = *self.indexes.last().unwrap();
+                if back_guard.data.is_empty() {
+                    None
+                } else {
+                    Some(back_guard.data[index].key.clone())
+                }
+            })
+            .flatten()
     }
 
     pub fn value(&self) -> Option<LsmTreeValueMarker<V>> {
-        self.stack.last().map(|back| {
-            let back_guard = back.read().unwrap();
-            let index = *self.indexes.last().unwrap();
-            back_guard.data[index].value.clone()
-        })
+        self.stack
+            .last()
+            .map(|back| {
+                let back_guard = back.read().unwrap();
+                let index = *self.indexes.last().unwrap();
+                if back_guard.data.is_empty() {
+                    None
+                } else {
+                    Some(back_guard.data[index].value.clone())
+                }
+            })
+            .flatten()
     }
 
     pub fn marker(&self) -> Option<LsmTreeValueMarker<()>> {
@@ -219,6 +233,11 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
         let old_val = back_guard.data[index].value.clone();
         back_guard.data[index].value = value;
         old_val
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.stack.clear();
+        self.indexes.clear();
     }
 
 }

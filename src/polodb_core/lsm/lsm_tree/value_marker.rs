@@ -47,6 +47,7 @@ impl<V> LsmTreeValueMarker<V> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn unwrap(self) -> V {
         match self {
             LsmTreeValueMarker::Value(value) => value,
