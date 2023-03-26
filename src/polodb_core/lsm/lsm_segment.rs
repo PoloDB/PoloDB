@@ -8,8 +8,9 @@ use crate::lsm::lsm_tree::LsmTree;
 
 #[derive(Copy, Clone)]
 pub(crate) struct LsmTuplePtr {
-    pub pid:    u64,
-    pub offset: u32,
+    pub pid:       u64,
+    pub offset:    u32,
+    pub byte_size: u64,
 }
 
 impl Default for LsmTuplePtr {
@@ -18,6 +19,7 @@ impl Default for LsmTuplePtr {
         LsmTuplePtr {
             pid: 0,
             offset: 0,
+            byte_size: 0,
         }
     }
 

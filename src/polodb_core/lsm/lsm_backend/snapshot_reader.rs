@@ -125,7 +125,8 @@ impl<'a> SnapshotReader<'a> {
         let mut segments: LsmTree<Arc<[u8]>, LsmTuplePtr> = LsmTree::new();
 
         for _ in 0..tuple_len {
-            let global_offset = segment_slice.as_ptr() as usize - self.mmap.as_ptr() as usize;
+            let tuple_start_ptr = segment_slice.as_ptr() as usize;
+            let global_offset = tuple_start_ptr - self.mmap.as_ptr() as usize;
             let pid = global_offset / (self.page_size as usize);
             let offset = global_offset % (self.page_size as usize);
 
@@ -145,6 +146,7 @@ impl<'a> SnapshotReader<'a> {
                         LsmTuplePtr {
                             pid: pid as u64,
                             offset: offset as u32,
+                            byte_size: (segment_slice.as_ptr() as usize - tuple_start_ptr) as u64,
                         },
                     );
                 }

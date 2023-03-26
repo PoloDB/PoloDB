@@ -39,17 +39,26 @@ impl<'a, 'b> FileWriter<'a, 'b> {
         }
     }
 
-    fn mark(&self) -> LsmTuplePtr {
+    fn start_mark(&self) -> LsmTuplePtr {
         let page_id = self.written_bytes / (self.page_size as u64);
         let page_offset = self.written_bytes % (self.page_size as u64);
         LsmTuplePtr {
             pid: self.start_pid + page_id,
             offset: page_offset as u32,
+            byte_size: self.written_bytes,
+        }
+    }
+
+    fn end_mark(&self, start_mark: &LsmTuplePtr) -> LsmTuplePtr {
+        LsmTuplePtr {
+            pid: start_mark.pid,
+            offset: start_mark.offset,
+            byte_size: self.written_bytes - start_mark.byte_size,
         }
     }
 
     pub fn write_tuple(&mut self, key: &[u8], value: LsmTreeValueMarker<&[u8]>) -> DbResult<LsmTuplePtr> {
-        let start_mark = self.mark();
+        let start_mark = self.start_mark();
         match value {
             LsmTreeValueMarker::Value(insert_buffer) => {
                 self.write_u8(format::LSM_INSERT)?;
@@ -76,7 +85,7 @@ impl<'a, 'b> FileWriter<'a, 'b> {
                 self.write_all(key)?;
             }
         }
-        Ok(start_mark)
+        Ok(self.end_mark(&start_mark))
     }
 
     pub fn begin(&mut self) -> DbResult<()> {
@@ -90,13 +99,13 @@ impl<'a, 'b> FileWriter<'a, 'b> {
 
     /// write padding to align page
     pub fn end(&mut self) -> DbResult<LsmTuplePtr> {
-        let start_mark = self.mark();
+        let start_mark = self.start_mark();
         let remain_to_next_page = self.page_size - start_mark.offset;
 
         let white = vec![0; remain_to_next_page as usize];
         self.file.write(&white)?;
 
-        Ok(start_mark)
+        Ok(self.end_mark(&start_mark))
     }
 
 }
