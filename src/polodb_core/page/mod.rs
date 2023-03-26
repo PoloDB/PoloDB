@@ -175,6 +175,7 @@ impl RawPage {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn pos(&mut self) -> u32 {
         self.pos
     }

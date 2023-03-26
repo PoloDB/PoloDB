@@ -79,6 +79,17 @@ impl LsmKv {
     {
         let cursor = self.open_cursor();
         cursor.seek(key.as_ref())?;
+        let test_key = cursor.key()?;
+
+        match test_key {
+            Some(test_key) => {
+                if test_key.as_ref().cmp(key.as_ref()) != std::cmp::Ordering::Equal {
+                    return Ok(None);
+                }
+            }
+            None => return Ok(None),
+        };
+
         let value = cursor.value()?;
         let result = match value {
             Some(bytes) => Some(bytes),
@@ -250,9 +261,9 @@ impl LsmKvInner {
         }
 
         if let Some(log) = &self.log {
-            let commit_result = log.commit()?;
-            let mut snapshot = self.snapshot.lock()?;
-            snapshot.log_offset = commit_result.offset;
+            let _commit_result = log.commit()?;
+            // let mut snapshot = self.snapshot.lock()?;
+            // snapshot.log_offset = commit_result.offset;
         }
 
         if let Some(backend) = &self.backend {

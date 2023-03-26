@@ -16,6 +16,7 @@ pub(crate) enum LsmTreeValueMarker<V> {
 impl<V> LsmTreeValueMarker<V> {
 
     #[inline]
+    #[allow(dead_code)]
     pub fn is_delete_start(&self) -> bool {
         match self {
             LsmTreeValueMarker::DeleteStart => true,
@@ -24,6 +25,7 @@ impl<V> LsmTreeValueMarker<V> {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn is_delete_end(&self) -> bool {
         match self {
             LsmTreeValueMarker::DeleteEnd => true,
@@ -32,6 +34,7 @@ impl<V> LsmTreeValueMarker<V> {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn is_deleted(&self) -> bool {
         match self {
             LsmTreeValueMarker::Deleted => true,

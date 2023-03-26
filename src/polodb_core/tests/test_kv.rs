@@ -3,7 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use csv::StringRecord;
 use polodb_core::LsmKv;
 use polodb_core::test_utils::mk_db_path;
 
@@ -93,14 +95,29 @@ fn test_delete() {
     });
 }
 
+fn find_crime_desc(header: &StringRecord) -> usize {
+    let mut index: usize = 0;
+    for h in header {
+        if h == "Crm Cd Desc" {
+            break;
+        }
+        index += 1;
+    }
+
+    index
+}
+
+/// insert 1500
 #[test]
-fn test_dataset() {
+fn test_dataset_1500() {
     let dir = env!("CARGO_MANIFEST_DIR");
     let data_set_path = dir.to_string() + "/tests/dataset/CrimeDataFrom2020.csv";
     let file = std::fs::File::open(data_set_path).unwrap();
 
-    let db_path = mk_db_path("test-kv-dataset");
+    let db_path = mk_db_path("test-kv-dataset-1500");
     clean_path(db_path.as_path());
+
+    let mut mem_table: HashMap<String, String> = HashMap::new();
 
     {
         let db = LsmKv::open_file(db_path.as_path()).unwrap();
@@ -109,21 +126,49 @@ fn test_dataset() {
 
         let mut rdr = csv::Reader::from_reader(&file);
 
+        let header = rdr.headers().unwrap();
+        let index: usize = find_crime_desc(header);
+
+        let mut counter: usize = 0;
         for result in rdr.records() {
             // Notice that we need to provide a type hint for automatic
             // deserialization.
             let record = result.unwrap();
 
             let key = record.get(0).unwrap();
-            let content = format!("{:?}", record);
+            let content = record.get(index).unwrap();
 
             db.put(key, content).unwrap();
+
+            mem_table.insert(key.into(), content.into());
+
+            counter += 1;
+            if counter >= 1500 {
+                break;
+            }
         }
 
         assert_eq!(metrics.sync_count(), 1);
     }
 
-
     let db = LsmKv::open_file(db_path.as_path()).unwrap();
-    assert!(db.get("200100509").unwrap().is_some());
+
+    // in sstable
+    let test0 = String::from_utf8(db.get("200100509").unwrap().unwrap()).unwrap();
+    assert_eq!(test0, "BURGLARY FROM VEHICLE");
+
+    // in log
+    let test1 = String::from_utf8(db.get("201108111").unwrap().unwrap()).unwrap();
+    assert_eq!(test1, "BATTERY - SIMPLE ASSAULT");
+
+    let mut counter = 0;
+    for (key, value) in &mem_table {
+        let test_value = String::from_utf8(
+        db.get(key.as_str())
+                .unwrap()
+                .expect(format!("no value: {}, key: {}", counter, key).as_str())
+        ).unwrap();
+        assert_eq!(test_value.as_str(), value.as_str(), "key: {}, counter: {}", key, counter);
+        counter += 1;
+    }
 }

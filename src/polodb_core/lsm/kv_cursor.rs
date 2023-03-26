@@ -41,6 +41,11 @@ impl KvCursor {
         cursor.value(db.as_ref())
     }
 
+    pub fn key(&self) -> DbResult<Option<Arc<[u8]>>> {
+        let cursor = self.inner.lock()?;
+        Ok(cursor.key())
+    }
+
     pub fn next(&self) -> DbResult<()> {
         let mut cursor = self.inner.lock()?;
         cursor.next()

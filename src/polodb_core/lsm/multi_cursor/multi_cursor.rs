@@ -40,8 +40,16 @@ impl MultiCursor {
 
         for cursor in &mut self.cursors {
             let tmp = cursor.seek(key);
-            self.seeks[idx] = tmp;
-            self.keys[idx] = cursor.key();
+
+            // the key is greater than every keys in the set
+            if let Some(Ordering::Greater) = tmp {
+                self.seeks[idx] = tmp;
+                self.keys[idx] = None;
+                cursor.reset();
+            } else {
+                self.seeks[idx] = tmp;
+                self.keys[idx] = cursor.key();
+            }
 
             idx += 1;
         }
@@ -225,6 +233,7 @@ impl MultiCursor {
         self.fin_min_key_and_seek_to_value()
     }
 
+    #[allow(dead_code)]
     pub fn done(&self) -> bool {
         for cursor in &self.cursors {
             if !cursor.done() {
