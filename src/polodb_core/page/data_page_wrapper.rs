@@ -76,7 +76,7 @@ impl DataPageWrapper {
         self.remain_size -= data_size + 2;
     }
 
-    // None representes the item with the index has been removed
+    // None represents the item with the index has been removed
     pub(crate) fn get(&self, index: u32) -> Option<&[u8]> {
         if index >= self.bar_len() {
             panic!("index {} is greater than length {}", index, self.bar_len());

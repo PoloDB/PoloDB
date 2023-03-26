@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::sync::Arc;
 use crate::DbResult;
 use crate::lsm::lsm_kv::LsmKvInner;
+use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_tree::LsmTreeValueMarker;
 use crate::lsm::multi_cursor::CursorRepr;
 
@@ -9,7 +10,6 @@ use crate::lsm::multi_cursor::CursorRepr;
 /// kv on multi-level lsm-tree.
 pub(crate) struct MultiCursor {
     cursors: Vec<CursorRepr>,
-    seeks: Vec<Option<Ordering>>,
     keys: Vec<Option<Arc<[u8]>>>,
     first_result: i64,
 }
@@ -20,7 +20,6 @@ impl MultiCursor {
         let len = cursors.len();
         MultiCursor {
             cursors,
-            seeks: vec![None; len],
             keys: vec![None; len],
             first_result: -1,
         }
@@ -34,6 +33,20 @@ impl MultiCursor {
         return self.keys[self.first_result as usize].clone();
     }
 
+    pub fn go_to_min(&mut self) -> DbResult<()> {
+        self.first_result = -1;
+        let mut idx: usize = 0;
+        for cursor in &mut self.cursors {
+            cursor.go_to_min()?;
+
+            self.keys[idx] = cursor.key();
+
+            idx += 1;
+        }
+
+        self.fin_min_key_and_seek_to_value()
+    }
+
     pub fn seek(&mut self, key: &[u8]) -> DbResult<()> {
         self.first_result = -1;
         let mut idx: usize = 0;
@@ -43,11 +56,8 @@ impl MultiCursor {
 
             // the key is greater than every keys in the set
             if let Some(Ordering::Greater) = tmp {
-                self.seeks[idx] = tmp;
-                self.keys[idx] = None;
                 cursor.reset();
             } else {
-                self.seeks[idx] = tmp;
                 self.keys[idx] = cursor.key();
             }
 
@@ -217,6 +227,13 @@ impl MultiCursor {
         }
 
         Ok(None)
+    }
+
+    pub fn unwrap_tuple_ptr(&self) -> DbResult<LsmTreeValueMarker<LsmTuplePtr>> {
+        assert!(self.first_result >= 0);
+
+        let cursor = &self.cursors[self.first_result as usize];
+        return Ok(cursor.unwrap_tuple_ptr());
     }
 
     pub fn next(&mut self) -> DbResult<()> {

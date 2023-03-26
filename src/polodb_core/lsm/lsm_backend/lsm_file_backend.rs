@@ -19,7 +19,7 @@ use crate::lsm::mem_table::MemTable;
 use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
 use crate::lsm::lsm_snapshot::{LsmMetaDelegate, LsmSnapshot};
 use crate::page::RawPage;
-use crate::lsm::lsm_tree::LsmTree;
+use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
 use crate::lsm::lsm_snapshot::lsm_meta::{META_ID_OFFSET};
 
 #[cfg(target_os = "windows")]
@@ -109,6 +109,16 @@ impl LsmFileBackend {
     pub fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.checkpoint_snapshot(snapshot)
+    }
+
+    pub fn write_merged_tuples(
+        &self,
+        snapshot: &LsmSnapshot,
+        tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)],
+        estimate_size: usize,
+    ) -> DbResult<ImLsmSegment> {
+        let mut inner = self.inner.lock()?;
+        inner.write_merged_tuples(snapshot, tuples, estimate_size)
     }
 }
 
@@ -215,7 +225,6 @@ impl LsmFileBackendInner {
         let mut writer = FileWriter::open(
             &mut self.file,
             start_pid,
-            snapshot,
             config,
         );
 
@@ -247,6 +256,57 @@ impl LsmFileBackendInner {
         snapshot.file_size = self.file.seek(SeekFrom::End(0))?;
 
         Ok(())
+    }
+
+    fn write_merged_tuples(&mut self, snapshot: &LsmSnapshot, tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)], _estimate_size: usize) -> DbResult<ImLsmSegment> {
+        let config = self.config.clone();
+        let page_size = config.get_lsm_page_size();
+
+        let mmap = unsafe{
+            Mmap::map(&self.file)?
+        };
+
+        // TODO: try alloc from free pages
+        let start_pid = snapshot.file_size / (page_size as u64);
+
+        let mut writer = FileWriter::open(
+            &mut self.file,
+            start_pid,
+            config,
+        );
+
+        writer.begin()?;
+
+        let mut segments = LsmTree::<Arc<[u8]>, LsmTuplePtr>::new();
+
+        for (key, value) in tuples {
+           let tuple =  match value {
+                LsmTreeValueMarker::Deleted => {
+                    writer.write_tuple(key, LsmTreeValueMarker::Deleted)?
+                },
+                LsmTreeValueMarker::DeleteStart => {
+                    writer.write_tuple(key, LsmTreeValueMarker::DeleteStart)?
+                },
+                LsmTreeValueMarker::DeleteEnd => {
+                    writer.write_tuple(key, LsmTreeValueMarker::DeleteEnd)?
+                },
+                LsmTreeValueMarker::Value(legacy_tuple) => {
+                    let offset = ((legacy_tuple.pid as usize) * (page_size as usize)) + (legacy_tuple.offset as usize);
+                    writer.write_buffer(&mmap[offset..(offset + (legacy_tuple.byte_size as usize))])?
+                }
+            };
+            segments.insert_in_place(key.clone(), tuple);
+        }
+
+        let end_ptr = writer.end()?;
+
+        let im_seg = ImLsmSegment {
+            segments,
+            start_pid,
+            end_pid: end_ptr.pid,
+        };
+
+        Ok(im_seg)
     }
 
     fn checkpoint_snapshot(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<()> {

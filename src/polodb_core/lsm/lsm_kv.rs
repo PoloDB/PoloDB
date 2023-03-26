@@ -9,9 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::kv_cursor::KvCursor;
-use crate::lsm::lsm_segment::LsmTuplePtr;
+use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
 use crate::lsm::LsmMetrics;
 use crate::lsm::lsm_snapshot::LsmSnapshot;
+use crate::lsm::lsm_tree::LsmTreeValueMarker;
 use super::lsm_backend::{LsmFileBackend, LsmLog};
 use crate::lsm::mem_table::MemTable;
 use crate::lsm::multi_cursor::{CursorRepr, MultiCursor};
@@ -286,12 +287,115 @@ impl LsmKvInner {
 
                 self.op_count.store(0, Ordering::Relaxed);
                 self.metrics.add_sync_count();
+
+                let level0 = &snapshot.levels[0];
+                if level0.content.len() > 4 {  // reach 5
+                    self.minor_compact(&mut snapshot)?;
+                }
             }
         }
 
         self.in_transaction.set(false);
 
         Ok(())
+    }
+
+    fn minor_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        let _new_segment = self.merge_level0_except_last(snapshot)?;
+
+        self.free_pages_of_level0_except_last(snapshot)?;
+        snapshot.levels[0].clear_except_last();
+
+        self.metrics.add_minor_compact();
+
+        Ok(())
+    }
+
+    fn free_pages_of_level0_except_last(&self, _snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        unimplemented!()
+    }
+
+    fn merge_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> DbResult<ImLsmSegment> {
+        let level0 = &snapshot.levels[0];
+        assert!(level0.content.len() > 1);
+
+        let preserve_delete = snapshot.levels.len() > 1;
+
+        let cursor = {
+            let mut cursor_repo: Vec<CursorRepr> = vec![];
+            let idx: i64 = (level0.content.len() as i64) - 2;
+
+            while idx >= 0 {
+                let cursor = level0.content[idx as usize].segments.open_cursor();
+                cursor_repo.push(cursor.into());
+            }
+
+            MultiCursor::new(cursor_repo)
+        };
+
+        let _segment = self.merge_level(snapshot, cursor, preserve_delete)?;
+        unimplemented!()
+    }
+
+    fn merge_level(&self, snapshot: &LsmSnapshot, mut cursor: MultiCursor, preserve_delete: bool) -> DbResult<ImLsmSegment> {
+        cursor.go_to_min()?;
+
+        let mut tuples = Vec::<(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)>::new();
+
+        while !cursor.done() {
+            let key_opt = cursor.key();
+            match key_opt {
+                Some(key) => {
+                    let value = cursor.unwrap_tuple_ptr()?;
+
+                    if preserve_delete {
+                        tuples.push((key, value));
+                        continue;
+                    }
+
+                    if value.is_value() {
+                        tuples.push((key, value));
+                    }
+                }
+                None => break,
+            }
+
+            cursor.next()?;
+        }
+
+        let estimate_size = LsmKvInner::estimate_merge_tuples_byte_size(&tuples);
+
+        let backend = self.backend.as_ref().unwrap().as_ref();
+
+        backend.write_merged_tuples(snapshot, &tuples, estimate_size)
+    }
+
+    fn estimate_merge_tuples_byte_size(tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)]) -> usize {
+        let mut result: usize = 0;
+
+        for (key, value) in tuples {
+            // marker
+            result += 1;
+
+            // key len(max): optimize this
+            result += 6;
+
+            result += key.len();
+
+            // value len(max): optimize this
+            result += 6;
+
+            let value_size = match value {
+                LsmTreeValueMarker::Deleted => 0,
+                LsmTreeValueMarker::DeleteStart => 0,
+                LsmTreeValueMarker::DeleteEnd => 0,
+                LsmTreeValueMarker::Value(tuple) => tuple.byte_size,
+            };
+
+            result += value_size as usize;
+        }
+
+        result
     }
 
     #[inline]

@@ -27,6 +27,10 @@ impl LsmMetrics {
         self.inner.sync_count.load(Ordering::Relaxed)
     }
 
+    pub fn add_minor_compact(&self) {
+        self.inner.add_minor_compact();
+    }
+
 }
 
 macro_rules! test_enable {
@@ -40,6 +44,7 @@ macro_rules! test_enable {
 struct LsmMetricsInner {
     enable: AtomicBool,
     sync_count: AtomicUsize,
+    minor_compact: AtomicUsize,
 }
 
 impl LsmMetricsInner {
@@ -54,6 +59,11 @@ impl LsmMetricsInner {
         self.sync_count.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn add_minor_compact(&self) {
+        test_enable!(self);
+        self.minor_compact.fetch_add(1, Ordering::Relaxed);
+    }
+
 }
 
 impl Default for LsmMetricsInner {
@@ -62,6 +72,7 @@ impl Default for LsmMetricsInner {
         LsmMetricsInner {
             enable: AtomicBool::new(false),
             sync_count: AtomicUsize::new(0),
+            minor_compact: AtomicUsize::new(0),
         }
     }
 

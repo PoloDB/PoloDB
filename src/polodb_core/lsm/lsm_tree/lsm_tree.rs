@@ -111,6 +111,7 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn delete_range_in_place(&mut self, start: &K, end: &K) {
         assert!(start < end);
 
@@ -120,6 +121,7 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         self.update_in_place(end.clone(), LsmTreeValueMarker::DeleteEnd);
     }
 
+    #[allow(dead_code)]
     fn indeed_delete_range_in_place(&mut self, start: &K, end: &K) {
         let mut cursor = self.open_cursor();
 
@@ -246,6 +248,7 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
         self.right.is_none()
     }
 
+    #[allow(dead_code)]
     fn insert_in_place(&mut self, key: K, value: V) -> TreeNodeInsertResult<K, V> {
         self.replace(key, LsmTreeValueMarker::Value(value))
     }

@@ -23,6 +23,19 @@ impl CursorRepr {
         }
     }
 
+    pub fn go_to_min(&mut self) -> DbResult<()> {
+        match self {
+            CursorRepr::MemTableCursor(cursor) => {
+                cursor.go_to_min();
+                Ok(())
+            }
+            CursorRepr::SegTableCursor(cursor) => {
+                cursor.go_to_min();
+                Ok(())
+            }
+        }
+    }
+
     pub fn key(&self) -> Option<Arc<[u8]>> {
         match self {
             CursorRepr::MemTableCursor(cursor) => cursor.key(),
@@ -93,6 +106,13 @@ impl CursorRepr {
         match self {
             CursorRepr::MemTableCursor(cursor) => cursor.done(),
             CursorRepr::SegTableCursor(cursor) => cursor.done(),
+        }
+    }
+
+    pub fn unwrap_tuple_ptr(&self) -> LsmTreeValueMarker<LsmTuplePtr> {
+        match self {
+            CursorRepr::SegTableCursor(cursor) => cursor.value().unwrap(),
+            _ => panic!("this is not seg table"),
         }
     }
 

@@ -23,6 +23,10 @@ impl LsmLevel {
         }
     }
 
+    pub fn clear_except_last(&mut self) {
+        self.content = smallvec![self.content.last().unwrap().clone()];
+    }
+
 }
 
 #[derive(Clone, Copy)]
