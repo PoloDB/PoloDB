@@ -7,5 +7,5 @@
 mod lsm_snapshot;
 pub(crate) mod lsm_meta;
 
-pub(crate) use lsm_snapshot::{LsmSnapshot, LsmLevel};
+pub(crate) use lsm_snapshot::{LsmSnapshot, LsmLevel, FreeSegmentRecord};
 pub(crate) use lsm_meta::LsmMetaDelegate;

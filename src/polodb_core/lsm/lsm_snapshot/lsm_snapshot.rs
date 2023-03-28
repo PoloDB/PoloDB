@@ -31,7 +31,8 @@ impl LsmLevel {
 
 #[derive(Clone, Copy)]
 pub(crate) struct  FreeSegmentRecord {
-    pid: u64,
+    pub start_pid: u64,
+    pub end_pid: u64,
 }
 
 #[derive(Clone)]
@@ -43,7 +44,7 @@ pub(crate) struct LsmSnapshot {
     pub file_size:   u64,
     pub log_offset:  u64,
     pub levels:      Vec<LsmLevel>,
-    pub free_segments: Vec<u32>,
+    pub free_segments: Vec<FreeSegmentRecord>,
 }
 
 impl LsmSnapshot {

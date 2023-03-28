@@ -31,6 +31,10 @@ impl LsmMetrics {
         self.inner.add_minor_compact();
     }
 
+    pub fn minor_compact(&self) -> usize {
+        self.inner.minor_compact()
+    }
+
 }
 
 macro_rules! test_enable {
@@ -62,6 +66,10 @@ impl LsmMetricsInner {
     pub fn add_minor_compact(&self) {
         test_enable!(self);
         self.minor_compact.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn minor_compact(&self) -> usize {
+        self.minor_compact.load(Ordering::Relaxed)
     }
 
 }

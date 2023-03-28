@@ -11,16 +11,18 @@ use std::path::Path;
 use std::sync::{Mutex, Arc};
 use byteorder::ReadBytesExt;
 use memmap2::Mmap;
+use smallvec::smallvec;
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::lsm_backend::file_writer::FileWriter;
 use crate::lsm::lsm_backend::format;
 use crate::lsm::lsm_backend::snapshot_reader::SnapshotReader;
 use crate::lsm::mem_table::MemTable;
 use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
-use crate::lsm::lsm_snapshot::{LsmMetaDelegate, LsmSnapshot};
+use crate::lsm::lsm_snapshot::{FreeSegmentRecord, LsmLevel, LsmMetaDelegate, LsmSnapshot};
 use crate::page::RawPage;
 use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
 use crate::lsm::lsm_snapshot::lsm_meta::{META_ID_OFFSET};
+use crate::lsm::multi_cursor::{CursorRepr, MultiCursor};
 
 #[cfg(target_os = "windows")]
 mod winerror {
@@ -106,19 +108,14 @@ impl LsmFileBackend {
         inner.sync_latest_segment(segment, snapshot)
     }
 
+    pub fn minor_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        let mut inner = self.inner.lock()?;
+        inner.minor_compact(snapshot)
+    }
+
     pub fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.checkpoint_snapshot(snapshot)
-    }
-
-    pub fn write_merged_tuples(
-        &self,
-        snapshot: &LsmSnapshot,
-        tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)],
-        estimate_size: usize,
-    ) -> DbResult<ImLsmSegment> {
-        let mut inner = self.inner.lock()?;
-        inner.write_merged_tuples(snapshot, tuples, estimate_size)
     }
 }
 
@@ -215,6 +212,8 @@ impl LsmFileBackendInner {
         }
     }
 
+    /// Sync the `mem_table` to the disk,
+    /// Add the segment on the top of level 0
     fn sync_latest_segment(&mut self, mem_table: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let config = self.config.clone();
         let page_size = config.get_lsm_page_size();
@@ -256,6 +255,129 @@ impl LsmFileBackendInner {
         snapshot.file_size = self.file.seek(SeekFrom::End(0))?;
 
         Ok(())
+    }
+
+    fn minor_compact(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        let new_segment = self.merge_level0_except_last(snapshot)?;
+
+        self.insert_new_segment_to_right_level(new_segment, snapshot);
+
+        self.free_pages_of_level0_except_last(snapshot)?;
+
+        snapshot.levels[0].clear_except_last();
+        snapshot.levels[0].age += 1;
+
+        snapshot.file_size = self.file.seek(SeekFrom::End(0))?;
+
+        Ok(())
+    }
+
+    fn insert_new_segment_to_right_level(&self, new_segment: ImLsmSegment, snapshot: &mut LsmSnapshot) {
+        let new_level = LsmLevel {
+            age: 0,
+            content: smallvec![new_segment],
+        };
+        snapshot.levels.insert(1, new_level);
+    }
+
+    fn free_pages_of_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        let level0 = &snapshot.levels[0];
+
+        let mut index: usize = 0;
+
+        while index < level0.content.len() - 1 {
+            let segment = &level0.content[index];
+            snapshot.free_segments.push(FreeSegmentRecord {
+                start_pid: segment.start_pid,
+                end_pid: segment.end_pid,
+            });
+            index += 1;
+        }
+
+        Ok(())
+    }
+
+    fn merge_level0_except_last(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<ImLsmSegment> {
+        let level0 = &snapshot.levels[0];
+        assert!(level0.content.len() > 1);
+
+        let preserve_delete = snapshot.levels.len() > 1;
+
+        let cursor = {
+            let mut cursor_repo: Vec<CursorRepr> = vec![];
+            let mut idx: i64 = (level0.content.len() as i64) - 2;
+
+            while idx >= 0 {
+                let cursor = level0.content[idx as usize].segments.open_cursor();
+                cursor_repo.push(cursor.into());
+                idx -= 1;
+            }
+
+            MultiCursor::new(cursor_repo)
+        };
+
+        let segment = self.merge_level(snapshot, cursor, preserve_delete)?;
+
+        Ok(segment)
+    }
+
+    fn merge_level(&mut self, snapshot: &LsmSnapshot, mut cursor: MultiCursor, preserve_delete: bool) -> DbResult<ImLsmSegment> {
+        cursor.go_to_min()?;
+
+        let mut tuples = Vec::<(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)>::new();
+
+        while !cursor.done() {
+            let key_opt = cursor.key();
+            match key_opt {
+                Some(key) => {
+                    let value = cursor.unwrap_tuple_ptr()?;
+
+                    if preserve_delete {
+                        tuples.push((key, value));
+                        continue;
+                    }
+
+                    if value.is_value() {
+                        tuples.push((key, value));
+                    }
+                }
+                None => break,
+            }
+
+            cursor.next()?;
+        }
+
+        let estimate_size = LsmFileBackendInner::estimate_merge_tuples_byte_size(&tuples);
+
+        self.write_merged_tuples(snapshot, &tuples, estimate_size)
+    }
+
+    fn estimate_merge_tuples_byte_size(tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)]) -> usize {
+        let mut result: usize = 0;
+
+        for (key, value) in tuples {
+            // marker
+            result += 1;
+
+            // key len(max): optimize this
+            result += 6;
+
+            result += key.len();
+
+            // value len(max): optimize this
+            result += 6;
+
+            let value_size = match value {
+                LsmTreeValueMarker::Deleted => 0,
+                LsmTreeValueMarker::DeleteStart => 0,
+                LsmTreeValueMarker::DeleteEnd => 0,
+                LsmTreeValueMarker::Value(tuple) => tuple.byte_size,
+            };
+
+            result += value_size as usize;
+        }
+
+        result
     }
 
     fn write_merged_tuples(&mut self, snapshot: &LsmSnapshot, tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)], _estimate_size: usize) -> DbResult<ImLsmSegment> {
