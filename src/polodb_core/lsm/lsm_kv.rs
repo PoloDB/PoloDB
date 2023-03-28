@@ -38,7 +38,8 @@ impl LsmKv {
     }
 
     pub fn open_memory_with_config(config: Config) -> DbResult<LsmKv> {
-        let inner = LsmKvInner::open_with_backend(None, None, config)?;
+        let metrics = LsmMetrics::new();
+        let inner = LsmKvInner::open_with_backend(None, None, metrics, config)?;
         LsmKv::open_with_inner(inner)
     }
 
@@ -148,15 +149,22 @@ impl LsmKvInner {
     }
 
     fn open_file(path: &Path, config: Config) -> DbResult<LsmKvInner> {
-        let backend = LsmFileBackend::open(path, config.clone())?;
+        let metrics = LsmMetrics::new();
+        let backend = LsmFileBackend::open(path, metrics.clone(), config.clone())?;
         let log_file = LsmKvInner::mk_log_path(path);
         let log = LsmLog::open(log_file.as_path(), config.clone())?;
-        LsmKvInner::open_with_backend(Some(Box::new(backend)), Some(log), config)
+        LsmKvInner::open_with_backend(
+            Some(Box::new(backend)),
+            Some(log),
+            metrics,
+            config,
+        )
     }
 
     fn open_with_backend(
         backend: Option<Box<LsmFileBackend>>,
         log: Option<LsmLog>,
+        metrics: LsmMetrics,
         config: Config,
     ) -> DbResult<LsmKvInner> {
         let snapshot = match &backend {
@@ -179,7 +187,7 @@ impl LsmKvInner {
             mem_table: RefCell::new(mem_table),
             in_transaction: Cell::new(false),
             op_count: AtomicUsize::new(0),
-            metrics: LsmMetrics::new(),
+            metrics,
             config,
         })
     }

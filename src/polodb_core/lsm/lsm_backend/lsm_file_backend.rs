@@ -22,6 +22,7 @@ use crate::lsm::lsm_snapshot::{FreeSegmentRecord, LsmLevel, LsmMetaDelegate, Lsm
 use crate::page::RawPage;
 use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
 use crate::lsm::lsm_snapshot::lsm_meta::{META_ID_OFFSET};
+use crate::lsm::LsmMetrics;
 use crate::lsm::multi_cursor::{CursorRepr, MultiCursor};
 
 #[cfg(target_os = "windows")]
@@ -85,9 +86,10 @@ impl LsmFileBackend {
     #[allow(unused)]
     pub fn open(
         path: &Path,
+        metrics: LsmMetrics,
         config: Config,
     ) -> DbResult<LsmFileBackend> {
-        let inner = LsmFileBackendInner::open(path, config)?;
+        let inner = LsmFileBackendInner::open(path, metrics, config)?;
         Ok(LsmFileBackend {
             inner: Mutex::new(inner),
         })
@@ -121,6 +123,7 @@ impl LsmFileBackend {
 
 struct LsmFileBackendInner {
     file:    File,
+    metrics: LsmMetrics,
     config:  Config,
 }
 
@@ -128,11 +131,13 @@ impl LsmFileBackendInner {
 
     fn open(
         path: &Path,
+        metrics: LsmMetrics,
         config: Config,
     ) -> DbResult<LsmFileBackendInner> {
         let file = open_file_native(path)?;
         Ok(LsmFileBackendInner {
             file,
+            metrics,
             config,
         })
     }
@@ -293,6 +298,8 @@ impl LsmFileBackendInner {
             });
             index += 1;
         }
+
+        self.metrics.set_free_segments_count(snapshot.free_segments.len());
 
         Ok(())
     }
