@@ -103,6 +103,8 @@ impl LsmSnapshot {
         for level in &self.levels {
             delegate.write_level(level);
         }
+
+        delegate.write_free_segments(&self.free_segments);
     }
 
 }

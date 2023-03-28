@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use crate::lsm::lsm_segment::ImLsmSegment;
-use crate::lsm::lsm_snapshot::LsmLevel;
+use crate::lsm::lsm_snapshot::{FreeSegmentRecord, LsmLevel};
 use crate::page::RawPage;
 
 static HEADER_DESP: &str      = "PoloDB Format v4.0";
@@ -13,6 +13,8 @@ const PAGE_SIZE_OFFSET: u32   = 36;
 pub(crate) const DB_FILE_SIZE_OFFSET: u32  = 40;
 pub(crate) const LOG_OFFSET_OFFSET: u32  = 48;
 pub(crate) const LEVEL_COUNT_OFFSET: u32 = 56;
+pub(crate) const FREELIST_START_OFFSET: u32 = 57;
+pub(crate) const FREELIST_COUNT_OFFSET: u32 = 60;
 const LEVEL_BEGIN_OFFSET: u32 = 128;
 
 /// Offset 0 (28 bytes) : "PoloDB Format v4.0"
@@ -39,9 +41,9 @@ const LEVEL_BEGIN_OFFSET: u32 = 128;
 /// 8 bytes: len
 /// 8 bytes: index page(preserved, default 0)
 ///
-/// Freelist record(12 bytes)
-/// 8 bytes: pid
-/// 4 bytes: len
+/// Freelist record(16 bytes)
+/// 8 bytes: start_pid
+/// 8 bytes: end_pid
 pub(crate) struct LsmMetaDelegate<'a>(pub &'a mut RawPage);
 
 impl<'a> LsmMetaDelegate<'a> {
@@ -114,4 +116,33 @@ impl<'a> LsmMetaDelegate<'a> {
         self.0.put_u64(seg.segments.len() as u64);
         self.0.put_u64(0);
     }
+
+    pub fn write_free_segments(&mut self, free_segments: &[FreeSegmentRecord]) {
+        let current_pos = self.0.pos();
+        let pos = better_free_segments_pos(current_pos);
+        assert!(pos < self.0.len());
+
+        self.0.seek(FREELIST_START_OFFSET);
+        self.0.put_u16(pos as u16);
+
+        self.0.seek(FREELIST_COUNT_OFFSET);
+        self.0.put_u32(free_segments.len() as u32);
+
+        self.0.seek(pos);
+
+        for seg in free_segments {
+            self.0.put_u64(seg.start_pid);
+            self.0.put_u64(seg.end_pid);
+        }
+    }
+
+}
+
+fn better_free_segments_pos(current_pos: u32) -> u32 {
+    let remain = current_pos % 8;
+    if remain == 0 {
+        return current_pos;
+    }
+
+    current_pos + (8 - remain)
 }

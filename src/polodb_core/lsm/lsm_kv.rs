@@ -199,10 +199,17 @@ impl LsmKvInner {
             mem_table_cursor.into(),
         ];
 
+        // push all cursor on level 0
         let level0 = &snapshot.levels[0];
 
         for item in level0.content.iter().rev() {
             let cursor = item.segments.open_cursor();
+            cursors.push(cursor.into());
+        }
+
+        for level in &snapshot.levels[1..] {
+            assert_eq!(level.content.len(), 1);
+            let cursor = level.content[0].segments.open_cursor();
             cursors.push(cursor.into());
         }
 
