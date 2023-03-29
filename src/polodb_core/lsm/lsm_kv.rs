@@ -305,6 +305,8 @@ impl LsmKvInner {
                 self.metrics.add_sync_count();
             } else if LsmKvInner::should_minor_compact(&snapshot) {
                 self.minor_compact(backend, &mut snapshot)?;
+            } else if LsmKvInner::should_major_compact(&snapshot) {
+                self.major_compact(backend, &mut snapshot)?;
             }
         }
 
@@ -318,6 +320,15 @@ impl LsmKvInner {
         backend.checkpoint_snapshot(snapshot)?;
 
         self.metrics.add_minor_compact();
+
+        Ok(())
+    }
+
+    fn major_compact(&self, backend: &LsmFileBackend, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        backend.major_compact(snapshot)?;
+        backend.checkpoint_snapshot(snapshot)?;
+
+        self.metrics.add_major_compact();
 
         Ok(())
     }
@@ -339,6 +350,11 @@ impl LsmKvInner {
         }
         let level0 = &snapshot.levels[0];
         level0.content.len() > 4
+    }
+
+    #[inline]
+    fn should_major_compact(snapshot: &LsmSnapshot) -> bool {
+        snapshot.levels.len() > 4
     }
 
     pub(crate) fn meta_id(&self) -> u64 {

@@ -35,6 +35,10 @@ impl LsmMetrics {
         self.inner.minor_compact()
     }
 
+    pub fn add_major_compact(&self) {
+        self.inner.add_major_compact()
+    }
+
     pub fn set_free_segments_count(&self, count: usize) {
         self.inner.set_free_segments_count(count)
     }
@@ -57,6 +61,7 @@ struct LsmMetricsInner {
     enable: AtomicBool,
     sync_count: AtomicUsize,
     minor_compact: AtomicUsize,
+    major_compact: AtomicUsize,
     free_segments_count: AtomicUsize,
 }
 
@@ -81,6 +86,11 @@ impl LsmMetricsInner {
         self.minor_compact.load(Ordering::Relaxed)
     }
 
+    fn add_major_compact(&self) {
+        test_enable!(self);
+        self.major_compact.fetch_add(1, Ordering::Relaxed);
+    }
+
     fn set_free_segments_count(&self, count: usize) {
         self.free_segments_count.store(count, Ordering::Relaxed);
     }
@@ -98,6 +108,7 @@ impl Default for LsmMetricsInner {
             enable: AtomicBool::new(false),
             sync_count: AtomicUsize::new(0),
             minor_compact: AtomicUsize::new(0),
+            major_compact: AtomicUsize::new(0),
             free_segments_count: AtomicUsize::new(0),
         }
     }

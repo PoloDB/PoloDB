@@ -115,6 +115,11 @@ impl LsmFileBackend {
         inner.minor_compact(snapshot)
     }
 
+    pub fn major_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        let mut inner = self.inner.lock()?;
+        inner.major_compact(snapshot)
+    }
+
     pub fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.checkpoint_snapshot(snapshot)
@@ -281,6 +286,54 @@ impl LsmFileBackendInner {
         snapshot.file_size = self.file.seek(SeekFrom::End(0))?;
 
         Ok(())
+    }
+
+    fn major_compact(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        assert!(snapshot.levels.len() > 3);
+        let new_segment = self.merge_last_two_levels(snapshot)?;
+
+        let mut level_len = snapshot.levels.len();
+        let last2 = &snapshot.levels[level_len - 2];
+        let last1 = &snapshot.levels[level_len - 1];
+        snapshot.free_segments.push(FreeSegmentRecord {
+            start_pid: last2.content[0].start_pid,
+            end_pid: last2.content[0].end_pid,
+        });
+        snapshot.free_segments.push(FreeSegmentRecord {
+            start_pid: last1.content[0].start_pid,
+            end_pid: last1.content[0].end_pid,
+        });
+
+        snapshot.levels.remove(level_len - 1);
+        level_len -= 1;
+        snapshot.levels[level_len - 1] = LsmLevel {
+            age: 0,
+            content: smallvec![new_segment],
+        };
+
+        LsmFileBackendInner::normalize_free_segments(snapshot)?;
+        snapshot.file_size = self.file.seek(SeekFrom::End(0))?;
+
+        Ok(())
+    }
+
+    fn merge_last_two_levels(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<ImLsmSegment> {
+        let level_len = snapshot.levels.len();
+        let last2 = &snapshot.levels[level_len - 2];
+        let last1 = &snapshot.levels[level_len - 1];
+
+        let cursor = {
+            let mut cursor_repo: Vec<CursorRepr> = vec![
+                last2.content[0].segments.open_cursor().into(),
+                last1.content[0].segments.open_cursor().into(),
+            ];
+
+            MultiCursor::new(cursor_repo)
+        };
+
+        let segment = self.merge_level(snapshot, cursor, false)?;
+
+        Ok(segment)
     }
 
     fn normalize_free_segments(snapshot: &mut LsmSnapshot) -> DbResult<()> {
