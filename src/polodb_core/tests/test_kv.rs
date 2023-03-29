@@ -251,6 +251,9 @@ fn test_dataset_7500() {
     }
 
     let db = LsmKv::open_file(db_path.as_path()).unwrap();
+    let metrics = db.metrics();
+
+    assert_eq!(1, metrics.free_segments_count());
 
     // in sstable
     let test0 = String::from_utf8(db.get("200100509").unwrap().unwrap()).unwrap();

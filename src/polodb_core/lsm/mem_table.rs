@@ -1,10 +1,11 @@
 use std::sync::Arc;
+use crate::lsm::lsm_tree::TreeCursor;
 use super::lsm_tree::LsmTree;
 
 pub(crate) struct MemTable {
-    pub segments:      LsmTree<Arc<[u8]>, Vec<u8>>,
-    store_bytes:       usize,
-    left_segment_pid:  u64,
+    segments:         LsmTree<Arc<[u8]>, Vec<u8>>,
+    store_bytes:      usize,
+    left_segment_pid: u64,
 }
 
 impl MemTable {
@@ -17,23 +18,35 @@ impl MemTable {
         }
     }
 
-    pub fn put(&mut self, key: &[u8], value: &[u8]) {
-        let prev = self.segments.insert_in_place(key.into(), value.into());
+    pub fn put<K, V>(&mut self, key: K, value: V)
+    where
+        K: Into<Arc<[u8]>>,
+        V: Into<Vec<u8>>,
+    {
+        let key = key.into();
+        let value = value.into();
+        let key_len = key.len();
+        let value_len = value.len();
+
+        let prev = self.segments.insert_in_place(key, value);
 
         if let Some(prev) = prev {
             self.store_bytes -= prev.len();
-            self.store_bytes += value.len();
+            self.store_bytes += value_len;
         } else {
             self.store_bytes += 1;  // for the flag
-            self.store_bytes += key.len();
-            self.store_bytes += value.len();
+            self.store_bytes += key_len;
+            self.store_bytes += value_len;
         }
     }
 
     /// Store will not really delete the value
     /// But inert a flag
-    pub fn delete(&mut self, key: &[u8]) {
-        let prev = self.segments.delete_in_place(key);
+    pub fn delete<K>(&mut self, key: K)
+    where
+        K: AsRef<[u8]>
+    {
+        let prev = self.segments.delete_in_place(key.as_ref());
 
         if let Some(prev) = prev {
             self.store_bytes -= prev.len();
@@ -43,6 +56,16 @@ impl MemTable {
     #[inline]
     pub fn store_bytes(&self) -> usize {
         self.store_bytes
+    }
+
+    #[inline]
+    pub fn open_cursor(&self) -> TreeCursor<Arc<[u8]>, Vec<u8>> {
+        self.segments.open_cursor()
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.segments.clear();
+        self.store_bytes = 0;
     }
 
 }

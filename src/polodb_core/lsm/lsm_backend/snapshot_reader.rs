@@ -11,8 +11,14 @@ use memmap2::Mmap;
 use smallvec::{SmallVec, smallvec};
 use crate::{DbErr, DbResult};
 use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
-use crate::lsm::lsm_snapshot::lsm_meta::{DB_FILE_SIZE_OFFSET, LEVEL_COUNT_OFFSET, LOG_OFFSET_OFFSET};
-use crate::lsm::lsm_snapshot::{LsmLevel, LsmSnapshot};
+use crate::lsm::lsm_snapshot::lsm_meta::{
+    DB_FILE_SIZE_OFFSET,
+    LEVEL_COUNT_OFFSET,
+    LOG_OFFSET_OFFSET,
+    FREELIST_START_OFFSET,
+    FREELIST_COUNT_OFFSET,
+};
+use crate::lsm::lsm_snapshot::{FreeSegmentRecord, LsmLevel, LsmSnapshot};
 use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
 use super::format;
 
@@ -44,13 +50,15 @@ impl<'a> SnapshotReader<'a> {
 
         let levels = self.read_level_from_page(meta_slice)?;
 
+        let free_segments = self.read_free_segments_from_page(meta_slice)?;
+
         let result = LsmSnapshot {
             meta_pid,
             meta_id,
             file_size: db_file_size,
             log_offset,
             levels,
-            free_segments: Vec::with_capacity(4),
+            free_segments,
         };
 
         Ok(result)
@@ -179,6 +187,44 @@ impl<'a> SnapshotReader<'a> {
             start_pid,
             end_pid,
         })
+    }
+
+    fn read_free_segments_from_page(&self, meta_slice: &[u8]) -> DbResult<Vec<FreeSegmentRecord>> {
+        let mut free_list_start_offset_be: [u8; 2] = [0; 2];
+        free_list_start_offset_be.copy_from_slice(&meta_slice[(FREELIST_START_OFFSET as usize)..(FREELIST_START_OFFSET as usize + 2)]);
+
+        let free_list_start_offset = u16::from_be_bytes(free_list_start_offset_be);
+
+        let mut free_list_count_offset_be: [u8; 4] = [0; 4];
+        free_list_count_offset_be.copy_from_slice(&meta_slice[(FREELIST_COUNT_OFFSET as usize)..(FREELIST_COUNT_OFFSET as usize  + 4)]);
+
+        let free_list_count = u32::from_be_bytes(free_list_count_offset_be);
+
+        let mut ptr = free_list_start_offset as usize;
+        let mut result = Vec::with_capacity(free_list_count as usize);
+
+        for _ in 0..(free_list_count as usize) {
+            let mut start_pid_be: [u8; 8] = [0; 8];
+            start_pid_be.copy_from_slice(&meta_slice[ptr..(ptr + 8)]);
+
+            let start_pid = u64::from_be_bytes(start_pid_be);
+
+            ptr += 8;
+
+            let mut end_pid_be: [u8; 8] = [0; 8];
+            end_pid_be.copy_from_slice(&meta_slice[ptr..(ptr + 8)]);
+
+            let end_pid = u64::from_be_bytes(end_pid_be);
+
+            result.push(FreeSegmentRecord {
+                start_pid,
+                end_pid,
+            });
+
+            ptr += 8;
+        }
+
+        Ok(result)
     }
 
 }

@@ -39,6 +39,10 @@ impl LsmMetrics {
         self.inner.set_free_segments_count(count)
     }
 
+    pub fn free_segments_count(&self) -> usize {
+        self.inner.free_segments_count()
+    }
+
 }
 
 macro_rules! test_enable {
@@ -78,8 +82,11 @@ impl LsmMetricsInner {
     }
 
     fn set_free_segments_count(&self, count: usize) {
-        test_enable!(self);
         self.free_segments_count.store(count, Ordering::Relaxed);
+    }
+
+    fn free_segments_count(&self) -> usize {
+        self.free_segments_count.load(Ordering::Relaxed)
     }
 
 }

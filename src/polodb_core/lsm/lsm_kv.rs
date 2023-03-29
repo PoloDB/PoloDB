@@ -199,7 +199,7 @@ impl LsmKvInner {
 
     fn open_multi_cursor(&self) -> MultiCursor {
         let mem_table = self.mem_table.borrow();
-        let mem_table_cursor = mem_table.segments.open_cursor();
+        let mem_table_cursor = mem_table.open_cursor();
 
         let snapshot = self.snapshot.lock().unwrap();
 
@@ -207,18 +207,20 @@ impl LsmKvInner {
             mem_table_cursor.into(),
         ];
 
-        // push all cursor on level 0
-        let level0 = &snapshot.levels[0];
+        if !snapshot.levels.is_empty() {
+            // push all cursor on level 0
+            let level0 = &snapshot.levels[0];
 
-        for item in level0.content.iter().rev() {
-            let cursor = item.segments.open_cursor();
-            cursors.push(cursor.into());
-        }
+            for item in level0.content.iter().rev() {
+                let cursor = item.segments.open_cursor();
+                cursors.push(cursor.into());
+            }
 
-        for level in &snapshot.levels[1..] {
-            assert_eq!(level.content.len(), 1);
-            let cursor = level.content[0].segments.open_cursor();
-            cursors.push(cursor.into());
+            for level in &snapshot.levels[1..] {
+                assert_eq!(level.content.len(), 1);
+                let cursor = level.content[0].segments.open_cursor();
+                cursors.push(cursor.into());
+            }
         }
 
         MultiCursor::new(cursors)
@@ -283,10 +285,10 @@ impl LsmKvInner {
 
         if let Some(backend) = &self.backend {
             let mut mem_table = self.mem_table.borrow_mut();
+            let mut snapshot = self.snapshot.lock()?;
 
             let store_bytes = mem_table.store_bytes();
             if self.should_sync(store_bytes) {
-                let mut snapshot = self.snapshot.lock()?;
                 backend.sync_latest_segment(
                     &mut mem_table,
                     &mut snapshot,
@@ -297,15 +299,12 @@ impl LsmKvInner {
                     log.shrink(&mut snapshot)?;
                 }
 
-                mem_table.segments.clear();
+                mem_table.clear();
 
                 self.op_count.store(0, Ordering::Relaxed);
                 self.metrics.add_sync_count();
-
-                let level0 = &snapshot.levels[0];
-                if level0.content.len() > 4 {  // reach 5
-                    self.minor_compact(backend, &mut snapshot)?;
-                }
+            } else if LsmKvInner::should_minor_compact(&snapshot) {
+                self.minor_compact(backend, &mut snapshot)?;
             }
         }
 
@@ -331,6 +330,15 @@ impl LsmKvInner {
 
         let block_size = self.config.get_lsm_block_size();
         return store_bytes > (block_size as usize);
+    }
+
+    #[inline]
+    fn should_minor_compact(snapshot: &LsmSnapshot) -> bool {
+        if snapshot.levels.is_empty() {
+            return false;
+        }
+        let level0 = &snapshot.levels[0];
+        level0.content.len() > 4
     }
 
     pub(crate) fn meta_id(&self) -> u64 {

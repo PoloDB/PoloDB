@@ -210,11 +210,15 @@ impl LsmFileBackendInner {
             page_size,
         );
 
-        if meta1 > meta2 {
-            reader.read_snapshot_from(0, meta1)
+        let snapshot = if meta1 > meta2 {
+            reader.read_snapshot_from(0, meta1)?
         } else {
-            reader.read_snapshot_from(1, meta2)
-        }
+            reader.read_snapshot_from(1, meta2)?
+        };
+
+        self.metrics.set_free_segments_count(snapshot.free_segments.len());
+
+        Ok(snapshot)
     }
 
     /// Sync the `mem_table` to the disk,
@@ -236,7 +240,7 @@ impl LsmFileBackendInner {
 
         let mut segments = LsmTree::<Arc<[u8]>, LsmTuplePtr>::new();
 
-        let mut mem_table_cursor = mem_table.segments.open_cursor();
+        let mut mem_table_cursor = mem_table.open_cursor();
         mem_table_cursor.go_to_min();
 
         while !mem_table_cursor.done() {
@@ -272,7 +276,34 @@ impl LsmFileBackendInner {
         snapshot.levels[0].clear_except_last();
         snapshot.levels[0].age += 1;
 
+        LsmFileBackendInner::normalize_free_segments(snapshot)?;
+
         snapshot.file_size = self.file.seek(SeekFrom::End(0))?;
+
+        Ok(())
+    }
+
+    fn normalize_free_segments(snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        snapshot.free_segments.sort_by(|a, b| {
+            a.start_pid.cmp(&b.start_pid)
+        });
+
+        let mut index: usize = 0;
+
+        while index < snapshot.free_segments.len() - 1 {
+            let (next_start_pid, next_end_pid) = {
+                let next = &snapshot.free_segments[index + 1];
+                (next.start_pid, next.end_pid)
+            };
+            let this = &mut snapshot.free_segments[index];
+
+            if this.end_pid + 1 == next_start_pid {
+                this.end_pid = next_end_pid;
+                snapshot.free_segments.remove(index + 1);
+            } else {
+                index += 1;
+            }
+        }
 
         Ok(())
     }
