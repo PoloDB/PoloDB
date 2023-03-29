@@ -39,6 +39,10 @@ impl LsmMetrics {
         self.inner.add_major_compact()
     }
 
+    pub fn major_compact(&self) -> usize {
+        self.inner.major_compact()
+    }
+
     pub fn set_free_segments_count(&self, count: usize) {
         self.inner.set_free_segments_count(count)
     }
@@ -89,6 +93,10 @@ impl LsmMetricsInner {
     fn add_major_compact(&self) {
         test_enable!(self);
         self.major_compact.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn major_compact(&self) -> usize {
+        self.major_compact.load(Ordering::Relaxed)
     }
 
     fn set_free_segments_count(&self, count: usize) {

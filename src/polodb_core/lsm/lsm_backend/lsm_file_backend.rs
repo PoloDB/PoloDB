@@ -323,7 +323,7 @@ impl LsmFileBackendInner {
         let last1 = &snapshot.levels[level_len - 1];
 
         let cursor = {
-            let mut cursor_repo: Vec<CursorRepr> = vec![
+            let cursor_repo: Vec<CursorRepr> = vec![
                 last2.content[0].segments.open_cursor().into(),
                 last1.content[0].segments.open_cursor().into(),
             ];
@@ -425,6 +425,7 @@ impl LsmFileBackendInner {
 
                     if preserve_delete {
                         tuples.push((key, value));
+                        cursor.next()?;
                         continue;
                     }
 

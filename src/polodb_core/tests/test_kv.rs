@@ -232,7 +232,6 @@ fn test_dataset_7500() {
     let file = std::fs::File::open(data_set_path).unwrap();
 
     let db_path = mk_db_path("test-kv-dataset-7500");
-    println!("7500 data: {}", db_path.to_str().unwrap());
     clean_path(db_path.as_path());
 
     let mut mem_table: HashMap<String, String> = HashMap::new();
@@ -254,6 +253,56 @@ fn test_dataset_7500() {
     let metrics = db.metrics();
 
     assert_eq!(1, metrics.free_segments_count());
+
+    // in sstable
+    let test0 = String::from_utf8(db.get("200100509").unwrap().unwrap()).unwrap();
+    assert_eq!(test0, "BURGLARY FROM VEHICLE");
+
+    // in log
+    let test1 = String::from_utf8(db.get("201108111").unwrap().unwrap()).unwrap();
+    assert_eq!(test1, "BATTERY - SIMPLE ASSAULT");
+
+    let mut counter = 0;
+    for (key, value) in &mem_table {
+        let test_value = String::from_utf8(
+            db.get(key.as_str())
+                .unwrap()
+                .expect(format!("no value: {}, key: {}", counter, key).as_str())
+        ).unwrap();
+        assert_eq!(test_value.as_str(), value.as_str(), "key: {}, counter: {}", key, counter);
+        counter += 1;
+    }
+}
+
+/// insert 16k data
+/// including major compact
+#[test]
+fn test_dataset_18k() {
+    let dir = env!("CARGO_MANIFEST_DIR");
+    let data_set_path = dir.to_string() + "/tests/dataset/CrimeDataFrom2020.csv";
+    let file = std::fs::File::open(data_set_path).unwrap();
+
+    let db_path = mk_db_path("test-kv-dataset-18k");
+    println!("18k data: {}", db_path.to_str().unwrap());
+    clean_path(db_path.as_path());
+
+    let mut mem_table: HashMap<String, String> = HashMap::new();
+
+    {
+        let db = LsmKv::open_file(db_path.as_path()).unwrap();
+        let metrics = db.metrics();
+        metrics.enable();
+
+        let mut rdr = Reader::from_reader(&file);
+
+        insert_csv_to_db(&db, &mut rdr, &mut mem_table, 18000);
+
+
+        assert_eq!(metrics.minor_compact(), 4);
+        assert_eq!(metrics.major_compact(), 1);
+    }
+
+    let db = LsmKv::open_file(db_path.as_path()).unwrap();
 
     // in sstable
     let test0 = String::from_utf8(db.get("200100509").unwrap().unwrap()).unwrap();
