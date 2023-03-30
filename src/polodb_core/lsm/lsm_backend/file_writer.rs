@@ -36,6 +36,11 @@ impl<'a> FileWriter<'a> {
         }
     }
 
+    #[inline]
+    pub fn written_bytes(&self) -> u64 {
+        self.written_bytes
+    }
+
     fn start_mark(&self) -> LsmTuplePtr {
         let page_id = self.written_bytes / (self.page_size as u64);
         let page_offset = self.written_bytes % (self.page_size as u64);

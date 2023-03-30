@@ -230,10 +230,9 @@ impl LsmFileBackendInner {
     /// Add the segment on the top of level 0
     fn sync_latest_segment(&mut self, mem_table: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let config = self.config.clone();
-        let page_size = config.get_lsm_page_size();
 
-        // TODO: try alloc from free pages
-        let start_pid = snapshot.file_size / (page_size as u64);
+        let estimate_size = LsmFileBackendInner::estimate_mem_table_byte_size(mem_table);
+        let (start_pid, used_free_segment) = self.get_start_writing_pid(snapshot, estimate_size);
 
         let mut writer = FileWriter::open(
             &mut self.file,
@@ -257,6 +256,8 @@ impl LsmFileBackendInner {
             mem_table_cursor.next();
         }
 
+        assert_eq!(writer.written_bytes(), estimate_size as u64);
+
         let end_ptr = writer.end()?;
 
         let im_seg = ImLsmSegment {
@@ -265,10 +266,23 @@ impl LsmFileBackendInner {
             end_pid: end_ptr.pid,
         };
 
+        LsmFileBackendInner::return_used_segment(used_free_segment.as_ref(), end_ptr.pid, snapshot);
+
         snapshot.add_latest_segment(im_seg);
         snapshot.file_size = self.file.seek(SeekFrom::End(0))?;
 
         Ok(())
+    }
+
+    fn return_used_segment(used_segment: Option<&FreeSegmentRecord>, end_pid: u64, snapshot: &mut LsmSnapshot) {
+        if let Some(used_segment) = &used_segment {
+            if end_pid < used_segment.end_pid {
+                snapshot.free_segments.push(FreeSegmentRecord {
+                    start_pid: end_pid + 1,
+                    end_pid: used_segment.end_pid,
+                })
+            }
+        }
     }
 
     fn minor_compact(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
@@ -448,31 +462,60 @@ impl LsmFileBackendInner {
         let mut result: usize = 0;
 
         for (key, value) in tuples {
-            // marker
-            result += 1;
-
-            // key len(max): optimize this
-            result += 6;
-
-            result += key.len();
-
-            // value len(max): optimize this
-            result += 6;
-
             let value_size = match value {
-                LsmTreeValueMarker::Deleted => 0,
-                LsmTreeValueMarker::DeleteStart => 0,
-                LsmTreeValueMarker::DeleteEnd => 0,
-                LsmTreeValueMarker::Value(tuple) => tuple.byte_size,
+                LsmTreeValueMarker::Value(tuple) => tuple.byte_size as usize,
+                _ => {
+                    LsmFileBackendInner::estimate_key_size(key)
+                }
             };
 
-            result += value_size as usize;
+            result += value_size;
         }
 
         result
     }
 
-    fn get_start_writing_pid(&self, snapshot: &mut LsmSnapshot, estimate_size: usize) -> u64 {
+    fn estimate_key_size(key: &Arc<[u8]>) -> usize {
+        let mut result: usize = 0;
+
+        result += 1;
+
+        result += crate::btree::vli::vli_len_u64(key.len() as u64);
+
+        result += key.len();
+
+        result
+    }
+
+    fn estimate_mem_table_byte_size(mem_table: &MemTable) -> usize {
+        let mut result: usize = 0;
+
+        let mut cursor = mem_table.open_cursor();
+        cursor.go_to_min();
+
+        while !cursor.done() {
+            let tuple = cursor.tuple();
+            if let Some((key, value)) = &tuple {
+                result += LsmFileBackendInner::estimate_key_size(key);
+
+                match value {
+                    LsmTreeValueMarker::Value(v) => {
+
+                        result += crate::btree::vli::vli_len_u64(v.len() as u64);
+
+                        result += v.len();
+                    }
+                    _ => ()
+                }
+            }
+
+            cursor.next();
+        }
+
+        result
+    }
+
+    fn get_start_writing_pid(&self, snapshot: &mut LsmSnapshot, estimate_size: usize) -> (u64, Option<FreeSegmentRecord>) {
         let page_size = self.config.get_lsm_page_size();
 
         let mut index: usize = 0;
@@ -487,18 +530,18 @@ impl LsmFileBackendInner {
             index += 1;
         }
 
-        snapshot.file_size / (page_size as u64)
+        (snapshot.file_size / (page_size as u64), None)
     }
 
-    fn choose_selected_segments(&self, snapshot: &mut LsmSnapshot, index: usize, _estimate_size: usize) -> u64 {
-        let seg = &snapshot.free_segments[index];
+    fn choose_selected_segments(&self, snapshot: &mut LsmSnapshot, index: usize, _estimate_size: usize) -> (u64, Option<FreeSegmentRecord>) {
+        let seg = snapshot.free_segments[index];
         let start_pid = seg.start_pid;
 
         snapshot.free_segments.remove(index);
 
         self.metrics.add_use_free_segment_count();
 
-        start_pid
+        (start_pid, Some(seg))
     }
 
     fn write_merged_tuples(
@@ -514,7 +557,7 @@ impl LsmFileBackendInner {
             Mmap::map(&self.file)?
         };
 
-        let start_pid = self.get_start_writing_pid(snapshot, estimate_size);
+        let (start_pid, used_free_segment) = self.get_start_writing_pid(snapshot, estimate_size);
 
         let mut writer = FileWriter::open(
             &mut self.file,
@@ -552,6 +595,8 @@ impl LsmFileBackendInner {
             start_pid,
             end_pid: end_ptr.pid,
         };
+
+        LsmFileBackendInner::return_used_segment(used_free_segment.as_ref(), end_ptr.pid, snapshot);
 
         Ok(im_seg)
     }

@@ -68,9 +68,10 @@ fn encode_u64<W: Write>(writer: &mut W, num: u64) -> BsonResult<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn vli_len(num: i64) -> usize {
     if num < 0 {
-        return vli_len_u64(num as u64) + 1;
+        return vli_len_u64((num * -1) as u64) + 1;
     }
     vli_len_u64(num as u64)
 }
@@ -197,7 +198,7 @@ fn decode_u64_with_first_byte<R: Read>(reader: &mut R, first_byte: u8) -> BsonRe
 
 #[cfg(test)]
 mod tests {
-    use crate::btree::vli::{encode_u64, decode_u64, encode, decode};
+    use crate::btree::vli::{encode_u64, decode_u64, encode, decode, vli_len_u64, vli_len};
 
     #[test]
     fn test_legacy_negative() {
@@ -213,13 +214,14 @@ mod tests {
         let mut bytes = vec![];
         encode(&mut bytes, -1).expect("encode error");
         assert_eq!(bytes.len(), 2);
-
-        let mut bytes_ref: &[u8] = bytes.as_ref();
+        assert_eq!(vli_len(-1), 2);
 
         for i in -20000..-1 {
             let num = i as i64;
             let mut bytes = vec![];
             encode(&mut bytes, num).expect("encode error");
+
+            let mut bytes_ref: &[u8] = bytes.as_ref();
 
             assert_eq!(decode(&mut bytes_ref).unwrap(), num);
         }
@@ -252,6 +254,7 @@ mod tests {
         encode_u64(&mut bytes, 256).expect("encode failed");
 
         assert_eq!(bytes.len(), 2);
+        assert_eq!(vli_len_u64(256), 2);
 
         let mut bytes_ref: &[u8] = bytes.as_ref();
         let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
@@ -268,6 +271,7 @@ mod tests {
         encode_u64(&mut bytes, num).expect("encode error");
 
         assert_eq!(bytes.len(), 3);
+        assert_eq!(vli_len_u64(num), 3);
 
         let mut bytes_ref: &[u8] = bytes.as_ref();
         let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
@@ -284,6 +288,7 @@ mod tests {
         encode_u64(&mut bytes, num).expect("encode error");
 
         assert_eq!(bytes.len(), 4);
+        assert_eq!(vli_len_u64(num), 4);
 
         let mut bytes_ref: &[u8] = bytes.as_ref();
         let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
@@ -300,6 +305,7 @@ mod tests {
         encode_u64(&mut bytes, num).expect("encode error");
 
         assert_eq!(bytes.len(), 5);
+        assert_eq!(vli_len_u64(num), 5);
 
         let mut bytes_ref: &[u8] = bytes.as_ref();
         let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
@@ -316,6 +322,7 @@ mod tests {
         encode_u64(&mut bytes, num).expect("encode error");
 
         assert_eq!(bytes.len(), 6);
+        assert_eq!(vli_len_u64(num), 6);
 
         let mut bytes_ref: &[u8] = bytes.as_ref();
         let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
@@ -332,6 +339,7 @@ mod tests {
         encode_u64(&mut bytes, num).expect("encode error");
 
         assert_eq!(bytes.len(), 8);
+        assert_eq!(vli_len_u64(num), 8);
 
         let mut bytes_ref: &[u8] = bytes.as_ref();
         let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
@@ -348,6 +356,7 @@ mod tests {
         encode_u64(&mut bytes, num).expect("encode error");
 
         assert_eq!(bytes.len(), 9);
+        assert_eq!(vli_len_u64(num), 9);
 
         let mut bytes_ref: &[u8] = bytes.as_ref();
         let decode_int = decode_u64(&mut bytes_ref).expect("decode err");
