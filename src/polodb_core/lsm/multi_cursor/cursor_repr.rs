@@ -6,7 +6,7 @@ use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_tree::{LsmTreeValueMarker, TreeCursor};
 
 pub(crate) enum CursorRepr {
-    MemTableCursor(TreeCursor<Arc<[u8]>, Vec<u8>>),
+    MemTableCursor(TreeCursor<Arc<[u8]>, Arc<[u8]>>),
     SegTableCursor(TreeCursor<Arc<[u8]>, LsmTuplePtr>),
 }
 
@@ -43,7 +43,7 @@ impl CursorRepr {
         }
     }
 
-    pub fn value(&self, db: &LsmKvInner) -> DbResult<Option<LsmTreeValueMarker<Vec<u8>>>> {
+    pub fn value(&self, db: &LsmKvInner) -> DbResult<Option<LsmTreeValueMarker<Arc<[u8]>>>> {
         match self {
             CursorRepr::MemTableCursor(mem_table_cursor) => {
                 let result = mem_table_cursor.value();
@@ -118,7 +118,7 @@ impl CursorRepr {
 
 }
 
-impl Into<CursorRepr> for TreeCursor<Arc<[u8]>, Vec<u8>> {
+impl Into<CursorRepr> for TreeCursor<Arc<[u8]>, Arc<[u8]>> {
 
     fn into(self) -> CursorRepr {
         CursorRepr::MemTableCursor(self)

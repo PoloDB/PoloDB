@@ -32,7 +32,7 @@ impl KvCursor {
         cursor.seek(key.as_ref())
     }
 
-    pub fn value(&self) -> DbResult<Option<Vec<u8>>> {
+    pub fn value(&self) -> DbResult<Option<Arc<[u8]>>> {
         let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let cursor = self.inner.lock()?;
         cursor.value(db.as_ref())

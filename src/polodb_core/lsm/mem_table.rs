@@ -3,7 +3,7 @@ use crate::lsm::lsm_tree::TreeCursor;
 use super::lsm_tree::LsmTree;
 
 pub(crate) struct MemTable {
-    segments:         LsmTree<Arc<[u8]>, Vec<u8>>,
+    segments:         LsmTree<Arc<[u8]>, Arc<[u8]>>,
     store_bytes:      usize,
 }
 
@@ -19,7 +19,7 @@ impl MemTable {
     pub fn put<K, V>(&mut self, key: K, value: V)
     where
         K: Into<Arc<[u8]>>,
-        V: Into<Vec<u8>>,
+        V: Into<Arc<[u8]>>,
     {
         let key = key.into();
         let value = value.into();
@@ -57,7 +57,7 @@ impl MemTable {
     }
 
     #[inline]
-    pub fn open_cursor(&self) -> TreeCursor<Arc<[u8]>, Vec<u8>> {
+    pub fn open_cursor(&self) -> TreeCursor<Arc<[u8]>, Arc<[u8]>> {
         self.segments.open_cursor()
     }
 

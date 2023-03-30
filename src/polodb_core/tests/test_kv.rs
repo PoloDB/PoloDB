@@ -23,7 +23,7 @@ fn test_insert_db() {
         assert_eq!(value, "World");
 
         let value = db.get(&[1u8]).unwrap().unwrap();
-        assert_eq!(value.as_slice(), &[2u8]);
+        assert_eq!(value.as_ref(), &[2u8]);
     });
 }
 
@@ -159,11 +159,11 @@ fn test_dataset_1500() {
     let db = LsmKv::open_file(db_path.as_path()).unwrap();
 
     // in sstable
-    let test0 = String::from_utf8(db.get("200100509").unwrap().unwrap()).unwrap();
+    let test0 = db.get_string("200100509").unwrap().unwrap();
     assert_eq!(test0, "BURGLARY FROM VEHICLE");
 
     // in log
-    let test1 = String::from_utf8(db.get("201108111").unwrap().unwrap()).unwrap();
+    let test1 = db.get_string("201108111").unwrap().unwrap();
     assert_eq!(test1, "BATTERY - SIMPLE ASSAULT");
 
     let mut counter = 0;
@@ -172,6 +172,7 @@ fn test_dataset_1500() {
         db.get(key.as_str())
                 .unwrap()
                 .expect(format!("no value: {}, key: {}", counter, key).as_str())
+                .to_vec()
         ).unwrap();
         assert_eq!(test_value.as_str(), value.as_str(), "key: {}, counter: {}", key, counter);
         counter += 1;
@@ -205,20 +206,18 @@ fn test_dataset_3500() {
     let db = LsmKv::open_file(db_path.as_path()).unwrap();
 
     // in sstable
-    let test0 = String::from_utf8(db.get("200100509").unwrap().unwrap()).unwrap();
+    let test0 = db.get_string("200100509").unwrap().unwrap();
     assert_eq!(test0, "BURGLARY FROM VEHICLE");
 
     // in log
-    let test1 = String::from_utf8(db.get("201108111").unwrap().unwrap()).unwrap();
+    let test1 = db.get_string("201108111").unwrap().unwrap();
     assert_eq!(test1, "BATTERY - SIMPLE ASSAULT");
 
     let mut counter = 0;
     for (key, value) in &mem_table {
-        let test_value = String::from_utf8(
-            db.get(key.as_str())
-                .unwrap()
-                .expect(format!("no value: {}, key: {}", counter, key).as_str())
-        ).unwrap();
+        let test_value = db.get_string(key.as_str())
+            .unwrap()
+            .expect(format!("no value: {}, key: {}", counter, key).as_str());
         assert_eq!(test_value.as_str(), value.as_str(), "key: {}, counter: {}", key, counter);
         counter += 1;
     }
@@ -255,20 +254,18 @@ fn test_dataset_7500() {
     assert_eq!(1, metrics.free_segments_count());
 
     // in sstable
-    let test0 = String::from_utf8(db.get("200100509").unwrap().unwrap()).unwrap();
+    let test0 = db.get_string("200100509").unwrap().unwrap();
     assert_eq!(test0, "BURGLARY FROM VEHICLE");
 
     // in log
-    let test1 = String::from_utf8(db.get("201108111").unwrap().unwrap()).unwrap();
+    let test1 = db.get_string("201108111").unwrap().unwrap();
     assert_eq!(test1, "BATTERY - SIMPLE ASSAULT");
 
     let mut counter = 0;
     for (key, value) in &mem_table {
-        let test_value = String::from_utf8(
-            db.get(key.as_str())
-                .unwrap()
-                .expect(format!("no value: {}, key: {}", counter, key).as_str())
-        ).unwrap();
+        let test_value = db.get_string(key.as_str())
+            .unwrap()
+            .expect(format!("no value: {}, key: {}", counter, key).as_str());
         assert_eq!(test_value.as_str(), value.as_str(), "key: {}, counter: {}", key, counter);
         counter += 1;
     }
@@ -306,20 +303,18 @@ fn test_dataset_18k() {
     let db = LsmKv::open_file(db_path.as_path()).unwrap();
 
     // in sstable
-    let test0 = String::from_utf8(db.get("200100509").unwrap().unwrap()).unwrap();
+    let test0 = db.get_string("200100509").unwrap().unwrap();
     assert_eq!(test0, "BURGLARY FROM VEHICLE");
 
     // in log
-    let test1 = String::from_utf8(db.get("201108111").unwrap().unwrap()).unwrap();
+    let test1 = db.get_string("201108111").unwrap().unwrap();
     assert_eq!(test1, "BATTERY - SIMPLE ASSAULT");
 
     let mut counter = 0;
     for (key, value) in &mem_table {
-        let test_value = String::from_utf8(
-            db.get(key.as_str())
-                .unwrap()
-                .expect(format!("no value: {}, key: {}", counter, key).as_str())
-        ).unwrap();
+        let test_value = db.get_string(key.as_str())
+            .unwrap()
+            .expect(format!("no value: {}, key: {}", counter, key).as_str());
         assert_eq!(test_value.as_str(), value.as_str(), "key: {}, counter: {}", key, counter);
         counter += 1;
     }

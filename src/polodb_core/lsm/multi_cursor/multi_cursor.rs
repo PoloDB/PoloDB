@@ -215,7 +215,7 @@ impl MultiCursor {
         Ok(())
     }
 
-    pub fn value(&self, db: &LsmKvInner) -> DbResult<Option<Vec<u8>>> {
+    pub fn value(&self, db: &LsmKvInner) -> DbResult<Option<Arc<[u8]>>> {
         if self.first_result >= 0 {
             let cursor = &self.cursors[self.first_result as usize];
             let tmp = cursor.value(db)?;

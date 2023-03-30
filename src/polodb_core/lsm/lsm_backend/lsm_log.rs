@@ -23,7 +23,7 @@ const DATABASE_VERSION: [u8; 4] = [0, 0, 4, 0];
 const DATA_BEGIN_OFFSET: u64 = 64;
 
 enum LogCommand {
-    Insert(Arc<[u8]>, Vec<u8>),
+    Insert(Arc<[u8]>, Arc<[u8]>),
     Delete(Arc<[u8]>)
 }
 
@@ -327,7 +327,7 @@ impl LsmLogInner {
         let mut value_buff = vec![0u8; value_len as usize];
         remain.read_exact(&mut value_buff)?;
 
-        commands.push(LogCommand::Insert(key_buff.into(), value_buff));
+        commands.push(LogCommand::Insert(key_buff.into(), value_buff.into()));
 
         *ptr = remain.as_ptr() as usize - mmap.as_ptr() as usize;
 

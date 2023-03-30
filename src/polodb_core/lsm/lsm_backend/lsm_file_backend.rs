@@ -96,7 +96,7 @@ impl LsmFileBackend {
         })
     }
 
-    pub fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Vec<u8>> {
+    pub fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
         let mut inner = self.inner.lock()?;
         inner.read_segment_by_ptr(ptr)
     }
@@ -168,7 +168,7 @@ impl LsmFileBackendInner {
         Ok(result)
     }
 
-    fn read_segment_by_ptr(&mut self, tuple: LsmTuplePtr) -> DbResult<Vec<u8>> {
+    fn read_segment_by_ptr(&mut self, tuple: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
         let page_size = self.config.get_lsm_page_size();
         let offset = (tuple.pid as u64) * (page_size as u64) + (tuple.offset as u64);
         self.file.seek(SeekFrom::Start(offset))?;
@@ -183,7 +183,7 @@ impl LsmFileBackendInner {
         let mut buffer = vec![0u8; value_len as usize];
         self.file.read_exact(&mut buffer)?;
 
-        Ok(buffer)
+        Ok(buffer.into())
     }
 
     fn read_latest_snapshot(&mut self) -> DbResult<LsmSnapshot> {

@@ -74,7 +74,7 @@ impl LsmKv {
         self.inner.commit()
     }
 
-    pub fn get<'a, K>(&self, key: K) -> DbResult<Option<Vec<u8>>>
+    pub fn get<'a, K>(&self, key: K) -> DbResult<Option<Arc<[u8]>>>
     where
         K: AsRef<[u8]>,
     {
@@ -107,7 +107,7 @@ impl LsmKv {
         let string = match bytes {
             None => None,
             Some(bytes) => {
-                let result = String::from_utf8(bytes)?;
+                let result = String::from_utf8(bytes.to_vec())?;
                 Some(result)
             }
         };
@@ -135,7 +135,7 @@ pub(crate) struct LsmKvInner {
 
 impl LsmKvInner {
 
-    pub(crate) fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Vec<u8>> {
+    pub(crate) fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
         let backend = self.backend.as_ref().expect("no file backend");
         backend.read_segment_by_ptr(ptr)
     }
