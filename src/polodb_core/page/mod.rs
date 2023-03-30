@@ -175,8 +175,25 @@ impl RawPage {
     }
 
     #[inline]
+    #[allow(dead_code)]
+    pub fn pos(&mut self) -> u32 {
+        self.pos
+    }
+
+    #[inline]
     pub fn len(&self) -> u32 {
         self.data.len() as u32
     }
 
+}
+
+impl Write for RawPage {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.put(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }

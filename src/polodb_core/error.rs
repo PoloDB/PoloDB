@@ -5,6 +5,7 @@
  */
 use std::io;
 use std::fmt;
+use std::string::FromUtf8Error;
 use std::sync::PoisonError;
 use bson::oid::ObjectId;
 use bson::ser::Error as BsonErr;
@@ -164,6 +165,9 @@ pub enum DbErr {
     NoTransactionStarted,
     InvalidSession(Box<ObjectId>),
     SessionOutdated,
+    DbIsClosed,
+    FromUtf8Error(Box<FromUtf8Error>),
+    DataMalformed,
 }
 
 impl DbErr {
@@ -261,6 +265,9 @@ impl fmt::Display for DbErr {
             DbErr::NoTransactionStarted => write!(f, "no transaction started"),
             DbErr::InvalidSession(sid) => write!(f, "invalid session: {}", sid),
             DbErr::SessionOutdated => write!(f, "session is outdated"),
+            DbErr::DbIsClosed => write!(f, "the database is closed"),
+            DbErr::FromUtf8Error(err) => write!(f, "{}", err),
+            DbErr::DataMalformed => write!(f, "data malformed"),
         }
     }
 
@@ -302,6 +309,14 @@ impl<T> From<PoisonError<T>> for DbErr {
     fn from(_: PoisonError<T>) -> Self {
         DbErr::LockError
     }
+}
+
+impl From<FromUtf8Error> for DbErr {
+
+    fn from(value: FromUtf8Error) -> Self {
+        DbErr::FromUtf8Error(Box::new(value))
+    }
+
 }
 
 impl std::error::Error for DbErr {}

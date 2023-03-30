@@ -218,7 +218,7 @@ mod tests {
     use crate::page::RawPage;
     use crate::backend::memory::MemoryBackend;
     use crate::backend::Backend;
-    use std::num::NonZeroU32;
+    use std::num::{NonZeroU32, NonZeroU64};
 
     fn make_raw_page(page_id: u32) -> RawPage {
         let mut page = RawPage::new(
@@ -239,7 +239,8 @@ mod tests {
     fn test_commit() {
         let config = Config::default();
         let mut backend = MemoryBackend::new(
-            NonZeroU32::new(4096).unwrap(), config.init_block_count
+            NonZeroU32::new(4096).unwrap(),
+            NonZeroU64::new(config.get_init_block_count()).unwrap(),
         );
 
         let mut ten_pages = Vec::with_capacity(TEST_PAGE_LEN as usize);

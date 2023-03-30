@@ -123,6 +123,7 @@ mod config;
 mod macros;
 mod backend;
 mod transaction;
+mod lsm;
 mod bson_utils;
 pub mod results;
 pub mod commands;
@@ -132,6 +133,7 @@ mod collection_info;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod test_utils;
 mod metrics;
+mod utils;
 
 pub use db::{Database, Collection, DbResult, IndexedDbContext};
 pub use config::Config;
@@ -140,5 +142,6 @@ pub use db::db_handle::DbHandle;
 pub use error::DbErr;
 pub use session::ClientSession;
 pub use metrics::Metrics;
+pub use lsm::LsmKv;
 
 pub extern crate bson;

@@ -5,8 +5,7 @@
  */
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::num::NonZeroU32;
-use std::sync::Arc;
+use std::num::{NonZeroU32, NonZeroU64};
 use bson::{Binary, Bson, DateTime, Document};
 use serde::Serialize;
 use super::db::DbResult;
@@ -74,7 +73,7 @@ pub(crate) struct DbContext {
     node_id:      [u8; 6],
     metrics:      Metrics,
     #[allow(dead_code)]
-    config:       Arc<Config>,
+    config:       Config,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -89,7 +88,6 @@ impl DbContext {
         let metrics = Metrics::new();
         let page_size = NonZeroU32::new(4096).unwrap();
 
-        let config = Arc::new(config);
         let backend = Box::new(FileBackend::open(
             path, page_size, config.clone(), metrics.clone(),
         )?);
@@ -110,15 +108,17 @@ impl DbContext {
     pub fn open_memory(config: Config) -> DbResult<DbContext> {
         let metrics = Metrics::new();
         let page_size = NonZeroU32::new(4096).unwrap();
-        let config = Arc::new(config);
-        let backend = Box::new(MemoryBackend::new(page_size, config.init_block_count));
+        let backend = Box::new(MemoryBackend::new(
+            page_size,
+            NonZeroU64::new(config.get_init_block_count()).unwrap(),
+        ));
         DbContext::open_with_backend(backend, page_size, config, metrics)
     }
 
     fn open_with_backend(
         backend: Box<dyn Backend + Send>,
         page_size: NonZeroU32,
-        config: Arc<Config>,
+        config: Config,
         metrics: Metrics,
     ) -> DbResult<DbContext> {
         let base_session = BaseSession::new(

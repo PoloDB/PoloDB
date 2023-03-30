@@ -10,11 +10,12 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use bson::Bson;
 use bson::oid::ObjectId;
 use bson::spec::ElementType;
-use crate::btree::{SearchKeyResult, vli};
+use crate::btree::SearchKeyResult;
 use crate::data_ticket::DataTicket;
 use crate::{DbErr, DbResult};
 use crate::page::{PageType, RawPage};
 use crate::session::Session;
+use crate::utils::vli;
 
 /// | left pid | key type | key size | key content | payload |
 /// | 4 bytes  | 1 byte   | 1 byte   | 0-254 bytes | 6 bytes |
@@ -661,7 +662,7 @@ pub fn serialize_key<W: Write>(key: &Bson, writer: &mut W) -> DbResult<()> {
     }
 }
 
-pub fn deserialize_key_with_ty(key_ty: u8, buffer: &[u8]) -> DbResult<Bson> {
+pub fn deserialize_key_with_ty(key_ty: u8, mut buffer: &[u8]) -> DbResult<Bson> {
     let element_type = ElementType::from(key_ty);
 
     let value = match element_type {
@@ -678,12 +679,12 @@ pub fn deserialize_key_with_ty(key_ty: u8, buffer: &[u8]) -> DbResult<Bson> {
         }
 
         Some(ElementType::Int32) => {
-            let (int_value, _) = vli::decode_u64(buffer)?;
+            let int_value = vli::decode_u64(&mut buffer)?;
             Bson::Int32(int_value as i32)
         }
 
         Some(ElementType::Int64) => {
-            let (int_value, _) = vli::decode_u64(buffer)?;
+            let int_value = vli::decode_u64(&mut buffer)?;
             Bson::Int64(int_value as i64)
         }
 

@@ -4,20 +4,58 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::num::NonZeroU64;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
+#[derive(Clone)]
 pub struct Config {
-    pub init_block_count:  NonZeroU64,
-    pub journal_full_size: u64,
+    inner: Arc<ConfigInner>,
+}
+
+impl Config {
+
+    pub fn get_init_block_count(&self) -> u64 {
+        self.inner.init_block_count.load(Ordering::Relaxed)
+    }
+
+    pub fn get_journal_full_size(&self) -> u64 {
+        self.inner.journal_full_size.load(Ordering::Relaxed)
+    }
+
+    pub fn get_lsm_page_size(&self) -> u32 {
+        self.inner.lsm_page_size.load(Ordering::Relaxed)
+    }
+
+    pub fn get_lsm_block_size(&self) -> u32 {
+        self.inner.lsm_block_size.load(Ordering::Relaxed)
+    }
 }
 
 impl Default for Config {
 
     fn default() -> Self {
+        let inner = ConfigInner::default();
         Config {
-            init_block_count:  NonZeroU64::new(16).unwrap(),
-            journal_full_size: 1000,
+            inner: Arc::new(inner),
         }
     }
 
+}
+
+struct ConfigInner {
+    init_block_count:  AtomicU64,
+    journal_full_size: AtomicU64,
+    lsm_page_size:     AtomicU32,
+    lsm_block_size:    AtomicU32,
+}
+
+impl Default for ConfigInner {
+    fn default() -> Self {
+        ConfigInner {
+            init_block_count: AtomicU64::new(16),
+            journal_full_size: AtomicU64::new(1000),
+            lsm_page_size: AtomicU32::new(4096),
+            lsm_block_size: AtomicU32::new(4 * 1024 * 1024),
+        }
+    }
 }
