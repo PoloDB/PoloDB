@@ -9,7 +9,6 @@ mod insert_wrapper;
 mod delete_wrapper;
 pub mod counter_helper;
 pub(crate) mod delete_all_helper;
-pub(crate) mod vli;
 mod btree_v2;
 
 pub(crate) use delete_wrapper::BTreePageDeleteWrapper;

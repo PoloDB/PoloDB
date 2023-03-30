@@ -20,6 +20,7 @@ use crate::lsm::lsm_snapshot::lsm_meta::{
 };
 use crate::lsm::lsm_snapshot::{FreeSegmentRecord, LsmLevel, LsmSnapshot};
 use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
+use crate::utils::vli;
 use super::format;
 
 pub(crate) struct SnapshotReader<'a> {
@@ -140,13 +141,13 @@ impl<'a> SnapshotReader<'a> {
 
             let flag = segment_slice.read_u8()?;
 
-            let key_len = crate::btree::vli::decode_u64(&mut segment_slice)?;
+            let key_len = vli::decode_u64(&mut segment_slice)?;
             let mut key_buffer = vec![0; key_len as usize];
             segment_slice.read_exact(&mut key_buffer)?;
 
             match flag {
                 format::LSM_INSERT => {
-                    let value_len = crate::btree::vli::decode_u64(&mut segment_slice)?;
+                    let value_len = vli::decode_u64(&mut segment_slice)?;
                     segment_slice = &segment_slice[(value_len as usize)..];
 
                     segments.insert_in_place(

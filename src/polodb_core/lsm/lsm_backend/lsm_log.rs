@@ -16,6 +16,7 @@ use memmap2::Mmap;
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use crate::lsm::mem_table::MemTable;
+use crate::utils::vli;
 
 static HEADER_DESP: &str       = "PoloDB Journal v0.4";
 const DATABASE_VERSION: [u8; 4] = [0, 0, 4, 0];
@@ -51,6 +52,7 @@ impl LogTransactionState {
 
 }
 
+#[allow(dead_code)]
 pub(crate) struct LsmCommitResult {
     pub offset: u64,
 }
@@ -68,6 +70,11 @@ impl LsmLog {
         })
     }
 
+    pub fn path(&self) -> PathBuf {
+        let inner = self.inner.borrow();
+        inner.file_path.to_path_buf()
+    }
+
     pub fn put(&self, key: &[u8], value: &[u8]) -> DbResult<()> {
         let mut inner = self.inner.borrow_mut();
         inner.put(key, value)
@@ -83,6 +90,7 @@ impl LsmLog {
         inner.start_transaction()
     }
 
+    #[allow(dead_code)]
     pub fn rollback(&self) -> DbResult<()> {
         let mut inner = self.inner.borrow_mut();
         inner.rollback()
@@ -121,6 +129,7 @@ fn crc64(bytes: &[u8]) -> u64 {
 }
 
 struct LsmLogInner {
+    #[allow(dead_code)]
     file_path:   PathBuf,
     file:        File,
     transaction: Option<LogTransactionState>,
@@ -310,11 +319,11 @@ impl LsmLogInner {
     fn read_write_command(mmap: &Mmap, commands: &mut Vec<LogCommand>, ptr: &mut usize) -> DbResult<()> {
         let mut remain = &mmap[*ptr..];
 
-        let key_len = crate::btree::vli::decode_u64(&mut remain)?;
+        let key_len = vli::decode_u64(&mut remain)?;
         let mut key_buff = vec![0u8; key_len as usize];
         remain.read_exact(&mut key_buff)?;
 
-        let value_len = crate::btree::vli::decode_u64(&mut remain)?;
+        let value_len = vli::decode_u64(&mut remain)?;
         let mut value_buff = vec![0u8; value_len as usize];
         remain.read_exact(&mut value_buff)?;
 
@@ -328,7 +337,7 @@ impl LsmLogInner {
     fn read_delete_command(mmap: &Mmap, commands: &mut Vec<LogCommand>, ptr: &mut usize) -> DbResult<()> {
         let mut remain = &mmap[*ptr..];
 
-        let key_len = crate::btree::vli::decode_u64(&mut remain)?;
+        let key_len = vli::decode_u64(&mut remain)?;
         let mut key_buff = vec![0u8; key_len as usize];
         remain.read_exact(&mut key_buff)?;
 
@@ -369,12 +378,12 @@ impl LsmLogInner {
         self.write_u8(format::WRITE)?;
 
         let key_len = key.len();
-        crate::btree::vli::encode(self, key_len as i64)?;
+        vli::encode(self, key_len as i64)?;
 
         self.write_all(key)?;
 
         let value_len = value.len();
-        crate::btree::vli::encode(self, value_len as i64)?;
+        vli::encode(self, value_len as i64)?;
 
         self.write_all(value)?;
 
@@ -385,7 +394,7 @@ impl LsmLogInner {
         self.write_u8(format::DELETE)?;
 
         let key_len = key.len();
-        crate::btree::vli::encode(self, key_len as i64)?;
+        vli::encode(self, key_len as i64)?;
 
         self.write_all(key)?;
 

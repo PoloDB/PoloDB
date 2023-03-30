@@ -71,18 +71,6 @@ impl LsmSnapshot {
         level0.content.push(segment);
     }
 
-    pub fn segment_pid(&self) -> u64 {
-        if self.levels.is_empty() {
-            return 0;
-        }
-        let level0 = &self.levels[0];
-        let last_at_level = level0.content.last();
-        match last_at_level {
-            Some(segment) => segment.start_pid,
-            None => 0,
-        }
-    }
-
     pub fn next_meta_pid(&self) -> u8 {
         if self.meta_pid == 0 {
             1

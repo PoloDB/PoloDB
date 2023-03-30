@@ -24,6 +24,7 @@ use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
 use crate::lsm::lsm_snapshot::lsm_meta::{META_ID_OFFSET};
 use crate::lsm::LsmMetrics;
 use crate::lsm::multi_cursor::{CursorRepr, MultiCursor};
+use crate::utils::vli;
 
 #[cfg(target_os = "windows")]
 mod winerror {
@@ -57,7 +58,7 @@ fn open_file_native(path: &Path) -> DbResult<File> {
 
 #[cfg(not(target_os = "windows"))]
 fn open_file_native(path: &Path) -> DbResult<File> {
-    use super::file_lock::exclusive_lock_file;
+    use crate::utils::file_lock::exclusive_lock_file;
     let file = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
@@ -174,10 +175,10 @@ impl LsmFileBackendInner {
         let flag = self.file.read_u8()?;
         assert_eq!(flag, format::LSM_INSERT);
 
-        let key_len = crate::btree::vli::decode_u64(&mut self.file)?;
+        let key_len = vli::decode_u64(&mut self.file)?;
         self.file.seek(SeekFrom::Current(key_len as i64))?;
 
-        let value_len = crate::btree::vli::decode_u64(&mut self.file)?;
+        let value_len = vli::decode_u64(&mut self.file)?;
 
         let mut buffer = vec![0u8; value_len as usize];
         self.file.read_exact(&mut buffer)?;
@@ -480,7 +481,7 @@ impl LsmFileBackendInner {
 
         result += 1;
 
-        result += crate::btree::vli::vli_len_u64(key.len() as u64);
+        result += vli::vli_len_u64(key.len() as u64);
 
         result += key.len();
 
@@ -501,7 +502,7 @@ impl LsmFileBackendInner {
                 match value {
                     LsmTreeValueMarker::Value(v) => {
 
-                        result += crate::btree::vli::vli_len_u64(v.len() as u64);
+                        result += vli::vli_len_u64(v.len() as u64);
 
                         result += v.len();
                     }

@@ -198,7 +198,7 @@ fn decode_u64_with_first_byte<R: Read>(reader: &mut R, first_byte: u8) -> BsonRe
 
 #[cfg(test)]
 mod tests {
-    use crate::btree::vli::{encode_u64, decode_u64, encode, decode, vli_len_u64, vli_len};
+    use crate::utils::vli::{encode_u64, decode_u64, encode, decode, vli_len_u64, vli_len};
 
     #[test]
     fn test_legacy_negative() {

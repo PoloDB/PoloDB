@@ -242,9 +242,28 @@ impl MultiCursor {
         }
 
         let first_fit = self.first_result as usize;
+
+        let current_key = self.keys[first_fit].clone();
+        if current_key.is_none() {
+            return Ok(())
+        }
+
         let cursor = &mut self.cursors[first_fit];
         cursor.next()?;
-        self.keys[first_fit] = self.cursors[first_fit].key();
+        self.keys[first_fit] = cursor.key();
+
+        let mut idx: usize = first_fit + 1;
+        while idx < self.keys.len() {
+            let this_key = &self.keys[idx as usize];
+            if let Some(this_key) = this_key {
+                if this_key.cmp(current_key.as_ref().unwrap()) == Ordering::Equal {
+                    self.cursors[idx as usize].next()?;
+                    self.keys[idx as usize] = self.cursors[idx as usize].key();
+                }
+            }
+
+            idx += 1;
+        }
 
         self.first_result = -1;
         self.fin_min_key_and_seek_to_value()

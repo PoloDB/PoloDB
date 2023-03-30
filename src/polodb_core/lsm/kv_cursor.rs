@@ -10,7 +10,6 @@ use crate::lsm::multi_cursor::MultiCursor;
 
 #[derive(Clone)]
 pub struct KvCursor {
-    meta_id: u64,  // verify if the cursor changed
     db: Weak<LsmKvInner>,
     inner: Arc<Mutex<MultiCursor>>,
 }
@@ -18,10 +17,8 @@ pub struct KvCursor {
 impl KvCursor {
 
     pub(crate) fn new(db: Arc<LsmKvInner>, multi_cursor: MultiCursor) -> KvCursor {
-        let meta_id = db.meta_id();
         let db = Arc::downgrade(&db);
         KvCursor {
-            meta_id,
             db,
             inner: Arc::new(Mutex::new(multi_cursor)),
         }

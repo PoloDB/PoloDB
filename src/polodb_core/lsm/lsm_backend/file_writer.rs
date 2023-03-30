@@ -9,6 +9,7 @@ use byteorder::WriteBytesExt;
 use crate::{Config, DbResult};
 use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_tree::LsmTreeValueMarker;
+use crate::utils::vli;
 use super::format;
 
 /// Write the data to file.
@@ -64,26 +65,26 @@ impl<'a> FileWriter<'a> {
         match value {
             LsmTreeValueMarker::Value(insert_buffer) => {
                 self.write_u8(format::LSM_INSERT)?;
-                crate::btree::vli::encode(self, key.len() as i64)?;
+                vli::encode(self, key.len() as i64)?;
                 self.write_all(key)?;
 
                 let value_len = insert_buffer.len();
-                crate::btree::vli::encode(self, value_len as i64)?;
+                vli::encode(self, value_len as i64)?;
                 self.write_all(&insert_buffer)?;
             }
             LsmTreeValueMarker::Deleted => {
                 self.write_u8(format::LSM_POINT_DELETE)?;
-                crate::btree::vli::encode(self, key.len() as i64)?;
+                vli::encode(self, key.len() as i64)?;
                 self.write_all(key)?;
             }
             LsmTreeValueMarker::DeleteStart => {
                 self.write_u8(format::LSM_START_DELETE)?;
-                crate::btree::vli::encode(self, key.len() as i64)?;
+                vli::encode(self, key.len() as i64)?;
                 self.write_all(key)?;
             }
             LsmTreeValueMarker::DeleteEnd => {
                 self.write_u8(format::LSM_END_DELETE)?;
-                crate::btree::vli::encode(self, key.len() as i64)?;
+                vli::encode(self, key.len() as i64)?;
                 self.write_all(key)?;
             }
         }

@@ -171,7 +171,7 @@ impl LsmKvInner {
             Some(backend) => backend.read_latest_snapshot()?,
             None => LsmSnapshot::new(),
         };
-        let mut mem_table = MemTable::new(0);
+        let mut mem_table = MemTable::new();
 
         if let Some(log) = &log {
             log.update_mem_table_with_latest_log(
@@ -357,9 +357,44 @@ impl LsmKvInner {
         snapshot.levels.len() > 4
     }
 
+    #[allow(dead_code)]
     pub(crate) fn meta_id(&self) -> u64 {
         let snapshot = self.snapshot.lock().unwrap();
         snapshot.meta_id
+    }
+
+    fn force_sync_last_segment(&mut self) -> DbResult<()> {
+        if let Some(backend) = &self.backend {
+            let mut mem_table = self.mem_table.borrow_mut();
+            let mut snapshot = self.snapshot.lock()?;
+
+            if mem_table.len() == 0 {
+                return Ok(())
+            }
+
+            backend.sync_latest_segment(
+                &mut mem_table,
+                &mut snapshot,
+            )?;
+            backend.checkpoint_snapshot(&mut snapshot)?;
+        }
+
+        Ok(())
+    }
+
+}
+
+impl Drop for LsmKvInner {
+
+    fn drop(&mut self) {
+        let sync_result = self.force_sync_last_segment();
+        if sync_result.is_ok() {
+            if let Some(log) = &self.log {
+                let path = log.path();
+                self.log = None;
+                let _ = std::fs::remove_file(&path);
+            }
+        }
     }
 
 }

@@ -133,6 +133,7 @@ mod collection_info;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod test_utils;
 mod metrics;
+mod utils;
 
 pub use db::{Database, Collection, DbResult, IndexedDbContext};
 pub use config::Config;

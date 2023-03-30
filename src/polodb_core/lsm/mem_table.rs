@@ -5,16 +5,14 @@ use super::lsm_tree::LsmTree;
 pub(crate) struct MemTable {
     segments:         LsmTree<Arc<[u8]>, Vec<u8>>,
     store_bytes:      usize,
-    left_segment_pid: u64,
 }
 
 impl MemTable {
 
-    pub fn new(left_segment_pid: u64) -> MemTable {
+    pub fn new() -> MemTable {
         MemTable {
             segments: LsmTree::new(),
             store_bytes: 0,
-            left_segment_pid,
         }
     }
 
@@ -66,6 +64,11 @@ impl MemTable {
     pub(crate) fn clear(&mut self) {
         self.segments.clear();
         self.store_bytes = 0;
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.segments.len()
     }
 
 }

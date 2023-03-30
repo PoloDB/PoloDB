@@ -10,11 +10,12 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use bson::Bson;
 use bson::oid::ObjectId;
 use bson::spec::ElementType;
-use crate::btree::{SearchKeyResult, vli};
+use crate::btree::SearchKeyResult;
 use crate::data_ticket::DataTicket;
 use crate::{DbErr, DbResult};
 use crate::page::{PageType, RawPage};
 use crate::session::Session;
+use crate::utils::vli;
 
 /// | left pid | key type | key size | key content | payload |
 /// | 4 bytes  | 1 byte   | 1 byte   | 0-254 bytes | 6 bytes |
