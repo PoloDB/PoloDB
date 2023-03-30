@@ -16,7 +16,16 @@ impl MemTable {
         }
     }
 
-    pub fn put<K, V>(&mut self, key: K, value: V)
+    pub fn get(&self, key: &[u8]) -> Option<Arc<[u8]>> {
+        let mut cursor = self.segments.open_cursor();
+        let _ord  = cursor.seek(key)?;
+        cursor
+            .value()
+            .map(|marker| marker.into())
+            .flatten()
+    }
+
+    pub fn put<K, V>(&mut self, key: K, value: V, in_place: bool)
     where
         K: Into<Arc<[u8]>>,
         V: Into<Arc<[u8]>>,
@@ -26,7 +35,16 @@ impl MemTable {
         let key_len = key.len();
         let value_len = value.len();
 
-        let prev = self.segments.insert_in_place(key, value);
+        let prev = if in_place {
+            let prev = self.segments.insert_in_place(key, value);
+            prev
+        } else {
+            let prev = self.get(key.as_ref());
+
+            self.segments = self.segments.insert(key, value);
+
+            prev
+        };
 
         if let Some(prev) = prev {
             self.store_bytes -= prev.len();
@@ -40,11 +58,17 @@ impl MemTable {
 
     /// Store will not really delete the value
     /// But inert a flag
-    pub fn delete<K>(&mut self, key: K)
+    pub fn delete<K>(&mut self, key: K, in_place: bool)
     where
         K: AsRef<[u8]>
     {
-        let prev = self.segments.delete_in_place(key.as_ref());
+        let prev = if in_place {
+            self.segments.delete_in_place(key.as_ref())
+        } else {
+            let prev = self.get(key.as_ref());
+            self.segments = self.segments.delete(key.as_ref().into());
+            prev
+        };
 
         if let Some(prev) = prev {
             self.store_bytes -= prev.len();

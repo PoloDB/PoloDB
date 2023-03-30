@@ -352,10 +352,10 @@ impl LsmLogInner {
         for cmd in commands {
             match cmd {
                 LogCommand::Insert(key, value) => {
-                    mem_table.put(key, value);
+                    mem_table.put(key, value, true);
                 }
                 LogCommand::Delete(key) => {
-                    mem_table.delete(key.as_ref());
+                    mem_table.delete(key.as_ref(), true);
                 }
             }
         }

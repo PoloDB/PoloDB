@@ -3,13 +3,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
+use std::num::NonZeroU64;
+use hashbrown::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::kv_cursor::KvCursor;
 use crate::lsm::lsm_segment::LsmTuplePtr;
+use crate::lsm::lsm_session::LsmSessionInner;
 use crate::lsm::LsmMetrics;
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use super::lsm_backend::{LsmFileBackend, LsmLog};
@@ -120,11 +123,27 @@ impl LsmKv {
 
 }
 
+struct MemTableCollection {
+    main: MemTable,
+    sessions: HashMap<NonZeroU64, LsmSessionInner>,
+}
+
+impl MemTableCollection {
+
+    fn new() -> MemTableCollection {
+        MemTableCollection {
+            main: MemTable::new(),
+            sessions: HashMap::new(),
+        }
+    }
+
+}
+
 pub(crate) struct LsmKvInner {
     backend: Option<Box<LsmFileBackend>>,
     log: Option<LsmLog>,
     snapshot: Mutex<LsmSnapshot>,
-    mem_table: RefCell<MemTable>,
+    mem_table: Mutex<MemTableCollection>,
     in_transaction: Cell<bool>,
     /// Operation count after last sync,
     /// including insert/delete
@@ -184,7 +203,7 @@ impl LsmKvInner {
             backend,
             log,
             snapshot: Mutex::new(snapshot),
-            mem_table: RefCell::new(mem_table),
+            mem_table: Mutex::new(MemTableCollection::new()),
             in_transaction: Cell::new(false),
             op_count: AtomicUsize::new(0),
             metrics,
@@ -198,7 +217,8 @@ impl LsmKvInner {
     }
 
     fn open_multi_cursor(&self) -> MultiCursor {
-        let mem_table = self.mem_table.borrow();
+        let mem_table_col = self.mem_table.lock().unwrap();
+        let mem_table = &mem_table_col.main;
         let mem_table_cursor = mem_table.open_cursor();
 
         let snapshot = self.snapshot.lock().unwrap();
@@ -236,7 +256,27 @@ impl LsmKvInner {
         Ok(())
     }
 
+    pub fn new_session(&self) -> NonZeroU64 {
+        let mut buffer: [u8; 8] = [0; 8];
+        getrandom::getrandom(&mut buffer).unwrap();
+        let id = NonZeroU64::new(u64::from_le_bytes(buffer)).unwrap();
+
+        let mut mem_table_col = self.mem_table.lock().unwrap();
+        mem_table_col.sessions.insert(id, LsmSessionInner::new());
+
+        id
+    }
+
+    pub fn remove_session(&self, id: NonZeroU64) {
+        let mut mem_table_col = self.mem_table.lock().unwrap();
+        mem_table_col.sessions.remove(&id);
+    }
+
     pub fn put(&self, key: &[u8], value: &[u8]) -> DbResult<()> {
+        self.put_internal(key, value, None)
+    }
+
+    fn put_internal(&self, key: &[u8], value: &[u8], session: Option<NonZeroU64>) -> DbResult<()> {
         if !self.in_transaction.get() {
             return Err(DbErr::NoTransactionStarted);
         }
@@ -245,9 +285,20 @@ impl LsmKvInner {
             log.put(key, value)?;
         }
 
-        let mut segment = self.mem_table.borrow_mut();
+        {
+            let mut mem_table_col = self.mem_table.lock()?;
 
-        segment.put(key, value);
+            match session {
+                Some(id) => {
+                    let session = mem_table_col.sessions.get_mut(&id).unwrap();
+                    session.mem_table.put(key, value, false);
+                }
+                None => {
+                    let session_empty = mem_table_col.sessions.is_empty();
+                    mem_table_col.main.put(key, value, session_empty);
+                }
+            }
+        }
 
         self.op_count.fetch_add(1, Ordering::Relaxed);
 
@@ -255,6 +306,10 @@ impl LsmKvInner {
     }
 
     pub fn delete(&self, key: &[u8]) -> DbResult<()> {
+        self.delete_internal(key, None)
+    }
+
+    fn delete_internal(&self, key: &[u8], session: Option<NonZeroU64>) -> DbResult<()> {
         if !self.in_transaction.get() {
             return Err(DbErr::NoTransactionStarted);
         }
@@ -263,9 +318,20 @@ impl LsmKvInner {
             log.delete(key)?;
         }
 
-        let mut segment = self.mem_table.borrow_mut();
+        {
+            let mut mem_table_col = self.mem_table.lock()?;
 
-        segment.delete(key);
+            match session {
+                Some(id) => {
+                    let session = mem_table_col.sessions.get_mut(&id).unwrap();
+                    session.mem_table.delete(key, false);
+                }
+                None => {
+                    let session_empty = mem_table_col.sessions.is_empty();
+                    mem_table_col.main.delete(key, session_empty);
+                }
+            }
+        }
 
         self.op_count.fetch_add(1, Ordering::Relaxed);
 
@@ -284,13 +350,14 @@ impl LsmKvInner {
         }
 
         if let Some(backend) = &self.backend {
-            let mut mem_table = self.mem_table.borrow_mut();
+            let mut mem_table_col = self.mem_table.lock()?;
+            let mem_table = &mut mem_table_col.main;
             let mut snapshot = self.snapshot.lock()?;
 
             let store_bytes = mem_table.store_bytes();
             if self.should_sync(store_bytes) {
                 backend.sync_latest_segment(
-                    &mut mem_table,
+                    mem_table,
                     &mut snapshot,
                 )?;
                 backend.checkpoint_snapshot(&mut snapshot)?;
@@ -365,15 +432,15 @@ impl LsmKvInner {
 
     fn force_sync_last_segment(&mut self) -> DbResult<()> {
         if let Some(backend) = &self.backend {
-            let mut mem_table = self.mem_table.borrow_mut();
+            let mut mem_table = self.mem_table.lock().unwrap();
             let mut snapshot = self.snapshot.lock()?;
 
-            if mem_table.len() == 0 {
+            if mem_table.main.len() == 0 {
                 return Ok(())
             }
 
             backend.sync_latest_segment(
-                &mut mem_table,
+                &mut mem_table.main,
                 &mut snapshot,
             )?;
             backend.checkpoint_snapshot(&mut snapshot)?;

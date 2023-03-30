@@ -12,6 +12,7 @@ mod kv_cursor;
 mod lsm_tree;
 mod multi_cursor;
 mod lsm_metrics;
+mod lsm_session;
 
 pub use lsm_kv::LsmKv;
 pub use kv_cursor::KvCursor;
