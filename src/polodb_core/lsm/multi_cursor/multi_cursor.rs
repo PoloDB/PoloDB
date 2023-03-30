@@ -291,18 +291,18 @@ mod tests {
     #[test]
     fn test_order_of_multi_cursor() {
         let map0 = {
-            let mut map = LsmTree::<Arc<[u8]>, Vec<u8>>::new();
-            map.insert_in_place([10].as_ref().into(), vec![10]);
-            map.insert_in_place([40].as_ref().into(), vec![40]);
-            map.insert_in_place([60].as_ref().into(), vec![60]);
+            let mut map = LsmTree::<Arc<[u8]>, Arc<[u8]>>::new();
+            map.insert_in_place([10].as_ref().into(), vec![10].into());
+            map.insert_in_place([40].as_ref().into(), vec![40].into());
+            map.insert_in_place([60].as_ref().into(), vec![60].into());
             map
         };
 
         let map1 = {
-            let mut map = LsmTree::<Arc<[u8]>, Vec<u8>>::new();
-            map.insert_in_place([20].as_ref().into(), vec![20]);
-            map.insert_in_place([30].as_ref().into(), vec![30]);
-            map.insert_in_place([50].as_ref().into(), vec![50]);
+            let mut map = LsmTree::<Arc<[u8]>, Arc<[u8]>>::new();
+            map.insert_in_place([20].as_ref().into(), vec![20].into());
+            map.insert_in_place([30].as_ref().into(), vec![30].into());
+            map.insert_in_place([50].as_ref().into(), vec![50].into());
             map
         };
 
@@ -336,10 +336,10 @@ mod tests {
     #[test]
     fn test_deleted_value() {
         let map0 = {
-            let mut map = LsmTree::<Arc<[u8]>, Vec<u8>>::new();
-            map.insert_in_place([10].as_ref().into(), vec![10]);
-            map.insert_in_place([40].as_ref().into(), vec![40]);
-            map.insert_in_place([60].as_ref().into(), vec![60]);
+            let mut map = LsmTree::<Arc<[u8]>, Arc<[u8]>>::new();
+            map.insert_in_place([10].as_ref().into(), vec![10].into());
+            map.insert_in_place([40].as_ref().into(), vec![40].into());
+            map.insert_in_place([60].as_ref().into(), vec![60].into());
 
             map.delete_in_place::<[u8]>([40].as_ref());
 
@@ -347,10 +347,10 @@ mod tests {
         };
 
         let map1 = {
-            let mut map = LsmTree::<Arc<[u8]>, Vec<u8>>::new();
-            map.insert_in_place([20].as_ref().into(), vec![20]);
-            map.insert_in_place([30].as_ref().into(), vec![30]);
-            map.insert_in_place([50].as_ref().into(), vec![50]);
+            let mut map = LsmTree::<Arc<[u8]>, Arc<[u8]>>::new();
+            map.insert_in_place([20].as_ref().into(), vec![20].into());
+            map.insert_in_place([30].as_ref().into(), vec![30].into());
+            map.insert_in_place([50].as_ref().into(), vec![50].into());
 
             map.delete_in_place::<[u8]>([20].as_ref());
 

@@ -36,16 +36,23 @@ impl<K: Ord + Clone, V: Clone> DivideInfo<K, V> {
 
 }
 
-enum TreeNodeInsertResult<K: Ord + Clone, V: Clone> {
+enum InsertResult<K: Ord + Clone, V: Clone> {
+    Replace(Arc<RwLock<TreeNode<K, V>>>),
+    Divide(Box<DivideInfo<K, V>>),
+}
+
+enum InsertInPlaceResult<K: Ord + Clone, V: Clone> {
     Normal,
     LegacyValue(LsmTreeValueMarker<V>),
     Divide(Box<DivideInfo<K, V>>),
 }
 
-impl<K: Ord + Clone, V: Clone> From<DivideInfo<K, V>> for TreeNodeInsertResult<K, V> {
+impl<K: Ord + Clone, V: Clone> From<DivideInfo<K, V>> for InsertInPlaceResult<K, V> {
+
     fn from(value: DivideInfo<K, V>) -> Self {
-        TreeNodeInsertResult::Divide(Box::new(value))
+        InsertInPlaceResult::Divide(Box::new(value))
     }
+
 }
 
 /// This is a simple b-tree implementation.
@@ -73,6 +80,129 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         self.root = Arc::new(RwLock::new(empty));
     }
 
+    pub fn insert(&self, key: K, value: V) -> LsmTree<K, V> {
+        self.update(key, LsmTreeValueMarker::Value(value))
+    }
+
+    pub fn delete(&self, key: K) -> LsmTree<K, V> {
+        self.update(key, LsmTreeValueMarker::Deleted)
+    }
+
+    fn update(&self, key: K, value: LsmTreeValueMarker<V>) -> LsmTree<K, V> {
+        let insert_result = LsmTree::update_with_node(self.root.clone(), key, value);
+
+        match insert_result {
+            InsertResult::Replace(node_ptr) => {
+                LsmTree {
+                    root: node_ptr
+                }
+            }
+            InsertResult::Divide(divide_info) => {
+                let mut node = TreeNode::new();
+                node.data.push(ItemTuple {
+                    key: divide_info.tuple.0,
+                    value: divide_info.tuple.1,
+                    left: Some(divide_info.left),
+                });
+                node.right = Some(divide_info.right);
+                LsmTree {
+                    root: Arc::new(RwLock::new(node)),
+                }
+            }
+        }
+    }
+
+    fn update_with_node(
+        node: Arc<RwLock<TreeNode<K, V>>>,
+        key: K,
+        value: LsmTreeValueMarker<V>,
+    ) -> InsertResult<K, V> {
+        let node_reader = node.read().unwrap();
+        if node_reader.data.is_empty() {
+            let mut cloned = node_reader.clone();
+            cloned.data.push(ItemTuple {
+                key,
+                value,
+                left: None,
+            });
+            let node_ptr = Arc::new(RwLock::new(cloned));
+            return InsertResult::Replace(node_ptr);
+        }
+
+        let (index, ordering) = node_reader.find(&key);
+        if ordering == Ordering::Equal {
+            let mut cloned = node_reader.clone();
+            cloned.data[index] = ItemTuple {
+                key,
+                value,
+                left: node_reader.data[index].left.clone(),
+            };
+            let node_ptr = Arc::new(RwLock::new(cloned));
+            return InsertResult::Replace(node_ptr);
+        }
+
+        if node_reader.is_leaf() {
+            let mut cloned = node_reader.clone();
+            cloned.data.insert(index, ItemTuple {
+                key,
+                value,
+                left: None,
+            });
+
+            return if cloned.data.len() > ORDER {
+                let divide = cloned.divide_this_node();
+                InsertResult::Divide(Box::new(divide))
+            } else {
+                let node_ptr = Arc::new(RwLock::new(cloned));
+                InsertResult::Replace(node_ptr)
+            }
+        }
+
+        let insert_result = if index == node_reader.data.len() {
+            LsmTree::update_with_node(node_reader.right.clone().expect("this is not a leaf"), key ,value)
+        } else {
+            let item = node_reader.data[index].left.clone().unwrap();
+            LsmTree::update_with_node(item, key, value)
+        };
+
+        let mut cloned = node_reader.clone();
+        match insert_result {
+            InsertResult::Replace(node) => {
+                if index == cloned.data.len() {
+                    cloned.right = Some(node);
+                } else {
+                    cloned.data[index].left = Some(node);
+                }
+
+                return InsertResult::Replace(Arc::new(RwLock::new(cloned)));
+            }
+            InsertResult::Divide(divide_info) => {
+                let new_item = ItemTuple::<K, V> {
+                    key: divide_info.tuple.0,
+                    value: divide_info.tuple.1,
+                    left: Some(divide_info.left),
+                };
+
+                let index = max(0, index) as usize;
+                cloned.data.insert(index, new_item);
+
+                if index == cloned.data.len() - 1 {  // is last
+                    cloned.right = Some(divide_info.right);
+                } else {
+                    cloned.data[index + 1].left = Some(divide_info.right);
+                }
+
+                if cloned.data.len() > ORDER {
+                    let divide_info = cloned.divide_this_node();
+                    InsertResult::Divide(Box::new(divide_info))
+                } else {
+                    let ptr = Arc::new(RwLock::new(cloned));
+                    InsertResult::Replace(ptr)
+                }
+            }
+        }
+    }
+
     pub fn insert_in_place(&mut self, key: K, value: V) -> Option<V> {
         self.update_in_place(key, LsmTreeValueMarker::Value(value))
     }
@@ -80,13 +210,13 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
     pub(crate) fn update_in_place(&mut self, key: K, value: LsmTreeValueMarker<V>) -> Option<V> {
         let result = {
             let mut root = self.root.write().unwrap();
-            root.replace(key, value)
+            root.replace_in_place(key, value)
         };
 
         match result {
-            TreeNodeInsertResult::Normal => None,
-            TreeNodeInsertResult::LegacyValue(val) => val.into(),
-            TreeNodeInsertResult::Divide(divide_info) => {
+            InsertInPlaceResult::Normal => None,
+            InsertInPlaceResult::LegacyValue(val) => val.into(),
+            InsertInPlaceResult::Divide(divide_info) => {
                 let node = divide_info.generate_node();
 
                 self.root = node;
@@ -157,6 +287,7 @@ pub(super) struct ItemTuple<K: Ord + Clone, V: Clone>{
     pub(super) left: Option<Arc<RwLock<TreeNode<K, V>>>>,
 }
 
+#[derive(Clone)]
 pub(super) struct TreeNode<K: Ord + Clone, V: Clone> {
     pub(super) data: Vec<ItemTuple<K, V>>,
     pub(super) right: Option<Arc<RwLock<TreeNode<K, V>>>>,
@@ -249,25 +380,25 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
     }
 
     #[allow(dead_code)]
-    fn insert_in_place(&mut self, key: K, value: V) -> TreeNodeInsertResult<K, V> {
-        self.replace(key, LsmTreeValueMarker::Value(value))
+    fn insert_in_place(&mut self, key: K, value: V) -> InsertInPlaceResult<K, V> {
+        self.replace_in_place(key, LsmTreeValueMarker::Value(value))
     }
 
-    fn replace(&mut self, key: K, value: LsmTreeValueMarker<V>) -> TreeNodeInsertResult<K, V> {
+    fn replace_in_place(&mut self, key: K, value: LsmTreeValueMarker<V>) -> InsertInPlaceResult<K, V> {
         if self.data.is_empty() {
             self.data.push(ItemTuple {
                 key,
                 value,
                 left: None,
             });
-            return TreeNodeInsertResult::Normal;
+            return InsertInPlaceResult::Normal;
         }
         let (index, order) = self.find(&key);
         if order == Ordering::Equal {
             let index = index as usize;
             let prev = self.data[index].value.clone();
             self.data[index].value = value;
-            TreeNodeInsertResult::LegacyValue(prev)
+            InsertInPlaceResult::LegacyValue(prev)
         } else {
             if self.is_leaf() {
                 let tuple = ItemTuple {
@@ -278,23 +409,23 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
                 self.data.insert(index, tuple);
 
                 if self.data.len() > ORDER {
-                    self.divide_this_node()
+                    self.divide_this_node().into()
                 } else {
-                    TreeNodeInsertResult::Normal
+                    InsertInPlaceResult::Normal
                 }
             } else {
                 let insert_result = if index == self.data.len() {
                     let mut right_page = self.right.as_ref().expect("this is not a leaf").write().unwrap();
-                    right_page.replace(key, value)
+                    right_page.replace_in_place(key, value)
                 } else {
                     let item = &self.data[index];
                     let mut right_page = item.left.as_ref().expect("this is not a leaf").write().unwrap();
-                    right_page.replace(key, value)
+                    right_page.replace_in_place(key, value)
                 };
                 match insert_result {
-                    TreeNodeInsertResult::Normal => insert_result,
-                    TreeNodeInsertResult::LegacyValue(_) => insert_result,
-                    TreeNodeInsertResult::Divide(divide_info) => {
+                    InsertInPlaceResult::Normal => insert_result,
+                    InsertInPlaceResult::LegacyValue(_) => insert_result,
+                    InsertInPlaceResult::Divide(divide_info) => {
                         let new_item = ItemTuple::<K, V> {
                             key: divide_info.tuple.0,
                             value: divide_info.tuple.1,
@@ -311,9 +442,9 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
                         }
 
                         if self.data.len() > ORDER {
-                            self.divide_this_node()
+                            self.divide_this_node().into()
                         } else {
-                            TreeNodeInsertResult::Normal
+                            InsertInPlaceResult::Normal
                         }
                     }
                 }
@@ -321,7 +452,7 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
         }
     }
 
-    fn divide_this_node(&mut self) -> TreeNodeInsertResult<K, V> {
+    fn divide_this_node(&mut self) -> DivideInfo<K, V> {
         let middle_index = self.data.len() / 2;
         let tuple = {
             let middle_item = &self.data[middle_index];
@@ -375,6 +506,23 @@ mod tests {
 
         for i in 0..100 {
             tree.insert_in_place(i, i);
+        }
+
+        assert_eq!(tree.len(), 100);
+
+        for i in 0..100 {
+            let mut cursor = tree.open_cursor();
+            cursor.seek(&i);
+            assert_eq!(cursor.value().unwrap().unwrap(), i);
+        }
+    }
+
+    #[test]
+    fn test_insert() {
+        let mut tree = LsmTree::new();
+
+        for i in 0..100 {
+            tree = tree.insert(i, i);
         }
 
         assert_eq!(tree.len(), 100);
@@ -456,7 +604,7 @@ mod tests {
     }
 
     #[test]
-    fn test_delete() {
+    fn test_delete_in_place() {
         let mut tree = LsmTree::new();
 
         for i in 0..100 {
@@ -464,6 +612,22 @@ mod tests {
         }
 
         tree.delete_in_place(&50);
+
+        let mut cursor = tree.open_cursor();
+        cursor.seek(&50);
+
+        assert!(cursor.value().unwrap().is_deleted())
+    }
+
+    #[test]
+    fn test_delete() {
+        let mut tree = LsmTree::new();
+
+        for i in 0..100 {
+            tree.insert_in_place(i, i);
+        }
+
+        tree = tree.delete(50);
 
         let mut cursor = tree.open_cursor();
         cursor.seek(&50);
