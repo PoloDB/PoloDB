@@ -68,6 +68,33 @@ fn encode_u64<W: Write>(writer: &mut W, num: u64) -> BsonResult<()> {
     Ok(())
 }
 
+pub fn vli_len(num: i64) -> usize {
+    if num < 0 {
+        return vli_len_u64(num as u64) + 1;
+    }
+    vli_len_u64(num as u64)
+}
+
+pub fn vli_len_u64(num: u64) -> usize {
+    if num <= 127 {
+        1
+    } else if num <= 16383 {  // 2 bytes
+        2
+    } else if num <= 2097151 {  // 3 bytes
+        3
+    } else if num <= 134217727 {  // 4 bytes
+        4
+    } else if num <= 34359738367 {  // 5 bytes
+        5
+    } else if num <= 0xFFFFFFFFFF {  // 6 bytes
+        6
+    } else if num <= 0xFFFFFFFFFFFFFFF { // 8 bytes
+        8
+    } else {  // 9 bytes
+        9
+    }
+}
+
 #[allow(dead_code)]
 pub fn decode<R: Read>(reader: &mut R) -> BsonResult<i64> {
     let first_byte = reader.read_u8()?;
