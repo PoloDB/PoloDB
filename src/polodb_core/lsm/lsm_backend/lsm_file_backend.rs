@@ -412,7 +412,7 @@ impl LsmFileBackendInner {
         Ok(segment)
     }
 
-    fn merge_level(&mut self, snapshot: &LsmSnapshot, mut cursor: MultiCursor, preserve_delete: bool) -> DbResult<ImLsmSegment> {
+    fn merge_level(&mut self, snapshot: &mut LsmSnapshot, mut cursor: MultiCursor, preserve_delete: bool) -> DbResult<ImLsmSegment> {
         cursor.go_to_min()?;
 
         let mut tuples = Vec::<(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)>::new();
@@ -472,7 +472,41 @@ impl LsmFileBackendInner {
         result
     }
 
-    fn write_merged_tuples(&mut self, snapshot: &LsmSnapshot, tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)], _estimate_size: usize) -> DbResult<ImLsmSegment> {
+    fn get_start_writing_pid(&self, snapshot: &mut LsmSnapshot, estimate_size: usize) -> u64 {
+        let page_size = self.config.get_lsm_page_size();
+
+        let mut index: usize = 0;
+        for seg in &snapshot.free_segments {
+            let page_count = seg.end_pid - seg.start_pid + 1;
+            let seg_size = (page_count as usize) * (page_size as usize);
+
+            if seg_size > estimate_size {
+                return self.choose_selected_segments(snapshot, index, estimate_size);
+            }
+
+            index += 1;
+        }
+
+        snapshot.file_size / (page_size as u64)
+    }
+
+    fn choose_selected_segments(&self, snapshot: &mut LsmSnapshot, index: usize, _estimate_size: usize) -> u64 {
+        let seg = &snapshot.free_segments[index];
+        let start_pid = seg.start_pid;
+
+        snapshot.free_segments.remove(index);
+
+        self.metrics.add_use_free_segment_count();
+
+        start_pid
+    }
+
+    fn write_merged_tuples(
+        &mut self,
+        snapshot: &mut LsmSnapshot,
+        tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)],
+        estimate_size: usize,
+    ) -> DbResult<ImLsmSegment> {
         let config = self.config.clone();
         let page_size = config.get_lsm_page_size();
 
@@ -480,8 +514,7 @@ impl LsmFileBackendInner {
             Mmap::map(&self.file)?
         };
 
-        // TODO: try alloc from free pages
-        let start_pid = snapshot.file_size / (page_size as u64);
+        let start_pid = self.get_start_writing_pid(snapshot, estimate_size);
 
         let mut writer = FileWriter::open(
             &mut self.file,

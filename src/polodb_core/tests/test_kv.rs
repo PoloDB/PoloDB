@@ -297,9 +297,10 @@ fn test_dataset_18k() {
 
         insert_csv_to_db(&db, &mut rdr, &mut mem_table, 18000);
 
-
         assert_eq!(metrics.minor_compact(), 4);
         assert_eq!(metrics.major_compact(), 1);
+
+        println!("use free segments: {}", metrics.use_free_segment_count());
     }
 
     let db = LsmKv::open_file(db_path.as_path()).unwrap();

@@ -51,6 +51,14 @@ impl LsmMetrics {
         self.inner.free_segments_count()
     }
 
+    pub fn add_use_free_segment_count(&self) {
+        self.inner.add_use_free_segment_count()
+    }
+
+    pub fn use_free_segment_count(&self) -> usize {
+        self.inner.use_free_segment_count()
+    }
+
 }
 
 macro_rules! test_enable {
@@ -67,6 +75,7 @@ struct LsmMetricsInner {
     minor_compact: AtomicUsize,
     major_compact: AtomicUsize,
     free_segments_count: AtomicUsize,
+    use_free_segment_count: AtomicUsize,
 }
 
 impl LsmMetricsInner {
@@ -107,6 +116,14 @@ impl LsmMetricsInner {
         self.free_segments_count.load(Ordering::Relaxed)
     }
 
+    fn add_use_free_segment_count(&self) {
+        self.use_free_segment_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn use_free_segment_count(&self) -> usize {
+        self.use_free_segment_count.load(Ordering::Relaxed)
+    }
+
 }
 
 impl Default for LsmMetricsInner {
@@ -118,6 +135,7 @@ impl Default for LsmMetricsInner {
             minor_compact: AtomicUsize::new(0),
             major_compact: AtomicUsize::new(0),
             free_segments_count: AtomicUsize::new(0),
+            use_free_segment_count: AtomicUsize::new(0),
         }
     }
 
