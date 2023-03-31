@@ -20,7 +20,6 @@ use crate::page::RawPage;
 use crate::DbResult;
 use crate::error::DbErr;
 use crate::utils::file_lock::*;
-use crate::dump::{JournalDump, JournalFrameDump};
 
 static HEADER_DESP: &str       = "PoloDB Journal v0.3";
 const JOURNAL_DATA_BEGIN: u64 = 64;
@@ -610,47 +609,6 @@ impl JournalManager {
 
     pub(crate) fn transaction_type(&self) -> Option<TransactionType> {
         self.transaction_state.as_ref().map(|state| state.ty)
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn dump(&mut self) -> DbResult<JournalDump> {
-        let file_meta = {
-            let journal_file = self.journal_file.borrow();
-            journal_file.metadata()?
-        };
-        let frames = self.dump_frames()?;
-        let dump = JournalDump {
-            path: self.file_path.clone(),
-            file_meta,
-            frame_count: self.count as usize,
-            frames,
-        };
-        Ok(dump)
-    }
-
-    pub(crate) fn dump_frames(&mut self) -> DbResult<Vec<JournalFrameDump>> {
-        let mut result = vec![];
-        let mut journal_file = self.journal_file.borrow_mut();
-
-        for index in 0..self.count {
-            let frame_header_offset: u64 =
-                JOURNAL_DATA_BEGIN + (self.page_size.get() as u64 + FRAME_HEADER_SIZE) * (index as u64);
-
-            let mut header_buffer: [u8; FRAME_HEADER_SIZE as usize] = [0; FRAME_HEADER_SIZE as usize];
-            journal_file.seek(SeekFrom::Start(frame_header_offset))?;
-            journal_file.read_exact(&mut header_buffer)?;
-
-            let header = FrameHeader::from_bytes(&header_buffer);
-
-            result.push(JournalFrameDump {
-                frame_id: index,
-                db_size: header.db_size,
-                salt1: header.salt1,
-                salt2: header.salt2,
-            });
-        }
-
-        Ok(result)
     }
 
 }

@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use crate::DbResult;
 use crate::lsm::lsm_kv::LsmKvInner;
 use crate::lsm::lsm_segment::LsmTuplePtr;
-use crate::lsm::lsm_tree::{LsmTreeValueMarker, TreeCursor};
+use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker, TreeCursor};
 
 pub(crate) enum CursorRepr {
     MemTableCursor(TreeCursor<Arc<[u8]>, Arc<[u8]>>),
@@ -20,6 +20,15 @@ impl CursorRepr {
             CursorRepr::SegTableCursor(cursor) => {
                 cursor.seek(key)
             }
+        }
+    }
+
+    pub fn update_current(&mut self, lsm_tree: &mut LsmTree<Arc<[u8]>, Arc<[u8]>>, value: &LsmTreeValueMarker<Arc<[u8]>>) {
+        match self {
+            CursorRepr::MemTableCursor(cursor) => {
+                cursor.update(lsm_tree, value);
+            }
+            _ => unreachable!(),
         }
     }
 

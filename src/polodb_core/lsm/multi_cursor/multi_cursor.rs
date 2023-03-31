@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::DbResult;
 use crate::lsm::lsm_kv::LsmKvInner;
 use crate::lsm::lsm_segment::LsmTuplePtr;
-use crate::lsm::lsm_tree::LsmTreeValueMarker;
+use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
 use crate::lsm::multi_cursor::CursorRepr;
 
 /// This is a cursor used to iterate
@@ -23,6 +23,10 @@ impl MultiCursor {
             keys: vec![None; len],
             first_result: -1,
         }
+    }
+
+    pub fn update_current(&mut self, lsm_tree: &mut LsmTree<Arc<[u8]>, Arc<[u8]>>, value: &LsmTreeValueMarker<Arc<[u8]>>) {
+        self.cursors[0].update_current(lsm_tree, value);
     }
 
     #[allow(dead_code)]
@@ -278,6 +282,12 @@ impl MultiCursor {
         }
 
         true
+    }
+
+    pub fn reset(&mut self) {
+        for cursor in &mut self.cursors {
+            cursor.reset();
+        }
     }
 
 }

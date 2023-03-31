@@ -15,10 +15,11 @@ use std::cmp::Ordering;
 use bson::Bson;
 use op::DbOp;
 use crate::cursor::Cursor;
-use crate::{TransactionType, DbResult, DbErr};
+use crate::{TransactionType, DbResult, DbErr, LsmKv};
 use crate::error::{CannotApplyOperationForTypes, mk_field_name_type_unexpected, mk_unexpected_type_for_op};
 use std::cell::Cell;
-use crate::session::Session;
+use std::sync::{Arc, Mutex};
+use crate::db::SessionInner;
 
 const STACK_SIZE: usize = 256;
 
@@ -43,14 +44,15 @@ pub enum VmState {
     HasRow = 2,
 }
 
-pub struct VM<'a> {
+pub struct VM {
+    kv_engine:           LsmKv,
+    session:             Arc<Mutex<SessionInner>>,
     pub(crate) state:    VmState,
     pc:                  *const u8,
     r0:                  i32,  // usually the logic register
     r1:                  Option<Cursor>,
     pub(crate) r2:       i64,  // usually the counter
     r3:                  usize,
-    session:             &'a dyn Session,
     stack:               Vec<Bson>,
     pub(crate) program:  SubProgram,
     rollback_on_drop:    bool,
@@ -70,19 +72,20 @@ fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> DbResult<bool> {
     Ok(result)
 }
 
-impl<'a> VM<'a> {
+impl VM {
 
-    pub(crate) fn new(page_handler: &dyn Session, program: SubProgram) -> VM {
+    pub(crate) fn new(kv_engine: LsmKv, session: Arc<Mutex<SessionInner>>, program: SubProgram) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         VM {
+            kv_engine,
+            session,
             state: VmState::Init,
             pc,
             r0: 0,
             r1: None,
             r2: 0,
             r3: 0,
-            session: page_handler,
             stack,
             program,
             rollback_on_drop: false,
@@ -90,31 +93,36 @@ impl<'a> VM<'a> {
     }
 
     fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        let result = self.session.auto_start_transaction(ty)?;
-        if result.auto_start {
-            self.rollback_on_drop = true;
-        }
-        Ok(())
+        let mut session = self.session.lock()?;
+        session.kv_session.start_transaction(ty)
     }
 
-    fn open_read(&mut self, root_pid: u32) -> DbResult<()> {
+    fn open_read(&mut self, prefix: Bson) -> DbResult<()> {
         self.auto_start_transaction(TransactionType::Read)?;
-        self.r1 = Some(Cursor::new(root_pid));
+        let cursor = {
+            let session = self.session.lock()?;
+            self.kv_engine.open_multi_cursor(Some(&session.kv_session))
+        };
+        self.r1 = Some(Cursor::new(prefix, cursor));
         Ok(())
     }
 
-    fn open_write(&mut self, root_pid: u32) -> DbResult<()> {
+    fn open_write(&mut self, prefix: Bson) -> DbResult<()> {
         self.auto_start_transaction(TransactionType::Write)?;
-        self.r1 = Some(Cursor::new(root_pid));
+        let cursor = {
+            let session = self.session.lock()?;
+            self.kv_engine.open_multi_cursor(Some(&session.kv_session))
+        };
+        self.r1 = Some(Cursor::new(prefix, cursor));
         Ok(())
     }
 
     fn reset_cursor(&mut self, is_empty: &Cell<bool>) -> DbResult<()> {
         let cursor = self.r1.as_mut().unwrap();
-        cursor.reset(self.session)?;
+        cursor.reset();
         if cursor.has_next() {
-            let item = cursor.peek_data().unwrap();
-            let doc = self.session.get_doc_from_ticket(&item)?;
+            let item = cursor.peek_data(self.kv_engine.inner.as_ref())?.unwrap();
+            let doc = bson::from_slice(item.as_ref())?;
             self.stack.push(Bson::Document(doc));
             is_empty.set(false);
         } else {
@@ -129,23 +137,23 @@ impl<'a> VM<'a> {
         let top_index = self.stack.len() - 1;
         let op = &self.stack[top_index];
 
-        let result = cursor.reset_by_pkey(self.session, op)?;
+        let result = cursor.reset_by_pkey(op)?;
         if !result {
             return Ok(false);
         }
 
-        let ticket = cursor.peek_data().unwrap();
-        let doc = self.session.get_doc_from_ticket(&ticket)?;
+        let buf = cursor.peek_data(self.kv_engine.inner.as_ref())?.unwrap();
+        let doc = bson::from_slice(buf.as_ref())?;
         self.stack.push(Bson::Document(doc));
         Ok(true)
     }
 
     fn next(&mut self) -> DbResult<()> {
         let cursor = self.r1.as_mut().unwrap();
-        let _ = cursor.next(self.session)?;
-        match cursor.peek_data() {
-            Some(ticket) => {
-                let doc = self.session.get_doc_from_ticket(&ticket)?;
+        cursor.next()?;
+        match cursor.peek_data(self.kv_engine.inner.as_ref())? {
+            Some(bytes) => {
+                let doc = bson::from_slice(bytes.as_ref())?;
                 self.stack.push(Bson::Document(doc));
 
                 debug_assert!(self.stack.len() <= 64, "stack too large: {}", self.stack.len());
@@ -541,7 +549,7 @@ impl<'a> VM<'a> {
 
                         let doc = top_value.as_document().unwrap();
 
-                        self.r1.as_mut().unwrap().update_current(self.session, doc)?;
+                        self.r1.as_mut().unwrap().update_current(doc)?;
 
                         self.pc = self.pc.add(1);
                     }
@@ -598,17 +606,19 @@ impl<'a> VM<'a> {
                     }
 
                     DbOp::OpenRead => {
-                        let root_pid = self.pc.add(1).cast::<u32>().read();
+                        let prefix_idx = self.pc.add(1).cast::<u32>().read();
+                        let prefix = self.program.static_values[prefix_idx as usize].clone();
 
-                        try_vm!(self, self.open_read(root_pid));
+                        try_vm!(self, self.open_read(prefix));
 
                         self.pc = self.pc.add(5);
                     }
 
                     DbOp::OpenWrite => {
-                        let root_pid = self.pc.add(1).cast::<u32>().read();
+                        let prefix_idx = self.pc.add(1).cast::<u32>().read();
+                        let prefix = self.program.static_values[prefix_idx as usize].clone();
 
-                        try_vm!(self, self.open_write(root_pid));
+                        try_vm!(self, self.open_write(prefix));
 
                         self.pc = self.pc.add(5);
                     }
@@ -621,10 +631,11 @@ impl<'a> VM<'a> {
 
                     DbOp::Close => {
                         self.r1 = None;
-                        if self.rollback_on_drop {
-                            self.session.auto_commit()?;
-                            self.rollback_on_drop = false;
-                        }
+                        // TODO: FIXME
+                        // if self.rollback_on_drop {
+                        //     self.session.auto_commit()?;
+                        //     self.rollback_on_drop = false;
+                        // }
 
                         self.pc = self.pc.add(1);
                     }
@@ -652,7 +663,8 @@ impl<'a> VM<'a> {
     }
 
     pub(crate) fn commit_and_close(mut self) -> DbResult<()> {
-        self.session.auto_commit()?;
+        // TODO: FIXME
+        // self.session.auto_commit()?;
         self.rollback_on_drop = false;
         Ok(())
     }
@@ -663,15 +675,16 @@ impl<'a> VM<'a> {
 
 }
 
-impl<'a> Drop for VM<'a> {
+impl Drop for VM {
 
     fn drop(&mut self) {
         if self.rollback_on_drop {
-            let _result = self.session.rollback();
-            #[cfg(debug_assertions)]
-            if let Err(err) = _result {
-                panic!("rollback fatal: {}", err);
-            }
+            // TODO: FIXME
+            // let _result = self.session.rollback();
+            // #[cfg(debug_assertions)]
+            // if let Err(err) = _result {
+            //     panic!("rollback fatal: {}", err);
+            // }
         }
     }
 

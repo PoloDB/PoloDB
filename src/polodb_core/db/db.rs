@@ -20,7 +20,6 @@ use super::context::DbContext;
 use crate::{DbHandle, TransactionType};
 use crate::collection_info::CollectionSpecification;
 use crate::db::collection::Collection;
-use crate::dump::FullDump;
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 use crate::commands::*;
 use crate::metrics::Metrics;
@@ -178,11 +177,6 @@ impl Database {
         inner.drop_session(session_id)
     }
 
-    pub fn dump(&self) -> DbResult<FullDump> {
-        let mut inner = self.inner.lock()?;
-        inner.dump()
-    }
-
     /// Gets the names of the collections in the database.
     pub fn list_collection_names(&self) -> DbResult<Vec<String>> {
         let mut inner = self.inner.lock()?;
@@ -316,7 +310,7 @@ impl DatabaseInner {
     }
 
     fn create_collection(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<()> {
-        let _collection_meta = self.ctx.create_collection(name, session_id)?;
+        let _collection_meta = self.ctx.create_collection_by_id(name, session_id)?;
         Ok(())
     }
 
@@ -327,12 +321,7 @@ impl DatabaseInner {
         create_if_not_exist: bool,
         session_id: Option<&ObjectId>
     ) -> DbResult<Option<CollectionSpecification>> {
-        self.ctx.get_collection_meta_by_name_advanced_auto(col_name, create_if_not_exist, session_id)
-    }
-
-    #[inline]
-    pub fn dump(&mut self) -> DbResult<FullDump> {
-        self.ctx.dump()
+        self.ctx.get_collection_meta_by_name_advanced_auto_by_id(col_name, create_if_not_exist, session_id)
     }
 
     #[inline]
@@ -467,7 +456,7 @@ impl DatabaseInner {
 
     fn insert_one<T: Serialize>(&mut self, col_name: &str, doc: impl Borrow<T>, session_id: Option<&ObjectId>) -> DbResult<InsertOneResult> {
         let doc = bson::to_document(doc.borrow())?;
-        let result = self.ctx.insert_one_auto(col_name, doc, session_id)?;
+        let result = self.ctx.insert_one_auto_by_id(col_name, doc, session_id)?;
         Ok(result)
     }
 
@@ -477,14 +466,14 @@ impl DatabaseInner {
         docs: impl IntoIterator<Item = impl Borrow<T>>,
         session_id: Option<&ObjectId>
     ) -> DbResult<InsertManyResult> {
-        self.ctx.insert_many_auto(col_name, docs, session_id)
+        self.ctx.insert_many_auto_by_id(col_name, docs, session_id)
     }
 
     fn update_one(&mut self, col_name: &str, query: Document, update: Document, session_id: Option<&ObjectId>) -> DbResult<UpdateResult> {
         let meta_opt = self.get_collection_meta_by_name(col_name, false, session_id)?;
         let modified_count: u64 = match meta_opt {
             Some(col_spec) => {
-                let size = self.ctx.update_one(
+                let size = self.ctx.update_one_by_id(
                     &col_spec,
                     Some(&query),
                     &update,
@@ -503,7 +492,7 @@ impl DatabaseInner {
         let meta_opt = self.get_collection_meta_by_name(col_name, false, session_id)?;
         let modified_count: u64 = match meta_opt {
             Some(col_spec) => {
-                let size = self.ctx.update_many(
+                let size = self.ctx.update_many_id(
                     &col_spec,
                     Some(&query),
                     &update,
@@ -519,7 +508,7 @@ impl DatabaseInner {
     }
 
     fn delete_one(&mut self, col_name: &str, query: Document, session_id: Option<&ObjectId>) -> DbResult<DeleteResult> {
-        let test_count = self.ctx.delete(
+        let test_count = self.ctx.delete_by_id(
             col_name,
             query,
             false,
@@ -540,9 +529,9 @@ impl DatabaseInner {
 
     fn delete_many(&mut self, col_name: &str, query: Document, session_id: Option<&ObjectId>) -> DbResult<DeleteResult> {
         let test_deleted_count = if query.len() == 0 {
-            self.ctx.delete_all(col_name, session_id)
+            self.ctx.delete_all_by_id(col_name, session_id)
         } else {
-            self.ctx.delete(col_name, query, true, session_id)
+            self.ctx.delete_by_id(col_name, query, true, session_id)
         };
         match test_deleted_count {
             Ok(deleted_count) => Ok(DeleteResult {
@@ -555,17 +544,15 @@ impl DatabaseInner {
         }
     }
 
+    #[inline]
     fn drop_collection(&mut self, col_name: &str, session_id: Option<&ObjectId>) -> DbResult<()> {
-        self.ctx.drop_collection(col_name, session_id)?;
-        Ok(())
+        self.ctx.drop_collection_by_id(col_name, session_id)
     }
 
     /// release in 0.12
     fn create_index(&mut self, col_name: &str, keys: &Document, options: Option<&Document>, session_id: Option<&ObjectId>) -> DbResult<()> {
-        let col_spec = self.get_collection_meta_by_name(col_name, true, session_id)?
-            .unwrap();
-        self.ctx.create_index(
-            col_spec.info.root_pid,
+        self.ctx.create_index_id(
+            col_name.into(),
             keys,
             options,
             session_id,
@@ -740,7 +727,7 @@ impl DatabaseInner {
             .as_ref()
             .map(|o| o.session_id.as_ref())
             .flatten();
-        self.ctx.drop_collection(col_name, session_id)?;
+        self.ctx.drop_collection_by_id(col_name, session_id)?;
 
         Ok(Bson::Null)
     }

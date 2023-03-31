@@ -2,7 +2,7 @@ use bson::Bson;
 use bson::spec::ElementType;
 use crate::{DbErr, DbResult};
 
-pub fn stacked_key(keys: &[Bson]) -> DbResult<Vec<u8>> {
+pub fn stacked_key<'a, T: IntoIterator<Item = &'a Bson>>(keys: T) -> DbResult<Vec<u8>> {
     let mut result = Vec::<u8>::new();
 
     for key in keys {

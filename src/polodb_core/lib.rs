@@ -118,7 +118,6 @@ mod session;
 mod db;
 mod data_ticket;
 mod meta_doc_helper;
-pub mod dump;
 mod config;
 mod macros;
 mod backend;

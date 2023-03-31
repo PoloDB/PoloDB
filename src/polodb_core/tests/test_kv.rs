@@ -297,7 +297,7 @@ fn test_dataset_18k() {
         assert_eq!(metrics.minor_compact(), 4);
         assert_eq!(metrics.major_compact(), 1);
 
-        assert_eq!(metrics.use_free_segment_count(), 12);
+        assert_eq!(metrics.use_free_segment_count(), 11);
     }
 
     let db = LsmKv::open_file(db_path.as_path()).unwrap();

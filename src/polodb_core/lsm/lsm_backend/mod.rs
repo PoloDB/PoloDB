@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 mod lsm_file_backend;
-mod lsm_log;
+pub(crate) mod lsm_log;
 mod file_writer;
 mod snapshot_reader;
 

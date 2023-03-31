@@ -7,12 +7,7 @@
 mod wrapper_base;
 mod insert_wrapper;
 mod delete_wrapper;
-pub mod counter_helper;
-pub(crate) mod delete_all_helper;
 mod btree_v2;
-
-pub(crate) use delete_wrapper::BTreePageDeleteWrapper;
-pub(crate) use insert_wrapper::{BTreePageInsertWrapper, InsertBackwardItem, InsertResult};
 
 #[allow(unused_imports)]
 pub(crate) use btree_v2::{

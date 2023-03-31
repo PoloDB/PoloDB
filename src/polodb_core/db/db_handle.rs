@@ -11,9 +11,9 @@ use crate::DbResult;
 /**
  * A VM wrapper for Rust-level API
  */
-pub struct DbHandle<'a>(VM<'a>);
+pub struct DbHandle(VM);
 
-impl<'a> DbHandle<'a> {
+impl DbHandle {
 
     pub fn new(vm: VM) -> DbHandle {
         DbHandle(vm)
@@ -52,7 +52,7 @@ impl<'a> DbHandle<'a> {
 
 }
 
-impl<'a> fmt::Display for DbHandle<'a> {
+impl fmt::Display for DbHandle {
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Program: \n\n{}", self.0.program)

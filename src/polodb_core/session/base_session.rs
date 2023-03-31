@@ -10,7 +10,6 @@ use bson::oid::ObjectId;
 use crate::backend::{AutoStartResult, Backend};
 use crate::{Config, DbErr, DbResult, Metrics, TransactionType};
 use crate::data_ticket::DataTicket;
-use crate::dump::JournalDump;
 use crate::page::header_page_wrapper::HeaderPageWrapper;
 use crate::page::RawPage;
 use crate::transaction::TransactionState;
@@ -48,11 +47,6 @@ impl BaseSession {
     pub fn set_transaction_state(&mut self, state: TransactionState) {
         let mut session = self.inner.as_ref().lock().unwrap();
         session.set_transaction_state(state);
-    }
-
-    pub fn dump_journal(&mut self) -> DbResult<Box<JournalDump>> {
-        let mut session = self.inner.as_ref().lock()?;
-        session.dump_journal()
     }
 
     pub fn only_rollback_journal(&mut self) -> DbResult<()> {
@@ -274,10 +268,6 @@ impl BaseSessionInner {
 
     fn only_rollback_journal(&mut self) -> DbResult<()> {
         self.backend.rollback()
-    }
-
-    fn dump_journal(&mut self) -> DbResult<Box<JournalDump>> {
-        Err(DbErr::Busy)
     }
 
     fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {

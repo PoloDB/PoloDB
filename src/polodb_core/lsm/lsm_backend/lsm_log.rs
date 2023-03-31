@@ -28,7 +28,7 @@ enum LogCommand {
 }
 
 #[allow(dead_code)]
-mod format {
+pub(crate) mod format {
     pub const EOF: u8     = 0x00;
     pub const PAD1: u8    = 0x01;
     pub const PAD2: u8    = 0x02;
@@ -96,9 +96,9 @@ impl LsmLog {
         inner.rollback()
     }
 
-    pub fn commit(&self) -> DbResult<LsmCommitResult> {
+    pub fn commit(&self, buffer: Option<&[u8]>) -> DbResult<LsmCommitResult> {
         let mut inner = self.inner.borrow_mut();
-        inner.commit()
+        inner.commit(buffer)
     }
 
     pub fn update_mem_table_with_latest_log(
@@ -415,10 +415,15 @@ impl LsmLogInner {
         Ok(())
     }
 
-    pub fn commit(&mut self) -> DbResult<LsmCommitResult> {
+    pub fn commit(&mut self, buffer: Option<&[u8]>) -> DbResult<LsmCommitResult> {
         if self.transaction.is_none() {
             return Err(DbErr::NoTransactionStarted);
         }
+
+        if let Some(buffer) = buffer {
+            self.write_all(buffer)?;
+        }
+
         {
             let state = self.transaction.as_ref().unwrap();
             let checksum = state.digest.sum64();

@@ -1,7 +1,9 @@
+use std::cmp::Ordering;
 use std::sync::Arc;
 use crate::lsm::lsm_tree::TreeCursor;
 use super::lsm_tree::LsmTree;
 
+#[derive(Clone)]
 pub(crate) struct MemTable {
     segments:         LsmTree<Arc<[u8]>, Arc<[u8]>>,
     store_bytes:      usize,
@@ -18,11 +20,15 @@ impl MemTable {
 
     pub fn get(&self, key: &[u8]) -> Option<Arc<[u8]>> {
         let mut cursor = self.segments.open_cursor();
-        let _ord  = cursor.seek(key)?;
-        cursor
-            .value()
-            .map(|marker| marker.into())
-            .flatten()
+        let ord  = cursor.seek(key)?;
+        if ord == Ordering::Equal {
+            cursor
+                .value()
+                .map(|marker| marker.into())
+                .flatten()
+        } else {
+            None
+        }
     }
 
     pub fn put<K, V>(&mut self, key: K, value: V, in_place: bool)

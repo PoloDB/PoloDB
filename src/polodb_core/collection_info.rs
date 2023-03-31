@@ -27,9 +27,6 @@ pub struct CollectionSpecificationInfo {
 
     pub create_at: DateTime,
 
-    /// Internal
-    #[serde(serialize_with = "crate::bson::serde_helpers::serialize_u32_as_i32")]
-    pub root_pid: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -91,7 +88,6 @@ mod test {
                 }),
 
                 create_at: DateTime::now(),
-                root_pid:1
             },
             indexes: HashMap::new(),
         };

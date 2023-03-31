@@ -9,19 +9,20 @@ use hashbrown::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::{Config, DbErr, DbResult};
+use crate::{Config, DbErr, DbResult, TransactionType};
 use crate::lsm::kv_cursor::KvCursor;
 use crate::lsm::lsm_segment::LsmTuplePtr;
-use crate::lsm::lsm_session::LsmSessionInner;
+use crate::lsm::lsm_session::LsmSession;
 use crate::lsm::LsmMetrics;
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use super::lsm_backend::{LsmFileBackend, LsmLog};
 use crate::lsm::mem_table::MemTable;
 use crate::lsm::multi_cursor::{CursorRepr, MultiCursor};
+use crate::transaction::TransactionState;
 
 #[derive(Clone)]
 pub struct LsmKv {
-    inner: Arc<LsmKvInner>,
+    pub(crate) inner: Arc<LsmKvInner>,
 }
 
 impl LsmKv {
@@ -54,8 +55,24 @@ impl LsmKv {
     }
 
     pub fn open_cursor(&self) -> KvCursor {
-        let multi_cursor = self.inner.open_multi_cursor();
+        let multi_cursor = self.inner.open_multi_cursor(None);
         KvCursor::new(self.inner.clone(), multi_cursor)
+    }
+
+    pub(crate) fn open_multi_cursor(&self, session: Option<&LsmSession>) -> MultiCursor {
+        self.inner.open_multi_cursor(session)
+    }
+
+    pub fn new_session(&self) -> LsmSession {
+        self.inner.new_session()
+    }
+
+    pub fn start_transaction(&self) -> DbResult<()> {
+        self.inner.indeed_start_transaction(TransactionState::User)
+    }
+
+    pub fn start_transaction_with_session(&self, _id: NonZeroU64) -> DbResult<()> {
+        unimplemented!()
     }
 
     pub fn put<K, V>(&self, key: K, value: V) -> DbResult<()>
@@ -63,18 +80,20 @@ impl LsmKv {
         K: AsRef<[u8]>,
         V: AsRef<[u8]>,
     {
-        self.inner.start_transaction()?;
-        self.inner.put(key.as_ref(), value.as_ref())?;
-        self.inner.commit()
+        let mut session = self.new_session();
+        session.start_transaction(TransactionType::Write)?;
+        session.put(key.as_ref(), value.as_ref())?;
+        self.inner.commit(&mut session)
     }
 
     pub fn delete<K>(&self, key: K) -> DbResult<()>
     where
         K: AsRef<[u8]>
     {
-        self.inner.start_transaction()?;
-        self.inner.delete(key.as_ref())?;
-        self.inner.commit()
+        let mut session = self.new_session();
+        session.start_transaction(TransactionType::Write)?;
+        session.delete(key.as_ref())?;
+        self.inner.commit(&mut session)
     }
 
     pub fn get<'a, K>(&self, key: K) -> DbResult<Option<Arc<[u8]>>>
@@ -123,28 +142,12 @@ impl LsmKv {
 
 }
 
-struct MemTableCollection {
-    main: MemTable,
-    sessions: HashMap<NonZeroU64, LsmSessionInner>,
-}
-
-impl MemTableCollection {
-
-    fn new() -> MemTableCollection {
-        MemTableCollection {
-            main: MemTable::new(),
-            sessions: HashMap::new(),
-        }
-    }
-
-}
-
 pub(crate) struct LsmKvInner {
     backend: Option<Box<LsmFileBackend>>,
     log: Option<LsmLog>,
     snapshot: Mutex<LsmSnapshot>,
-    mem_table: Mutex<MemTableCollection>,
-    in_transaction: Cell<bool>,
+    main_mem_table: Mutex<MemTable>,
+    transaction: Mutex<TransactionState>,
     /// Operation count after last sync,
     /// including insert/delete
     op_count: AtomicUsize,
@@ -203,8 +206,8 @@ impl LsmKvInner {
             backend,
             log,
             snapshot: Mutex::new(snapshot),
-            mem_table: Mutex::new(MemTableCollection::new()),
-            in_transaction: Cell::new(false),
+            main_mem_table: Mutex::new(mem_table),
+            transaction: Mutex::new(TransactionState::NoTrans),
             op_count: AtomicUsize::new(0),
             metrics,
             config,
@@ -216,10 +219,16 @@ impl LsmKvInner {
         self.metrics.clone()
     }
 
-    fn open_multi_cursor(&self) -> MultiCursor {
-        let mem_table_col = self.mem_table.lock().unwrap();
-        let mem_table = &mem_table_col.main;
-        let mem_table_cursor = mem_table.open_cursor();
+    fn open_multi_cursor(&self, session: Option<&LsmSession>) -> MultiCursor {
+        let mem_table_cursor = match session {
+            Some(session) => {
+                session.mem_table.open_cursor()
+            }
+            None => {
+                let mem_table = self.main_mem_table.lock().unwrap();
+                mem_table.open_cursor()
+            }
+        };
 
         let snapshot = self.snapshot.lock().unwrap();
 
@@ -246,118 +255,59 @@ impl LsmKvInner {
         MultiCursor::new(cursors)
     }
 
-    fn start_transaction(&self) -> DbResult<()> {
+    pub(crate) fn auto_start_transaction(&self) -> DbResult<()> {
+        self.indeed_start_transaction(TransactionState::DbAuto(Cell::new(1)))
+    }
+
+    fn indeed_start_transaction(&self, state: TransactionState) -> DbResult<()> {
+        {
+            let t_ref = self.transaction.lock()?;
+            if *t_ref != TransactionState::NoTrans {
+                return Err(DbErr::StartTransactionInAnotherTransaction);
+            }
+        }
+
         if let Some(log) = &self.log {
             log.start_transaction()?;
         }
 
-        self.in_transaction.set(true);
-
-        Ok(())
-    }
-
-    pub fn new_session(&self) -> NonZeroU64 {
-        let mut buffer: [u8; 8] = [0; 8];
-        getrandom::getrandom(&mut buffer).unwrap();
-        let id = NonZeroU64::new(u64::from_le_bytes(buffer)).unwrap();
-
-        let mut mem_table_col = self.mem_table.lock().unwrap();
-        mem_table_col.sessions.insert(id, LsmSessionInner::new());
-
-        id
-    }
-
-    pub fn remove_session(&self, id: NonZeroU64) {
-        let mut mem_table_col = self.mem_table.lock().unwrap();
-        mem_table_col.sessions.remove(&id);
-    }
-
-    pub fn put(&self, key: &[u8], value: &[u8]) -> DbResult<()> {
-        self.put_internal(key, value, None)
-    }
-
-    fn put_internal(&self, key: &[u8], value: &[u8], session: Option<NonZeroU64>) -> DbResult<()> {
-        if !self.in_transaction.get() {
-            return Err(DbErr::NoTransactionStarted);
-        }
-
-        if let Some(log) = &self.log {
-            log.put(key, value)?;
-        }
-
         {
-            let mut mem_table_col = self.mem_table.lock()?;
-
-            match session {
-                Some(id) => {
-                    let session = mem_table_col.sessions.get_mut(&id).unwrap();
-                    session.mem_table.put(key, value, false);
-                }
-                None => {
-                    let session_empty = mem_table_col.sessions.is_empty();
-                    mem_table_col.main.put(key, value, session_empty);
-                }
-            }
+            let mut t_ref = self.transaction.lock()?;
+            *t_ref = state;
         }
-
-        self.op_count.fetch_add(1, Ordering::Relaxed);
 
         Ok(())
     }
 
-    pub fn delete(&self, key: &[u8]) -> DbResult<()> {
-        self.delete_internal(key, None)
+    fn new_session(&self) -> LsmSession {
+        let id = (self.op_count.load(Ordering::SeqCst) + 1) as u64;
+        let mem_table = {
+            let m = self.main_mem_table.lock().unwrap();
+            m.clone()
+        };
+        LsmSession::new(id, mem_table, self.log.is_some())
     }
 
-    fn delete_internal(&self, key: &[u8], session: Option<NonZeroU64>) -> DbResult<()> {
-        if !self.in_transaction.get() {
-            return Err(DbErr::NoTransactionStarted);
-        }
+    pub(crate) fn commit(&self, session: &mut LsmSession) -> DbResult<()> {
+        // TODO: check id of session
 
         if let Some(log) = &self.log {
-            log.delete(key)?;
-        }
-
-        {
-            let mut mem_table_col = self.mem_table.lock()?;
-
-            match session {
-                Some(id) => {
-                    let session = mem_table_col.sessions.get_mut(&id).unwrap();
-                    session.mem_table.delete(key, false);
-                }
-                None => {
-                    let session_empty = mem_table_col.sessions.is_empty();
-                    mem_table_col.main.delete(key, session_empty);
-                }
-            }
-        }
-
-        self.op_count.fetch_add(1, Ordering::Relaxed);
-
-        Ok(())
-    }
-
-    fn commit(&self) -> DbResult<()> {
-        if !self.in_transaction.get() {
-            return Err(DbErr::NoTransactionStarted);
-        }
-
-        if let Some(log) = &self.log {
-            let _commit_result = log.commit()?;
+            log.start_transaction()?;
+            let _commit_result = log.commit(session.log_buffer())?;
             // let mut snapshot = self.snapshot.lock()?;
             // snapshot.log_offset = commit_result.offset;
         }
 
+        let mut mem_table_col = self.main_mem_table.lock()?;
+        *mem_table_col = session.mem_table.clone();
+
         if let Some(backend) = &self.backend {
-            let mut mem_table_col = self.mem_table.lock()?;
-            let mem_table = &mut mem_table_col.main;
             let mut snapshot = self.snapshot.lock()?;
 
-            let store_bytes = mem_table.store_bytes();
+            let store_bytes = mem_table_col.store_bytes();
             if self.should_sync(store_bytes) {
                 backend.sync_latest_segment(
-                    mem_table,
+                    &mem_table_col,
                     &mut snapshot,
                 )?;
                 backend.checkpoint_snapshot(&mut snapshot)?;
@@ -366,9 +316,8 @@ impl LsmKvInner {
                     log.shrink(&mut snapshot)?;
                 }
 
-                mem_table.clear();
+                mem_table_col.clear();
 
-                self.op_count.store(0, Ordering::Relaxed);
                 self.metrics.add_sync_count();
             } else if LsmKvInner::should_minor_compact(&snapshot) {
                 self.minor_compact(backend, &mut snapshot)?;
@@ -377,7 +326,8 @@ impl LsmKvInner {
             }
         }
 
-        self.in_transaction.set(false);
+        self.op_count.store(session.id() as usize, Ordering::SeqCst);
+        session.finished_transaction();
 
         Ok(())
     }
@@ -402,7 +352,8 @@ impl LsmKvInner {
 
     #[inline]
     fn should_sync(&self, store_bytes: usize) -> bool {
-        if self.op_count.load(Ordering::Relaxed) >= 1000 {
+        let op_count = self.op_count.load(Ordering::SeqCst);
+        if op_count % 1000 == 0 && op_count != 0 {
             return true;
         }
 
@@ -432,15 +383,15 @@ impl LsmKvInner {
 
     fn force_sync_last_segment(&mut self) -> DbResult<()> {
         if let Some(backend) = &self.backend {
-            let mut mem_table = self.mem_table.lock().unwrap();
+            let mut mem_table = self.main_mem_table.lock().unwrap();
             let mut snapshot = self.snapshot.lock()?;
 
-            if mem_table.main.len() == 0 {
+            if mem_table.len() == 0 {
                 return Ok(())
             }
 
             backend.sync_latest_segment(
-                &mut mem_table.main,
+                &mem_table,
                 &mut snapshot,
             )?;
             backend.checkpoint_snapshot(&mut snapshot)?;

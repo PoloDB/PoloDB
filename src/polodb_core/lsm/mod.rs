@@ -10,10 +10,12 @@ mod lsm_snapshot;
 mod mem_table;
 mod kv_cursor;
 mod lsm_tree;
-mod multi_cursor;
+pub(crate) mod multi_cursor;
 mod lsm_metrics;
 mod lsm_session;
 
 pub use lsm_kv::LsmKv;
+pub(crate) use lsm_kv::LsmKvInner;
 pub use kv_cursor::KvCursor;
 pub use lsm_metrics::LsmMetrics;
+pub use lsm_session::LsmSession;

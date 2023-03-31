@@ -75,6 +75,10 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         }
     }
 
+    pub(super) fn update_root(&mut self, root: Arc<RwLock<TreeNode<K, V>>>) {
+        self.root = root;
+    }
+
     pub fn clear(&mut self) {
         let empty = TreeNode::<K, V>::new();
         self.root = Arc::new(RwLock::new(empty));
@@ -88,7 +92,7 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         self.update(key, LsmTreeValueMarker::Deleted)
     }
 
-    fn update(&self, key: K, value: LsmTreeValueMarker<V>) -> LsmTree<K, V> {
+    pub fn update(&self, key: K, value: LsmTreeValueMarker<V>) -> LsmTree<K, V> {
         let insert_result = LsmTree::update_with_node(self.root.clone(), key, value);
 
         match insert_result {

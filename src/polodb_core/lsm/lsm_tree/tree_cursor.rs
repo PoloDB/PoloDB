@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::cmp::{min, Ordering};
 use std::sync::{Arc, RwLock};
 use smallvec::{SmallVec, smallvec};
+use crate::lsm::lsm_tree::LsmTree;
 use super::lsm_tree::TreeNode;
 use super::LsmTreeValueMarker;
 
@@ -233,6 +234,37 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
         let old_val = back_guard.data[index].value.clone();
         back_guard.data[index].value = value;
         old_val
+    }
+
+    pub(crate) fn update(&mut self, lsm_tree: &mut LsmTree<K, V>, value: &LsmTreeValueMarker<V>) {
+        let stack_len = self.stack.len() as i64;
+        if stack_len == 0 {
+            return;
+        }
+        let mut index = stack_len - 1;
+
+        while index >= 0 {
+            let node = self.stack[index as usize].clone();
+            let data_index = self.indexes[index as usize];
+            let node_reader = node.read().unwrap();
+            let mut cloned = node_reader.clone();
+
+            if index == stack_len - 1 {
+                cloned.data[data_index].value = value.clone();
+                self.stack[index as usize] = Arc::new(RwLock::new(cloned));
+            } else {
+                let next = self.stack[(index + 1) as usize].clone();
+                if data_index == cloned.data.len() {
+                    cloned.right = Some(next);
+                } else {
+                    cloned.data[index as usize].left = Some(next);
+                }
+            }
+
+            index -= 1;
+        }
+
+        lsm_tree.update_root(self.stack[0].clone());
     }
 
     pub(crate) fn reset(&mut self) {

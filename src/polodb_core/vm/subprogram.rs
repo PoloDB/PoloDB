@@ -37,7 +37,7 @@ impl SubProgram {
 
         let mut codegen = Codegen::new(skip_annotation);
 
-        codegen.emit_open_read(col_spec.info.root_pid);
+        codegen.emit_open_read(col_spec._id.clone().into());
 
         codegen.emit_query_layout(
             query,
@@ -60,7 +60,7 @@ impl SubProgram {
     ) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation);
 
-        codegen.emit_open_write(col_spec.info.root_pid);
+        codegen.emit_open_write(col_spec._id.clone().into());
 
         codegen.emit_query_layout(
             query.unwrap(),
@@ -82,7 +82,7 @@ impl SubProgram {
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
 
-        codegen.emit_open_read(col_spec.info.root_pid);
+        codegen.emit_open_read(col_spec._id.clone().into());
 
         codegen.emit_goto(DbOp::Rewind, close_label);
 
@@ -335,14 +335,13 @@ mod tests {
     use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
     use crate::vm::SubProgram;
 
-    fn new_spec<T: Into<String>>(name: T, root_pid: u32) -> CollectionSpecification {
+    fn new_spec<T: Into<String>>(name: T) -> CollectionSpecification {
         CollectionSpecification {
             _id: name.into(),
             collection_type: CollectionType::Collection,
             info: CollectionSpecificationInfo {
                 uuid: None,
                 create_at: DateTime::now(),
-                root_pid,
             },
             indexes: HashMap::new(),
         }
@@ -351,7 +350,7 @@ mod tests {
     #[test]
     fn print_program() {
         // let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let program = SubProgram::compile_query_all(&col_spec, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
@@ -383,7 +382,7 @@ mod tests {
             "name": "Vincent Chan",
             "age": 32,
         };
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
@@ -436,7 +435,7 @@ mod tests {
 
     #[test]
     fn print_query_by_primary_key() {
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let test_doc = doc! {
             "_id": 6,
             "age": 32,
@@ -473,7 +472,7 @@ mod tests {
 
     #[test]
     fn query_by_logic_and() {
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let test_doc = doc! {
             "$and": [
                 doc! {
@@ -536,7 +535,7 @@ mod tests {
 
     #[test]
     fn print_logic_or() {
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let test_doc = doc! {
             "$or": [
                 doc! {
@@ -609,7 +608,7 @@ mod tests {
 
     #[test]
     fn print_complex_print() {
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let test_doc = doc! {
             "age": doc! {
                 "$gt": 3,
@@ -669,7 +668,7 @@ mod tests {
 
     #[test]
     fn print_update() {
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let query_doc = doc! {
             "_id": doc! {
                 "$gt": 3
