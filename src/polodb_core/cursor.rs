@@ -40,21 +40,36 @@ impl CursorItem {
 /// Cursor is struct pointing on
 /// a value on the kv engine
 pub(crate) struct Cursor {
-    prefix:    Bson,
-    kv_cursor: MultiCursor,
+    prefix:       Bson,
+    prefix_bytes: Vec<u8>,
+    kv_cursor:    MultiCursor,
+    current_key:  Option<Arc<[u8]>>,
 }
 
 impl Cursor {
 
     pub fn new<T: Into<Bson>>(prefix: T, kv_cursor: MultiCursor) -> Cursor {
+        let prefix = prefix.into();
+        let mut prefix_bytes = Vec::new();
+        crate::utils::bson::stacked_key_bytes(&mut prefix_bytes, &prefix).unwrap();
         Cursor {
-            prefix: prefix.into(),
+            prefix,
+            prefix_bytes,
             kv_cursor,
+            current_key: None,
         }
     }
 
-    pub fn reset(&mut self) {
-        self.kv_cursor.reset();
+    pub fn reset(&mut self) -> DbResult<()> {
+        let key_buffer = crate::utils::bson::stacked_key([
+            &self.prefix,
+        ])?;
+
+        self.kv_cursor.seek(&key_buffer)?;
+
+        self.current_key = self.kv_cursor.key();
+
+        Ok(())
     }
 
     pub fn reset_by_pkey(&mut self, pkey: &Bson) -> DbResult<bool> {
@@ -65,28 +80,54 @@ impl Cursor {
 
         self.kv_cursor.seek(&key_buffer)?;
 
-        let key = self.kv_cursor.key();
-        if let Some(found) = key {
+        self.current_key = self.kv_cursor.key();
+        if let Some(found) = &self.current_key {
             return Ok(found.as_ref().cmp(key_buffer.as_slice()) == Ordering::Equal);
         }
         return Ok(false)
     }
 
     pub fn peek_data(&self, db: &LsmKvInner) -> DbResult<Option<Arc<[u8]>>> {
-        self.kv_cursor.value(db)
+        if let Some(current_key) = &self.current_key {
+            if !is_prefix_with(&current_key, &self.prefix_bytes) {
+                return Ok(None);
+            }
+
+            self.kv_cursor.value(db)
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn update_current(&mut self, _doc: &Document) -> DbResult<()> {
         unimplemented!()
     }
 
-    #[inline]
     pub fn has_next(&self) -> bool {
-        !self.kv_cursor.done()
+        if self.kv_cursor.done() {
+            return false;
+        }
+
+        if let Some(current_key) = &self.current_key {
+            if !is_prefix_with(&current_key, &self.prefix_bytes) {
+                return false;
+            }
+        }
+
+        true
     }
 
     pub fn next(&mut self) -> DbResult<()> {
         self.kv_cursor.next()
     }
 
+}
+
+#[inline]
+fn is_prefix_with(target: &[u8], prefix: &[u8]) -> bool {
+    if target.len() < prefix.len() {
+        return false;
+    }
+
+    target[0..prefix.len()].cmp(prefix) == Ordering::Equal
 }

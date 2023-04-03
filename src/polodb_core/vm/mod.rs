@@ -99,27 +99,29 @@ impl VM {
 
     fn open_read(&mut self, prefix: Bson) -> DbResult<()> {
         self.auto_start_transaction(TransactionType::Read)?;
-        let cursor = {
+        let mut cursor = {
             let session = self.session.lock()?;
             self.kv_engine.open_multi_cursor(Some(&session.kv_session))
         };
+        cursor.go_to_min()?;
         self.r1 = Some(Cursor::new(prefix, cursor));
         Ok(())
     }
 
     fn open_write(&mut self, prefix: Bson) -> DbResult<()> {
         self.auto_start_transaction(TransactionType::Write)?;
-        let cursor = {
+        let mut cursor = {
             let session = self.session.lock()?;
             self.kv_engine.open_multi_cursor(Some(&session.kv_session))
         };
+        cursor.go_to_min()?;
         self.r1 = Some(Cursor::new(prefix, cursor));
         Ok(())
     }
 
     fn reset_cursor(&mut self, is_empty: &Cell<bool>) -> DbResult<()> {
         let cursor = self.r1.as_mut().unwrap();
-        cursor.reset();
+        cursor.reset()?;
         if cursor.has_next() {
             let item = cursor.peek_data(self.kv_engine.inner.as_ref())?.unwrap();
             let doc = bson::from_slice(item.as_ref())?;

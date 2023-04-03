@@ -46,21 +46,21 @@ fn test_insert_struct() {
         typed_collection.insert_many(books).unwrap();
 
         let result = typed_collection.find_one(doc! {
-                "title": "The Grapes of Wrath",
-            }).unwrap();
+            "title": "The Grapes of Wrath",
+        }).unwrap();
         let book = result.unwrap();
         assert_eq!(book.author, "John Steinbeck");
 
         let result = typed_collection.find_many(doc! {
-                "$or": [
-                    {
-                        "title": "The Grapes of Wrath",
-                    },
-                    {
-                        "title": "To Kill a Mockingbird",
-                    }
-                ]
-            }).unwrap();
+            "$or": [
+                {
+                    "title": "The Grapes of Wrath",
+                },
+                {
+                    "title": "To Kill a Mockingbird",
+                }
+            ]
+        }).unwrap();
         assert_eq!(result.len(), 2);
     });
 }

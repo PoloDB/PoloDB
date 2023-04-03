@@ -135,17 +135,22 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
     }
 
     pub fn marker(&self) -> Option<LsmTreeValueMarker<()>> {
-        self.stack.last().map(|back| {
-            let back_guard = back.read().unwrap();
-            let index = *self.indexes.last().unwrap();
-            let value = &back_guard.data[index].value;
-            match value {
-                LsmTreeValueMarker::Deleted => LsmTreeValueMarker::Deleted,
-                LsmTreeValueMarker::DeleteStart => LsmTreeValueMarker::DeleteStart,
-                LsmTreeValueMarker::DeleteEnd => LsmTreeValueMarker::DeleteEnd,
-                LsmTreeValueMarker::Value(_) => LsmTreeValueMarker::Value(()),
-            }
-        })
+        self.stack.last()
+            .map(|back| {
+                let back_guard = back.read().unwrap();
+                if back_guard.data.is_empty() {
+                    return None
+                }
+                let index = *self.indexes.last().unwrap();
+                let value = &back_guard.data[index].value;
+                Some(match value {
+                    LsmTreeValueMarker::Deleted => LsmTreeValueMarker::Deleted,
+                    LsmTreeValueMarker::DeleteStart => LsmTreeValueMarker::DeleteStart,
+                    LsmTreeValueMarker::DeleteEnd => LsmTreeValueMarker::DeleteEnd,
+                    LsmTreeValueMarker::Value(_) => LsmTreeValueMarker::Value(()),
+                })
+            })
+            .flatten()
     }
 
     pub fn tuple(&self) -> Option<(K, LsmTreeValueMarker<V>)> {

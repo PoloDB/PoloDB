@@ -5,7 +5,6 @@
  */
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::num::{NonZeroU32, NonZeroU64};
 use bson::{Binary, Bson, DateTime, Document};
 use serde::Serialize;
 use super::db::DbResult;
@@ -79,7 +78,7 @@ impl SessionInner {
     }
 
     pub fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        if self.auto_count == 0 && self.kv_session.transaction().is_some() {
+        if self.auto_count == 0 {
             if self.kv_session.transaction().is_some() {  // manually
                 return Ok(());
             }
@@ -132,17 +131,10 @@ impl DbContext {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file(path: &Path, config: Config) -> DbResult<DbContext> {
         let metrics = Metrics::new();
-        let page_size = NonZeroU32::new(4096).unwrap();
-
         let kv_engine = LsmKv::open_file(path)?;
 
-        let backend = Box::new(FileBackend::open(
-            path, page_size, config.clone(), metrics.clone(),
-        )?);
         DbContext::open_with_backend(
             kv_engine,
-            backend,
-            page_size,
             config,
             metrics,
         )
@@ -161,16 +153,9 @@ impl DbContext {
 
     pub fn open_memory(config: Config) -> DbResult<DbContext> {
         let metrics = Metrics::new();
-        let page_size = NonZeroU32::new(4096).unwrap();
-        let backend = Box::new(MemoryBackend::new(
-            page_size,
-            NonZeroU64::new(config.get_init_block_count()).unwrap(),
-        ));
         let kv_engine = LsmKv::open_memory()?;
         DbContext::open_with_backend(
             kv_engine,
-            backend,
-            page_size,
             config,
             metrics,
         )
@@ -178,8 +163,6 @@ impl DbContext {
 
     fn open_with_backend(
         kv_engine: LsmKv,
-        backend: Box<dyn Backend + Send>,
-        page_size: NonZeroU32,
         config: Config,
         metrics: Metrics,
     ) -> DbResult<DbContext> {
@@ -310,7 +293,7 @@ impl DbContext {
     }
 
     fn auto_start_transaction(&mut self, session: &mut SessionInner, ty: TransactionType) -> DbResult<()> {
-        session.kv_session.start_transaction(ty)
+        session.auto_start_transaction(ty)
     }
 
     fn auto_commit(&self, session: &mut SessionInner) -> DbResult<()> {
