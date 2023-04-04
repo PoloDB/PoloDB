@@ -145,6 +145,8 @@ pub enum DbOp {
     // 1 byte
     UpdateCurrent,
 
+    DeleteCurrent,
+
     Pop,
 
     // 5 bytes

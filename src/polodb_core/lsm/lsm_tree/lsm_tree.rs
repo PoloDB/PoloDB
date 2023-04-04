@@ -75,8 +75,10 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         }
     }
 
-    pub(super) fn update_root(&mut self, root: Arc<RwLock<TreeNode<K, V>>>) {
-        self.root = root;
+    pub(super) fn new_with_root(root: Arc<RwLock<TreeNode<K, V>>>) -> LsmTree<K, V>  {
+        LsmTree {
+            root,
+        }
     }
 
     pub fn clear(&mut self) {

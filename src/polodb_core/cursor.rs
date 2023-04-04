@@ -4,38 +4,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use std::cmp::Ordering;
-use std::sync::{Arc, Mutex};
-use bson::{Document, Bson};
-use crate::btree::BTreePageDelegateWithKey;
+use std::sync::Arc;
+use bson::Bson;
 use crate::DbResult;
 use crate::lsm::LsmKvInner;
 use crate::lsm::multi_cursor::MultiCursor;
-
-#[derive(Clone)]
-struct CursorItem {
-    node:         Arc<Mutex<BTreePageDelegateWithKey>>,
-    index:        usize,  // pointer point to the current node
-}
-
-impl CursorItem {
-
-    fn new(node: BTreePageDelegateWithKey, index: usize) -> CursorItem {
-        CursorItem {
-            node: Arc::new(Mutex::new(node)),
-            index,
-        }
-    }
-
-    fn done(&self) -> bool {
-        let node_inner = self.node.lock().unwrap();
-        self.index >= node_inner.len()
-    }
-
-    fn right_pid(&self) -> u32 {
-        let node_inner = self.node.lock().unwrap();
-        node_inner.right_pid
-    }
-}
 
 /// Cursor is struct pointing on
 /// a value on the kv engine
@@ -58,6 +31,11 @@ impl Cursor {
             kv_cursor,
             current_key: None,
         }
+    }
+
+    #[inline]
+    pub fn multi_cursor_mut(&mut self) -> &mut MultiCursor {
+        &mut self.kv_cursor
     }
 
     pub fn reset(&mut self) -> DbResult<()> {
@@ -99,10 +77,6 @@ impl Cursor {
         }
     }
 
-    pub fn update_current(&mut self, _doc: &Document) -> DbResult<()> {
-        unimplemented!()
-    }
-
     pub fn has_next(&self) -> bool {
         if self.kv_cursor.done() {
             return false;
@@ -112,13 +86,16 @@ impl Cursor {
             if !is_prefix_with(&current_key, &self.prefix_bytes) {
                 return false;
             }
+            true
+        } else {
+            false
         }
-
-        true
     }
 
     pub fn next(&mut self) -> DbResult<()> {
-        self.kv_cursor.next()
+        self.kv_cursor.next()?;
+        self.current_key = self.kv_cursor.key();
+        Ok(())
     }
 
 }

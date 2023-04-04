@@ -634,6 +634,10 @@ impl Codegen {
         Ok(())
     }
 
+    pub(super) fn emit_delete_operation(&mut self) {
+        self.emit(DbOp::DeleteCurrent);
+    }
+
     pub(super) fn emit_update_operation(&mut self, update: &Document) -> DbResult<()> {
         for (key, value) in update.iter() {
             path_hint!(self, key.clone(), {

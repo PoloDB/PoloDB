@@ -4,6 +4,7 @@ use crate::DbResult;
 use crate::lsm::lsm_kv::LsmKvInner;
 use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
+use crate::lsm::mem_table::MemTable;
 use crate::lsm::multi_cursor::CursorRepr;
 
 /// This is a cursor used to iterate
@@ -25,8 +26,13 @@ impl MultiCursor {
         }
     }
 
-    pub fn update_current(&mut self, lsm_tree: &mut LsmTree<Arc<[u8]>, Arc<[u8]>>, value: &LsmTreeValueMarker<Arc<[u8]>>) {
-        self.cursors[0].update_current(lsm_tree, value);
+    pub fn update_current(&mut self, value: &[u8]) -> Option<(LsmTree<Arc<[u8]>, Arc<[u8]>>, Option<Arc<[u8]>>)> {
+        let buf: Arc<[u8]> = value.into();
+        self.cursors[0].update_current(&LsmTreeValueMarker::Value(buf))
+    }
+
+    pub fn delete_current(&mut self) -> Option<(LsmTree<Arc<[u8]>, Arc<[u8]>>, Option<Arc<[u8]>>)> {
+        self.cursors[0].update_current(&LsmTreeValueMarker::Deleted)
     }
 
     #[allow(dead_code)]

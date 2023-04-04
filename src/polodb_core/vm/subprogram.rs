@@ -67,7 +67,28 @@ impl SubProgram {
             |codegen| -> DbResult<()> {
                 codegen.emit_update_operation(update)?;
                 codegen.emit(DbOp::Pop);
-                codegen.emit(DbOp::IncR2);
+                Ok(())
+            },
+            is_many
+        )?;
+
+        Ok(codegen.take())
+    }
+
+    pub(crate) fn compile_delete(
+        col_name: &str,
+        query: Option<&Document>,
+        skip_annotation: bool, is_many: bool,
+    ) -> DbResult<SubProgram> {
+        let mut codegen = Codegen::new(skip_annotation);
+
+        codegen.emit_open_write(col_name.into());
+
+        codegen.emit_query_layout(
+            query.unwrap(),
+            |codegen| -> DbResult<()> {
+                codegen.emit_delete_operation();
+                codegen.emit(DbOp::Pop);
                 Ok(())
             },
             is_many
@@ -77,12 +98,16 @@ impl SubProgram {
     }
 
     pub(crate) fn compile_query_all(col_spec: &CollectionSpecification, skip_annotation: bool) -> DbResult<SubProgram> {
+        SubProgram::compile_query_all_by_name(col_spec.name(), skip_annotation)
+    }
+
+    pub(crate) fn compile_query_all_by_name(col_name: &str, skip_annotation: bool) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation);
         let result_label = codegen.new_label();
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
 
-        codegen.emit_open_read(col_spec._id.clone().into());
+        codegen.emit_open_read(col_name.into());
 
         codegen.emit_goto(DbOp::Rewind, close_label);
 

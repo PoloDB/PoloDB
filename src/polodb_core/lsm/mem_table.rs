@@ -5,8 +5,8 @@ use super::lsm_tree::LsmTree;
 
 #[derive(Clone)]
 pub(crate) struct MemTable {
-    segments:         LsmTree<Arc<[u8]>, Arc<[u8]>>,
-    store_bytes:      usize,
+    segments:    LsmTree<Arc<[u8]>, Arc<[u8]>>,
+    store_bytes: usize,
 }
 
 impl MemTable {
@@ -84,6 +84,15 @@ impl MemTable {
     #[inline]
     pub fn store_bytes(&self) -> usize {
         self.store_bytes
+    }
+
+    #[inline]
+    pub fn store_bytes_mut(&mut self) -> &mut usize {
+        &mut self.store_bytes
+    }
+
+    pub fn update_root(&mut self, new_tree: LsmTree<Arc<[u8]>, Arc<[u8]>>) {
+        self.segments = new_tree;
     }
 
     #[inline]

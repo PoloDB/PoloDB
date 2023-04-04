@@ -302,7 +302,8 @@ impl DbContext {
     }
 
     fn auto_rollback(&self, session: &mut SessionInner) -> DbResult<()> {
-        unimplemented!()
+        // unimplemented!()
+        Ok(())
     }
 
     pub fn create_collection_by_id(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<CollectionSpecification> {
@@ -586,13 +587,11 @@ impl DbContext {
         self.find_internal(session, col_spec, query)
     }
 
-    fn find_internal(&mut self, session: Arc<Mutex<SessionInner>>, col_spec: &CollectionSpecification, query: Option<Document>) -> DbResult<DbHandle> {
-        // let meta_source = DbContext::get_meta_source(session)?;
-        // let collection_meta = DbContext::find_collection_root_pid_by_id(
-        //     session, 0,
-        //     meta_source.meta_pid, col_id
-        // )?;
-
+    fn find_internal(
+        &mut self, session: Arc<Mutex<SessionInner>>,
+        col_spec: &CollectionSpecification,
+        query: Option<Document>,
+    ) -> DbResult<DbHandle> {
         let subprogram = match query {
             Some(query) => SubProgram::compile_query(
                 col_spec,
@@ -637,6 +636,7 @@ impl DbContext {
         )?;
 
         let mut vm = VM::new(self.kv_engine.clone(), session, subprogram);
+        vm.set_rollback_on_drop(true);
         vm.execute()?;
 
         Ok(vm.r2 as usize)
@@ -677,23 +677,25 @@ impl DbContext {
     }
 
     pub fn delete(&mut self, col_name: &str, query: Document, is_many: bool, session: Arc<Mutex<SessionInner>>) -> DbResult<usize> {
-        {
-            let mut session = session.lock()?;
-            self.auto_start_transaction(&mut session, TransactionType::Write)?;
-        }
+        // {
+        //     let mut session = session.lock()?;
+        //     self.auto_start_transaction(&mut session, TransactionType::Write)?;
+        // }
 
-        let result = match self.internal_delete_by_query(session.clone(), col_name, query, is_many) {
-            Ok(result) => {
-                let mut session = session.lock()?;
-                self.auto_commit(&mut session)?;
-                result
-            }
-            Err(err) => {
-                let mut session = session.lock()?;
-                self.auto_rollback(&mut session)?;
-                return Err(err);
-            }
-        };
+        let result = self.internal_delete_by_query(session.clone(), col_name, query, is_many)?;
+
+        // let result = match self.internal_delete_by_query(session.clone(), col_name, query, is_many) {
+        //     Ok(result) => {
+        //         let mut session = session.lock()?;
+        //         self.auto_commit(&mut session)?;
+        //         result
+        //     }
+        //     Err(err) => {
+        //         let mut session = session.lock()?;
+        //         self.auto_rollback(&mut session)?;
+        //         return Err(err);
+        //     }
+        // };
 
         Ok(result)
     }
@@ -711,17 +713,18 @@ impl DbContext {
     // }
 
     fn internal_delete_by_query(&mut self, session: Arc<Mutex<SessionInner>>, col_name: &str, query: Document, is_many: bool) -> DbResult<usize> {
-        // let primary_keys = self.get_primary_keys_by_query(
-        //     session,
-        //     col_name,
-        //     Some(query),
-        //     is_many,
-        // )?;
-        // {
-        //     let mut session = session.lock()?;
-        //     self.internal_delete(&mut session, col_name, &primary_keys)
-        // }
-        unimplemented!()
+        let subprogram = SubProgram::compile_delete(
+            col_name,
+            Some(&query),
+            true,
+            is_many,
+        )?;
+
+        let mut vm = VM::new(self.kv_engine.clone(), session, subprogram);
+        vm.set_rollback_on_drop(true);
+        vm.execute()?;
+
+        Ok(vm.r2 as usize)
     }
 
     fn internal_delete_all(&mut self, session: Arc<Mutex<SessionInner>>, col_name: &str) -> DbResult<usize> {
@@ -810,43 +813,57 @@ impl DbContext {
     //     Ok(true)
     // }
 
-    #[allow(dead_code)]
-    pub(crate) fn delete_by_pkey(&mut self, col_name: &str, key: &Bson, session: Arc<Mutex<SessionInner>>) -> DbResult<Option<Document>> {
-        {
+    pub fn count(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<u64> {
+        let session = self.get_session_by_id(session_id)?.clone();
+        let col = {
             let mut session = session.lock()?;
-            self.auto_start_transaction(&mut session, TransactionType::Write)?;
+            self.get_collection_meta_by_name_advanced_auto(name, false, &mut session)?
+        };
+        if col.is_none() {
+            return Ok(0);
         }
 
-        let result = match self.internal_delete_by_pkey(session.clone(), col_name, key) {
-            Ok(result) => {
-                let mut session = session.lock()?;
-                self.auto_commit(&mut session)?;
-                result
-            },
-            Err(err) => {
-                let mut session = session.lock()?;
-                self.auto_rollback(&mut session)?;
-                return Err(err);
-            },
-        };
+        let col = col.unwrap();
+        let mut count = 0;
 
-        Ok(result)
-    }
+        let mut handle = self.find_internal(session.clone(), &col, None)?;
+        handle.step()?;
 
-    fn internal_delete_by_pkey(&self, _session: Arc<Mutex<SessionInner>>, col_name: &str, key: &Bson) -> DbResult<Option<Document>> {
-        // let collection_meta = self.internal_get_collection_id_by_name(
-        //     session_id, col_name,
-        // )?;
+        while handle.has_row() {
+            count += 1;
 
-        unimplemented!();
-    }
+            handle.step()?;
+        }
 
-    pub fn count(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<u64> {
-        unimplemented!()
+        handle.commit_and_close_vm()?;
+
+        Ok(count)
     }
 
     pub(crate) fn query_all_meta(&mut self, session_id: Option<&ObjectId>) -> DbResult<Vec<Document>> {
-        unimplemented!()
+        let session = self.get_session_by_id(session_id)?.clone();
+
+        let mut handle = {
+            let subprogram = SubProgram::compile_query_all_by_name(
+                TABLE_META_PREFIX,
+                true
+            )?;
+
+            self.make_handle(session, subprogram)?
+        };
+
+        handle.step()?;
+
+        let mut result = Vec::new();
+
+        while handle.has_row() {
+            let value = handle.get();
+            result.push(value.as_document().unwrap().clone());
+
+            handle.step()?;
+        }
+
+        Ok(result)
     }
 
     pub fn start_transaction(&mut self, ty: Option<TransactionType>, session_id: Option<&ObjectId>) -> DbResult<()> {

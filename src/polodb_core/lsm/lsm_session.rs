@@ -1,8 +1,11 @@
 use std::io::Write;
 use byteorder::WriteBytesExt;
+use libc::printf;
 use crate::lsm::mem_table::MemTable;
 use crate::{DbErr, DbResult, TransactionType};
+use crate::lsm::KvCursor;
 use crate::lsm::lsm_backend::lsm_log::format;
+use crate::lsm::multi_cursor::MultiCursor;
 use crate::utils::vli;
 
 pub struct LsmSession {
@@ -95,6 +98,60 @@ impl LsmSession {
         writer.write_all(key)?;
 
         Ok(())
+    }
+
+    pub(crate) fn update_cursor_current(&mut self, cursor: &mut MultiCursor, value: &[u8]) -> DbResult<bool> {
+        let key = cursor.key();
+        if key.is_none() {
+            return Ok(false);
+        }
+        let mut result = false;
+        let key = key.as_ref().unwrap();
+
+        if let Some(log_buffer) = &mut self.log_buffer {
+            LsmSession::put_log(log_buffer, key, value)?;
+        }
+
+        let new_tree_opt = cursor.update_current(value);
+        if let Some((new_tree, legacy_value_opt)) = new_tree_opt {
+            self.mem_table.update_root(new_tree);
+
+            if let Some(legacy_value) = legacy_value_opt {
+                *self.mem_table.store_bytes_mut() -= legacy_value.len();
+                result = true;
+            }
+
+            *self.mem_table.store_bytes_mut() += value.len();
+        }
+
+        Ok(result)
+    }
+
+    pub(crate) fn delete_cursor_current(&mut self, cursor: &mut MultiCursor) -> DbResult<bool> {
+        let key = cursor.key();
+        if key.is_none() {
+            return Ok(false);
+        }
+        let mut result = false;
+        let key = key.as_ref().unwrap();
+
+        if let Some(log_buffer) = &mut self.log_buffer {
+            LsmSession::delete_log(log_buffer, key)?;
+        }
+
+        let new_tree_opt = cursor.delete_current();
+        if let Some((new_tree, legacy_value_opt)) = new_tree_opt {
+            self.mem_table.update_root(new_tree);
+
+            if let Some(legacy_value) = legacy_value_opt {
+                // The "key" and "mark" still needs space
+                // only substract the space of value here
+                *self.mem_table.store_bytes_mut() -= legacy_value.len();
+                result = true;
+            }
+        }
+
+        Ok(result)
     }
 
     pub(crate) fn finished_transaction(&mut self) {

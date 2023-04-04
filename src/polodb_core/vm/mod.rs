@@ -550,8 +550,32 @@ impl VM {
                         let top_value = &self.stack[top_index];
 
                         let doc = top_value.as_document().unwrap();
+                        let doc_buf = bson::to_vec(doc)?;
 
-                        self.r1.as_mut().unwrap().update_current(doc)?;
+                        let updated = {
+                            let cursor = self.r1.as_mut().unwrap();
+                            let mut session = self.session.lock().unwrap();
+                            session.kv_session.update_cursor_current(
+                                cursor.multi_cursor_mut(),
+                                &doc_buf,
+                            )?
+                        };
+                        if updated {
+                            self.r2 += 1;
+                        }
+
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::DeleteCurrent => {
+                        let deleted = {
+                            let cursor = self.r1.as_mut().unwrap();
+                            let mut session = self.session.lock().unwrap();
+                            session.kv_session.delete_cursor_current(cursor.multi_cursor_mut())?
+                        };
+                        if deleted {
+                            self.r2 += 1;
+                        }
 
                         self.pc = self.pc.add(1);
                     }
@@ -633,11 +657,11 @@ impl VM {
 
                     DbOp::Close => {
                         self.r1 = None;
-                        // TODO: FIXME
-                        // if self.rollback_on_drop {
-                        //     self.session.auto_commit()?;
-                        //     self.rollback_on_drop = false;
-                        // }
+                        if self.rollback_on_drop {
+                            let mut session = self.session.lock()?;
+                            self.kv_engine.inner.commit(&mut session.kv_session)?;
+                            self.rollback_on_drop = false;
+                        }
 
                         self.pc = self.pc.add(1);
                     }
@@ -665,8 +689,8 @@ impl VM {
     }
 
     pub(crate) fn commit_and_close(mut self) -> DbResult<()> {
-        // TODO: FIXME
-        // self.session.auto_commit()?;
+        let mut session = self.session.lock()?;
+        self.kv_engine.inner.commit(&mut session.kv_session)?;
         self.rollback_on_drop = false;
         Ok(())
     }

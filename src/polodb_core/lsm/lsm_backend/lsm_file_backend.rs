@@ -173,7 +173,7 @@ impl LsmFileBackendInner {
         let offset = (tuple.pid as u64) * (page_size as u64) + (tuple.offset as u64);
         self.file.seek(SeekFrom::Start(offset))?;
         let flag = self.file.read_u8()?;
-        assert_eq!(flag, format::LSM_INSERT);
+        assert!(flag == format::LSM_INSERT || flag == format::LSM_POINT_DELETE);
 
         let key_len = vli::decode_u64(&mut self.file)?;
         self.file.seek(SeekFrom::Current(key_len as i64))?;

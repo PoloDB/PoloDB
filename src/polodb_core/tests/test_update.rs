@@ -66,7 +66,7 @@ fn prepare_db_with_data(db_name: &str) -> Database {
 fn test_update_gte_set() {
     let db = prepare_db_with_data("test-update-many");
     let col = db.collection::<Document>("test");
-    col.update_many(doc! {
+    let update_result = col.update_many(doc! {
         "_id": {
             "$gte": 500,
         },
@@ -75,6 +75,7 @@ fn test_update_gte_set() {
             "content": "updated!",
         },
     }).unwrap();
+    assert_eq!(update_result.modified_count, 500);
     let result = col.find_many(doc! {
         "content": "updated!",
     }).unwrap();
@@ -127,6 +128,7 @@ fn test_update_rename() {
     let result = col.find_one(doc! {
         "_id": 0,
     }).unwrap().unwrap();
+    println!("result: {}", result);
     assert_eq!(result.get("_id").unwrap().as_i32().unwrap(), 0);
     assert!(result.get("num").is_none());
     assert_eq!(result.get("num2").unwrap().as_i32().unwrap(), 0);
