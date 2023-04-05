@@ -3,7 +3,6 @@ use std::cmp::{min, Ordering};
 use std::sync::{Arc, RwLock};
 use smallvec::{SmallVec, smallvec};
 use crate::lsm::lsm_tree::LsmTree;
-use crate::lsm::mem_table::MemTable;
 use super::lsm_tree::TreeNode;
 use super::LsmTreeValueMarker;
 
@@ -254,6 +253,12 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
             let node = self.stack[index as usize].clone();
             let data_index = self.indexes[index as usize];
             let node_reader = node.read().unwrap();
+
+            if node_reader.data.is_empty() {
+                assert_eq!(index, 0);
+                return None;
+            }
+
             let mut cloned = node_reader.clone();
 
             if index == stack_len - 1 {
@@ -277,6 +282,13 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
             legacy.unwrap().into(),
         );
         Some(result)
+    }
+
+    pub(crate) fn insert(&mut self, key: K, value: &LsmTreeValueMarker<V>) -> LsmTree<K, V> {
+        let root_node_ref = self.root.clone();
+        let mut root_tree = LsmTree::<K, V>::new_with_root(root_node_ref);
+        let new_tree = root_tree.update(key, value.clone());
+        new_tree
     }
 
     pub(crate) fn reset(&mut self) {

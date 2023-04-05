@@ -4,7 +4,6 @@ use crate::DbResult;
 use crate::lsm::lsm_kv::LsmKvInner;
 use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
-use crate::lsm::mem_table::MemTable;
 use crate::lsm::multi_cursor::CursorRepr;
 
 /// This is a cursor used to iterate
@@ -14,6 +13,8 @@ pub(crate) struct MultiCursor {
     keys: Vec<Option<Arc<[u8]>>>,
     first_result: i64,
 }
+
+type UpdateResult = Option<(LsmTree<Arc<[u8]>, Arc<[u8]>>, Option<Arc<[u8]>>)>;
 
 impl MultiCursor {
 
@@ -26,13 +27,35 @@ impl MultiCursor {
         }
     }
 
-    pub fn update_current(&mut self, value: &[u8]) -> Option<(LsmTree<Arc<[u8]>, Arc<[u8]>>, Option<Arc<[u8]>>)> {
+    pub fn update_current(&mut self, value: &[u8]) -> DbResult<UpdateResult> {
         let buf: Arc<[u8]> = value.into();
-        self.cursors[0].update_current(&LsmTreeValueMarker::Value(buf))
+        if self.first_result == 0 {
+            Ok(self.cursors[0].update_current(&LsmTreeValueMarker::Value(buf)))
+        } else {
+            let cursor = &self.cursors[self.first_result as usize];
+            let key = cursor.key().unwrap();
+            let new_tree = self.cursors[0].insert_current(key.clone(), &LsmTreeValueMarker::Value(buf));
+            let mut new_cursor = new_tree.open_cursor();
+            new_cursor.seek(key.as_ref());
+            self.cursors[0] = new_cursor.into();
+            self.first_result = 0;
+            Ok(Some((new_tree, None)))
+        }
     }
 
-    pub fn delete_current(&mut self) -> Option<(LsmTree<Arc<[u8]>, Arc<[u8]>>, Option<Arc<[u8]>>)> {
-        self.cursors[0].update_current(&LsmTreeValueMarker::Deleted)
+    pub fn delete_current(&mut self) -> DbResult<UpdateResult> {
+        if self.first_result == 0 {
+            Ok(self.cursors[0].update_current(&LsmTreeValueMarker::Deleted))
+        } else {
+            let cursor = &self.cursors[self.first_result as usize];
+            let key = cursor.key().unwrap();
+            let result = self.cursors[0].insert_current(key.clone(), &LsmTreeValueMarker::Deleted);
+            let mut new_cursor = result.open_cursor();
+            new_cursor.seek(key.as_ref());
+            self.cursors[0] = new_cursor.into();
+            self.first_result = 0;
+            Ok(Some((result, None)))
+        }
     }
 
     #[allow(dead_code)]
@@ -67,6 +90,7 @@ impl MultiCursor {
             // the key is greater than every keys in the set
             if let Some(Ordering::Greater) = tmp {
                 cursor.reset();
+                self.keys[idx] = None;
             } else {
                 self.keys[idx] = cursor.key();
             }
@@ -290,6 +314,7 @@ impl MultiCursor {
         true
     }
 
+    #[allow(dead_code)]
     pub fn reset(&mut self) {
         for cursor in &mut self.cursors {
             cursor.reset();

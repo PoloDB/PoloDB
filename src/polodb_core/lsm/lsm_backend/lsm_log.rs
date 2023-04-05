@@ -4,11 +4,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::cell::RefCell;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use byteorder::WriteBytesExt;
 use crc64fast::Digest;
 use getrandom::getrandom;
@@ -58,7 +57,7 @@ pub(crate) struct LsmCommitResult {
 }
 
 pub(crate) struct LsmLog {
-    inner: RefCell<LsmLogInner>
+    inner: Mutex<LsmLogInner>
 }
 
 impl LsmLog {
@@ -66,38 +65,38 @@ impl LsmLog {
     pub fn open(path: &Path, config: Config) -> DbResult<LsmLog> {
         let inner = LsmLogInner::open(path, config)?;
         Ok(LsmLog {
-            inner: RefCell::new(inner),
+            inner: Mutex::new(inner),
         })
     }
 
     pub fn path(&self) -> PathBuf {
-        let inner = self.inner.borrow();
+        let inner = self.inner.lock().unwrap();
         inner.file_path.to_path_buf()
     }
 
     pub fn put(&self, key: &[u8], value: &[u8]) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.put(key, value)
     }
 
     pub fn delete(&self, key: &[u8]) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.delete(key)
     }
 
     pub fn start_transaction(&self) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.start_transaction()
     }
 
     #[allow(dead_code)]
     pub fn rollback(&self) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.rollback()
     }
 
     pub fn commit(&self, buffer: Option<&[u8]>) -> DbResult<LsmCommitResult> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.commit(buffer)
     }
 
@@ -106,12 +105,12 @@ impl LsmLog {
         snapshot: &LsmSnapshot,
         mem_table: &mut MemTable,
     ) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.update_mem_table_with_latest_log(snapshot, mem_table)
     }
 
     pub fn shrink(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.shrink(snapshot)
     }
 }

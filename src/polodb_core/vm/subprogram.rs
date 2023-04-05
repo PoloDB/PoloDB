@@ -97,6 +97,38 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
+    // TODO: need test
+    pub(crate) fn compile_delete_all(
+        col_name: &str,
+        skip_annotation: bool
+    ) -> DbResult<SubProgram> {
+        let mut codegen = Codegen::new(skip_annotation);
+        let result_label = codegen.new_label();
+        let next_label = codegen.new_label();
+        let close_label = codegen.new_label();
+
+        codegen.emit_open_read(col_name.into());
+
+        codegen.emit_goto(DbOp::Rewind, close_label);
+
+        codegen.emit_goto(DbOp::Goto, result_label);
+
+        codegen.emit_label(next_label);
+        codegen.emit_goto(DbOp::Next, result_label);
+
+        codegen.emit_label(close_label);
+        codegen.emit(DbOp::Close);
+        codegen.emit(DbOp::Halt);
+
+        codegen.emit_label(result_label);
+        codegen.emit_delete_operation();
+        codegen.emit(DbOp::Pop);
+
+        codegen.emit_goto(DbOp::Goto, next_label);
+
+        Ok(codegen.take())
+    }
+
     pub(crate) fn compile_query_all(col_spec: &CollectionSpecification, skip_annotation: bool) -> DbResult<SubProgram> {
         SubProgram::compile_query_all_by_name(col_spec.name(), skip_annotation)
     }

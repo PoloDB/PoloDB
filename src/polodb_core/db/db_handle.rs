@@ -5,8 +5,8 @@
  */
 use std::fmt;
 use bson::Bson;
-use crate::vm::{VM, VmState};
 use crate::DbResult;
+use crate::vm::{VM, VmState};
 
 /**
  * A VM wrapper for Rust-level API

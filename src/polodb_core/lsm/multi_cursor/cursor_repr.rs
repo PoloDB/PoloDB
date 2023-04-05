@@ -4,7 +4,6 @@ use crate::DbResult;
 use crate::lsm::lsm_kv::LsmKvInner;
 use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker, TreeCursor};
-use crate::lsm::mem_table::MemTable;
 
 pub(crate) enum CursorRepr {
     MemTableCursor(TreeCursor<Arc<[u8]>, Arc<[u8]>>),
@@ -31,6 +30,19 @@ impl CursorRepr {
         match self {
             CursorRepr::MemTableCursor(cursor) => {
                 cursor.update(value)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn insert_current(
+        &mut self,
+        key: Arc<[u8]>,
+        value: &LsmTreeValueMarker<Arc<[u8]>>,
+    ) -> LsmTree<Arc<[u8]>, Arc<[u8]>> {
+        match self {
+            CursorRepr::MemTableCursor(cursor) => {
+                cursor.insert(key, value)
             }
             _ => unreachable!(),
         }

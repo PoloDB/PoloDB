@@ -108,7 +108,6 @@
 
 extern crate core;
 
-mod btree;
 mod page;
 mod vm;
 mod error;
@@ -120,13 +119,10 @@ mod data_ticket;
 mod meta_doc_helper;
 mod config;
 mod macros;
-mod backend;
 mod transaction;
 mod lsm;
-mod bson_utils;
 pub mod results;
 pub mod commands;
-mod data_structures;
 mod collection_info;
 
 #[cfg(not(target_arch = "wasm32"))]

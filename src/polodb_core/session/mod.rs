@@ -4,11 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 mod client_session;
-mod session;
-mod base_session;
-mod dynamic_session;
+mod session_inner;
 
 pub use client_session::ClientSession;
-pub(crate) use session::Session;
-pub(crate) use base_session::BaseSession;
-pub(crate) use dynamic_session::DynamicSession;
+pub(crate) use session_inner::SessionInner;

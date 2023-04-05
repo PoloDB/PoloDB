@@ -252,7 +252,7 @@ impl LsmFileBackendInner {
             let (key, value) = mem_table_cursor.tuple().unwrap();
             let pos = writer.write_tuple(key.as_ref(), value.as_ref())?;
 
-            segments.insert_in_place(key, pos);
+            segments.update_in_place(key, pos);
 
             mem_table_cursor.next();
         }
@@ -583,10 +583,11 @@ impl LsmFileBackendInner {
                 },
                 LsmTreeValueMarker::Value(legacy_tuple) => {
                     let offset = ((legacy_tuple.pid as usize) * (page_size as usize)) + (legacy_tuple.offset as usize);
-                    writer.write_buffer(&mmap[offset..(offset + (legacy_tuple.byte_size as usize))])?
+                    let tuple_ptr = writer.write_buffer(&mmap[offset..(offset + (legacy_tuple.byte_size as usize))])?;
+                    LsmTreeValueMarker::Value(tuple_ptr)
                 }
             };
-            segments.insert_in_place(key.clone(), tuple);
+            segments.update_in_place(key.clone(), tuple);
         }
 
         let end_ptr = writer.end()?;

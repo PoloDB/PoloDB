@@ -10,5 +10,4 @@ pub mod db_handle;
 
 pub use collection::Collection;
 pub use db::{Database, DbResult, IndexedDbContext};
-pub(crate) use context::SessionInner;
 pub(crate) use db::SHOULD_LOG;

@@ -3,11 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-mod dumper;
 mod ipc;
 mod server;
 
-use crate::dumper::dump;
 use polodb_core::Database;
 use clap::{App, Arg};
 use error_chain::error_chain;
@@ -35,14 +33,6 @@ fn main() {
         .version(version.as_str())
         .about("Command line tool for PoloDB")
         .author("Vincent Chan <okcdz@diverse.space>")
-        .subcommand(App::new("dump")
-            .about("dump the database to text")
-            .arg(
-                Arg::with_name("path")
-                    .index(1)
-                    .required(true)
-            )
-            .arg(Arg::with_name("detail").required(false)))
         .subcommand(App::new("serve")
             .about("attach the database, start the tcp server")
             .arg(
@@ -104,13 +94,6 @@ fn main() {
         } else {
             eprintln!("you should pass either --path or --memory");
         }
-        return;
-    }
-
-    if let Some(sub) = matches.subcommand_matches("dump") {
-        let path = sub.value_of("path").expect("no input path");
-        let detail = sub.is_present("detail");
-        dump(path, detail);
         return;
     }
 

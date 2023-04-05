@@ -5,7 +5,6 @@
  */
 use std::cell::Cell;
 use std::num::NonZeroU64;
-use hashbrown::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -383,7 +382,7 @@ impl LsmKvInner {
 
     fn force_sync_last_segment(&mut self) -> DbResult<()> {
         if let Some(backend) = &self.backend {
-            let mut mem_table = self.main_mem_table.lock().unwrap();
+            let mem_table = self.main_mem_table.lock().unwrap();
             let mut snapshot = self.snapshot.lock()?;
 
             if mem_table.len() == 0 {

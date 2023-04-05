@@ -65,6 +65,11 @@ impl Cursor {
         return Ok(false)
     }
 
+    #[allow(dead_code)]
+    pub fn peek_key(&self) -> Option<Arc<[u8]>> {
+        self.current_key.clone()
+    }
+
     pub fn peek_data(&self, db: &LsmKvInner) -> DbResult<Option<Arc<[u8]>>> {
         if let Some(current_key) = &self.current_key {
             if !is_prefix_with(&current_key, &self.prefix_bytes) {

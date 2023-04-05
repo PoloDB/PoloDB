@@ -94,7 +94,6 @@ fn test_delete_all_items() {
             doc_collection.push(new_doc);
         }
         collection.insert_many(&doc_collection).unwrap();
-        let data_page_count = metrics.data().data_page_count;
 
         let mut counter = 0;
         for doc in &doc_collection {
@@ -102,7 +101,7 @@ fn test_delete_all_items() {
             let deleted_result = collection.delete_many(doc!{
                 "_id": key.clone(),
             }).expect(format!("delete error: {}", counter).as_str());
-            assert!(deleted_result.deleted_count > 0, "delete nothing with key: {}", key);
+            assert!(deleted_result.deleted_count > 0, "delete nothing with key: {}, count: {}", key, deleted_result.deleted_count);
             let find_doc = doc! {
                 "_id": key.clone(),
             };
@@ -110,9 +109,5 @@ fn test_delete_all_items() {
             assert_eq!(result.len(), 0, "item with key: {}", key);
             counter += 1;
         }
-
-        let deleted_metrics_data = metrics.data();
-        let deleted_data_page_count = deleted_metrics_data.data_page_count;
-        assert!(deleted_data_page_count < data_page_count);
     });
 }

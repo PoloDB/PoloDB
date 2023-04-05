@@ -11,19 +11,12 @@ use super::db::DbResult;
 use crate::error::DbErr;
 use crate::{LsmKv, TransactionType};
 use crate::Config;
-use crate::vm::{SubProgram, VM, VmState};
+use crate::vm::SubProgram;
 use crate::meta_doc_helper::meta_doc_key;
 // use crate::index_ctx::{IndexCtx, merge_options_into_default};
-use crate::transaction::TransactionState;
-use crate::backend::memory::MemoryBackend;
 use crate::page::RawPage;
 use crate::db::db_handle::DbHandle;
-use crate::page::header_page_wrapper::HeaderPageWrapper;
-use crate::backend::Backend;
 use crate::results::{InsertManyResult, InsertOneResult};
-use crate::session::{BaseSession, DynamicSession, Session};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::backend::file::FileBackend;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -33,8 +26,9 @@ use bson::oid::ObjectId;
 use bson::spec::BinarySubtype;
 use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
 use crate::cursor::Cursor;
-use crate::lsm::LsmSession;
 use crate::metrics::Metrics;
+use crate::session::SessionInner;
+use crate::vm::VM;
 
 macro_rules! try_multiple {
     ($err: expr, $action: expr) => {
@@ -63,48 +57,28 @@ macro_rules! try_db_op {
     }
 }
 
-pub(crate) struct SessionInner {
-    pub(crate) kv_session: LsmSession,
-    auto_count: i32,
-}
-
-impl SessionInner {
-
-    pub fn new(kv_session: LsmSession) -> SessionInner {
-        SessionInner {
-            kv_session,
-            auto_count: 0,
-        }
-    }
-
-    pub fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        if self.auto_count == 0 {
-            if self.kv_session.transaction().is_some() {  // manually
-                return Ok(());
+macro_rules! wrap_db_op {
+    ($self: tt, $session: expr, $tt: expr, $action: expr) => {
+        {
+            {
+                let mut s = $session.lock()?;
+                s.auto_start_transaction($tt)?;
             }
+            match $action {
+                Ok(ret) => {
+                    let mut s = $session.lock()?;
+                    s.auto_commit(&$self.kv_engine)?;
+                    ret
+                }
 
-            self.kv_session.start_transaction(ty)?;  // auto
+                Err(err) => {
+                    let mut s = $session.lock()?;
+                    $self.auto_rollback(&mut s)?;
+                    return Err(err);
+                }
+            }
         }
-
-        self.auto_count += 1;
-
-        Ok(())
     }
-
-    pub fn auto_commit(&mut self, kv_engine: &LsmKv) -> DbResult<()> {
-        if self.auto_count == 0 {
-            return Ok(());
-        }
-
-        self.auto_count -= 1;
-
-        if self.auto_count == 0 {
-            kv_engine.inner.commit(&mut self.kv_session)?;
-        }
-
-        Ok(())
-    }
-
 }
 
 const TABLE_META_PREFIX: &'static str = "$TABLE_META";
@@ -197,7 +171,7 @@ impl DbContext {
 
     fn internal_get_collection_id_by_name(&self, session: &SessionInner, name: &str) -> DbResult<CollectionSpecification> {
         let mut cursor =  {
-            let kv_cursor = self.kv_engine.open_multi_cursor(Some(&session.kv_session));
+            let kv_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
             Cursor::new(TABLE_META_PREFIX.to_string(), kv_cursor)
         };
 
@@ -361,7 +335,7 @@ impl DbContext {
 
         let buffer = bson::to_vec(&spec)?;
 
-        session.kv_session.put(stacked_key.as_slice(), buffer.as_ref())?;
+        session.put(stacked_key.as_slice(), buffer.as_ref())?;
 
         Ok(spec)
     }
@@ -491,7 +465,7 @@ impl DbContext {
 
         let doc_buf = bson::to_vec(&doc)?;
 
-        session.kv_session.put(
+        session.put(
             stacked_key.as_ref(),
             &doc_buf,
         )?;
@@ -643,32 +617,50 @@ impl DbContext {
     }
 
     pub fn drop_collection_by_id(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<()> {
-        let session_ref = self.get_session_by_id(session_id)?.clone();
-        let mut session = session_ref.lock()?;
-        self.drop_collection(name, &mut session)
-    }
+        let session = self.get_session_by_id(session_id)?.clone();
 
-    pub fn drop_collection(&mut self, name: &str, session: &mut SessionInner) -> DbResult<()> {
-        self.auto_start_transaction(session, TransactionType::Write)?;
-
-        try_db_op!(self, session, self.internal_drop(session, name));
+        wrap_db_op!(
+            self,
+            session,
+            TransactionType::Write,
+            self.drop_collection(name, session.clone())
+        );
 
         Ok(())
     }
 
-    fn internal_drop(&self, session: &mut SessionInner, name: &str) -> DbResult<()> {
-        unimplemented!()
-        // let meta_source = DbContext::get_meta_source(session)?;
-        // let collection_meta = DbContext::internal_get_collection_id_by_name(session, name)?;
-        // delete_all_helper::delete_all(session, &collection_meta)?;
-        //
-        // let mut btree_wrapper = BTreePageDeleteWrapper::new(
-        //     session, meta_source.meta_pid);
-        //
-        // let pkey = Bson::from(name);
-        // btree_wrapper.delete_item(&pkey)?;
-        //
-        // DbContext::update_meta_source(session, &meta_source)
+    pub fn drop_collection(&mut self, col_name: &str, session: Arc<Mutex<SessionInner>>) -> DbResult<()> {
+        // Delete content begin
+        let subprogram = SubProgram::compile_delete_all(
+            col_name,
+            true,
+        )?;
+
+        {
+            let mut vm = VM::new(self.kv_engine.clone(), session.clone(), subprogram);
+            vm.set_rollback_on_drop(true);
+            vm.execute()?;
+        } // Delete content end
+
+        self.delete_collection_meta(col_name, session.as_ref())?;
+
+        Ok(())
+    }
+
+    fn delete_collection_meta(&mut self, col_name: &str, session: &Mutex<SessionInner>) -> DbResult<()> {
+        let mut cursor = {
+            let session = session.lock()?;
+            let multi_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
+            Cursor::new(TABLE_META_PREFIX, multi_cursor)
+        };
+
+        let found = cursor.reset_by_pkey(&col_name.into())?;
+        if found {
+            let mut session = session.lock()?;
+            session.delete_cursor_current(cursor.multi_cursor_mut())?;
+        }
+
+        Ok(())
     }
 
     pub fn delete_by_id(&mut self, col_name: &str, query: Document, is_many: bool, session_id: Option<&ObjectId>) -> DbResult<usize> {
@@ -747,23 +739,12 @@ impl DbContext {
     }
 
     pub fn delete_all(&mut self, col_name: &str, session: Arc<Mutex<SessionInner>>) -> DbResult<usize> {
-        {
-            let mut session = session.lock()?;
-            self.auto_start_transaction(&mut session, TransactionType::Write)?;
-        }
-
-        let result = match self.internal_delete_all(session.clone(), col_name) {
-            Ok(result) => {
-                let mut session = session.lock()?;
-                self.auto_commit(&mut session)?;
-                result
-            },
-            Err(err) => {
-                let mut session = session.lock()?;
-                self.auto_rollback(&mut session)?;
-                return Err(err);
-            }
-        };
+        let result = wrap_db_op!(
+            self,
+            session,
+            TransactionType::Write,
+            self.internal_delete_all(session.clone(), col_name)
+        );
 
         Ok(result)
     }
