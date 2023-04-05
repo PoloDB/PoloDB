@@ -3,22 +3,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use bson::oid::ObjectId;
-use crate::{Database, DbResult, TransactionType};
+use crate::{DbResult, TransactionType};
+use crate::session::SessionInner;
 
 /// A PoloDB client session. This struct represents a logical session used for ordering sequential
 /// operations. To create a `ClientSession`, call `start_session` on a `Database`.
-pub struct ClientSession<'a> {
-    db: &'a Database,
-    pub(crate) id: ObjectId,
+pub struct ClientSession {
+    pub(crate) inner: SessionInner,
 }
 
-impl<'a> ClientSession<'a> {
+impl ClientSession {
 
-    pub(crate) fn new(db: &'a Database, id: ObjectId) -> ClientSession {
+    pub(crate) fn new(inner: SessionInner) -> ClientSession {
         ClientSession {
-            db,
-            id,
+           inner,
         }
     }
 
@@ -33,23 +31,14 @@ impl<'a> ClientSession<'a> {
     /// execute write operations(insert/update/delete), the DB will turn into
     /// write mode.
     pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
-        self.db.start_transaction(ty, Some(&self.id))
+        self.inner.start_transaction(ty)
     }
 
     pub fn commit_transaction(&mut self) -> DbResult<()> {
-        self.db.commit(Some(&self.id))
+        self.inner.commit_transaction()
     }
 
     pub fn abort_transaction(&mut self) -> DbResult<()> {
-        self.db.rollback(Some(&self.id))
-    }
-}
-
-impl Drop for ClientSession<'_> {
-    fn drop(&mut self) {
-        let drop_error = self.db.drop_session(&self.id);
-        if let Err(err) = drop_error {
-            crate::polo_log!("drop session error: {}", err);
-        }
+        self.inner.abort_transaction()
     }
 }

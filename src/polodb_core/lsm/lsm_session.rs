@@ -1,13 +1,17 @@
 use std::io::Write;
+use std::sync::Weak;
 use byteorder::WriteBytesExt;
 use crate::lsm::mem_table::MemTable;
 use crate::{DbErr, DbResult, TransactionType};
 use crate::lsm::lsm_backend::lsm_log::format;
+use crate::lsm::LsmKvInner;
 use crate::lsm::multi_cursor::MultiCursor;
 use crate::utils::vli;
 
 pub struct LsmSession {
+    engine: Weak<LsmKvInner>,
     id: u64,
+    prev_mem_table: MemTable,
     pub(crate) mem_table: MemTable,
     log_buffer: Option<Vec<u8>>,
     transaction: Option<TransactionType>,
@@ -20,14 +24,21 @@ impl LsmSession {
         self.id
     }
 
-    pub(crate) fn new(id: u64, mem_table: MemTable, has_log: bool) -> LsmSession {
+    pub(crate) fn new(
+        engine: Weak<LsmKvInner>,
+        id: u64,
+        mem_table: MemTable,
+        has_log: bool,
+    ) -> LsmSession {
         let log_buffer = if has_log {
             Some(Vec::new())
         } else {
             None
         };
         LsmSession {
+            engine,
             id,
+            prev_mem_table: mem_table.clone(),
             mem_table,
             log_buffer,
             transaction: None,
@@ -47,7 +58,22 @@ impl LsmSession {
         if self.transaction.is_some() {
             return Err(DbErr::StartTransactionInAnotherTransaction);
         }
+        self.prev_mem_table = self.mem_table.clone();
         self.transaction = Some(ty);
+        Ok(())
+    }
+
+    pub fn commit_transaction(&mut self) -> DbResult<()> {
+        let engine = self.engine.upgrade().ok_or(DbErr::DbIsClosed)?;
+        engine.commit(self)
+    }
+
+    pub fn abort_transaction(&mut self) -> DbResult<()> {
+        if let Some(log_buffer) = &mut self.log_buffer {
+            log_buffer.clear();
+        }
+        self.mem_table = self.prev_mem_table.clone();
+        self.transaction = None;
         Ok(())
     }
 

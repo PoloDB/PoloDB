@@ -290,14 +290,16 @@ impl fmt::Display for SubProgram {
                     }
 
                     DbOp::OpenRead => {
-                        let root_pid = begin.add(pc + 1).cast::<u32>().read();
-                        writeln!(f, "{}: OpenRead({})", pc, root_pid)?;
+                        let idx = begin.add(pc + 1).cast::<u32>().read();
+                        let value = &self.static_values[idx as usize];
+                        writeln!(f, "{}: OpenRead({})", pc, value)?;
                         pc += 5;
                     }
 
                     DbOp::OpenWrite => {
-                        let root_pid = begin.add(pc + 1).cast::<u32>().read();
-                        writeln!(f, "{}: OpenWrite({})", pc, root_pid)?;
+                        let idx = begin.add(pc + 1).cast::<u32>().read();
+                        let value = &self.static_values[idx as usize];
+                        writeln!(f, "{}: OpenWrite({})", pc, value)?;
                         pc += 5;
                     }
 
@@ -413,7 +415,7 @@ mod tests {
 
         let expect = "Program:
 
-0: OpenRead(100)
+0: OpenRead(\"test\")
 5: Rewind(30)
 10: Goto(37)
 
@@ -445,7 +447,7 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead(100)
+0: OpenRead("test")
 5: Rewind(30)
 10: Goto(73)
 
@@ -503,7 +505,7 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead(100)
+0: OpenRead("test")
 5: PushValue(6)
 10: FindByPrimaryKey(25)
 15: Goto(33)
@@ -545,7 +547,7 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead(100)
+0: OpenRead("test")
 5: Rewind(30)
 10: Goto(73)
 
@@ -608,7 +610,7 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead(100)
+0: OpenRead("test")
 5: Rewind(30)
 10: Goto(73)
 
@@ -679,7 +681,7 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead(100)
+0: OpenRead("test")
 5: Rewind(30)
 10: Goto(73)
 
@@ -761,12 +763,12 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenWrite(100)
+0: OpenWrite("test")
 5: Rewind(30)
-10: Goto(197)
+10: Goto(196)
 
 15: Label(1)
-20: Next(197)
+20: Next(196)
 
 25: Label(5, "Close")
 30: Close
@@ -820,17 +822,16 @@ mod tests {
 179: Label(9)
 184: UpdateCurrent
 185: Pop
-186: IncR2
-187: Goto(20)
+186: Goto(20)
 
-192: Label(0, "Compare")
-197: SaveStackPos
-198: GetField("_id", 49)
-207: PushValue(3)
-212: Greater
-213: FalseJump(37)
-218: Pop2(2)
-223: Goto(61)
+191: Label(0, "Compare")
+196: SaveStackPos
+197: GetField("_id", 49)
+206: PushValue(3)
+211: Greater
+212: FalseJump(37)
+217: Pop2(2)
+222: Goto(61)
 "#;
         assert_eq!(expect, actual);
     }

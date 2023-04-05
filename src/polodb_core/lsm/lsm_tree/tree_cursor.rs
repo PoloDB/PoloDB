@@ -286,7 +286,7 @@ impl<K: Ord + Clone, V: Clone> TreeCursor<K, V> {
 
     pub(crate) fn insert(&mut self, key: K, value: &LsmTreeValueMarker<V>) -> LsmTree<K, V> {
         let root_node_ref = self.root.clone();
-        let mut root_tree = LsmTree::<K, V>::new_with_root(root_node_ref);
+        let root_tree = LsmTree::<K, V>::new_with_root(root_node_ref);
         let new_tree = root_tree.update(key, value.clone());
         new_tree
     }

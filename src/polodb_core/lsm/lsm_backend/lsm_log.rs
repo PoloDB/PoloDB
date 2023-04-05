@@ -74,11 +74,13 @@ impl LsmLog {
         inner.file_path.to_path_buf()
     }
 
+    #[allow(dead_code)]
     pub fn put(&self, key: &[u8], value: &[u8]) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.put(key, value)
     }
 
+    #[allow(dead_code)]
     pub fn delete(&self, key: &[u8]) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.delete(key)

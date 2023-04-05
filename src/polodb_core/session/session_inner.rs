@@ -3,13 +3,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use crate::{DbResult, LsmKv, TransactionType};
+use std::cell::Cell;
+use crate::{DbErr, DbResult, TransactionType};
 use crate::lsm::LsmSession;
 use crate::lsm::multi_cursor::MultiCursor;
+use crate::transaction::TransactionState;
 
 pub(crate) struct SessionInner {
     kv_session: LsmSession,
-    auto_count: i32,
+    transaction_state: TransactionState,
 }
 
 impl SessionInner {
@@ -17,18 +19,13 @@ impl SessionInner {
     pub fn new(kv_session: LsmSession) -> SessionInner {
         SessionInner {
             kv_session,
-            auto_count: 0,
+            transaction_state: TransactionState::NoTrans,
         }
     }
 
     #[inline]
     pub fn kv_session(&self) -> &LsmSession {
         &self.kv_session
-    }
-
-    #[inline]
-    pub fn kv_session_mut(&mut self) -> &mut LsmSession {
-        &mut self.kv_session
     }
 
     #[inline]
@@ -47,30 +44,56 @@ impl SessionInner {
     }
 
     pub fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        if self.auto_count == 0 {
-            if self.kv_session.transaction().is_some() {  // manually
+        match &self.transaction_state {
+            TransactionState::DbAuto(counter) => {
+                counter.set(counter.get() + 1)
+            }
+            TransactionState::NoTrans => {
+                self.kv_session.start_transaction(ty)?;  // auto
+                self.transaction_state = TransactionState::DbAuto(Cell::new(1));
+            }
+            _ => ()
+        };
+        Ok(())
+    }
+
+    pub fn auto_commit(&mut self) -> DbResult<()> {
+        if let TransactionState::DbAuto(counter) = &self.transaction_state {
+            if counter.get() == 0 {
                 return Ok(());
             }
-
-            self.kv_session.start_transaction(ty)?;  // auto
+            counter.set(counter.get() - 1);
+            if counter.get() == 0 {
+                self.kv_session.commit_transaction()?;
+            }
         }
-
-        self.auto_count += 1;
 
         Ok(())
     }
 
-    pub fn auto_commit(&mut self, kv_engine: &LsmKv) -> DbResult<()> {
-        if self.auto_count == 0 {
-            return Ok(());
+    pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
+        if self.transaction_state != TransactionState::NoTrans {
+            return Err(DbErr::StartTransactionInAnotherTransaction);
+        }
+        self.kv_session.start_transaction(ty.unwrap_or(TransactionType::Read))?;
+        self.transaction_state = TransactionState::User;
+        Ok(())
+    }
+
+    pub fn commit_transaction(&mut self) -> DbResult<()> {
+        if self.transaction_state != TransactionState::User {
+            return Err(DbErr::NoTransactionStarted);
         }
 
-        self.auto_count -= 1;
+        self.kv_session.commit_transaction()?;
 
-        if self.auto_count == 0 {
-            kv_engine.inner.commit(&mut self.kv_session)?;
-        }
+        self.transaction_state = TransactionState::NoTrans;
+        Ok(())
+    }
 
+    pub fn abort_transaction(&mut self) -> DbResult<()> {
+        self.kv_session.abort_transaction()?;
+        self.transaction_state = TransactionState::NoTrans;
         Ok(())
     }
 

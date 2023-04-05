@@ -3,11 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use std::cell::Cell;
-use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, Weak};
+use std::sync::atomic::{AtomicU64, Ordering};
 use crate::{Config, DbErr, DbResult, TransactionType};
 use crate::lsm::kv_cursor::KvCursor;
 use crate::lsm::lsm_segment::LsmTuplePtr;
@@ -63,15 +61,12 @@ impl LsmKv {
     }
 
     pub fn new_session(&self) -> LsmSession {
-        self.inner.new_session()
+        let db_ref = Arc::downgrade(&self.inner);
+        self.inner.new_session(db_ref)
     }
 
     pub fn start_transaction(&self) -> DbResult<()> {
         self.inner.indeed_start_transaction(TransactionState::User)
-    }
-
-    pub fn start_transaction_with_session(&self, _id: NonZeroU64) -> DbResult<()> {
-        unimplemented!()
     }
 
     pub fn put<K, V>(&self, key: K, value: V) -> DbResult<()>
@@ -149,7 +144,7 @@ pub(crate) struct LsmKvInner {
     transaction: Mutex<TransactionState>,
     /// Operation count after last sync,
     /// including insert/delete
-    op_count: AtomicUsize,
+    op_count: AtomicU64,
     metrics: LsmMetrics,
     pub(crate) config: Config,
 }
@@ -207,7 +202,7 @@ impl LsmKvInner {
             snapshot: Mutex::new(snapshot),
             main_mem_table: Mutex::new(mem_table),
             transaction: Mutex::new(TransactionState::NoTrans),
-            op_count: AtomicUsize::new(0),
+            op_count: AtomicU64::new(0),
             metrics,
             config,
         })
@@ -254,10 +249,6 @@ impl LsmKvInner {
         MultiCursor::new(cursors)
     }
 
-    pub(crate) fn auto_start_transaction(&self) -> DbResult<()> {
-        self.indeed_start_transaction(TransactionState::DbAuto(Cell::new(1)))
-    }
-
     fn indeed_start_transaction(&self, state: TransactionState) -> DbResult<()> {
         {
             let t_ref = self.transaction.lock()?;
@@ -278,17 +269,24 @@ impl LsmKvInner {
         Ok(())
     }
 
-    fn new_session(&self) -> LsmSession {
+    fn new_session(&self, engine: Weak<LsmKvInner>) -> LsmSession {
         let id = (self.op_count.load(Ordering::SeqCst) + 1) as u64;
         let mem_table = {
             let m = self.main_mem_table.lock().unwrap();
             m.clone()
         };
-        LsmSession::new(id, mem_table, self.log.is_some())
+        LsmSession::new(
+            engine,
+            id,
+            mem_table,
+            self.log.is_some(),
+        )
     }
 
     pub(crate) fn commit(&self, session: &mut LsmSession) -> DbResult<()> {
-        // TODO: check id of session
+        if session.id() != self.op_count.load(Ordering::SeqCst) + 1 {
+            return Err(DbErr::SessionOutdated);
+        }
 
         if let Some(log) = &self.log {
             log.start_transaction()?;
@@ -325,7 +323,7 @@ impl LsmKvInner {
             }
         }
 
-        self.op_count.store(session.id() as usize, Ordering::SeqCst);
+        self.op_count.store(session.id(), Ordering::SeqCst);
         session.finished_transaction();
 
         Ok(())

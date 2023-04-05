@@ -5,6 +5,7 @@
  */
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::io::Read;
 use bson::{Binary, Bson, DateTime, Document};
 use serde::Serialize;
 use super::db::DbResult;
@@ -16,14 +17,14 @@ use crate::meta_doc_helper::meta_doc_key;
 // use crate::index_ctx::{IndexCtx, merge_options_into_default};
 use crate::page::RawPage;
 use crate::db::db_handle::DbHandle;
-use crate::results::{InsertManyResult, InsertOneResult};
+use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
-use std::sync::{Arc, Mutex};
 #[cfg(target_arch = "wasm32")]
 use crate::backend::indexeddb::IndexedDbBackend;
 use bson::oid::ObjectId;
 use bson::spec::BinarySubtype;
+use serde::de::DeserializeOwned;
 use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
 use crate::cursor::Cursor;
 use crate::metrics::Metrics;
@@ -57,38 +58,13 @@ macro_rules! try_db_op {
     }
 }
 
-macro_rules! wrap_db_op {
-    ($self: tt, $session: expr, $tt: expr, $action: expr) => {
-        {
-            {
-                let mut s = $session.lock()?;
-                s.auto_start_transaction($tt)?;
-            }
-            match $action {
-                Ok(ret) => {
-                    let mut s = $session.lock()?;
-                    s.auto_commit(&$self.kv_engine)?;
-                    ret
-                }
-
-                Err(err) => {
-                    let mut s = $session.lock()?;
-                    $self.auto_rollback(&mut s)?;
-                    return Err(err);
-                }
-            }
-        }
-    }
-}
-
 const TABLE_META_PREFIX: &'static str = "$TABLE_META";
 
 /**
  * API for all platforms
  */
-pub(crate) struct DbContext {
+pub(crate) struct DatabaseInner {
     kv_engine:    LsmKv,
-    session_map:  HashMap<ObjectId, Arc<Mutex<SessionInner>>>,
     node_id:      [u8; 6],
     metrics:      Metrics,
     #[allow(dead_code)]
@@ -100,14 +76,14 @@ pub struct MetaSource {
     pub meta_pid: u32,
 }
 
-impl DbContext {
+impl DatabaseInner {
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn open_file(path: &Path, config: Config) -> DbResult<DbContext> {
+    pub fn open_file(path: &Path, config: Config) -> DbResult<DatabaseInner> {
         let metrics = Metrics::new();
         let kv_engine = LsmKv::open_file(path)?;
 
-        DbContext::open_with_backend(
+        DatabaseInner::open_with_backend(
             kv_engine,
             config,
             metrics,
@@ -115,20 +91,20 @@ impl DbContext {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(ctx: crate::IndexedDbContext, config: Config) -> DbResult<DbContext> {
+    pub fn open_indexeddb(ctx: crate::IndexedDbContext, config: Config) -> DbResult<DatabaseInner> {
         let metrics = Metrics::new();
         let page_size = NonZeroU32::new(4096).unwrap();
         let config = Arc::new(config);
         let backend = Box::new(IndexedDbBackend::open(
             ctx, page_size, config.init_block_count
         ));
-        DbContext::open_with_backend(backend, page_size, config, metrics)
+        DatabaseInner::open_with_backend(backend, page_size, config, metrics)
     }
 
-    pub fn open_memory(config: Config) -> DbResult<DbContext> {
+    pub fn open_memory(config: Config) -> DbResult<DatabaseInner> {
         let metrics = Metrics::new();
         let kv_engine = LsmKv::open_memory()?;
-        DbContext::open_with_backend(
+        DatabaseInner::open_with_backend(
             kv_engine,
             config,
             metrics,
@@ -139,13 +115,12 @@ impl DbContext {
         kv_engine: LsmKv,
         config: Config,
         metrics: Metrics,
-    ) -> DbResult<DbContext> {
+    ) -> DbResult<DatabaseInner> {
         let mut node_id: [u8; 6] = [0; 6];
         getrandom::getrandom(&mut node_id).unwrap();
 
-        let ctx = DbContext {
+        let ctx = DatabaseInner {
             kv_engine,
-            session_map: HashMap::new(),
             // first_page,
             node_id,
             metrics,
@@ -159,14 +134,10 @@ impl DbContext {
         self.metrics.clone()
     }
 
-    pub fn start_session(&mut self) -> DbResult<ObjectId> {
-        let id = ObjectId::new();
-
+    pub fn start_session(&mut self) -> DbResult<SessionInner> {
         let kv_session = self.kv_engine.new_session();
         let inner = SessionInner::new(kv_session);
-        self.session_map.insert(id, Arc::new(Mutex::new(inner)));
-
-        Ok(id)
+        Ok(inner)
     }
 
     fn internal_get_collection_id_by_name(&self, session: &SessionInner, name: &str) -> DbResult<CollectionSpecification> {
@@ -191,30 +162,6 @@ impl DbContext {
         Ok(entry)
     }
 
-    fn get_session_by_id(&mut self, session_id: Option<&ObjectId>) -> DbResult<&Arc<Mutex<SessionInner>>> {
-        match session_id {
-            None => {
-                let sid = self.start_session()?;
-                Ok(self.session_map.get(&sid).unwrap())
-            }
-            Some(sid) => {
-                Ok(self.session_map.get(sid).unwrap())
-            }
-        }
-    }
-
-    pub fn get_collection_meta_by_name_advanced_auto_by_id(
-        &mut self,
-        name: &str,
-        create_if_not_exist: bool,
-        session_id: Option<&ObjectId>
-    ) -> DbResult<Option<CollectionSpecification>> {
-        let session_ref = self.get_session_by_id(session_id)?.clone();
-
-        let mut session = session_ref.lock()?;
-        self.get_collection_meta_by_name_advanced_auto(name, create_if_not_exist, &mut session)
-    }
-
     pub fn get_collection_meta_by_name_advanced_auto(
         &mut self,
         name: &str,
@@ -230,7 +177,7 @@ impl DbContext {
         let result = try_db_op!(
             self,
             session,
-            DbContext::get_collection_meta_by_name_advanced(self, session, name, create_if_not_exist, &self.node_id)
+            DatabaseInner::get_collection_meta_by_name_advanced(self, session, name, create_if_not_exist, &self.node_id)
         );
 
         Ok(result)
@@ -271,22 +218,21 @@ impl DbContext {
     }
 
     fn auto_commit(&self, session: &mut SessionInner) -> DbResult<()> {
-        session.auto_commit(&self.kv_engine)?;
+        session.auto_commit()?;
         Ok(())
     }
 
-    fn auto_rollback(&self, session: &mut SessionInner) -> DbResult<()> {
+    fn auto_rollback(&self, _session: &mut SessionInner) -> DbResult<()> {
         // unimplemented!()
         Ok(())
     }
 
-    pub fn create_collection_by_id(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<CollectionSpecification> {
-        let session_ref = self.get_session_by_id(session_id)?.clone();
-        let mut session = session_ref.lock()?;
-        self.create_collection(name, &mut session)
+    pub fn create_collection(&mut self, name: &str) -> DbResult<CollectionSpecification> {
+        let mut session = self.start_session()?;
+        self.create_collection_internal(name, &mut session)
     }
 
-    pub fn create_collection(&mut self, name: &str, session: &mut SessionInner) -> DbResult<CollectionSpecification> {
+    pub fn create_collection_internal(&mut self, name: &str, session: &mut SessionInner) -> DbResult<CollectionSpecification> {
         self.auto_start_transaction(session, TransactionType::Write)?;
 
         let meta = try_db_op!(self, session, self.internal_create_collection(session, name, &self.node_id));
@@ -340,21 +286,16 @@ impl DbContext {
         Ok(spec)
     }
 
-    pub(crate) fn make_handle(&mut self, session: Arc<Mutex<SessionInner>>, program: SubProgram) -> DbResult<DbHandle> {
+    pub(crate) fn make_handle<'a>(&self, session: &'a mut SessionInner, program: SubProgram) -> DbResult<DbHandle<'a>> {
         let vm = VM::new(self.kv_engine.clone(), session, program);
         Ok(DbHandle::new(vm))
     }
 
-    pub fn create_index_id(&mut self, prefix: Bson, keys: &Document, options: Option<&Document>, session_id: Option<&ObjectId>) -> DbResult<()> {
-        let session_ref = self.get_session_by_id(session_id)?.clone();
-        let mut session = session_ref.lock()?;
-        self.create_index(prefix, keys, options, &mut session)
-    }
-
+    #[allow(dead_code)]
     pub fn create_index(&mut self, prefix: Bson, keys: &Document, options: Option<&Document>, session: &mut SessionInner) -> DbResult<()> {
         self.auto_start_transaction(session, TransactionType::Write)?;
 
-        try_db_op!(self, session, DbContext::internal_create_index(session, prefix, keys, options));
+        try_db_op!(self, session, DatabaseInner::internal_create_index(session, prefix, keys, options));
 
         Ok(())
     }
@@ -430,21 +371,15 @@ impl DbContext {
         doc
     }
 
-    pub fn insert_one_auto_by_id(&mut self, col_name: &str, doc: Document, session_id: Option<&ObjectId>) -> DbResult<InsertOneResult> {
-        let session_ref = self.get_session_by_id(session_id)?.clone();
-        let mut session = session_ref.lock()?;
-        self.insert_one_auto(col_name, doc, &mut session)
-    }
-
-    pub fn insert_one_auto(&mut self, col_name: &str, doc: Document, session: &mut SessionInner) -> DbResult<InsertOneResult> {
+    pub fn insert_one(&mut self, col_name: &str, doc: Document, session: &mut SessionInner) -> DbResult<InsertOneResult> {
         self.auto_start_transaction(session, TransactionType::Write)?;
 
-        let changed = try_db_op!(self, session, self.insert_one(session, col_name, doc, &self.node_id));
+        let changed = try_db_op!(self, session, self.insert_one_internal(session, col_name, doc, &self.node_id));
 
         Ok(changed)
     }
 
-    fn insert_one(&self, session: &mut SessionInner, col_name: &str, doc: Document, node_id: &[u8; 6]) -> DbResult<InsertOneResult> {
+    fn insert_one_internal(&self, session: &mut SessionInner, col_name: &str, doc: Document, node_id: &[u8; 6]) -> DbResult<InsertOneResult> {
         let col_meta = self.get_collection_meta_by_name_advanced(session, col_name, true, node_id)?
             .expect("internal: meta must exist");
         let (result, _) = self.insert_one_with_meta(session, col_meta, doc)?;
@@ -453,8 +388,8 @@ impl DbContext {
 
     /// Insert one item with the collection spec
     /// return the new spec for the outside to do the following operation
-    fn insert_one_with_meta(&self, session: &mut SessionInner, mut col_spec: CollectionSpecification, doc: Document) -> DbResult<(InsertOneResult, CollectionSpecification)> {
-        let doc  = DbContext::fix_doc(doc);
+    fn insert_one_with_meta(&self, session: &mut SessionInner, col_spec: CollectionSpecification, doc: Document) -> DbResult<(InsertOneResult, CollectionSpecification)> {
+        let doc  = DatabaseInner::fix_doc(doc);
 
         let pkey = doc.get("_id").unwrap();
 
@@ -496,19 +431,7 @@ impl DbContext {
         ))
     }
 
-    pub fn insert_many_auto_by_id<T: Serialize>(
-        &mut self,
-        col_name: &str,
-        docs: impl IntoIterator<Item = impl Borrow<T>>,
-        session_id: Option<&ObjectId>
-    ) -> DbResult<InsertManyResult> {
-        let session_ref = self.get_session_by_id(session_id)?.clone();
-        let mut session = session_ref.lock()?;
-
-        self.insert_many_auto(col_name, docs, &mut session)
-    }
-
-    pub fn insert_many_auto<T: Serialize>(
+    pub fn insert_many<T: Serialize>(
         &mut self,
         col_name: &str,
         docs: impl IntoIterator<Item = impl Borrow<T>>,
@@ -516,12 +439,12 @@ impl DbContext {
     ) -> DbResult<InsertManyResult> {
         self.auto_start_transaction(session, TransactionType::Write)?;
 
-        let result = try_db_op!(self, session, self.insert_many(session, col_name, docs, &self.node_id));
+        let result = try_db_op!(self, session, self.insert_many_internal(session, col_name, docs, &self.node_id));
 
         Ok(result)
     }
 
-    fn insert_many<T: Serialize>(
+    fn insert_many_internal<T: Serialize>(
         &self,
         session: &mut SessionInner,
         col_name: &str,
@@ -547,25 +470,12 @@ impl DbContext {
         })
     }
 
-    /// query: None for findAll
-    pub fn find(&mut self, col_spec: &CollectionSpecification, query: Option<Document>, session_id: Option<&ObjectId>) -> DbResult<DbHandle> {
-        let session = match session_id {
-            Some(sid) => {
-                self.session_map.get(sid).unwrap().clone()
-            }
-            None => {
-                let oid = self.start_session()?;
-                self.session_map.get(&oid).unwrap().clone()
-            }
-        };
-        self.find_internal(session, col_spec, query)
-    }
-
-    fn find_internal(
-        &mut self, session: Arc<Mutex<SessionInner>>,
+    fn find_internal<'b>(
+        &self,
+        session: &'b mut SessionInner,
         col_spec: &CollectionSpecification,
         query: Option<Document>,
-    ) -> DbResult<DbHandle> {
+    ) -> DbResult<DbHandle<'b>> {
         let subprogram = match query {
             Some(query) => SubProgram::compile_query(
                 col_spec,
@@ -579,28 +489,69 @@ impl DbContext {
         Ok(handle)
     }
 
-    pub fn update_many_id(&mut self, col_spec: &CollectionSpecification, query: Option<&Document>, update: &Document, session_id: Option<&ObjectId>) -> DbResult<usize> {
-        let session = self.get_session_by_id(session_id)?.clone();
-        self.update_many(col_spec, query, update, session.clone())
+    pub fn update_one(
+        &mut self,
+        col_name: &str,
+        query: Option<&Document>,
+        update: &Document,
+        session: &mut SessionInner,
+    ) -> DbResult<UpdateResult> {
+        // let result = self.internal_update(session, col_spec, query, update, false)?;
+        //
+        // Ok(result)
+        let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, session)?;
+        let modified_count: u64 = match meta_opt {
+            Some(col_spec) => {
+                let size = self.internal_update(
+                    &col_spec,
+                    query,
+                    &update,
+                    false,
+                    session
+                )?;
+                size as u64
+            }
+            None => 0,
+        };
+        Ok(UpdateResult {
+            modified_count,
+        })
     }
 
-    pub fn update_many(&mut self, col_spec: &CollectionSpecification, query: Option<&Document>, update: &Document, session: Arc<Mutex<SessionInner>>) -> DbResult<usize> {
-        let result = self.internal_update(session, col_spec, query, update, true)?;
-        Ok(result)
+    pub(super) fn update_many(
+        &mut self,
+        col_name: &str,
+        query: Document,
+        update: Document,
+        session: &mut SessionInner,
+    ) -> DbResult<UpdateResult> {
+        let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, session)?;
+        let modified_count: u64 = match meta_opt {
+            Some(col_spec) => {
+                let size = self.internal_update(
+                    &col_spec,
+                    Some(&query),
+                    &update,
+                    true,
+                    session
+                )?;
+                size as u64
+            }
+            None => 0,
+        };
+        Ok(UpdateResult {
+            modified_count,
+        })
     }
 
-    pub fn update_one_by_id(&mut self, col_spec: &CollectionSpecification, query: Option<&Document>, update: &Document, session_id: Option<&ObjectId>) -> DbResult<usize> {
-        let session = self.get_session_by_id(session_id)?.clone();
-        self.update_one(col_spec, query, update, session.clone())
-    }
-
-    pub fn update_one(&mut self, col_spec: &CollectionSpecification, query: Option<&Document>, update: &Document, session: Arc<Mutex<SessionInner>>) -> DbResult<usize> {
-        let result = self.internal_update(session, col_spec, query, update, false)?;
-
-        Ok(result)
-    }
-
-    fn internal_update(&self, session: Arc<Mutex<SessionInner>>, col_spec: &CollectionSpecification, query: Option<&Document>, update: &Document, is_many: bool) -> DbResult<usize> {
+    fn internal_update(
+        &self,
+        col_spec: &CollectionSpecification,
+        query: Option<&Document>,
+        update: &Document,
+        is_many: bool,
+        session: &mut SessionInner,
+    ) -> DbResult<usize> {
         let subprogram = SubProgram::compile_update(
             col_spec,
             query,
@@ -616,20 +567,15 @@ impl DbContext {
         Ok(vm.r2 as usize)
     }
 
-    pub fn drop_collection_by_id(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<()> {
-        let session = self.get_session_by_id(session_id)?.clone();
+    pub fn drop_collection(&mut self, col_name: &str, session: &mut SessionInner) -> DbResult<()> {
+        self.auto_start_transaction(session, TransactionType::Write)?;
 
-        wrap_db_op!(
-            self,
-            session,
-            TransactionType::Write,
-            self.drop_collection(name, session.clone())
-        );
+        try_db_op!(self, session, self.drop_collection_internal(col_name, session));
 
         Ok(())
     }
 
-    pub fn drop_collection(&mut self, col_name: &str, session: Arc<Mutex<SessionInner>>) -> DbResult<()> {
+    fn drop_collection_internal(&mut self, col_name: &str, session: &mut SessionInner) -> DbResult<()> {
         // Delete content begin
         let subprogram = SubProgram::compile_delete_all(
             col_name,
@@ -637,44 +583,37 @@ impl DbContext {
         )?;
 
         {
-            let mut vm = VM::new(self.kv_engine.clone(), session.clone(), subprogram);
+            let mut vm = VM::new(self.kv_engine.clone(), session, subprogram);
             vm.set_rollback_on_drop(true);
             vm.execute()?;
         } // Delete content end
 
-        self.delete_collection_meta(col_name, session.as_ref())?;
+        self.delete_collection_meta(col_name, session)?;
 
         Ok(())
     }
 
-    fn delete_collection_meta(&mut self, col_name: &str, session: &Mutex<SessionInner>) -> DbResult<()> {
+    fn delete_collection_meta(&mut self, col_name: &str, session: &mut SessionInner) -> DbResult<()> {
         let mut cursor = {
-            let session = session.lock()?;
             let multi_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
             Cursor::new(TABLE_META_PREFIX, multi_cursor)
         };
 
         let found = cursor.reset_by_pkey(&col_name.into())?;
         if found {
-            let mut session = session.lock()?;
             session.delete_cursor_current(cursor.multi_cursor_mut())?;
         }
 
         Ok(())
     }
 
-    pub fn delete_by_id(&mut self, col_name: &str, query: Document, is_many: bool, session_id: Option<&ObjectId>) -> DbResult<usize> {
-        let session = self.get_session_by_id(session_id)?.clone();
-        self.delete(col_name, query, is_many, session.clone())
-    }
-
-    pub fn delete(&mut self, col_name: &str, query: Document, is_many: bool, session: Arc<Mutex<SessionInner>>) -> DbResult<usize> {
+    pub fn delete(&mut self, col_name: &str, query: Document, is_many: bool, session: &mut SessionInner) -> DbResult<usize> {
         // {
         //     let mut session = session.lock()?;
         //     self.auto_start_transaction(&mut session, TransactionType::Write)?;
         // }
 
-        let result = self.internal_delete_by_query(session.clone(), col_name, query, is_many)?;
+        let result = self.internal_delete_by_query(session, col_name, query, is_many)?;
 
         // let result = match self.internal_delete_by_query(session.clone(), col_name, query, is_many) {
         //     Ok(result) => {
@@ -704,7 +643,7 @@ impl DbContext {
     //     Ok(count)
     // }
 
-    fn internal_delete_by_query(&mut self, session: Arc<Mutex<SessionInner>>, col_name: &str, query: Document, is_many: bool) -> DbResult<usize> {
+    fn internal_delete_by_query(&mut self, session: &mut SessionInner, col_name: &str, query: Document, is_many: bool) -> DbResult<usize> {
         let subprogram = SubProgram::compile_delete(
             col_name,
             Some(&query),
@@ -719,87 +658,66 @@ impl DbContext {
         Ok(vm.r2 as usize)
     }
 
-    fn internal_delete_all(&mut self, session: Arc<Mutex<SessionInner>>, col_name: &str) -> DbResult<usize> {
-        // let primary_keys = self.get_primary_keys_by_query(
-        //     session,
-        //     col_name,
-        //     None,
-        //     true,
-        // )?;
-        // {
-        //     let mut session = session.lock()?;
-        //     self.internal_delete(&mut session, col_name, &primary_keys)
-        // }
-        unimplemented!()
+    fn internal_delete_all(&mut self, session: &mut SessionInner, col_name: &str) -> DbResult<usize> {
+        // Delete content begin
+        let subprogram = SubProgram::compile_delete_all(
+            col_name,
+            true,
+        )?;
+
+        let delete_count = {
+            let mut vm = VM::new(self.kv_engine.clone(), session, subprogram);
+            vm.set_rollback_on_drop(true);
+            vm.execute()?;
+
+            vm.r2 as usize
+        }; // Delete content end
+
+        Ok(delete_count)
     }
 
-    pub fn delete_all_by_id(&mut self, col_name: &str, session_id: Option<&ObjectId>) -> DbResult<usize> {
-        let session = self.get_session_by_id(session_id)?.clone();
-        self.delete_all(col_name, session.clone())
-    }
+    pub fn delete_all(&mut self, col_name: &str, session: &mut SessionInner) -> DbResult<usize> {
+        self.auto_start_transaction(session, TransactionType::Write)?;
 
-    pub fn delete_all(&mut self, col_name: &str, session: Arc<Mutex<SessionInner>>) -> DbResult<usize> {
-        let result = wrap_db_op!(
+        let result = try_db_op!(
             self,
             session,
-            TransactionType::Write,
-            self.internal_delete_all(session.clone(), col_name)
+            self.internal_delete_all(session, col_name)
         );
 
         Ok(result)
     }
 
-    fn get_primary_keys_by_query(&mut self, session: Arc<Mutex<SessionInner>>, col_name: &str, query: Option<Document>, is_many: bool) -> DbResult<Vec<Bson>> {
-        let col_spec = {
-            let session = session.lock()?;
-            self.internal_get_collection_id_by_name(&session, col_name)?
-        };
-        let mut handle = self.find_internal(session, &col_spec, query)?;
-        let mut buffer: Vec<Bson> = vec![];
-
-        handle.step()?;
-
-        while handle.has_row() {
-            let doc = handle.get().as_document().unwrap();
-            let pkey = doc.get("_id").unwrap();
-            buffer.push(pkey.clone());
-
-            if !is_many {
-                handle.commit_and_close_vm()?;
-                return Ok(buffer);
-            }
-
-            handle.step()?;
-        }
-
-        handle.commit_and_close_vm()?;
-        Ok(buffer)
-    }
-
-    // fn update_by_root_pid(&self, session_id: Option<&ObjectId>, prefix: Bson, key: &Bson, doc: &Document) -> DbResult<bool> {
-    //     let kv_id = self.find_kv_id_by_session_id(session_id);
+    // fn get_primary_keys_by_query(&mut self, session: &mut SessionInner, col_name: &str, query: Option<Document>, is_many: bool) -> DbResult<Vec<Bson>> {
+    //     let col_spec = self.internal_get_collection_id_by_name(session, col_name)?;
+    //     let mut handle = self.find_internal(session, &col_spec, query)?;
+    //     let mut buffer: Vec<Bson> = vec![];
     //
-    //     let kv_cursor = self.kv_engine.open_multi_cursor(kv_id);
+    //     handle.step()?;
     //
-    //     let mut cursor = Cursor::new(prefix, kv_cursor);
+    //     while handle.has_row() {
+    //         let doc = handle.get().as_document().unwrap();
+    //         let pkey = doc.get("_id").unwrap();
+    //         buffer.push(pkey.clone());
     //
-    //     let reset_result = cursor.reset_by_pkey(key)?;
+    //         if !is_many {
+    //             handle.commit_and_close_vm()?;
+    //             return Ok(buffer);
+    //         }
     //
-    //     if !reset_result {
-    //         return Ok(false);
+    //         handle.step()?;
     //     }
     //
-    //     cursor.update_current(doc)?;
-    //
-    //     Ok(true)
+    //     handle.commit_and_close_vm()?;
+    //     Ok(buffer)
     // }
 
-    pub fn count(&mut self, name: &str, session_id: Option<&ObjectId>) -> DbResult<u64> {
-        let session = self.get_session_by_id(session_id)?.clone();
-        let col = {
-            let mut session = session.lock()?;
-            self.get_collection_meta_by_name_advanced_auto(name, false, &mut session)?
-        };
+    pub fn count(&mut self, name: &str, session: &mut SessionInner) -> DbResult<u64> {
+        let col = self.get_collection_meta_by_name_advanced_auto(
+            name,
+            false,
+            session,
+        )?;
         if col.is_none() {
             return Ok(0);
         }
@@ -807,7 +725,7 @@ impl DbContext {
         let col = col.unwrap();
         let mut count = 0;
 
-        let mut handle = self.find_internal(session.clone(), &col, None)?;
+        let mut handle = self.find_internal(session, &col, None)?;
         handle.step()?;
 
         while handle.has_row() {
@@ -821,9 +739,12 @@ impl DbContext {
         Ok(count)
     }
 
-    pub(crate) fn query_all_meta(&mut self, session_id: Option<&ObjectId>) -> DbResult<Vec<Document>> {
-        let session = self.get_session_by_id(session_id)?.clone();
+    pub(crate) fn list_collection_names_with_session(&mut self, session: &mut SessionInner) -> DbResult<Vec<String>> {
+        let docs = self.query_all_meta(session)?;
+        Ok(collection_metas_to_names(docs))
+    }
 
+    pub(crate) fn query_all_meta(&mut self, session: &mut SessionInner) -> DbResult<Vec<Document>> {
         let mut handle = {
             let subprogram = SubProgram::compile_query_all_by_name(
                 TABLE_META_PREFIX,
@@ -847,42 +768,134 @@ impl DbContext {
         Ok(result)
     }
 
-    pub fn start_transaction(&mut self, ty: Option<TransactionType>, session_id: Option<&ObjectId>) -> DbResult<()> {
+    pub fn handle_request<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
         unimplemented!()
     }
 
-    pub fn commit(&mut self, session_id: Option<&ObjectId>) -> DbResult<()> {
+    pub fn handle_request_doc(&mut self, value: Bson) -> DbResult<HandleRequestResult> {
         unimplemented!()
     }
 
-    pub fn rollback(&mut self, session_id: Option<&ObjectId>) -> DbResult<()> {
-        unimplemented!()
+    pub fn find_one<T: DeserializeOwned>(
+        &mut self,
+        col_name: &str,
+        filter: impl Into<Option<Document>>,
+        session: &mut SessionInner,
+    ) -> DbResult<Option<T>> {
+        let filter_query = filter.into();
+        let col_spec = self.get_collection_meta_by_name_advanced_auto(col_name, false, session)?;
+        let result: Option<T> = if let Some(col_spec) = col_spec {
+            let mut handle = self.find_internal(
+                session,
+                &col_spec,
+                filter_query,
+            )?;
+            handle.step()?;
+
+            if !handle.has_row() {
+                handle.commit_and_close_vm()?;
+                return Ok(None);
+            }
+
+            let result_doc = handle.get().as_document().unwrap().clone();
+
+            handle.commit_and_close_vm()?;
+
+            bson::from_document(result_doc)?
+        } else {
+            None
+        };
+
+        Ok(result)
     }
 
-    pub fn drop_session(&mut self, session_id: &ObjectId) -> DbResult<()> {
-        unimplemented!()
-    }
+    pub fn find_many<T: DeserializeOwned>(
+        &mut self,
+        col_name: &str,
+        filter: impl Into<Option<Document>>,
+        session: &mut SessionInner
+    ) -> DbResult<Vec<T>> {
+        let filter_query = filter.into();
+        let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, session)?;
+        match meta_opt {
+            Some(col_spec) => {
+                let mut handle = self.find_internal(
+                    session,
+                    &col_spec,
+                    filter_query,
+                )?;
 
-}
+                let mut result: Vec<T> = Vec::new();
+                consume_handle_to_vec::<T>(&mut handle, &mut result)?;
 
-fn dump_version(version: &[u8]) -> String {
-    let mut result = String::new();
+                Ok(result)
 
-    let mut i: usize = 0;
-    while i < version.len() {
-        let digit = version[i] as u32;
-        let ch: char = std::char::from_digit(digit, 10).unwrap();
-        result.push(ch);
-        if i != version.len() - 1 {
-            result.push('.');
+            }
+            None => {
+                Ok(vec![])
+            }
         }
-        i += 1;
     }
 
-    result
+    pub(super) fn count_documents(&mut self, col_name: &str, session: &mut SessionInner) -> DbResult<u64> {
+        let test_result = self.count(col_name, session);
+        match test_result {
+            Ok(result) => Ok(result),
+            Err(DbErr::CollectionNotFound(_)) => Ok(0),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub(super) fn delete_one(
+        &mut self,
+        col_name: &str,
+        query: Document,
+        session: &mut SessionInner,
+    ) -> DbResult<DeleteResult> {
+        let test_count = self.delete(
+            col_name,
+            query,
+            false,
+            session,
+        );
+
+        match test_count {
+            Ok(count) => Ok(DeleteResult {
+                deleted_count: count as u64,
+            }),
+            Err(DbErr::CollectionNotFound(_)) => Ok(DeleteResult {
+                deleted_count: 0,
+            }),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub(super) fn delete_many(&mut self, col_name: &str, query: Document, session: &mut SessionInner) -> DbResult<DeleteResult> {
+        let test_deleted_count = if query.len() == 0 {
+            self.delete_all(col_name, session)
+        } else {
+            self.delete(col_name, query, true, session)
+        };
+        match test_deleted_count {
+            Ok(deleted_count) => Ok(DeleteResult {
+                deleted_count: deleted_count as u64,
+            }),
+            Err(DbErr::CollectionNotFound(_)) => Ok(DeleteResult {
+                deleted_count: 0
+            }),
+            Err(err) => Err(err),
+        }
+    }
+
 }
 
-impl Drop for DbContext {
+#[derive(Clone)]
+pub struct HandleRequestResult {
+    pub is_quit: bool,
+    pub value: Bson,
+}
+
+impl Drop for DatabaseInner {
 
     fn drop(&mut self) {
         // TODO: FIXME
@@ -891,4 +904,28 @@ impl Drop for DbContext {
         // }
     }
 
+}
+
+fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, result: &mut Vec<T>) -> DbResult<()> {
+    handle.step()?;
+
+    while handle.has_row() {
+        let doc_result = handle.get().as_document().unwrap();
+        let item: T = bson::from_document(doc_result.clone())?;
+        result.push(item);
+
+        handle.step()?;
+    }
+
+    Ok(())
+}
+
+fn collection_metas_to_names(doc_meta: Vec<Document>) -> Vec<String> {
+    doc_meta
+        .iter()
+        .map(|doc| {
+            let name = doc.get("_id").unwrap().as_str().unwrap().to_string();
+            name
+        })
+        .collect()
 }

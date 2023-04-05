@@ -71,6 +71,7 @@ impl RawPage {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn get_u16(&self, pos: u32) -> u16 {
         let mut buffer: [u8; 2] = [0; 2];
         buffer.copy_from_slice(&self.data[(pos as usize)..((pos as usize) + 2)]);
@@ -78,12 +79,14 @@ impl RawPage {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn put_u16(&mut self, data: u16) {
         let data_be = data.to_be_bytes();
         self.put(&data_be)
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn get_u32(&self, pos: u32) -> u32 {
         let mut buffer: [u8; 4] = [0; 4];
         buffer.copy_from_slice(&self.data[(pos as usize)..((pos as usize) + 4)]);
@@ -91,6 +94,7 @@ impl RawPage {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn put_u32(&mut self, data: u32) {
         let data_be = data.to_be_bytes();
         self.put(&data_be)

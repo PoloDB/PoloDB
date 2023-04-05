@@ -95,7 +95,7 @@ mod test {
         assert_eq!(doc.get("_id").unwrap().as_str().unwrap(), "test");
 
         let bytes = bson::to_vec(&doc).unwrap();
-        assert_eq!(bytes.len(), 123);
+        assert_eq!(bytes.len(), 110);
     }
 
 }

@@ -115,7 +115,6 @@ mod cursor;
 mod session;
 
 mod db;
-mod data_ticket;
 mod meta_doc_helper;
 mod config;
 mod macros;

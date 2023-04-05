@@ -4,7 +4,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use bson::Bson;
-use std::sync::{Arc, Mutex};
 use std::cell::Cell;
 use std::cmp::Ordering;
 use crate::{DbErr, DbResult, LsmKv, TransactionType};
@@ -37,9 +36,9 @@ pub enum VmState {
     HasRow = 2,
 }
 
-pub struct VM {
+pub struct VM<'a> {
     kv_engine:           LsmKv,
-    session:             Arc<Mutex<SessionInner>>,
+    session:             &'a mut SessionInner,
     pub(crate) state:    VmState,
     pc:                  *const u8,
     r0:                  i32,  // usually the logic register
@@ -65,9 +64,9 @@ fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> DbResult<bool> {
     Ok(result)
 }
 
-impl VM {
+impl<'a> VM<'a> {
 
-    pub(crate) fn new(kv_engine: LsmKv, session: Arc<Mutex<SessionInner>>, program: SubProgram) -> VM {
+    pub(crate) fn new(kv_engine: LsmKv, session: &'a mut SessionInner, program: SubProgram) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         VM {
@@ -86,16 +85,12 @@ impl VM {
     }
 
     fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        let mut session = self.session.lock()?;
-        session.auto_start_transaction(ty)
+        self.session.auto_start_transaction(ty)
     }
 
     fn open_read(&mut self, prefix: Bson) -> DbResult<()> {
         self.auto_start_transaction(TransactionType::Read)?;
-        let mut cursor = {
-            let session = self.session.lock()?;
-            self.kv_engine.open_multi_cursor(Some(session.kv_session()))
-        };
+        let mut cursor = self.kv_engine.open_multi_cursor(Some(self.session.kv_session())) ;
         cursor.go_to_min()?;
         self.r1 = Some(Cursor::new(prefix, cursor));
         Ok(())
@@ -103,10 +98,7 @@ impl VM {
 
     fn open_write(&mut self, prefix: Bson) -> DbResult<()> {
         self.auto_start_transaction(TransactionType::Write)?;
-        let mut cursor = {
-            let session = self.session.lock()?;
-            self.kv_engine.open_multi_cursor(Some(session.kv_session()))
-        };
+        let mut cursor = self.kv_engine.open_multi_cursor(Some(self.session.kv_session()));
         cursor.go_to_min()?;
         self.r1 = Some(Cursor::new(prefix, cursor));
         Ok(())
@@ -547,8 +539,7 @@ impl VM {
 
                         let updated = {
                             let cursor = self.r1.as_mut().unwrap();
-                            let mut session = self.session.lock().unwrap();
-                            session.update_cursor_current(
+                            self.session.update_cursor_current(
                                 cursor.multi_cursor_mut(),
                                 &doc_buf,
                             )?
@@ -563,8 +554,7 @@ impl VM {
                     DbOp::DeleteCurrent => {
                         let deleted = {
                             let cursor = self.r1.as_mut().unwrap();
-                            let mut session = self.session.lock().unwrap();
-                            session.delete_cursor_current(cursor.multi_cursor_mut())?
+                            self.session.delete_cursor_current(cursor.multi_cursor_mut())?
                         };
                         if deleted {
                             self.r2 += 1;
@@ -651,8 +641,7 @@ impl VM {
                     DbOp::Close => {
                         self.r1 = None;
                         if self.rollback_on_drop {
-                            let mut session = self.session.lock()?;
-                            session.auto_commit(&self.kv_engine)?;
+                            self.session.auto_commit()?;
                             self.rollback_on_drop = false;
                         }
 
@@ -682,8 +671,7 @@ impl VM {
     }
 
     pub(crate) fn commit_and_close(mut self) -> DbResult<()> {
-        let mut session = self.session.lock()?;
-        session.auto_commit(&self.kv_engine)?;
+        self.session.auto_commit()?;
         self.rollback_on_drop = false;
         Ok(())
     }
@@ -694,7 +682,7 @@ impl VM {
 
 }
 
-impl Drop for VM {
+impl Drop for VM<'_> {
 
     fn drop(&mut self) {
         if self.rollback_on_drop {
