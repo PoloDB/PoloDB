@@ -1,4 +1,9 @@
 
+# 4.0.0
+
+- **Breaking change:** use LSM-Tree as backend data structure
+  to implement multiple writers
+
 # 3.5.2
 
 - Re-license to MPL-2.0

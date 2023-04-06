@@ -290,8 +290,8 @@ impl<'a> VM<'a> {
     fn array_push(&mut self) -> DbResult<()> {
         let st = self.stack.len();
         let val = self.stack[st - 1].clone();
-        let array_value = match &mut self.stack[st - 2] {
-            Bson::Array(arr) => arr,
+        let mut array_value = match &self.stack[st - 2] {
+            Bson::Array(arr) => arr.clone(),
             _ => {
                 let name = format!("{}", self.stack[st-  2]);
                 return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
@@ -300,6 +300,7 @@ impl<'a> VM<'a> {
             }
         };
         array_value.push(val);
+        self.stack[st - 2] = array_value.into();
         Ok(())
     }
 
@@ -435,7 +436,7 @@ impl<'a> VM<'a> {
 
                         let key = self.borrow_static(key_stat_id as usize);
                         let key_name = key.as_str().unwrap();
-                        let top = self.stack[self.stack.len() - 1].clone();
+                        let top = &self.stack[self.stack.len() - 1];
                         let doc = match top {
                             Bson::Document(doc) => doc,
                             _ => {

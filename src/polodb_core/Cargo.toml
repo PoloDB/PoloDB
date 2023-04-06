@@ -16,7 +16,7 @@ path="lib.rs"
 [dependencies]
 libc = "0.2"
 lru = "0.9.0"
-bson = "2.3.0"
+bson = "2.6.1"
 crc64fast = "1.0"
 hashbrown = "0.13.1"
 getrandom = { version = "0.2.3", features = ["js"] }

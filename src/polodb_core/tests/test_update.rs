@@ -179,26 +179,26 @@ fn test_update_max() {
     assert_eq!(result.get("num").unwrap().as_i32().unwrap(), 2);
 }
 
-// #[test]
-// fn test_update_push() {
-//     let db = prepare_db("test-update-max").unwrap();
-//     let col = db.collection::<Document>("test");
-//     col.insert_one(doc! {
-//         "_id": 0,
-//         "content:": [1,2,3],
-//     }).unwrap();
-//     let update_result = col.update_many(doc! {
-//         "_id": 0,
-//     }, doc! {
-//         "$push": {
-//             "content": 4,
-//         },
-//     }).unwrap();
-//     assert_eq!(update_result.modified_count, 1);
-//     let result = col.find_one(doc! {
-//         "_id": 0,
-//     }).unwrap().unwrap();
-//     let content = result.get_array("content").unwrap();
-//     println!("{:?}", content);
-//     // assert_eq!(result.get("content").unwrap().as_array().unwrap().len(), 4);
-// }
+#[test]
+fn test_update_push() {
+    let db = prepare_db("test-update-max").unwrap();
+    let col = db.collection::<Document>("test");
+    let insert_doc = doc! {
+        "_id": 0,
+        "content": [1, 2, 3],
+    };
+    col.insert_one(insert_doc).unwrap();
+    let update_result = col.update_many(doc! {
+        "_id": 0,
+    }, doc! {
+        "$push": {
+            "content": 4,
+        },
+    }).unwrap();
+    assert_eq!(update_result.modified_count, 1);
+    let result = col.find_one(doc! {
+        "_id": 0,
+    }).unwrap().unwrap();
+    let content = result.get_array("content").unwrap();
+    assert_eq!(content.len(), 4);
+}
