@@ -15,7 +15,6 @@ use crate::Config;
 use crate::vm::SubProgram;
 use crate::meta_doc_helper::meta_doc_key;
 // use crate::index_ctx::{IndexCtx, merge_options_into_default};
-use crate::page::RawPage;
 use crate::db::db_handle::DbHandle;
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 #[cfg(not(target_arch = "wasm32"))]
@@ -195,21 +194,6 @@ impl DatabaseInner {
                 }
             },
             Err(err) => return Err(err),
-        }
-    }
-
-    fn check_first_page_valid(page: &RawPage) -> DbResult<()> {
-        let mut title_area: [u8; 32] = [0; 32];
-        title_area.copy_from_slice(&page.data[0..32]);
-
-        match std::str::from_utf8(&title_area) {
-            Ok(s) => {
-                if !s.starts_with("PoloDB") {
-                    return Err(DbErr::NotAValidDatabase);
-                }
-                Ok(())
-            },
-            Err(_) => Err(DbErr::NotAValidDatabase),
         }
     }
 

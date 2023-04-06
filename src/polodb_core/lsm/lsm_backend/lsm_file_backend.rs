@@ -192,6 +192,25 @@ impl LsmFileBackendInner {
         Ok(buffer.into())
     }
 
+    fn check_first_page_valid(data: &[u8]) -> DbResult<()> {
+        let mut title_area: [u8; 32] = [0; 32];
+        if data.len() < 32 {
+            return Err(DbErr::NotAValidDatabase);
+        }
+        title_area.copy_from_slice(&data[0..32]);
+
+        match std::str::from_utf8(&title_area) {
+            Ok(s) => {
+                if !s.starts_with("PoloDB") {
+                    return Err(DbErr::NotAValidDatabase);
+                }
+                Ok(())
+            },
+            Err(_) => Err(DbErr::NotAValidDatabase),
+        }
+    }
+
+
     fn read_latest_snapshot(&mut self) -> DbResult<LsmSnapshot> {
         let meta = self.file.metadata()?;
         if meta.len() == 0 { // new file
@@ -201,6 +220,8 @@ impl LsmFileBackendInner {
         let mmap = unsafe {
             Mmap::map(&self.file)?
         };
+
+        LsmFileBackendInner::check_first_page_valid(&mmap)?;
 
         let page_size = self.config.get_lsm_page_size();
 

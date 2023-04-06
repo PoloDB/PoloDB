@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use crate::lsm::lsm_tree::LsmTree;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub(crate) struct LsmTuplePtr {
     pub pid:       u64,
     pub offset:    u32,

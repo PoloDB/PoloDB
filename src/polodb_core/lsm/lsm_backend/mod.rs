@@ -8,10 +8,12 @@ pub(crate) mod lsm_log;
 mod file_writer;
 mod snapshot_reader;
 mod lsm_backend;
+mod indexeddb_backend;
 
 pub(crate) use lsm_file_backend::LsmFileBackend;
 pub(crate) use lsm_log::LsmLog;
 pub(crate) use lsm_backend::LsmBackend;
+pub(crate) use indexeddb_backend::IndexeddbBackend;
 
 #[allow(unused)]
 pub(crate) mod format {
