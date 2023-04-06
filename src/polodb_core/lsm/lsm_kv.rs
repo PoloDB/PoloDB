@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{AtomicU64, Ordering};
 use crate::{Config, DbErr, DbResult, TransactionType};
 use crate::lsm::kv_cursor::KvCursor;
+use crate::lsm::lsm_backend::LsmBackend;
 use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_session::LsmSession;
 use crate::lsm::LsmMetrics;
@@ -137,7 +138,7 @@ impl LsmKv {
 }
 
 pub(crate) struct LsmKvInner {
-    backend: Option<Box<LsmFileBackend>>,
+    backend: Option<Box<dyn LsmBackend>>,
     log: Option<LsmLog>,
     snapshot: Mutex<LsmSnapshot>,
     main_mem_table: Mutex<MemTable>,
@@ -178,7 +179,7 @@ impl LsmKvInner {
     }
 
     fn open_with_backend(
-        backend: Option<Box<LsmFileBackend>>,
+        backend: Option<Box<dyn LsmBackend>>,
         log: Option<LsmLog>,
         metrics: LsmMetrics,
         config: Config,
@@ -331,9 +332,9 @@ impl LsmKvInner {
 
                 self.metrics.add_sync_count();
             } else if LsmKvInner::should_minor_compact(&snapshot) {
-                self.minor_compact(backend, &mut snapshot)?;
+                self.minor_compact(backend.as_ref(), &mut snapshot)?;
             } else if LsmKvInner::should_major_compact(&snapshot) {
-                self.major_compact(backend, &mut snapshot)?;
+                self.major_compact(backend.as_ref(), &mut snapshot)?;
             }
         }
 
@@ -343,7 +344,7 @@ impl LsmKvInner {
         Ok(())
     }
 
-    fn minor_compact(&self, backend: &LsmFileBackend, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn minor_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         backend.minor_compact(snapshot)?;
         backend.checkpoint_snapshot(snapshot)?;
 
@@ -352,7 +353,7 @@ impl LsmKvInner {
         Ok(())
     }
 
-    fn major_compact(&self, backend: &LsmFileBackend, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn major_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         backend.major_compact(snapshot)?;
         backend.checkpoint_snapshot(snapshot)?;
 

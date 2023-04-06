@@ -7,9 +7,11 @@ mod lsm_file_backend;
 pub(crate) mod lsm_log;
 mod file_writer;
 mod snapshot_reader;
+mod lsm_backend;
 
 pub(crate) use lsm_file_backend::LsmFileBackend;
 pub(crate) use lsm_log::LsmLog;
+pub(crate) use lsm_backend::LsmBackend;
 
 #[allow(unused)]
 pub(crate) mod format {

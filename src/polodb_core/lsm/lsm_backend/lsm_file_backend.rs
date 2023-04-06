@@ -15,6 +15,7 @@ use smallvec::smallvec;
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::lsm_backend::file_writer::FileWriter;
 use crate::lsm::lsm_backend::format;
+use crate::lsm::lsm_backend::lsm_backend::LsmBackend;
 use crate::lsm::lsm_backend::snapshot_reader::SnapshotReader;
 use crate::lsm::mem_table::MemTable;
 use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
@@ -96,35 +97,40 @@ impl LsmFileBackend {
         })
     }
 
-    pub fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
+}
+
+impl LsmBackend for LsmFileBackend {
+
+    fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
         let mut inner = self.inner.lock()?;
         inner.read_segment_by_ptr(ptr)
     }
 
-    pub fn read_latest_snapshot(&self) -> DbResult<LsmSnapshot> {
+    fn read_latest_snapshot(&self) -> DbResult<LsmSnapshot> {
         let mut inner = self.inner.lock()?;
         inner.read_latest_snapshot()
     }
 
-    pub fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.sync_latest_segment(segment, snapshot)
     }
 
-    pub fn minor_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn minor_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.minor_compact(snapshot)
     }
 
-    pub fn major_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn major_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.major_compact(snapshot)
     }
 
-    pub fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
         inner.checkpoint_snapshot(snapshot)
     }
+
 }
 
 struct LsmFileBackendInner {

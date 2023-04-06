@@ -222,8 +222,8 @@ impl DatabaseInner {
         Ok(())
     }
 
-    fn auto_rollback(&self, _session: &mut SessionInner) -> DbResult<()> {
-        // unimplemented!()
+    fn auto_rollback(&self, session: &mut SessionInner) -> DbResult<()> {
+        session.auto_rollback()?;
         Ok(())
     }
 
@@ -592,40 +592,9 @@ impl DatabaseInner {
     }
 
     pub fn delete(&mut self, col_name: &str, query: Document, is_many: bool, session: &mut SessionInner) -> DbResult<usize> {
-        // {
-        //     let mut session = session.lock()?;
-        //     self.auto_start_transaction(&mut session, TransactionType::Write)?;
-        // }
-
         let result = self.internal_delete_by_query(session, col_name, query, is_many)?;
-
-        // let result = match self.internal_delete_by_query(session.clone(), col_name, query, is_many) {
-        //     Ok(result) => {
-        //         let mut session = session.lock()?;
-        //         self.auto_commit(&mut session)?;
-        //         result
-        //     }
-        //     Err(err) => {
-        //         let mut session = session.lock()?;
-        //         self.auto_rollback(&mut session)?;
-        //         return Err(err);
-        //     }
-        // };
-
         Ok(result)
     }
-
-    // fn internal_delete(&self, session: &mut SessionInner, col_name: &str, primary_keys: &[Bson]) -> DbResult<usize> {
-    //     let mut count: usize = 0;
-    //     for pkey in primary_keys {
-    //         let delete_result = self.internal_delete_by_pkey(session, col_name, pkey)?;
-    //         if delete_result.is_some() {
-    //             count += 1;
-    //         }
-    //     }
-    //
-    //     Ok(count)
-    // }
 
     fn internal_delete_by_query(&mut self, session: &mut SessionInner, col_name: &str, query: Document, is_many: bool) -> DbResult<usize> {
         let subprogram = SubProgram::compile_delete(
@@ -877,17 +846,6 @@ impl DatabaseInner {
 pub struct HandleRequestResult {
     pub is_quit: bool,
     pub value: Bson,
-}
-
-impl Drop for DatabaseInner {
-
-    fn drop(&mut self) {
-        // TODO: FIXME
-        // if !self.base_session.transaction_state().is_no_trans() {
-        //     let _ = self.base_session.only_rollback_journal();
-        // }
-    }
-
 }
 
 fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, result: &mut Vec<T>) -> DbResult<()> {
