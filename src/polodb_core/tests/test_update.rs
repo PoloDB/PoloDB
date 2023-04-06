@@ -181,7 +181,7 @@ fn test_update_max() {
 
 #[test]
 fn test_update_push() {
-    let db = prepare_db("test-update-max").unwrap();
+    let db = prepare_db("test-update-push").unwrap();
     let col = db.collection::<Document>("test");
     let insert_doc = doc! {
         "_id": 0,
