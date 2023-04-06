@@ -496,26 +496,11 @@ impl DatabaseInner {
         update: &Document,
         session: &mut SessionInner,
     ) -> DbResult<UpdateResult> {
-        // let result = self.internal_update(session, col_spec, query, update, false)?;
-        //
-        // Ok(result)
-        let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, session)?;
-        let modified_count: u64 = match meta_opt {
-            Some(col_spec) => {
-                let size = self.internal_update(
-                    &col_spec,
-                    query,
-                    &update,
-                    false,
-                    session
-                )?;
-                size as u64
-            }
-            None => 0,
-        };
-        Ok(UpdateResult {
-            modified_count,
-        })
+        session.auto_start_transaction(TransactionType::Write)?;
+
+        let result = try_db_op!(self, session, self.internal_update(col_name, query, update, false, session));
+
+        Ok(result)
     }
 
     pub(super) fn update_many(
@@ -525,46 +510,45 @@ impl DatabaseInner {
         update: Document,
         session: &mut SessionInner,
     ) -> DbResult<UpdateResult> {
-        let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, session)?;
-        let modified_count: u64 = match meta_opt {
-            Some(col_spec) => {
-                let size = self.internal_update(
-                    &col_spec,
-                    Some(&query),
-                    &update,
-                    true,
-                    session
-                )?;
-                size as u64
-            }
-            None => 0,
-        };
-        Ok(UpdateResult {
-            modified_count,
-        })
+        session.auto_start_transaction(TransactionType::Write)?;
+
+        let result = try_db_op!(self, session, self.internal_update(col_name, Some(&query), &update, true, session));
+
+        Ok(result)
     }
 
     fn internal_update(
-        &self,
-        col_spec: &CollectionSpecification,
+        &mut self,
+        col_name: &str,
         query: Option<&Document>,
         update: &Document,
         is_many: bool,
         session: &mut SessionInner,
-    ) -> DbResult<usize> {
-        let subprogram = SubProgram::compile_update(
-            col_spec,
-            query,
-            update,
-            true,
-            is_many,
-        )?;
+    ) -> DbResult<UpdateResult> {
+        let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, session)?;
 
-        let mut vm = VM::new(self.kv_engine.clone(), session, subprogram);
-        vm.set_rollback_on_drop(true);
-        vm.execute()?;
+        let modified_count = match &meta_opt {
+            Some(col_spec) => {
+                let subprogram = SubProgram::compile_update(
+                    col_spec,
+                    query,
+                    update,
+                    true,
+                    is_many,
+                )?;
 
-        Ok(vm.r2 as usize)
+                let mut vm = VM::new(self.kv_engine.clone(), session, subprogram);
+                vm.set_rollback_on_drop(true);
+                vm.execute()?;
+
+                vm.r2 as u64
+            },
+            None => 0,
+        };
+
+        Ok(UpdateResult {
+            modified_count,
+        })
     }
 
     pub fn drop_collection(&mut self, col_name: &str, session: &mut SessionInner) -> DbResult<()> {

@@ -18,7 +18,7 @@ pub fn mk_db_path(db_name: &str) -> PathBuf {
 pub fn mk_journal_path(db_name: &str) -> PathBuf {
     let mut journal_path = env::temp_dir();
 
-    let journal_filename = String::from(db_name) + ".db.journal";
+    let journal_filename = String::from(db_name) + ".db.wal";
     journal_path.push(journal_filename);
 
     journal_path

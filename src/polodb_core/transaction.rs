@@ -17,17 +17,18 @@ pub enum TransactionType {
 pub(crate) enum TransactionState {
     NoTrans,
     User,
-    UserAuto,
     DbAuto(Cell<i32>),
 }
 
 impl TransactionState {
 
+    #[inline]
     pub(crate) fn new_db_auto() -> TransactionState {
         TransactionState::DbAuto(Cell::new(1))
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn is_no_trans(&self) -> bool {
         if let TransactionState::NoTrans = self {
             true
@@ -36,12 +37,14 @@ impl TransactionState {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn acquire(&self) {
         if let TransactionState::DbAuto(counter) = self {
             counter.set(counter.get() + 1)
         }
     }
 
+    #[allow(dead_code)]
     pub (crate) fn release(&self) -> bool {
         if let TransactionState::DbAuto(counter) = self {
             counter.set(counter.get() - 1);

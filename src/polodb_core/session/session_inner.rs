@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use std::cell::Cell;
 use crate::{DbErr, DbResult, TransactionType};
 use crate::lsm::LsmSession;
 use crate::lsm::multi_cursor::MultiCursor;
@@ -50,9 +49,13 @@ impl SessionInner {
             }
             TransactionState::NoTrans => {
                 self.kv_session.start_transaction(ty)?;  // auto
-                self.transaction_state = TransactionState::DbAuto(Cell::new(1));
+                self.transaction_state = TransactionState::new_db_auto();
             }
-            _ => ()
+            TransactionState::User => {
+                if ty == TransactionType::Write {
+                    self.kv_session.upgrade_to_write_if_needed()?;
+                }
+            }
         };
         Ok(())
     }

@@ -283,7 +283,21 @@ impl LsmKvInner {
         )
     }
 
+    #[inline]
+    fn is_write_transaction(t: Option<TransactionType>) -> bool {
+        if let Some(t) = &t {
+            return *t == TransactionType::Write
+        }
+
+        false
+    }
+
     pub(crate) fn commit(&self, session: &mut LsmSession) -> DbResult<()> {
+        if !LsmKvInner::is_write_transaction(session.transaction()) {
+            session.finished_transaction();
+            return Ok(())
+        }
+
         if session.id() != self.op_count.load(Ordering::SeqCst) + 1 {
             return Err(DbErr::SessionOutdated);
         }

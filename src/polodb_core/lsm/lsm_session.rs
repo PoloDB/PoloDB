@@ -63,6 +63,13 @@ impl LsmSession {
         Ok(())
     }
 
+    pub(crate) fn upgrade_to_write_if_needed(&mut self) -> DbResult<()> {
+        if self.transaction.unwrap() == TransactionType::Read {
+            self.transaction = Some(TransactionType::Write);
+        }
+        Ok(())
+    }
+
     pub fn commit_transaction(&mut self) -> DbResult<()> {
         let engine = self.engine.upgrade().ok_or(DbErr::DbIsClosed)?;
         engine.commit(self)
@@ -181,10 +188,14 @@ impl LsmSession {
     }
 
     pub(crate) fn finished_transaction(&mut self) {
-        if self.log_buffer.is_some() {
-            self.log_buffer = Some(Vec::new());
+        let t = self.transaction.unwrap();
+
+        if t == TransactionType::Write {
+            if self.log_buffer.is_some() {
+                self.log_buffer = Some(Vec::new());
+            }
+            self.transaction = None;
         }
-        self.transaction = None;
         self.id += 1;
     }
 

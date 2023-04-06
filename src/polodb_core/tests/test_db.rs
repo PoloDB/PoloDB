@@ -5,28 +5,40 @@
  */
 use polodb_core::{Database, Config, DbErr};
 use polodb_core::bson::{doc, Document};
-use std::env;
 
 mod common;
 
 use common::{
     create_file_and_return_db_with_items,
-    create_memory_and_return_db_with_items,
     mk_db_path,
 };
+use polodb_core::test_utils::mk_journal_path;
 
 static TEST_SIZE: usize = 1000;
 
 #[test]
 fn test_reopen_db() {
+    let db_path = mk_db_path("test-reopen");
+    let journal_path = mk_journal_path("test-reopen");
+
+    let _ = std::fs::remove_file(db_path.as_path());
+    let _ = std::fs::remove_file(journal_path);
+
     {
-        let _db1 = create_file_and_return_db_with_items("test-reopen", 5);
+        let db = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
+
+        let collection = db.collection("books");
+        collection.insert_one(doc! {
+           "title": "The Three-Body Problem",
+           "author": "Liu Cixin",
+        }).unwrap();
     }
 
     {
-        let mut db_path = env::temp_dir();
-        db_path.push("test-reopen.db");
-        let _db2 = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
+        let db = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
+        let collection = db.collection::<Document>("books");
+        let book = collection.find_one(doc! {}).unwrap().unwrap();
+        assert_eq!(book.get("author").unwrap().as_str().unwrap(), "Liu Cixin");
     }
 }
 
