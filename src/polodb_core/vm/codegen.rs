@@ -634,6 +634,10 @@ impl Codegen {
         Ok(())
     }
 
+    pub(super) fn emit_delete_operation(&mut self) {
+        self.emit(DbOp::DeleteCurrent);
+    }
+
     pub(super) fn emit_update_operation(&mut self, update: &Document) -> DbResult<()> {
         for (key, value) in update.iter() {
             path_hint!(self, key.clone(), {
@@ -764,16 +768,16 @@ impl Codegen {
         self.program.instructions.extend_from_slice(&bytes);
     }
 
-    pub(super) fn emit_open_read(&mut self, root_pid: u32) {
+    pub(super) fn emit_open_read(&mut self, prefix: Bson) {
         self.emit(DbOp::OpenRead);
-        let bytes = root_pid.to_le_bytes();
-        self.program.instructions.extend_from_slice(&bytes);
+        let id = self.push_static(prefix);
+        self.emit_u32(id);
     }
 
-    pub(super) fn emit_open_write(&mut self, root_pid: u32) {
+    pub(super) fn emit_open_write(&mut self, prefix: Bson) {
         self.emit(DbOp::OpenWrite);
-        let bytes = root_pid.to_le_bytes();
-        self.program.instructions.extend_from_slice(&bytes);
+        let id = self.push_static(prefix);
+        self.emit_u32(id);
     }
 
     #[inline]

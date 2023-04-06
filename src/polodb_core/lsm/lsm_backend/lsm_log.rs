@@ -4,11 +4,10 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use std::cell::RefCell;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use byteorder::WriteBytesExt;
 use crc64fast::Digest;
 use getrandom::getrandom;
@@ -23,12 +22,12 @@ const DATABASE_VERSION: [u8; 4] = [0, 0, 4, 0];
 const DATA_BEGIN_OFFSET: u64 = 64;
 
 enum LogCommand {
-    Insert(Arc<[u8]>, Vec<u8>),
+    Insert(Arc<[u8]>, Arc<[u8]>),
     Delete(Arc<[u8]>)
 }
 
 #[allow(dead_code)]
-mod format {
+pub(crate) mod format {
     pub const EOF: u8     = 0x00;
     pub const PAD1: u8    = 0x01;
     pub const PAD2: u8    = 0x02;
@@ -58,7 +57,7 @@ pub(crate) struct LsmCommitResult {
 }
 
 pub(crate) struct LsmLog {
-    inner: RefCell<LsmLogInner>
+    inner: Mutex<LsmLogInner>
 }
 
 impl LsmLog {
@@ -66,39 +65,41 @@ impl LsmLog {
     pub fn open(path: &Path, config: Config) -> DbResult<LsmLog> {
         let inner = LsmLogInner::open(path, config)?;
         Ok(LsmLog {
-            inner: RefCell::new(inner),
+            inner: Mutex::new(inner),
         })
     }
 
     pub fn path(&self) -> PathBuf {
-        let inner = self.inner.borrow();
+        let inner = self.inner.lock().unwrap();
         inner.file_path.to_path_buf()
     }
 
+    #[allow(dead_code)]
     pub fn put(&self, key: &[u8], value: &[u8]) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.put(key, value)
     }
 
+    #[allow(dead_code)]
     pub fn delete(&self, key: &[u8]) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.delete(key)
     }
 
     pub fn start_transaction(&self) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.start_transaction()
     }
 
     #[allow(dead_code)]
     pub fn rollback(&self) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.rollback()
     }
 
-    pub fn commit(&self) -> DbResult<LsmCommitResult> {
-        let mut inner = self.inner.borrow_mut();
-        inner.commit()
+    pub fn commit(&self, buffer: Option<&[u8]>) -> DbResult<LsmCommitResult> {
+        let mut inner = self.inner.lock()?;
+        inner.commit(buffer)
     }
 
     pub fn update_mem_table_with_latest_log(
@@ -106,12 +107,12 @@ impl LsmLog {
         snapshot: &LsmSnapshot,
         mem_table: &mut MemTable,
     ) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.update_mem_table_with_latest_log(snapshot, mem_table)
     }
 
     pub fn shrink(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.inner.lock()?;
         inner.shrink(snapshot)
     }
 }
@@ -327,7 +328,7 @@ impl LsmLogInner {
         let mut value_buff = vec![0u8; value_len as usize];
         remain.read_exact(&mut value_buff)?;
 
-        commands.push(LogCommand::Insert(key_buff.into(), value_buff));
+        commands.push(LogCommand::Insert(key_buff.into(), value_buff.into()));
 
         *ptr = remain.as_ptr() as usize - mmap.as_ptr() as usize;
 
@@ -352,10 +353,10 @@ impl LsmLogInner {
         for cmd in commands {
             match cmd {
                 LogCommand::Insert(key, value) => {
-                    mem_table.put(key, value);
+                    mem_table.put(key, value, true);
                 }
                 LogCommand::Delete(key) => {
-                    mem_table.delete(key.as_ref());
+                    mem_table.delete(key.as_ref(), true);
                 }
             }
         }
@@ -415,10 +416,15 @@ impl LsmLogInner {
         Ok(())
     }
 
-    pub fn commit(&mut self) -> DbResult<LsmCommitResult> {
+    pub fn commit(&mut self, buffer: Option<&[u8]>) -> DbResult<LsmCommitResult> {
         if self.transaction.is_none() {
             return Err(DbErr::NoTransactionStarted);
         }
+
+        if let Some(buffer) = buffer {
+            self.write_all(buffer)?;
+        }
+
         {
             let state = self.transaction.as_ref().unwrap();
             let checksum = state.digest.sum64();

@@ -3,10 +3,10 @@ use std::cmp::Ordering;
 use crate::DbResult;
 use crate::lsm::lsm_kv::LsmKvInner;
 use crate::lsm::lsm_segment::LsmTuplePtr;
-use crate::lsm::lsm_tree::{LsmTreeValueMarker, TreeCursor};
+use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker, TreeCursor};
 
 pub(crate) enum CursorRepr {
-    MemTableCursor(TreeCursor<Arc<[u8]>, Vec<u8>>),
+    MemTableCursor(TreeCursor<Arc<[u8]>, Arc<[u8]>>),
     SegTableCursor(TreeCursor<Arc<[u8]>, LsmTuplePtr>),
 }
 
@@ -20,6 +20,31 @@ impl CursorRepr {
             CursorRepr::SegTableCursor(cursor) => {
                 cursor.seek(key)
             }
+        }
+    }
+
+    pub fn update_current(
+        &mut self,
+        value: &LsmTreeValueMarker<Arc<[u8]>>,
+    ) -> Option<(LsmTree<Arc<[u8]>, Arc<[u8]>>, Option<Arc<[u8]>>)> {
+        match self {
+            CursorRepr::MemTableCursor(cursor) => {
+                cursor.update(value)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn insert_current(
+        &mut self,
+        key: Arc<[u8]>,
+        value: &LsmTreeValueMarker<Arc<[u8]>>,
+    ) -> LsmTree<Arc<[u8]>, Arc<[u8]>> {
+        match self {
+            CursorRepr::MemTableCursor(cursor) => {
+                cursor.insert(key, value)
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -43,7 +68,7 @@ impl CursorRepr {
         }
     }
 
-    pub fn value(&self, db: &LsmKvInner) -> DbResult<Option<LsmTreeValueMarker<Vec<u8>>>> {
+    pub fn value(&self, db: &LsmKvInner) -> DbResult<Option<LsmTreeValueMarker<Arc<[u8]>>>> {
         match self {
             CursorRepr::MemTableCursor(mem_table_cursor) => {
                 let result = mem_table_cursor.value();
@@ -118,7 +143,7 @@ impl CursorRepr {
 
 }
 
-impl Into<CursorRepr> for TreeCursor<Arc<[u8]>, Vec<u8>> {
+impl Into<CursorRepr> for TreeCursor<Arc<[u8]>, Arc<[u8]>> {
 
     fn into(self) -> CursorRepr {
         CursorRepr::MemTableCursor(self)

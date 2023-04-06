@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::DbResult;
 use crate::lsm::lsm_kv::LsmKvInner;
 use crate::lsm::lsm_segment::LsmTuplePtr;
-use crate::lsm::lsm_tree::LsmTreeValueMarker;
+use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
 use crate::lsm::multi_cursor::CursorRepr;
 
 /// This is a cursor used to iterate
@@ -14,6 +14,8 @@ pub(crate) struct MultiCursor {
     first_result: i64,
 }
 
+type UpdateResult = Option<(LsmTree<Arc<[u8]>, Arc<[u8]>>, Option<Arc<[u8]>>)>;
+
 impl MultiCursor {
 
     pub fn new(cursors: Vec<CursorRepr>) -> MultiCursor {
@@ -22,6 +24,37 @@ impl MultiCursor {
             cursors,
             keys: vec![None; len],
             first_result: -1,
+        }
+    }
+
+    pub fn update_current(&mut self, value: &[u8]) -> DbResult<UpdateResult> {
+        let buf: Arc<[u8]> = value.into();
+        if self.first_result == 0 {
+            Ok(self.cursors[0].update_current(&LsmTreeValueMarker::Value(buf)))
+        } else {
+            let cursor = &self.cursors[self.first_result as usize];
+            let key = cursor.key().unwrap();
+            let new_tree = self.cursors[0].insert_current(key.clone(), &LsmTreeValueMarker::Value(buf));
+            let mut new_cursor = new_tree.open_cursor();
+            new_cursor.seek(key.as_ref());
+            self.cursors[0] = new_cursor.into();
+            self.first_result = 0;
+            Ok(Some((new_tree, None)))
+        }
+    }
+
+    pub fn delete_current(&mut self) -> DbResult<UpdateResult> {
+        if self.first_result == 0 {
+            Ok(self.cursors[0].update_current(&LsmTreeValueMarker::Deleted))
+        } else {
+            let cursor = &self.cursors[self.first_result as usize];
+            let key = cursor.key().unwrap();
+            let result = self.cursors[0].insert_current(key.clone(), &LsmTreeValueMarker::Deleted);
+            let mut new_cursor = result.open_cursor();
+            new_cursor.seek(key.as_ref());
+            self.cursors[0] = new_cursor.into();
+            self.first_result = 0;
+            Ok(Some((result, None)))
         }
     }
 
@@ -57,6 +90,7 @@ impl MultiCursor {
             // the key is greater than every keys in the set
             if let Some(Ordering::Greater) = tmp {
                 cursor.reset();
+                self.keys[idx] = None;
             } else {
                 self.keys[idx] = cursor.key();
             }
@@ -215,7 +249,7 @@ impl MultiCursor {
         Ok(())
     }
 
-    pub fn value(&self, db: &LsmKvInner) -> DbResult<Option<Vec<u8>>> {
+    pub fn value(&self, db: &LsmKvInner) -> DbResult<Option<Arc<[u8]>>> {
         if self.first_result >= 0 {
             let cursor = &self.cursors[self.first_result as usize];
             let tmp = cursor.value(db)?;
@@ -280,6 +314,13 @@ impl MultiCursor {
         true
     }
 
+    #[allow(dead_code)]
+    pub fn reset(&mut self) {
+        for cursor in &mut self.cursors {
+            cursor.reset();
+        }
+    }
+
 }
 
 #[cfg(test)]
@@ -291,18 +332,18 @@ mod tests {
     #[test]
     fn test_order_of_multi_cursor() {
         let map0 = {
-            let mut map = LsmTree::<Arc<[u8]>, Vec<u8>>::new();
-            map.insert_in_place([10].as_ref().into(), vec![10]);
-            map.insert_in_place([40].as_ref().into(), vec![40]);
-            map.insert_in_place([60].as_ref().into(), vec![60]);
+            let mut map = LsmTree::<Arc<[u8]>, Arc<[u8]>>::new();
+            map.insert_in_place([10].as_ref().into(), vec![10].into());
+            map.insert_in_place([40].as_ref().into(), vec![40].into());
+            map.insert_in_place([60].as_ref().into(), vec![60].into());
             map
         };
 
         let map1 = {
-            let mut map = LsmTree::<Arc<[u8]>, Vec<u8>>::new();
-            map.insert_in_place([20].as_ref().into(), vec![20]);
-            map.insert_in_place([30].as_ref().into(), vec![30]);
-            map.insert_in_place([50].as_ref().into(), vec![50]);
+            let mut map = LsmTree::<Arc<[u8]>, Arc<[u8]>>::new();
+            map.insert_in_place([20].as_ref().into(), vec![20].into());
+            map.insert_in_place([30].as_ref().into(), vec![30].into());
+            map.insert_in_place([50].as_ref().into(), vec![50].into());
             map
         };
 
@@ -336,10 +377,10 @@ mod tests {
     #[test]
     fn test_deleted_value() {
         let map0 = {
-            let mut map = LsmTree::<Arc<[u8]>, Vec<u8>>::new();
-            map.insert_in_place([10].as_ref().into(), vec![10]);
-            map.insert_in_place([40].as_ref().into(), vec![40]);
-            map.insert_in_place([60].as_ref().into(), vec![60]);
+            let mut map = LsmTree::<Arc<[u8]>, Arc<[u8]>>::new();
+            map.insert_in_place([10].as_ref().into(), vec![10].into());
+            map.insert_in_place([40].as_ref().into(), vec![40].into());
+            map.insert_in_place([60].as_ref().into(), vec![60].into());
 
             map.delete_in_place::<[u8]>([40].as_ref());
 
@@ -347,10 +388,10 @@ mod tests {
         };
 
         let map1 = {
-            let mut map = LsmTree::<Arc<[u8]>, Vec<u8>>::new();
-            map.insert_in_place([20].as_ref().into(), vec![20]);
-            map.insert_in_place([30].as_ref().into(), vec![30]);
-            map.insert_in_place([50].as_ref().into(), vec![50]);
+            let mut map = LsmTree::<Arc<[u8]>, Arc<[u8]>>::new();
+            map.insert_in_place([20].as_ref().into(), vec![20].into());
+            map.insert_in_place([30].as_ref().into(), vec![30].into());
+            map.insert_in_place([50].as_ref().into(), vec![50].into());
 
             map.delete_in_place::<[u8]>([20].as_ref());
 

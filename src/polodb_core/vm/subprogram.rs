@@ -37,7 +37,7 @@ impl SubProgram {
 
         let mut codegen = Codegen::new(skip_annotation);
 
-        codegen.emit_open_read(col_spec.info.root_pid);
+        codegen.emit_open_read(col_spec._id.clone().into());
 
         codegen.emit_query_layout(
             query,
@@ -60,14 +60,13 @@ impl SubProgram {
     ) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation);
 
-        codegen.emit_open_write(col_spec.info.root_pid);
+        codegen.emit_open_write(col_spec._id.clone().into());
 
         codegen.emit_query_layout(
             query.unwrap(),
             |codegen| -> DbResult<()> {
                 codegen.emit_update_operation(update)?;
                 codegen.emit(DbOp::Pop);
-                codegen.emit(DbOp::IncR2);
                 Ok(())
             },
             is_many
@@ -76,13 +75,71 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_query_all(col_spec: &CollectionSpecification, skip_annotation: bool) -> DbResult<SubProgram> {
+    pub(crate) fn compile_delete(
+        col_name: &str,
+        query: Option<&Document>,
+        skip_annotation: bool, is_many: bool,
+    ) -> DbResult<SubProgram> {
+        let mut codegen = Codegen::new(skip_annotation);
+
+        codegen.emit_open_write(col_name.into());
+
+        codegen.emit_query_layout(
+            query.unwrap(),
+            |codegen| -> DbResult<()> {
+                codegen.emit_delete_operation();
+                codegen.emit(DbOp::Pop);
+                Ok(())
+            },
+            is_many
+        )?;
+
+        Ok(codegen.take())
+    }
+
+    // TODO: need test
+    pub(crate) fn compile_delete_all(
+        col_name: &str,
+        skip_annotation: bool
+    ) -> DbResult<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation);
         let result_label = codegen.new_label();
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
 
-        codegen.emit_open_read(col_spec.info.root_pid);
+        codegen.emit_open_read(col_name.into());
+
+        codegen.emit_goto(DbOp::Rewind, close_label);
+
+        codegen.emit_goto(DbOp::Goto, result_label);
+
+        codegen.emit_label(next_label);
+        codegen.emit_goto(DbOp::Next, result_label);
+
+        codegen.emit_label(close_label);
+        codegen.emit(DbOp::Close);
+        codegen.emit(DbOp::Halt);
+
+        codegen.emit_label(result_label);
+        codegen.emit_delete_operation();
+        codegen.emit(DbOp::Pop);
+
+        codegen.emit_goto(DbOp::Goto, next_label);
+
+        Ok(codegen.take())
+    }
+
+    pub(crate) fn compile_query_all(col_spec: &CollectionSpecification, skip_annotation: bool) -> DbResult<SubProgram> {
+        SubProgram::compile_query_all_by_name(col_spec.name(), skip_annotation)
+    }
+
+    pub(crate) fn compile_query_all_by_name(col_name: &str, skip_annotation: bool) -> DbResult<SubProgram> {
+        let mut codegen = Codegen::new(skip_annotation);
+        let result_label = codegen.new_label();
+        let next_label = codegen.new_label();
+        let close_label = codegen.new_label();
+
+        codegen.emit_open_read(col_name.into());
 
         codegen.emit_goto(DbOp::Rewind, close_label);
 
@@ -233,14 +290,16 @@ impl fmt::Display for SubProgram {
                     }
 
                     DbOp::OpenRead => {
-                        let root_pid = begin.add(pc + 1).cast::<u32>().read();
-                        writeln!(f, "{}: OpenRead({})", pc, root_pid)?;
+                        let idx = begin.add(pc + 1).cast::<u32>().read();
+                        let value = &self.static_values[idx as usize];
+                        writeln!(f, "{}: OpenRead({})", pc, value)?;
                         pc += 5;
                     }
 
                     DbOp::OpenWrite => {
-                        let root_pid = begin.add(pc + 1).cast::<u32>().read();
-                        writeln!(f, "{}: OpenWrite({})", pc, root_pid)?;
+                        let idx = begin.add(pc + 1).cast::<u32>().read();
+                        let value = &self.static_values[idx as usize];
+                        writeln!(f, "{}: OpenWrite({})", pc, value)?;
                         pc += 5;
                     }
 
@@ -335,14 +394,13 @@ mod tests {
     use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
     use crate::vm::SubProgram;
 
-    fn new_spec<T: Into<String>>(name: T, root_pid: u32) -> CollectionSpecification {
+    fn new_spec<T: Into<String>>(name: T) -> CollectionSpecification {
         CollectionSpecification {
             _id: name.into(),
             collection_type: CollectionType::Collection,
             info: CollectionSpecificationInfo {
                 uuid: None,
                 create_at: DateTime::now(),
-                root_pid,
             },
             indexes: HashMap::new(),
         }
@@ -351,13 +409,13 @@ mod tests {
     #[test]
     fn print_program() {
         // let meta_entry = MetaDocEntry::new(0, "test".into(), 100);
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let program = SubProgram::compile_query_all(&col_spec, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = "Program:
 
-0: OpenRead(100)
+0: OpenRead(\"test\")
 5: Rewind(30)
 10: Goto(37)
 
@@ -383,13 +441,13 @@ mod tests {
             "name": "Vincent Chan",
             "age": 32,
         };
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
 
-0: OpenRead(100)
+0: OpenRead("test")
 5: Rewind(30)
 10: Goto(73)
 
@@ -436,7 +494,7 @@ mod tests {
 
     #[test]
     fn print_query_by_primary_key() {
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let test_doc = doc! {
             "_id": 6,
             "age": 32,
@@ -447,7 +505,7 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead(100)
+0: OpenRead("test")
 5: PushValue(6)
 10: FindByPrimaryKey(25)
 15: Goto(33)
@@ -473,7 +531,7 @@ mod tests {
 
     #[test]
     fn query_by_logic_and() {
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let test_doc = doc! {
             "$and": [
                 doc! {
@@ -489,7 +547,7 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead(100)
+0: OpenRead("test")
 5: Rewind(30)
 10: Goto(73)
 
@@ -536,7 +594,7 @@ mod tests {
 
     #[test]
     fn print_logic_or() {
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let test_doc = doc! {
             "$or": [
                 doc! {
@@ -552,7 +610,7 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead(100)
+0: OpenRead("test")
 5: Rewind(30)
 10: Goto(73)
 
@@ -609,7 +667,7 @@ mod tests {
 
     #[test]
     fn print_complex_print() {
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let test_doc = doc! {
             "age": doc! {
                 "$gt": 3,
@@ -623,7 +681,7 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead(100)
+0: OpenRead("test")
 5: Rewind(30)
 10: Goto(73)
 
@@ -669,7 +727,7 @@ mod tests {
 
     #[test]
     fn print_update() {
-        let col_spec = new_spec("test", 100);
+        let col_spec = new_spec("test");
         let query_doc = doc! {
             "_id": doc! {
                 "$gt": 3
@@ -705,12 +763,12 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenWrite(100)
+0: OpenWrite("test")
 5: Rewind(30)
-10: Goto(197)
+10: Goto(196)
 
 15: Label(1)
-20: Next(197)
+20: Next(196)
 
 25: Label(5, "Close")
 30: Close
@@ -764,17 +822,16 @@ mod tests {
 179: Label(9)
 184: UpdateCurrent
 185: Pop
-186: IncR2
-187: Goto(20)
+186: Goto(20)
 
-192: Label(0, "Compare")
-197: SaveStackPos
-198: GetField("_id", 49)
-207: PushValue(3)
-212: Greater
-213: FalseJump(37)
-218: Pop2(2)
-223: Goto(61)
+191: Label(0, "Compare")
+196: SaveStackPos
+197: GetField("_id", 49)
+206: PushValue(3)
+211: Greater
+212: FalseJump(37)
+217: Pop2(2)
+222: Goto(61)
 "#;
         assert_eq!(expect, actual);
     }

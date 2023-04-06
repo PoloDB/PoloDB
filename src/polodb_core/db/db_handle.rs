@@ -5,8 +5,8 @@
  */
 use std::fmt;
 use bson::Bson;
-use crate::vm::{VM, VmState};
 use crate::DbResult;
+use crate::vm::{VM, VmState};
 
 /**
  * A VM wrapper for Rust-level API
@@ -52,7 +52,7 @@ impl<'a> DbHandle<'a> {
 
 }
 
-impl<'a> fmt::Display for DbHandle<'a> {
+impl fmt::Display for DbHandle<'_> {
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Program: \n\n{}", self.0.program)

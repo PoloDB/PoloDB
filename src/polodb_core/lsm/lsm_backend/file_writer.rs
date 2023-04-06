@@ -60,7 +60,11 @@ impl<'a> FileWriter<'a> {
         }
     }
 
-    pub fn write_tuple(&mut self, key: &[u8], value: LsmTreeValueMarker<&[u8]>) -> DbResult<LsmTuplePtr> {
+    pub fn write_tuple(
+        &mut self,
+        key: &[u8],
+        value: LsmTreeValueMarker<&[u8]>,
+    ) -> DbResult<LsmTreeValueMarker<LsmTuplePtr>> {
         let start_mark = self.start_mark();
         match value {
             LsmTreeValueMarker::Value(insert_buffer) => {
@@ -71,24 +75,27 @@ impl<'a> FileWriter<'a> {
                 let value_len = insert_buffer.len();
                 vli::encode(self, value_len as i64)?;
                 self.write_all(&insert_buffer)?;
+                Ok(LsmTreeValueMarker::Value(self.end_mark(&start_mark)))
             }
             LsmTreeValueMarker::Deleted => {
                 self.write_u8(format::LSM_POINT_DELETE)?;
                 vli::encode(self, key.len() as i64)?;
                 self.write_all(key)?;
+                Ok(LsmTreeValueMarker::Deleted)
             }
             LsmTreeValueMarker::DeleteStart => {
                 self.write_u8(format::LSM_START_DELETE)?;
                 vli::encode(self, key.len() as i64)?;
                 self.write_all(key)?;
+                Ok(LsmTreeValueMarker::DeleteStart)
             }
             LsmTreeValueMarker::DeleteEnd => {
                 self.write_u8(format::LSM_END_DELETE)?;
                 vli::encode(self, key.len() as i64)?;
                 self.write_all(key)?;
+                Ok(LsmTreeValueMarker::DeleteEnd)
             }
         }
-        Ok(self.end_mark(&start_mark))
     }
 
     pub fn write_buffer(&mut self, buffer: &[u8]) -> DbResult<LsmTuplePtr> {

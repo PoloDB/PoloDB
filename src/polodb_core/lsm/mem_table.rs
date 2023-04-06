@@ -1,10 +1,12 @@
+use std::cmp::Ordering;
 use std::sync::Arc;
 use crate::lsm::lsm_tree::TreeCursor;
 use super::lsm_tree::LsmTree;
 
+#[derive(Clone)]
 pub(crate) struct MemTable {
-    segments:         LsmTree<Arc<[u8]>, Vec<u8>>,
-    store_bytes:      usize,
+    segments:    LsmTree<Arc<[u8]>, Arc<[u8]>>,
+    store_bytes: usize,
 }
 
 impl MemTable {
@@ -16,17 +18,39 @@ impl MemTable {
         }
     }
 
-    pub fn put<K, V>(&mut self, key: K, value: V)
+    pub fn get(&self, key: &[u8]) -> Option<Arc<[u8]>> {
+        let mut cursor = self.segments.open_cursor();
+        let ord  = cursor.seek(key)?;
+        if ord == Ordering::Equal {
+            cursor
+                .value()
+                .map(|marker| marker.into())
+                .flatten()
+        } else {
+            None
+        }
+    }
+
+    pub fn put<K, V>(&mut self, key: K, value: V, in_place: bool)
     where
         K: Into<Arc<[u8]>>,
-        V: Into<Vec<u8>>,
+        V: Into<Arc<[u8]>>,
     {
         let key = key.into();
         let value = value.into();
         let key_len = key.len();
         let value_len = value.len();
 
-        let prev = self.segments.insert_in_place(key, value);
+        let prev = if in_place {
+            let prev = self.segments.insert_in_place(key, value);
+            prev
+        } else {
+            let prev = self.get(key.as_ref());
+
+            self.segments = self.segments.insert(key, value);
+
+            prev
+        };
 
         if let Some(prev) = prev {
             self.store_bytes -= prev.len();
@@ -40,11 +64,17 @@ impl MemTable {
 
     /// Store will not really delete the value
     /// But inert a flag
-    pub fn delete<K>(&mut self, key: K)
+    pub fn delete<K>(&mut self, key: K, in_place: bool)
     where
         K: AsRef<[u8]>
     {
-        let prev = self.segments.delete_in_place(key.as_ref());
+        let prev = if in_place {
+            self.segments.delete_in_place(key.as_ref())
+        } else {
+            let prev = self.get(key.as_ref());
+            self.segments = self.segments.delete(key.as_ref().into());
+            prev
+        };
 
         if let Some(prev) = prev {
             self.store_bytes -= prev.len();
@@ -57,7 +87,16 @@ impl MemTable {
     }
 
     #[inline]
-    pub fn open_cursor(&self) -> TreeCursor<Arc<[u8]>, Vec<u8>> {
+    pub fn store_bytes_mut(&mut self) -> &mut usize {
+        &mut self.store_bytes
+    }
+
+    pub fn update_root(&mut self, new_tree: LsmTree<Arc<[u8]>, Arc<[u8]>>) {
+        self.segments = new_tree;
+    }
+
+    #[inline]
+    pub fn open_cursor(&self) -> TreeCursor<Arc<[u8]>, Arc<[u8]>> {
         self.segments.open_cursor()
     }
 

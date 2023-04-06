@@ -3,22 +3,23 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::{Config, DbErr, DbResult};
+use std::sync::{Arc, Mutex, Weak};
+use std::sync::atomic::{AtomicU64, Ordering};
+use crate::{Config, DbErr, DbResult, TransactionType};
 use crate::lsm::kv_cursor::KvCursor;
 use crate::lsm::lsm_segment::LsmTuplePtr;
+use crate::lsm::lsm_session::LsmSession;
 use crate::lsm::LsmMetrics;
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use super::lsm_backend::{LsmFileBackend, LsmLog};
 use crate::lsm::mem_table::MemTable;
 use crate::lsm::multi_cursor::{CursorRepr, MultiCursor};
+use crate::transaction::TransactionState;
 
 #[derive(Clone)]
 pub struct LsmKv {
-    inner: Arc<LsmKvInner>,
+    pub(crate) inner: Arc<LsmKvInner>,
 }
 
 impl LsmKv {
@@ -51,8 +52,21 @@ impl LsmKv {
     }
 
     pub fn open_cursor(&self) -> KvCursor {
-        let multi_cursor = self.inner.open_multi_cursor();
+        let multi_cursor = self.inner.open_multi_cursor(None);
         KvCursor::new(self.inner.clone(), multi_cursor)
+    }
+
+    pub(crate) fn open_multi_cursor(&self, session: Option<&LsmSession>) -> MultiCursor {
+        self.inner.open_multi_cursor(session)
+    }
+
+    pub fn new_session(&self) -> LsmSession {
+        let db_ref = Arc::downgrade(&self.inner);
+        self.inner.new_session(db_ref)
+    }
+
+    pub fn start_transaction(&self) -> DbResult<()> {
+        self.inner.indeed_start_transaction(TransactionState::User)
     }
 
     pub fn put<K, V>(&self, key: K, value: V) -> DbResult<()>
@@ -60,21 +74,23 @@ impl LsmKv {
         K: AsRef<[u8]>,
         V: AsRef<[u8]>,
     {
-        self.inner.start_transaction()?;
-        self.inner.put(key.as_ref(), value.as_ref())?;
-        self.inner.commit()
+        let mut session = self.new_session();
+        session.start_transaction(TransactionType::Write)?;
+        session.put(key.as_ref(), value.as_ref())?;
+        self.inner.commit(&mut session)
     }
 
     pub fn delete<K>(&self, key: K) -> DbResult<()>
     where
         K: AsRef<[u8]>
     {
-        self.inner.start_transaction()?;
-        self.inner.delete(key.as_ref())?;
-        self.inner.commit()
+        let mut session = self.new_session();
+        session.start_transaction(TransactionType::Write)?;
+        session.delete(key.as_ref())?;
+        self.inner.commit(&mut session)
     }
 
-    pub fn get<'a, K>(&self, key: K) -> DbResult<Option<Vec<u8>>>
+    pub fn get<'a, K>(&self, key: K) -> DbResult<Option<Arc<[u8]>>>
     where
         K: AsRef<[u8]>,
     {
@@ -107,7 +123,7 @@ impl LsmKv {
         let string = match bytes {
             None => None,
             Some(bytes) => {
-                let result = String::from_utf8(bytes)?;
+                let result = String::from_utf8(bytes.to_vec())?;
                 Some(result)
             }
         };
@@ -124,18 +140,18 @@ pub(crate) struct LsmKvInner {
     backend: Option<Box<LsmFileBackend>>,
     log: Option<LsmLog>,
     snapshot: Mutex<LsmSnapshot>,
-    mem_table: RefCell<MemTable>,
-    in_transaction: Cell<bool>,
+    main_mem_table: Mutex<MemTable>,
+    transaction: Mutex<TransactionState>,
     /// Operation count after last sync,
     /// including insert/delete
-    op_count: AtomicUsize,
+    op_count: AtomicU64,
     metrics: LsmMetrics,
     pub(crate) config: Config,
 }
 
 impl LsmKvInner {
 
-    pub(crate) fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Vec<u8>> {
+    pub(crate) fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
         let backend = self.backend.as_ref().expect("no file backend");
         backend.read_segment_by_ptr(ptr)
     }
@@ -184,9 +200,9 @@ impl LsmKvInner {
             backend,
             log,
             snapshot: Mutex::new(snapshot),
-            mem_table: RefCell::new(mem_table),
-            in_transaction: Cell::new(false),
-            op_count: AtomicUsize::new(0),
+            main_mem_table: Mutex::new(mem_table),
+            transaction: Mutex::new(TransactionState::NoTrans),
+            op_count: AtomicU64::new(0),
             metrics,
             config,
         })
@@ -197,9 +213,16 @@ impl LsmKvInner {
         self.metrics.clone()
     }
 
-    fn open_multi_cursor(&self) -> MultiCursor {
-        let mem_table = self.mem_table.borrow();
-        let mem_table_cursor = mem_table.open_cursor();
+    fn open_multi_cursor(&self, session: Option<&LsmSession>) -> MultiCursor {
+        let mem_table_cursor = match session {
+            Some(session) => {
+                session.mem_table.open_cursor()
+            }
+            None => {
+                let mem_table = self.main_mem_table.lock().unwrap();
+                mem_table.open_cursor()
+            }
+        };
 
         let snapshot = self.snapshot.lock().unwrap();
 
@@ -226,71 +249,62 @@ impl LsmKvInner {
         MultiCursor::new(cursors)
     }
 
-    fn start_transaction(&self) -> DbResult<()> {
+    fn indeed_start_transaction(&self, state: TransactionState) -> DbResult<()> {
+        {
+            let t_ref = self.transaction.lock()?;
+            if *t_ref != TransactionState::NoTrans {
+                return Err(DbErr::StartTransactionInAnotherTransaction);
+            }
+        }
+
         if let Some(log) = &self.log {
             log.start_transaction()?;
         }
 
-        self.in_transaction.set(true);
+        {
+            let mut t_ref = self.transaction.lock()?;
+            *t_ref = state;
+        }
 
         Ok(())
     }
 
-    pub fn put(&self, key: &[u8], value: &[u8]) -> DbResult<()> {
-        if !self.in_transaction.get() {
-            return Err(DbErr::NoTransactionStarted);
-        }
-
-        if let Some(log) = &self.log {
-            log.put(key, value)?;
-        }
-
-        let mut segment = self.mem_table.borrow_mut();
-
-        segment.put(key, value);
-
-        self.op_count.fetch_add(1, Ordering::Relaxed);
-
-        Ok(())
+    fn new_session(&self, engine: Weak<LsmKvInner>) -> LsmSession {
+        let id = (self.op_count.load(Ordering::SeqCst) + 1) as u64;
+        let mem_table = {
+            let m = self.main_mem_table.lock().unwrap();
+            m.clone()
+        };
+        LsmSession::new(
+            engine,
+            id,
+            mem_table,
+            self.log.is_some(),
+        )
     }
 
-    pub fn delete(&self, key: &[u8]) -> DbResult<()> {
-        if !self.in_transaction.get() {
-            return Err(DbErr::NoTransactionStarted);
+    pub(crate) fn commit(&self, session: &mut LsmSession) -> DbResult<()> {
+        if session.id() != self.op_count.load(Ordering::SeqCst) + 1 {
+            return Err(DbErr::SessionOutdated);
         }
 
         if let Some(log) = &self.log {
-            log.delete(key)?;
-        }
-
-        let mut segment = self.mem_table.borrow_mut();
-
-        segment.delete(key);
-
-        self.op_count.fetch_add(1, Ordering::Relaxed);
-
-        Ok(())
-    }
-
-    fn commit(&self) -> DbResult<()> {
-        if !self.in_transaction.get() {
-            return Err(DbErr::NoTransactionStarted);
-        }
-
-        if let Some(log) = &self.log {
-            let _commit_result = log.commit()?;
+            log.start_transaction()?;
+            let _commit_result = log.commit(session.log_buffer())?;
             // let mut snapshot = self.snapshot.lock()?;
             // snapshot.log_offset = commit_result.offset;
         }
 
+        let mut mem_table_col = self.main_mem_table.lock()?;
+        *mem_table_col = session.mem_table.clone();
+
         if let Some(backend) = &self.backend {
-            let mut mem_table = self.mem_table.borrow_mut();
             let mut snapshot = self.snapshot.lock()?;
 
-            let store_bytes = mem_table.store_bytes();
+            let store_bytes = mem_table_col.store_bytes();
             if self.should_sync(store_bytes) {
                 backend.sync_latest_segment(
-                    &mut mem_table,
+                    &mem_table_col,
                     &mut snapshot,
                 )?;
                 backend.checkpoint_snapshot(&mut snapshot)?;
@@ -299,9 +313,8 @@ impl LsmKvInner {
                     log.shrink(&mut snapshot)?;
                 }
 
-                mem_table.clear();
+                mem_table_col.clear();
 
-                self.op_count.store(0, Ordering::Relaxed);
                 self.metrics.add_sync_count();
             } else if LsmKvInner::should_minor_compact(&snapshot) {
                 self.minor_compact(backend, &mut snapshot)?;
@@ -310,7 +323,8 @@ impl LsmKvInner {
             }
         }
 
-        self.in_transaction.set(false);
+        self.op_count.store(session.id(), Ordering::SeqCst);
+        session.finished_transaction();
 
         Ok(())
     }
@@ -335,7 +349,8 @@ impl LsmKvInner {
 
     #[inline]
     fn should_sync(&self, store_bytes: usize) -> bool {
-        if self.op_count.load(Ordering::Relaxed) >= 1000 {
+        let op_count = self.op_count.load(Ordering::SeqCst);
+        if op_count % 1000 == 0 && op_count != 0 {
             return true;
         }
 
@@ -365,7 +380,7 @@ impl LsmKvInner {
 
     fn force_sync_last_segment(&mut self) -> DbResult<()> {
         if let Some(backend) = &self.backend {
-            let mut mem_table = self.mem_table.borrow_mut();
+            let mem_table = self.main_mem_table.lock().unwrap();
             let mut snapshot = self.snapshot.lock()?;
 
             if mem_table.len() == 0 {
@@ -373,7 +388,7 @@ impl LsmKvInner {
             }
 
             backend.sync_latest_segment(
-                &mut mem_table,
+                &mem_table,
                 &mut snapshot,
             )?;
             backend.checkpoint_snapshot(&mut snapshot)?;

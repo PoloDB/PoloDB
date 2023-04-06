@@ -96,7 +96,7 @@ impl LsmFileBackend {
         })
     }
 
-    pub fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Vec<u8>> {
+    pub fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
         let mut inner = self.inner.lock()?;
         inner.read_segment_by_ptr(ptr)
     }
@@ -168,12 +168,12 @@ impl LsmFileBackendInner {
         Ok(result)
     }
 
-    fn read_segment_by_ptr(&mut self, tuple: LsmTuplePtr) -> DbResult<Vec<u8>> {
+    fn read_segment_by_ptr(&mut self, tuple: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
         let page_size = self.config.get_lsm_page_size();
         let offset = (tuple.pid as u64) * (page_size as u64) + (tuple.offset as u64);
         self.file.seek(SeekFrom::Start(offset))?;
         let flag = self.file.read_u8()?;
-        assert_eq!(flag, format::LSM_INSERT);
+        assert!(flag == format::LSM_INSERT || flag == format::LSM_POINT_DELETE);
 
         let key_len = vli::decode_u64(&mut self.file)?;
         self.file.seek(SeekFrom::Current(key_len as i64))?;
@@ -183,7 +183,7 @@ impl LsmFileBackendInner {
         let mut buffer = vec![0u8; value_len as usize];
         self.file.read_exact(&mut buffer)?;
 
-        Ok(buffer)
+        Ok(buffer.into())
     }
 
     fn read_latest_snapshot(&mut self) -> DbResult<LsmSnapshot> {
@@ -252,7 +252,7 @@ impl LsmFileBackendInner {
             let (key, value) = mem_table_cursor.tuple().unwrap();
             let pos = writer.write_tuple(key.as_ref(), value.as_ref())?;
 
-            segments.insert_in_place(key, pos);
+            segments.update_in_place(key, pos);
 
             mem_table_cursor.next();
         }
@@ -583,10 +583,11 @@ impl LsmFileBackendInner {
                 },
                 LsmTreeValueMarker::Value(legacy_tuple) => {
                     let offset = ((legacy_tuple.pid as usize) * (page_size as usize)) + (legacy_tuple.offset as usize);
-                    writer.write_buffer(&mmap[offset..(offset + (legacy_tuple.byte_size as usize))])?
+                    let tuple_ptr = writer.write_buffer(&mmap[offset..(offset + (legacy_tuple.byte_size as usize))])?;
+                    LsmTreeValueMarker::Value(tuple_ptr)
                 }
             };
-            segments.insert_in_place(key.clone(), tuple);
+            segments.update_in_place(key.clone(), tuple);
         }
 
         let end_ptr = writer.end()?;

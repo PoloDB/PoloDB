@@ -101,6 +101,7 @@ pub(crate) fn exclusive_lock_file(file: &File) -> DbResult<()> {
 }
 
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 pub(crate) fn shared_lock_file(file: &File) -> DbResult<()> {
     use std::os::unix::prelude::*;
     use libc::{flock, LOCK_SH, LOCK_NB};
@@ -120,6 +121,7 @@ pub(crate) fn shared_lock_file(file: &File) -> DbResult<()> {
 /// LOCK_UN: unlock
 /// LOCK_NB: non-blocking
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 pub(crate) fn unlock_file(file: &File) -> DbResult<()> {
     use std::os::unix::prelude::*;
     use libc::{flock, LOCK_UN, LOCK_NB};

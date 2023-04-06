@@ -46,21 +46,21 @@ fn test_insert_struct() {
         typed_collection.insert_many(books).unwrap();
 
         let result = typed_collection.find_one(doc! {
-                "title": "The Grapes of Wrath",
-            }).unwrap();
+            "title": "The Grapes of Wrath",
+        }).unwrap();
         let book = result.unwrap();
         assert_eq!(book.author, "John Steinbeck");
 
         let result = typed_collection.find_many(doc! {
-                "$or": [
-                    {
-                        "title": "The Grapes of Wrath",
-                    },
-                    {
-                        "title": "To Kill a Mockingbird",
-                    }
-                ]
-            }).unwrap();
+            "$or": [
+                {
+                    "title": "The Grapes of Wrath",
+                },
+                {
+                    "title": "To Kill a Mockingbird",
+                }
+            ]
+        }).unwrap();
         assert_eq!(result.len(), 2);
     });
 }
@@ -167,32 +167,6 @@ fn test_insert_after_delete() {
 
         assert_eq!(one.get("content").unwrap().as_str().unwrap(), "Hello World");
     });
-}
-
-#[test]
-fn test_data_used_ratio() {
-    let db = Database::open_memory().unwrap();
-    let metrics = db.metrics();
-    metrics.enable();
-
-    let collection = db.collection::<Document>("test");
-
-    let mut doc_collection  = vec![];
-
-    for i in 0..1000 {
-        let content = i.to_string();
-        let new_doc = doc! {
-                    "_id": content.clone(),
-                    "content": content,
-                };
-        doc_collection.push(new_doc);
-    }
-    collection.insert_many(&doc_collection).unwrap();
-
-    let metrics_data = metrics.data();
-    let ratio = metrics_data.data_used_ratio();
-    println!("ratio: {}", ratio);
-    assert!(ratio > 0.9);
 }
 
 #[test]

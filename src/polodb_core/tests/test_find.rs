@@ -79,14 +79,6 @@ fn test_multiple_find_one() {
         }).unwrap().unwrap();
 
         assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c22");
-
-        if *is_file {
-            let data = metrics.data();
-            assert!(data.page_hit_ratio() > 0.9);
-        } else {
-            let data = metrics.data();
-            assert_eq!(data.page_hit_ratio(), 0.0);
-        }
     });
 }
 
