@@ -20,7 +20,7 @@ use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResu
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 #[cfg(target_arch = "wasm32")]
-use crate::backend::indexeddb::IndexedDbBackend;
+use wasm_bindgen::JsValue;
 use bson::oid::ObjectId;
 use bson::spec::BinarySubtype;
 use serde::de::DeserializeOwned;
@@ -90,14 +90,15 @@ impl DatabaseInner {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(ctx: crate::IndexedDbContext, config: Config) -> DbResult<DatabaseInner> {
+    pub fn open_indexeddb(init_data: JsValue, config: Config) -> DbResult<DatabaseInner> {
         let metrics = Metrics::new();
-        let page_size = NonZeroU32::new(4096).unwrap();
-        let config = Arc::new(config);
-        let backend = Box::new(IndexedDbBackend::open(
-            ctx, page_size, config.init_block_count
-        ));
-        DatabaseInner::open_with_backend(backend, page_size, config, metrics)
+        let kv_engine = LsmKv::open_indexeddb(init_data)?;
+
+        DatabaseInner::open_with_backend(
+            kv_engine,
+            config,
+            metrics,
+        )
     }
 
     pub fn open_memory(config: Config) -> DbResult<DatabaseInner> {

@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use serde::{Deserialize, Serialize};
 use smallvec::{smallvec, SmallVec};
 use crate::lsm::lsm_snapshot::LsmMetaDelegate;
 use crate::lsm::lsm_segment::ImLsmSegment;
@@ -29,7 +30,7 @@ impl LsmLevel {
 
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub(crate) struct  FreeSegmentRecord {
     pub start_pid: u64,
     pub end_pid: u64,

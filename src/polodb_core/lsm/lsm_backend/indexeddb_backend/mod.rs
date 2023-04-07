@@ -3,10 +3,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-mod db;
-mod collection;
-mod db_inner;
-pub mod db_handle;
 
-pub use collection::Collection;
-pub use db::{Database, DbResult};
+mod indexeddb_backend;
+mod models;
+
+pub use indexeddb_backend::{
+    IndexeddbBackend,
+    IndexeddbLog,
+};

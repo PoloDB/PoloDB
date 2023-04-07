@@ -5,6 +5,8 @@
  */
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsValue;
 use std::io::Read;
 use bson::Bson;
 use serde::Serialize;
@@ -18,11 +20,6 @@ use crate::db::db_inner::HandleRequestResult;
 use crate::metrics::Metrics;
 
 pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
-
-pub struct IndexedDbContext {
-    pub name: String,
-    pub idb: web_sys::IdbDatabase,
-}
 
 ///
 /// API wrapper for Rust-level
@@ -57,15 +54,6 @@ impl Database {
         VERSION.into()
     }
 
-    #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(ctx: IndexedDbContext) -> DbResult<Database> {
-        let inner = DatabaseInner::open_indexeddb(ctx, Config::default())?;
-
-        Ok(Database {
-            inner: Mutex::new(inner),
-        })
-    }
-
     pub fn open_memory() -> DbResult<Database> {
         Database::open_memory_with_config(Config::default())
     }
@@ -86,6 +74,16 @@ impl Database {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file_with_config<P: AsRef<Path>>(path: P, config: Config) -> DbResult<Database>  {
         let inner = DatabaseInner::open_file(path.as_ref(), config)?;
+
+        Ok(Database {
+            inner: Arc::new(Mutex::new(inner)),
+        })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn open_indexeddb(init_data: JsValue) -> DbResult<Database> {
+        let config = Config::default();
+        let inner = DatabaseInner::open_indexeddb(init_data, config)?;
 
         Ok(Database {
             inner: Arc::new(Mutex::new(inner)),

@@ -258,5 +258,6 @@ fn error_code_of_db_err(err: &DbErr) -> i32 {
         DbErr::DbIsClosed => 57,
         DbErr::FromUtf8Error(_) => 58,
         DbErr::DataMalformed => 59,
+        DbErr::DbNotReady => 60,
     }
 }

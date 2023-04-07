@@ -119,7 +119,7 @@ mod meta_doc_helper;
 mod config;
 mod macros;
 mod transaction;
-mod lsm;
+pub mod lsm;
 pub mod results;
 pub mod commands;
 mod collection_info;
@@ -129,7 +129,7 @@ pub mod test_utils;
 mod metrics;
 mod utils;
 
-pub use db::{Database, Collection, DbResult, IndexedDbContext};
+pub use db::{Database, Collection, DbResult};
 pub use config::Config;
 pub use transaction::TransactionType;
 pub use db::db_handle::DbHandle;

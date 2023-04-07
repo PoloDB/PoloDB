@@ -1,15 +1,9 @@
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsCast;
-#[cfg(target_arch = "wasm32")]
-use js_sys::Reflect;
-#[cfg(target_arch = "wasm32")]
-use web_sys::IdbDatabase;
-#[cfg(target_arch = "wasm32")]
-use polodb_core::IndexedDbContext;
 use std::rc::Rc;
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 use polodb_core::{Database, bson};
+#[cfg(target_arch = "wasm32")]
+use polodb_core::lsm::IndexeddbBackend;
 
 #[wasm_bindgen(js_name = Database)]
 pub struct DatabaseWrapper {
@@ -32,10 +26,14 @@ impl DatabaseWrapper {
 
     /// If a name is provided, the data will be synced to IndexedDB
     #[wasm_bindgen]
-    pub fn open(&mut self, name: Option<String>) -> Result<(), JsError> {
+    #[cfg(target_arch = "wasm32")]
+    pub async fn open(&mut self, name: Option<String>) -> Result<(), JsError> {
         match name {
             Some(name) => {
-                self.open_indexeddb(name.as_str())?;
+                let init_data = IndexeddbBackend::load_snapshot(&name).await;
+                let db = Database::open_indexeddb(init_data)?;
+                let mut db_ref = self.db.as_ref().borrow_mut();
+                *db_ref = Some(db);
             },
             None => {
                 let db = Database::open_memory()?;
@@ -43,47 +41,6 @@ impl DatabaseWrapper {
                 *db_ref = Some(db);
             },
         };
-        Ok(())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn open_indexeddb(&mut self, _name: &str) -> Result<(), JsError> {
-        unreachable!()
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn open_indexeddb(&mut self, name: &str) -> Result<(), JsError> {
-        let window = web_sys::window().unwrap();
-        let factory = window.indexed_db().unwrap().expect("indexeddb not supported");
-
-        let open_request = factory.open(name).unwrap();
-
-        {
-            let db = self.db.clone();
-            let name = name.to_string();
-            let user_onsuccess = self.onsuccess().clone();
-            let onsuccess = Closure::<dyn Fn(JsValue)>::new(move |event: JsValue| {
-                let db = db.clone();
-                let name = name.to_string();
-                let user_onsuccess = user_onsuccess.clone();
-                let target = Reflect::get(event.as_ref(), &"target".into()).unwrap();
-                let idb = Reflect::get(target.as_ref(), &"result".into()).unwrap().dyn_into::<IdbDatabase>().unwrap();
-                // val
-                let raw_db = Database::open_indexeddb(IndexedDbContext {
-                    name,
-                    idb,
-                }).unwrap();
-                let mut db_ref = db.as_ref().borrow_mut();
-                *db_ref = Some(raw_db);
-
-                if let Some(user_onsuccess) = user_onsuccess {
-                    user_onsuccess.call0(&JsValue::UNDEFINED).unwrap();
-                }
-            });
-            open_request.set_onsuccess(Some(onsuccess.as_ref().unchecked_ref()));
-            open_request.set_onerror(self.onerror.as_ref());
-        }
-
         Ok(())
     }
 

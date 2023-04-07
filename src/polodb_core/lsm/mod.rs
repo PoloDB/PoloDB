@@ -19,3 +19,4 @@ pub(crate) use lsm_kv::LsmKvInner;
 pub use kv_cursor::KvCursor;
 pub use lsm_metrics::LsmMetrics;
 pub use lsm_session::LsmSession;
+pub use lsm_backend::IndexeddbBackend;
