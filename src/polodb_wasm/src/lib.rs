@@ -1,13 +1,13 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
-use polodb_core::{Database, bson};
+use polodb_core::{Database, bson, DatabaseServer};
 #[cfg(target_arch = "wasm32")]
 use polodb_core::lsm::IndexeddbBackend;
 
 #[wasm_bindgen(js_name = Database)]
 pub struct DatabaseWrapper {
-    db:        Rc<RefCell<Option<Database>>>,
+    db:        Rc<RefCell<Option<DatabaseServer>>>,
     onsuccess: Option<js_sys::Function>,
     onerror:   Option<js_sys::Function>,
 }
@@ -33,12 +33,12 @@ impl DatabaseWrapper {
                 let init_data = IndexeddbBackend::load_snapshot(&name).await;
                 let db = Database::open_indexeddb(init_data)?;
                 let mut db_ref = self.db.as_ref().borrow_mut();
-                *db_ref = Some(db);
+                *db_ref = Some(DatabaseServer::new(db));
             },
             None => {
                 let db = Database::open_memory()?;
                 let mut db_ref = self.db.as_ref().borrow_mut();
-                *db_ref = Some(db);
+                *db_ref = Some(DatabaseServer::new(db));
             },
         };
         Ok(())

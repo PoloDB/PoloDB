@@ -129,7 +129,7 @@ pub mod test_utils;
 mod metrics;
 mod utils;
 
-pub use db::{Database, Collection, DbResult};
+pub use db::{Database, DatabaseServer, Collection, DbResult};
 pub use config::Config;
 pub use transaction::TransactionType;
 pub use db::db_handle::DbHandle;

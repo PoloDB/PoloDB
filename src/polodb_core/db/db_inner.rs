@@ -706,14 +706,6 @@ impl DatabaseInner {
         Ok(result)
     }
 
-    pub fn handle_request<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
-        unimplemented!()
-    }
-
-    pub fn handle_request_doc(&mut self, value: Bson) -> DbResult<HandleRequestResult> {
-        unimplemented!()
-    }
-
     pub fn find_one<T: DeserializeOwned>(
         &mut self,
         col_name: &str,
@@ -825,12 +817,6 @@ impl DatabaseInner {
         }
     }
 
-}
-
-#[derive(Clone)]
-pub struct HandleRequestResult {
-    pub is_quit: bool,
-    pub value: Bson,
 }
 
 fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, result: &mut Vec<T>) -> DbResult<()> {

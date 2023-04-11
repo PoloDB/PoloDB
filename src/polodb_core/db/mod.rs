@@ -7,6 +7,8 @@ mod db;
 mod collection;
 mod db_inner;
 pub mod db_handle;
+mod server;
 
 pub use collection::Collection;
 pub use db::{Database, DbResult};
+pub use server::DatabaseServer;

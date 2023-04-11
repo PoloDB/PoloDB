@@ -96,40 +96,13 @@ pub unsafe extern "C" fn PLDB_open(path: *const c_char, result: *mut *mut Databa
 
 #[no_mangle]
 pub unsafe extern "C" fn PLDB_handle_message(
-    db_wrapper: *mut DatabaseWrapper,
-    msg: *const c_uchar,
-    msg_size: u64,
-    result: *mut *mut c_uchar,
-    result_size: *mut u64
+    _db_wrapper: *mut DatabaseWrapper,
+    _msg: *const c_uchar,
+    _msg_size: u64,
+    _result: *mut *mut c_uchar,
+    _result_size: *mut u64
 ) -> *mut PoloDbError {
-    let db_wrapper_ref = db_wrapper.as_ref().unwrap();
-    let db_arc = db_wrapper_ref.db.clone();
-
-    let mut req_buf = std::slice::from_raw_parts(msg.cast::<u8>(), msg_size as usize);
-
-    let request_result = db_arc.handle_request::<&[u8]>(&mut req_buf);
-
-    match request_result {
-        Ok(request_result) => {
-            let bytes = polodb_core::bson::to_vec(&request_result.value).unwrap();
-            let ptr = libc::malloc(bytes.len()).cast::<u8>();
-
-            ptr.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len());
-
-            if !result.is_null() {
-                result.write(ptr.cast::<c_uchar>());
-            }
-
-            if !result_size.is_null() {
-                result_size.write(bytes.len() as u64);
-            }
-
-            null_mut()
-        }
-        Err(err) => {
-            db_error_to_c(err)
-        }
-    }
+    unimplemented!()
 }
 
 struct RawBox<T>(*mut T);
@@ -143,39 +116,13 @@ unsafe impl<T> Send for RawBox<T> {}
 /// because spawning a thread is expensive.
 #[no_mangle]
 pub unsafe extern "C" fn PLDB_handle_message_async(
-    db_wrapper: *mut DatabaseWrapper,
-    msg: *const c_uchar,
-    msg_size: u64,
-    callback: unsafe extern "C" fn(*mut PoloDbError, *mut c_uchar, u64, *mut c_void),
-    raw: *mut c_void,
+    _db_wrapper: *mut DatabaseWrapper,
+    _msg: *const c_uchar,
+    _msg_size: u64,
+    _callback: unsafe extern "C" fn(*mut PoloDbError, *mut c_uchar, u64, *mut c_void),
+    _raw: *mut c_void,
 ) {
-    let db_wrapper_ref = db_wrapper.as_ref().unwrap();
-    let db_arc = db_wrapper_ref.db.clone();
-
-    let raw_data_wrapper = RawBox(raw);
-
-    // copy message to a buffer
-    let mut msg_buffer: Vec<c_uchar> = Vec::new();
-    msg_buffer.resize(msg_size as usize, 0);
-    msg.copy_to_nonoverlapping(msg_buffer.as_mut_ptr(), msg_size as usize);
-
-    db_wrapper_ref.thread_pool.execute(move || {
-        let mut msg_slice = msg_buffer.as_slice();
-
-        let request_result = db_arc.handle_request::<&[u8]>(&mut msg_slice);
-        match request_result {
-            Ok(request_result) => {
-                let bytes = polodb_core::bson::to_vec(&request_result.value).unwrap();
-                let ptr = libc::malloc(bytes.len()).cast::<u8>();
-                ptr.copy_from_nonoverlapping(bytes.as_ptr(), bytes.len());
-                callback(null_mut(), ptr, bytes.len() as u64, raw_data_wrapper.0);
-            }
-            Err(err) => {
-                let c_error = db_error_to_c(err);
-                callback(c_error, null_mut(), 0, raw_data_wrapper.0);
-            }
-        }
-    });
+    unimplemented!()
 }
 
 #[no_mangle]

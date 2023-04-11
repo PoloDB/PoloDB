@@ -109,13 +109,13 @@ pub struct StartTransactionCommand {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CommitCommand {
+pub struct CommitTransactionCommand {
     pub session_id: ObjectId,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RollbackCommand {
+pub struct AbortTransactionCommand {
     pub session_id: ObjectId,
 }
 
@@ -130,7 +130,7 @@ pub enum CommandMessage {
     DropCollection(DropCollectionCommand),
     CountDocuments(CountDocumentsCommand),
     StartTransaction(StartTransactionCommand),
-    Commit(CommitCommand),
-    Rollback(RollbackCommand),
+    CommitTransaction(CommitTransactionCommand),
+    AbortTransaction(AbortTransactionCommand),
     SafelyQuit,
 }

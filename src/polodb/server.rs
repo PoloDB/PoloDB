@@ -5,7 +5,7 @@
  */
 use std::thread;
 use std::sync::atomic::{AtomicI32, Ordering};
-use polodb_core::Database;
+use polodb_core::{Database, DatabaseServer};
 use std::process::exit;
 use std::sync::{Arc, Mutex};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -27,15 +27,16 @@ const PING_HEAD: [u8; 4] = [0xFF, 0x00, 0xAA, 0xCC];
 #[derive(Clone)]
 struct AppContext {
     socket_path: String,
-    db: Arc<Mutex<Option<Arc<Database>>>>,
+    db: Arc<Mutex<Option<Arc<DatabaseServer>>>>,
 }
 
 impl AppContext {
 
     fn new(socket_path: String, db: Database) -> AppContext {
+        let server = DatabaseServer::new(db);
         AppContext {
             socket_path,
-            db: Arc::new(Mutex::new(Some(Arc::new(db)))),
+            db: Arc::new(Mutex::new(Some(Arc::new(server)))),
         }
     }
 
@@ -110,7 +111,7 @@ impl AppContext {
     /// {
     ///     "error": <error_string>,
     /// }
-    fn handle_request_in_db(conn: &mut Connection, req_id: u32, db: Arc<Database>, req_body: bson::Bson) -> crate::Result<bool> {
+    fn handle_request_in_db(conn: &mut Connection, req_id: u32, db: Arc<DatabaseServer>, req_body: bson::Bson) -> crate::Result<bool> {
         let msg_ty_result = db.handle_request_doc(req_body.clone());
 
         let is_quit = match msg_ty_result {
