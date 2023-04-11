@@ -8,7 +8,7 @@ use bson::{Bson, Document};
 use bson::oid::ObjectId;
 use hashbrown::HashMap;
 use crate::{ClientSession, Database, DbErr, DbResult};
-use crate::commands::{CommandMessage, CommitTransactionCommand, CountDocumentsCommand, CreateCollectionCommand, DeleteCommand, DropCollectionCommand, FindCommand, InsertCommand, AbortTransactionCommand, StartTransactionCommand, UpdateCommand};
+use crate::commands::{CommandMessage, CommitTransactionCommand, CountDocumentsCommand, CreateCollectionCommand, DeleteCommand, DropCollectionCommand, FindCommand, InsertCommand, AbortTransactionCommand, StartTransactionCommand, UpdateCommand, DropSessionCommand};
 
 #[derive(Clone)]
 pub struct HandleRequestResult {
@@ -18,7 +18,7 @@ pub struct HandleRequestResult {
 
 pub struct DatabaseServer {
     db: Database,
-    session_map: HashMap<ObjectId, Arc<Mutex<ClientSession>>>,
+    session_map: Mutex<HashMap<ObjectId, Arc<Mutex<ClientSession>>>>,
 }
 
 impl DatabaseServer {
@@ -26,7 +26,7 @@ impl DatabaseServer {
     pub fn new(db: Database) -> DatabaseServer {
         DatabaseServer {
             db,
-            session_map: HashMap::new(),
+            session_map: Mutex::new(HashMap::new()),
         }
     }
 
@@ -72,6 +72,12 @@ impl DatabaseServer {
             CommandMessage::CountDocuments(count_documents) => {
                 self.handle_count_operation(count_documents)?
             }
+            CommandMessage::StartSession => {
+                self.handle_start_session()?
+            }
+            CommandMessage::DropSession(drop_session) => {
+                self.handle_drop_session(drop_session)?
+            }
         };
 
 
@@ -84,7 +90,8 @@ impl DatabaseServer {
     fn get_session_by_session_id(&self, sid: Option<&ObjectId>) -> DbResult<Arc<Mutex<ClientSession>>> {
         match sid {
             Some(sid) => {
-                Ok(self.session_map.get(sid).unwrap().clone())
+                let session_map = self.session_map.lock()?;
+                Ok(session_map.get(sid).unwrap().clone())
             }
             None => {
                 let session = self.db.start_session()?;
@@ -248,6 +255,20 @@ impl DatabaseServer {
         let session_ref = self.get_session_by_session_id(Some(&rollback_command.session_id))?;
         let mut session = session_ref.lock()?;
         session.abort_transaction()?;
+        Ok(Bson::Null)
+    }
+
+    fn handle_start_session(&self) -> DbResult<Bson> {
+        let mut session_map = self.session_map.lock()?;
+        let sid = ObjectId::new();
+        let session = self.db.start_session()?;
+        session_map.insert(sid.clone(), Arc::new(Mutex::new(session)));
+        Ok(Bson::ObjectId(sid))
+    }
+
+    fn handle_drop_session(&self, drop_session_command: DropSessionCommand) -> DbResult<Bson> {
+        let mut session_map = self.session_map.lock()?;
+        session_map.remove(&drop_session_command.session_id);
         Ok(Bson::Null)
     }
 

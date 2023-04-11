@@ -8,7 +8,6 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use byteorder::WriteBytesExt;
 use crc64fast::Digest;
 use getrandom::getrandom;
 use memmap2::Mmap;
@@ -54,6 +53,7 @@ impl LsmFileLog {
         })
     }
 
+    #[allow(dead_code)]
     pub fn path(&self) -> PathBuf {
         let inner = self.inner.lock().unwrap();
         inner.file_path.to_path_buf()
@@ -354,44 +354,11 @@ impl LsmFileLogInner {
         Ok(())
     }
 
-    pub fn put(&mut self, key: &[u8], value: &[u8]) -> DbResult<()> {
-        self.write_u8(format::WRITE)?;
-
-        let key_len = key.len();
-        vli::encode(self, key_len as i64)?;
-
-        self.write_all(key)?;
-
-        let value_len = value.len();
-        vli::encode(self, value_len as i64)?;
-
-        self.write_all(value)?;
-
-        Ok(())
-    }
-
-    pub fn delete(&mut self, key: &[u8]) -> DbResult<()> {
-        self.write_u8(format::DELETE)?;
-
-        let key_len = key.len();
-        vli::encode(self, key_len as i64)?;
-
-        self.write_all(key)?;
-
-        Ok(())
-    }
-
     /// Go to the end of the file
     pub fn start_transaction(&mut self) -> DbResult<()> {
         let state = LogTransactionState::new();
         self.transaction = Some(state);
         self.offset = self.file.seek(SeekFrom::End(0))?;
-        Ok(())
-    }
-
-    pub fn rollback(&mut self) -> DbResult<()> {
-        self.file.set_len(self.offset)?;
-        self.transaction = None;
         Ok(())
     }
 

@@ -1,9 +1,11 @@
 use std::rc::Rc;
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
-use polodb_core::{Database, bson, DatabaseServer};
+use polodb_core::{bson, DatabaseServer};
 #[cfg(target_arch = "wasm32")]
 use polodb_core::lsm::IndexeddbBackend;
+#[cfg(target_arch = "wasm32")]
+use polodb_core::Database;
 
 #[wasm_bindgen(js_name = Database)]
 pub struct DatabaseWrapper {

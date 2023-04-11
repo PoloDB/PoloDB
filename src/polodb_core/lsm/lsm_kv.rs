@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use wasm_bindgen::JsValue;
 use crate::{Config, DbErr, DbResult, TransactionType};
 use crate::lsm::kv_cursor::KvCursor;
-use crate::lsm::lsm_backend::{IndexeddbLog, LsmBackend};
+use crate::lsm::lsm_backend::LsmBackend;
 use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_session::LsmSession;
 use crate::lsm::LsmMetrics;
@@ -22,7 +22,7 @@ use super::lsm_backend::LsmLog;
 #[cfg(not(target_arch = "wasm32"))]
 use super::lsm_backend::{LsmFileBackend, LsmFileLog};
 #[cfg(target_arch = "wasm32")]
-use super::lsm_backend::IndexeddbBackend;
+use super::lsm_backend::{IndexeddbLog, IndexeddbBackend};
 
 #[derive(Clone)]
 pub struct LsmKv {

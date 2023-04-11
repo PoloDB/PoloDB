@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use bson::oid::ObjectId;
 use hashbrown::HashMap;
 use wasm_bindgen::prelude::*;
-use js_sys::{Array, Reflect};
+use js_sys::Reflect;
 use crate::{DbErr, DbResult};
 use crate::lsm::lsm_backend::indexeddb_backend::models::{IdbLog, IdbSegment};
 use crate::lsm::lsm_backend::{LsmBackend, LsmLog};
@@ -71,12 +71,6 @@ impl IndexeddbBackend {
         Ok(result)
     }
 
-}
-
-fn js_array(values: &[&str]) -> JsValue {
-    return JsValue::from(values.into_iter()
-        .map(|x| JsValue::from_str(x))
-        .collect::<Array>());
 }
 
 impl LsmBackend for IndexeddbBackend {

@@ -5,7 +5,6 @@
  */
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::io::Read;
 use bson::{Binary, Bson, DateTime, Document};
 use serde::Serialize;
 use super::db::DbResult;
