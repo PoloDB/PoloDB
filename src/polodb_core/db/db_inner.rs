@@ -5,7 +5,7 @@
  */
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use bson::{Binary, Bson, DateTime, Document};
+use bson::{Binary, Bson, Document};
 use serde::Serialize;
 use super::db::DbResult;
 use crate::error::DbErr;
@@ -27,6 +27,7 @@ use crate::collection_info::{CollectionSpecification, CollectionSpecificationInf
 use crate::cursor::Cursor;
 use crate::metrics::Metrics;
 use crate::session::SessionInner;
+use crate::utils::bson::bson_datetime_now;
 use crate::vm::VM;
 
 macro_rules! try_multiple {
@@ -253,7 +254,7 @@ impl DatabaseInner {
                     bytes: uuid.as_bytes().to_vec(),
                 }),
 
-                create_at: DateTime::now(),
+                create_at: bson_datetime_now(),
             },
             indexes: HashMap::new(),
         };

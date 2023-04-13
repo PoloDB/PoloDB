@@ -10,7 +10,8 @@ use lz4_flex::{
     decompress_size_prepended,
 };
 use lz4_flex::block::DecompressError;
-use crate::lsm::lsm_snapshot::{FreeSegmentRecord, LsmSnapshot};
+use crate::lsm::lsm_segment::ImLsmSegment;
+use crate::lsm::lsm_snapshot::{FreeSegmentRecord, LsmLevel, LsmSnapshot};
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct IdbSegment {
@@ -52,8 +53,8 @@ pub(crate) struct IdbLog {
 #[derive(Serialize, Deserialize)]
 pub(crate) struct IdbLevel {
     pub age: u16,
-    // the primary key of the segments
-    pub segments: Vec<u64>,
+    // the key of the segments
+    pub segments: Vec<ObjectId>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -76,7 +77,7 @@ impl IdbMeta {
                     .content
                     .iter()
                     .map(|segment| {
-                        segment.start_pid
+                        segment.to_object_id()
                     })
                     .collect();
                 IdbLevel {
@@ -91,6 +92,36 @@ impl IdbMeta {
             levels,
             free_segments: snapshot.free_segments.clone(),
             session_id,
+        }
+    }
+
+    pub fn generate_snapshot(&self) -> LsmSnapshot {
+        let levels = self
+            .levels
+            .iter()
+            .map(|level| {
+                let content = level
+                    .segments
+                    .iter()
+                    .map(|segment| {
+                        ImLsmSegment::from_object_id(segment)
+                    })
+                    .collect();
+
+                LsmLevel {
+                    age: level.age,
+                    content,
+                }
+            })
+            .collect();
+
+        LsmSnapshot {
+            meta_pid: 0,
+            meta_id: self.id,
+            file_size: 0,
+            log_offset: 0,
+            free_segments: self.free_segments.clone(),
+            levels,
         }
     }
 

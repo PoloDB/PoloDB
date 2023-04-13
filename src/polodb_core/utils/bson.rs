@@ -149,6 +149,18 @@ pub fn value_cmp(a: &Bson, b: &Bson) -> BsonResult<Ordering> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+pub fn bson_datetime_now() -> bson::datetime::DateTime {
+    return bson::datetime::DateTime::now()
+}
+
+#[cfg(target_arch = "wasm32")]
+// TODO: performance.now() maybe better
+pub fn bson_datetime_now() -> bson::datetime::DateTime {
+    let date = js_sys::Date::now();
+    bson::datetime::DateTime::from_millis(date as i64)
+}
+
 #[cfg(test)]
 mod tests {
     use std::cmp::Ordering;

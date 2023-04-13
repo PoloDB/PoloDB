@@ -26,7 +26,7 @@ async function open_db(name) {
                 keyPath: "id",
             });
             const log_store = db.createObjectStore(STORE_NAME_LOGS, {
-                keyPath: "id",
+                autoIncrement: true,
             });
             log_store.createIndex("session", "session");
         }

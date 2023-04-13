@@ -83,7 +83,7 @@ impl LsmBackend for IndexeddbBackend {
 
     fn read_latest_snapshot(&self) -> DbResult<LsmSnapshot> {
         let inner = self.inner.lock()?;
-        Ok(inner.snapshot.as_ref().unwrap().clone())
+        Ok(inner.snapshot.clone())
     }
 
     fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
@@ -101,11 +101,11 @@ impl LsmBackend for IndexeddbBackend {
     fn checkpoint_snapshot(&self, new_snapshot: &mut LsmSnapshot) -> DbResult<()> {
         {
             let mut inner = self.inner.lock()?;
-            inner.snapshot = Some(new_snapshot.clone());
+            inner.snapshot = new_snapshot.clone();
 
             let id_meta: IdbMeta = IdbMeta::from_snapshot(
                 inner.session_id.clone(),
-                inner.snapshot.as_ref().unwrap(),
+                &inner.snapshot,
             );
             let store_value = serde_wasm_bindgen::to_value(&id_meta).unwrap();
             inner.adapter.write_snapshot_to_idb(store_value);
@@ -119,7 +119,7 @@ struct IndexeddbBackendInner {
     session_id: ObjectId,
     adapter: IdbBackendAdapter,
     data_value: HashMap<u64, Arc<[u8]>>,
-    snapshot: Option<LsmSnapshot>,
+    snapshot: LsmSnapshot,
 }
 
 impl IndexeddbBackendInner {
@@ -148,7 +148,8 @@ impl IndexeddbBackendInner {
         if meta_snapshot.is_object() {
             let segments = Reflect::get(&init_data, JsValue::from_str("segments").as_ref()).unwrap();
 
-            let _meta = serde_wasm_bindgen::from_value::<IdbMeta>(meta_snapshot).unwrap();
+            let meta = serde_wasm_bindgen::from_value::<IdbMeta>(meta_snapshot).unwrap();
+            let snapshot = meta.generate_snapshot();
 
             let data_value = IndexeddbBackendInner::data_value_from_segments(segments);
 
@@ -156,14 +157,14 @@ impl IndexeddbBackendInner {
                 session_id,
                 adapter,
                 data_value,
-                snapshot: None,
+                snapshot,
             })
         } else {
             let result = IndexeddbBackendInner {
                 session_id,
                 adapter,
                 data_value: HashMap::new(),
-                snapshot: Some(LsmSnapshot::new()),
+                snapshot: LsmSnapshot::new(),
             };
 
             result.force_write_first_snapshot();
@@ -175,7 +176,7 @@ impl IndexeddbBackendInner {
     fn force_write_first_snapshot(&self) {
         let id_meta = IdbMeta::from_snapshot(
             self.session_id.clone(),
-            self.snapshot.as_ref().unwrap(),
+            &self.snapshot,
         );
 
         let meta_js_value = serde_wasm_bindgen::to_value(&id_meta).unwrap();
