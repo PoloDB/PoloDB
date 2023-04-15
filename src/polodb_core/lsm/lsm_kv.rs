@@ -197,14 +197,13 @@ impl LsmKvInner {
 
     #[cfg(target_arch = "wasm32")]
     fn open_indexeddb(init_data: JsValue, config: Config) -> DbResult<LsmKvInner> {
-        use bson::oid::ObjectId;
-
         let metrics = LsmMetrics::new();
-        let session_id = ObjectId::new();
         let backend = IndexeddbBackend::open(
-            session_id.clone(),
             init_data.clone(),
         )?;
+
+        let session_id = backend.session_id();
+
         let log = IndexeddbLog::new(session_id, init_data);
         LsmKvInner::open_with_backend(
             Some(Box::new(backend)),

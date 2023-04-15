@@ -53,6 +53,13 @@ pub struct DeleteResult {
     #[serde(serialize_with = "crate::bson::serde_helpers::serialize_u64_as_i64")]
     pub deleted_count: u64,
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CountDocumentsResult {
+    pub count: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use bson::doc;

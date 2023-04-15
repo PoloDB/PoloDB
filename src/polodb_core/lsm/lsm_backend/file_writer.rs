@@ -47,6 +47,7 @@ impl<'a> FileWriter<'a> {
         let page_offset = self.written_bytes % (self.page_size as u64);
         LsmTuplePtr {
             pid: self.start_pid + page_id,
+            pid_ext: 0,
             offset: page_offset as u32,
             byte_size: self.written_bytes,
         }
@@ -55,6 +56,7 @@ impl<'a> FileWriter<'a> {
     fn end_mark(&self, start_mark: &LsmTuplePtr) -> LsmTuplePtr {
         LsmTuplePtr {
             pid: start_mark.pid,
+            pid_ext: 0,
             offset: start_mark.offset,
             byte_size: self.written_bytes - start_mark.byte_size,
         }

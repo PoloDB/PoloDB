@@ -60,9 +60,8 @@ async function read_latest_meta(metas_store) {
  * @param {Map<string, any>} map
  * @returns {Promise<any>}
  */
-async function read_segment(transaction, map, segment) {
+function read_segment(transaction, map, segment) {
     return new Promise((resolve, reject) => {
-
         const segments_store = transaction.objectStore(STORE_NAME_SEGMENTS);
 
         const cursor = segments_store.openCursor(segment);
@@ -71,6 +70,36 @@ async function read_segment(transaction, map, segment) {
             resolve(cursor.result);
         }
         cursor.onerror = reject;
+    });
+}
+
+/**
+ *
+ * @param {IDBTransaction} transaction
+ * @param {string} session_id
+ * @returns {Promise<any[]>}
+ */
+function read_logs_by_session_id(transaction, session_id) {
+    return new Promise((resolve, reject) => {
+        const logs_store = transaction.objectStore(STORE_NAME_LOGS);
+
+        const session_index = logs_store.index("session");
+
+        const cursor_req = session_index.openCursor(IDBKeyRange.only(session_id));
+        const result = [];
+
+        cursor_req.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+                result.push(cursor.value);
+
+                cursor.continue();
+            } else {
+                resolve(result);
+            }
+        }
+
+        cursor_req.onerror = reject;
     });
 }
 
@@ -108,12 +137,16 @@ export async function load_snapshot(name) {
         }
     }
 
-    // const logs_data = transaction.objectStore(STORE_NAME_LOGS);
+    const session_id = latest_meta.session_id;
+
+    const logs_data = await read_logs_by_session_id(transaction, session_id);
 
     return {
         db,
+        session_id,
         snapshot: latest_meta,
         segments: data,
+        logs_data,
     }
 }
 
@@ -128,13 +161,27 @@ export class IdbBackendAdapter {
     }
 
     write_snapshot_to_idb(snapshot) {
-        console.log("put snapshot:", snapshot);
         return new Promise((resolve, reject) => {
             const transaction = this._db.transaction([STORE_NAME_METAS], "readwrite");
 
-            const segments_store = transaction.objectStore(STORE_NAME_METAS);
+            const metas_store = transaction.objectStore(STORE_NAME_METAS);
 
-            const req = segments_store.put(snapshot);
+            const req = metas_store.put(snapshot);
+
+            transaction.commit();
+
+            req.onsuccess = resolve;
+            req.onerror = reject;
+        });
+    }
+
+    write_segments_to_idb(segments) {
+        return new Promise((resolve, reject) => {
+            const transaction = this._db.transaction([STORE_NAME_SEGMENTS], "readwrite");
+
+            const segments_store = transaction.objectStore(STORE_NAME_SEGMENTS);
+
+            const req = segments_store.put(segments);
 
             transaction.commit();
 

@@ -12,6 +12,7 @@ use lz4_flex::{
 use lz4_flex::block::DecompressError;
 use crate::lsm::lsm_segment::ImLsmSegment;
 use crate::lsm::lsm_snapshot::{FreeSegmentRecord, LsmLevel, LsmSnapshot};
+use crate::lsm::lsm_tree::LsmTree;
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct IdbSegment {
@@ -23,10 +24,10 @@ pub(crate) struct IdbSegment {
 
 impl IdbSegment {
 
-    pub fn compress(data: &[u8]) -> IdbSegment {
+    pub fn compress(id: ObjectId, data: &[u8]) -> IdbSegment {
         let compressed = compress_prepend_size(data);
         IdbSegment {
-            id: ObjectId::new(),
+            id,
             compress: Some("lz4".into()),
             data: compressed,
         }
@@ -104,7 +105,11 @@ impl IdbMeta {
                     .segments
                     .iter()
                     .map(|segment| {
-                        ImLsmSegment::from_object_id(segment)
+                        // TODO: read segments
+                        ImLsmSegment::from_object_id(
+                            LsmTree::new(),
+                            segment,
+                        )
                     })
                     .collect();
 

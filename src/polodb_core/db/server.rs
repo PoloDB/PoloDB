@@ -9,6 +9,7 @@ use bson::oid::ObjectId;
 use hashbrown::HashMap;
 use crate::{ClientSession, Database, DbErr, DbResult};
 use crate::commands::{CommandMessage, CommitTransactionCommand, CountDocumentsCommand, CreateCollectionCommand, DeleteCommand, DropCollectionCommand, FindCommand, InsertCommand, AbortTransactionCommand, StartTransactionCommand, UpdateCommand, DropSessionCommand};
+use crate::results::CountDocumentsResult;
 
 #[derive(Clone)]
 pub struct HandleRequestResult {
@@ -234,7 +235,11 @@ impl DatabaseServer {
 
         let collection = self.db.collection::<Document>(&count_documents.ns);
         let count = collection.count_documents_with_session(&mut session)?;
-        Ok(Bson::Int64(count as i64))
+
+        let bson_val = bson::to_bson(&CountDocumentsResult {
+            count
+        })?;
+        Ok(bson_val)
     }
 
     fn handle_start_transaction(&self, start_transaction_command: StartTransactionCommand) -> DbResult<Bson> {
