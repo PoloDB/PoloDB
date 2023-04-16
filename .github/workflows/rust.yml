@@ -39,9 +39,9 @@ jobs:
           curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build wasm
         run: wasm-pack build src/polodb_wasm
-      - run: npm install -g pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run build
+      - run: npm install -g pnpm@7
+      - run: cd src/polodb_wasm && pnpm install
+      - run: cd src/polodb_wasm && pnpm run build
 
   Windows:
     name: Test on Windows
