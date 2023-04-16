@@ -29,6 +29,10 @@ impl Config {
     pub fn get_lsm_block_size(&self) -> u32 {
         self.inner.lsm_block_size.load(Ordering::Relaxed)
     }
+
+    pub fn get_sync_log_count(&self) -> u64 {
+        self.inner.sync_log_count.load(Ordering::Relaxed)
+    }
 }
 
 impl Default for Config {
@@ -47,15 +51,25 @@ struct ConfigInner {
     journal_full_size: AtomicU64,
     lsm_page_size:     AtomicU32,
     lsm_block_size:    AtomicU32,
+    sync_log_count:    AtomicU64,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+const SYNC_LOG_COUNT: u64 = 1000;
+
+#[cfg(target_arch = "wasm32")]
+const SYNC_LOG_COUNT: u64 = 200;
+
 impl Default for ConfigInner {
+
     fn default() -> Self {
         ConfigInner {
             init_block_count: AtomicU64::new(16),
             journal_full_size: AtomicU64::new(1000),
             lsm_page_size: AtomicU32::new(4096),
             lsm_block_size: AtomicU32::new(4 * 1024 * 1024),
+            sync_log_count: AtomicU64::new(SYNC_LOG_COUNT),
         }
     }
+
 }
