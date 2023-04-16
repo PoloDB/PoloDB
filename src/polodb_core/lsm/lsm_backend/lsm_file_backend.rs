@@ -89,7 +89,7 @@ impl LsmFileBackend {
     pub fn open(
         path: &Path,
         metrics: LsmMetrics,
-        config: Config,
+        config: Arc<Config>,
     ) -> DbResult<LsmFileBackend> {
         let inner = LsmFileBackendInner::open(path, metrics, config)?;
         Ok(LsmFileBackend {
@@ -136,7 +136,7 @@ impl LsmBackend for LsmFileBackend {
 struct LsmFileBackendInner {
     file:    File,
     metrics: LsmMetrics,
-    config:  Config,
+    config:  Arc<Config>,
 }
 
 impl LsmFileBackendInner {
@@ -144,7 +144,7 @@ impl LsmFileBackendInner {
     fn open(
         path: &Path,
         metrics: LsmMetrics,
-        config: Config,
+        config: Arc<Config>,
     ) -> DbResult<LsmFileBackendInner> {
         let file = open_file_native(path)?;
         Ok(LsmFileBackendInner {
@@ -156,14 +156,14 @@ impl LsmFileBackendInner {
 
     fn force_init_file(&mut self) -> DbResult<LsmSnapshot> {
         let mut result = LsmSnapshot::new();
-        let mut first_page = RawPage::new(0, NonZeroU32::new(self.config.get_lsm_page_size()).unwrap());
+        let mut first_page = RawPage::new(0, NonZeroU32::new(self.config.lsm_page_size).unwrap());
 
         let _delegate = LsmMetaDelegate::new_with_default(&mut first_page);
 
         first_page.sync_to_file(&mut self.file, 0)?;
         self.file.flush()?;
 
-        let page_size = self.config.get_lsm_page_size();
+        let page_size = self.config.lsm_page_size;
         let meta_size = (page_size * 2) as u64;
 
         self.file.set_len(meta_size)?;
@@ -175,7 +175,7 @@ impl LsmFileBackendInner {
     }
 
     fn read_segment_by_ptr(&mut self, tuple: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
-        let page_size = self.config.get_lsm_page_size();
+        let page_size = self.config.lsm_page_size;
         let offset = (tuple.pid as u64) * (page_size as u64) + (tuple.offset as u64);
         self.file.seek(SeekFrom::Start(offset))?;
         let flag = self.file.read_u8()?;
@@ -223,7 +223,7 @@ impl LsmFileBackendInner {
 
         LsmFileBackendInner::check_first_page_valid(&mmap)?;
 
-        let page_size = self.config.get_lsm_page_size();
+        let page_size = self.config.lsm_page_size;
 
         assert!(mmap.len() >= (page_size * 2) as usize);
 
@@ -480,7 +480,7 @@ impl LsmFileBackendInner {
     }
 
     fn get_start_writing_pid(&self, snapshot: &mut LsmSnapshot, estimate_size: usize) -> (u64, Option<FreeSegmentRecord>) {
-        let page_size = self.config.get_lsm_page_size();
+        let page_size = self.config.lsm_page_size;
 
         let mut index: usize = 0;
         for seg in &snapshot.free_segments {
@@ -515,7 +515,7 @@ impl LsmFileBackendInner {
         estimate_size: usize,
     ) -> DbResult<ImLsmSegment> {
         let config = self.config.clone();
-        let page_size = config.get_lsm_page_size();
+        let page_size = config.lsm_page_size;
 
         let mmap = unsafe{
             Mmap::map(&self.file)?
@@ -584,7 +584,7 @@ impl LsmFileBackendInner {
     }
 
     fn read_page(&mut self, pid: u64) -> DbResult<RawPage> {
-        let page_size = self.config.get_lsm_page_size();
+        let page_size = self.config.lsm_page_size;
         let offset = (page_size as u64) * pid;
 
         let mut result = RawPage::new(pid as u32, NonZeroU32::new(page_size).unwrap());
@@ -594,7 +594,7 @@ impl LsmFileBackendInner {
     }
 
     fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
-        let page_size = self.config.get_lsm_page_size();
+        let page_size = self.config.lsm_page_size;
         let offset = (page_size as u64) * (page.page_id as u64);
         page.sync_to_file(&mut self.file, offset)?;
         Ok(())
