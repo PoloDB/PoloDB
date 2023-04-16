@@ -21,6 +21,8 @@ use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
 use crate::lsm::mem_table::MemTable;
 use super::models::IdbMeta;
 use byteorder::WriteBytesExt;
+use crate::lsm::lsm_backend::lsm_backend::lsm_backend_utils;
+use crate::lsm::multi_cursor::{CursorRepr, MultiCursor};
 use crate::utils::vli;
 
 #[wasm_bindgen(module = "/idb-adapter.js")]
@@ -37,6 +39,9 @@ extern "C" {
 
     #[wasm_bindgen(method)]
     fn write_segments_to_idb(this: &IdbBackendAdapter, value: JsValue);
+
+    #[wasm_bindgen(method)]
+    fn batch_delete_segments(this: &IdbBackendAdapter, ids: JsValue);
 
     #[wasm_bindgen(method)]
     fn dispose(this: &IdbBackendAdapter);
@@ -93,6 +98,113 @@ impl IndexeddbBackend {
         };
 
         Ok(result)
+    }
+
+    fn merge_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> DbResult<ImLsmSegment> {
+        let level0 = &snapshot.levels[0];
+        assert!(level0.content.len() > 1);
+
+        let preserve_delete = snapshot.levels.len() > 1;
+
+        let cursor = {
+            let mut cursor_repo: Vec<CursorRepr> = vec![];
+            let mut idx: i64 = (level0.content.len() as i64) - 2;
+
+            while idx >= 0 {
+                let cursor = level0.content[idx as usize].segments.open_cursor();
+                cursor_repo.push(cursor.into());
+                idx -= 1;
+            }
+
+            MultiCursor::new(cursor_repo)
+        };
+
+        let segment = self.merge_level(snapshot, cursor, preserve_delete)?;
+
+        Ok(segment)
+    }
+
+    fn merge_level(&self, snapshot: &mut LsmSnapshot, cursor: MultiCursor, preserve_delete: bool) -> DbResult<ImLsmSegment> {
+        let result = lsm_backend_utils::merge_level(cursor, preserve_delete)?;
+        self.write_merged_tuples(snapshot, &result.tuples)
+    }
+
+    fn write_merged_tuples(
+        &self,
+        _snapshot: &mut LsmSnapshot,
+        tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)],
+    ) -> DbResult<ImLsmSegment> {
+        let mut result = vec![];
+        let oid = ObjectId::new();
+
+        let mut segments = LsmTree::<Arc<[u8]>, LsmTuplePtr>::new();
+
+        for (key, value) in tuples {
+            let tuple =  match value {
+                LsmTreeValueMarker::Deleted => {
+                    write_tuple_to_buffer(&mut result, &oid, key, LsmTreeValueMarker::Deleted)?
+                },
+                LsmTreeValueMarker::DeleteStart => {
+                    write_tuple_to_buffer(&mut result, &oid, key, LsmTreeValueMarker::DeleteStart)?
+                },
+                LsmTreeValueMarker::DeleteEnd => {
+                    write_tuple_to_buffer(&mut result, &oid, key, LsmTreeValueMarker::DeleteEnd)?
+                },
+                LsmTreeValueMarker::Value(legacy_tuple) => {
+                    let legacy_data = self.read_segment_by_ptr(*legacy_tuple)?;
+                    let tuple = write_tuple_to_buffer(
+                        &mut result,
+                        &oid,
+                        key,
+                        LsmTreeValueMarker::Value(legacy_data.as_ref()),
+                    )?;
+                    tuple
+                    // let offset = ((legacy_tuple.pid as usize) * (page_size as usize)) + (legacy_tuple.offset as usize);
+                    // let tuple_ptr = writer.write_buffer(&mmap[offset..(offset + (legacy_tuple.byte_size as usize))])?;
+                    // LsmTreeValueMarker::Value(tuple_ptr)
+                }
+            };
+            segments.update_in_place(key.clone(), tuple);
+        }
+
+        let im_seg = ImLsmSegment::from_object_id(segments, &oid);
+
+        let segments_model = IdbSegment::compress(oid, &result);
+
+        let store_value = serde_wasm_bindgen::to_value(&segments_model).unwrap();
+
+        {
+            let mut inner = self.inner.lock()?;
+            inner.data_value.insert(oid, result.into());
+            inner.adapter.write_segments_to_idb(store_value);
+        }
+
+        Ok(im_seg)
+    }
+
+    fn free_pages_of_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        let level0 = &snapshot.levels[0];
+
+        let mut index: usize = 0;
+
+        let segments_to_delete = js_sys::Array::new();
+
+        while index < level0.content.len() - 1 {
+            let segment = &level0.content[index];
+
+            let oid = segment.to_object_id();
+            let oid_str = oid.to_hex();
+            segments_to_delete.push(JsValue::from_str(&oid_str).as_ref());
+
+            index += 1;
+        }
+
+        {
+            let inner = self.inner.lock()?;
+            inner.adapter.batch_delete_segments(JsValue::from(segments_to_delete));
+        }
+
+        Ok(())
     }
 
 }
@@ -175,8 +287,16 @@ impl LsmBackend for IndexeddbBackend {
 
     fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
         let inner = self.inner.lock()?;
-        let result = inner.data_value.get(&ptr.pid).ok_or(DbErr::DbNotReady)?.clone();
-        Ok(result)
+        let oid = ptr.object_id();
+        let segments = inner.data_value.get(&oid).ok_or(DbErr::DbNotReady)?.clone();
+
+        let mut buffer = vec![0u8; ptr.byte_size as usize];
+
+        let buffer_offset = ptr.offset as usize;
+        let buffer_size = ptr.byte_size as usize;
+        buffer.copy_from_slice(&segments.as_ref()[buffer_offset..(buffer_offset + buffer_size)]);
+
+        Ok(buffer.into())
     }
 
     fn read_latest_snapshot(&self) -> DbResult<LsmSnapshot> {
@@ -200,8 +320,17 @@ impl LsmBackend for IndexeddbBackend {
         Ok(())
     }
 
-    fn minor_compact(&self, _snapshot: &mut LsmSnapshot) -> DbResult<()> {
-        todo!()
+    fn minor_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        let new_segment = self.merge_level0_except_last(snapshot)?;
+
+        lsm_backend_utils::insert_new_segment_to_right_level(new_segment, snapshot);
+
+        self.free_pages_of_level0_except_last(snapshot)?;
+
+        snapshot.levels[0].clear_except_last();
+        snapshot.levels[0].age += 1;
+
+        Ok(())
     }
 
     fn major_compact(&self, _snapshot: &mut LsmSnapshot) -> DbResult<()> {
@@ -226,7 +355,7 @@ impl LsmBackend for IndexeddbBackend {
 struct IndexeddbBackendInner {
     session_id: ObjectId,
     adapter: IdbBackendAdapter,
-    data_value: HashMap<u64, Arc<[u8]>>,
+    data_value: HashMap<ObjectId, Arc<[u8]>>,
     snapshot: LsmSnapshot,
 }
 
@@ -237,12 +366,13 @@ impl IndexeddbBackendInner {
         self.session_id.clone()
     }
 
-    fn data_value_from_segments(segments: JsValue) -> HashMap<u64, Arc<[u8]>> {
+    fn data_value_from_segments(segments: JsValue) -> HashMap<ObjectId, Arc<[u8]>> {
         let mut result = HashMap::new();
         let segments_map = segments.dyn_into::<js_sys::Map>().unwrap();
 
         segments_map.for_each(&mut |key, value| {
-            let rkey = key.as_f64().unwrap() as u64;
+            let rkey_str = key.as_string().unwrap();
+            let rkey = ObjectId::from_str(&rkey_str).unwrap();
 
             let segment_data = serde_wasm_bindgen::from_value::<IdbSegment>(value).unwrap();
 

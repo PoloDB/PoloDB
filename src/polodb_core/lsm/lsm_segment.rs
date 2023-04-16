@@ -38,6 +38,18 @@ impl LsmTuplePtr {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn object_id(&self) -> ObjectId {
+        let pid_be: [u8; 8] = self.pid.to_be_bytes();
+        let pid_ext_be: [u8; 4] = self.pid_ext.to_be_bytes();
+
+        let mut bytes = [0u8; 12];
+        bytes[0..8].copy_from_slice(&pid_be);
+        bytes[8..12].copy_from_slice(&pid_ext_be);
+
+        ObjectId::from_bytes(bytes)
+    }
+
 }
 
 impl Default for LsmTuplePtr {

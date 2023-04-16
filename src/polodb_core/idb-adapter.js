@@ -190,6 +190,15 @@ export class IdbBackendAdapter {
         });
     }
 
+    batch_delete_segments(ids) {
+        const transaction = this._db.transaction([STORE_NAME_SEGMENTS], "readwrite");
+        const segments_store = transaction.objectStore(STORE_NAME_SEGMENTS);
+
+        ids.forEach(key => {
+            segments_store.delete(key);
+        });
+    }
+
     dispose() {
         this._db.close();
     }

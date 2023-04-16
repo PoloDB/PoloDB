@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use bson::oid::ObjectId;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use lz4_flex::{
     compress_prepend_size,
     decompress_size_prepended,
@@ -55,7 +55,16 @@ pub(crate) struct IdbLog {
 pub(crate) struct IdbLevel {
     pub age: u16,
     // the key of the segments
+    #[serde(serialize_with = "serialize_oid_vec")]
     pub segments: Vec<ObjectId>,
+}
+
+fn serialize_oid_vec<S>(vec: &Vec<ObjectId>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+{
+    let mapped_vec = vec.iter().map(|x| x.to_hex()).collect::<Vec<String>>();
+    mapped_vec.serialize(serializer)
 }
 
 #[derive(Serialize, Deserialize)]

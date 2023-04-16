@@ -316,7 +316,7 @@ impl LsmFileBackendInner {
     fn minor_compact(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let new_segment = self.merge_level0_except_last(snapshot)?;
 
-        self.insert_new_segment_to_right_level(new_segment, snapshot);
+        lsm_backend_utils::insert_new_segment_to_right_level(new_segment, snapshot);
 
         self.free_pages_of_level0_except_last(snapshot)?;
 
@@ -401,14 +401,6 @@ impl LsmFileBackendInner {
         }
 
         Ok(())
-    }
-
-    fn insert_new_segment_to_right_level(&self, new_segment: ImLsmSegment, snapshot: &mut LsmSnapshot) {
-        let new_level = LsmLevel {
-            age: 0,
-            content: smallvec![new_segment],
-        };
-        snapshot.levels.insert(1, new_level);
     }
 
     fn free_pages_of_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {

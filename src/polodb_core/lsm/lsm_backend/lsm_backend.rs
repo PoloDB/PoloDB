@@ -21,8 +21,10 @@ pub(crate) trait LsmBackend: Send + Sync {
 
 pub(crate) mod lsm_backend_utils {
     use std::sync::Arc;
+    use smallvec::smallvec;
     use crate::DbResult;
-    use crate::lsm::lsm_segment::LsmTuplePtr;
+    use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
+    use crate::lsm::lsm_snapshot::{LsmLevel, LsmSnapshot};
     use crate::lsm::lsm_tree::LsmTreeValueMarker;
     use crate::lsm::multi_cursor::MultiCursor;
     use crate::utils::vli;
@@ -95,6 +97,14 @@ pub(crate) mod lsm_backend_utils {
         result += key.len();
 
         result
+    }
+
+    pub(crate) fn insert_new_segment_to_right_level(new_segment: ImLsmSegment, snapshot: &mut LsmSnapshot) {
+        let new_level = LsmLevel {
+            age: 0,
+            content: smallvec![new_segment],
+        };
+        snapshot.levels.insert(1, new_level);
     }
 
 }
