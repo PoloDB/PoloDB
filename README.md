@@ -5,7 +5,7 @@
 [![docs.rs](https://docs.rs/polodb_core/badge.svg)](https://docs.rs/polodb_core)
 [![License](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE)
 
-PoloDB is an embedded JSON-based database.
+PoloDB is an embedded document database.
 
 | [Documentations](https://www.polodb.org/docs) | [中文版](README_CN.md) |
 
@@ -14,34 +14,17 @@ PoloDB is an embedded JSON-based database.
 PoloDB is a library written in Rust
 that implements a lightweight [MongoDB](https://www.mongodb.com/).
 
-PoloDB has no dependency(except for libc),
-so it can be easily run on most platforms (thanks
-for Rust Language).
-
-The data of PoloDB is stored in a file.
-The file format is stable, cross-platform, and
-backwards compatible.
-
-The API of PoloDB is very similar to MongoDB.
-It's very easy to learn and use.
-
 # Features
 
 - Simple and Lightweight
-  - Only cost ~500kb memory to serve a database
-  - The database server binary is less than 2Mb 
 - Easy to learn and use
   - NoSQL
   - MongoDB-like API
-- Various language bindings
-- Embedded
-  - No standalone processes
-  - No cross-process calls
-  - No runtime dependency
 - Cross-Platform
 - Multiple backends
   - Filesystem(WAL)
   - Memory
+  - IndexedDB(WIP)
 
 # Quick start
 
@@ -103,6 +86,10 @@ Limited by my time, I have only compiled and tested on the following platforms:
 
 The features will be implemented one by one in order.
 
+- [ ] Backend
+  - [x] Memory
+  - [x] File
+  - [ ] IndexedDB(WIP)
 - [x] Basic database API
   - [x] CRUD
   - [x] Transactions
@@ -110,11 +97,11 @@ The features will be implemented one by one in order.
   - [ ] Indexes
   - [ ] Aggregation
 - [x] Command line Tools
-- [ ] Language bindings
-  - [ ] [Node.js](https://github.com/vincentdchan/polodb.js)
-  - [ ] Python
-- [ ] Multi-threads support
-- [ ] Extension API
-  - [ ] Data Encryption
-  - [ ] JavaScript Engine
+- [ ] Platforms
+  - [x] MacOS
+  - [x] Linux
+  - [x] Windows
+  - [ ] Web Browser(WIP)
+  - [ ] iOS
+  - [ ] Android
 - [ ] Visualization Tools
