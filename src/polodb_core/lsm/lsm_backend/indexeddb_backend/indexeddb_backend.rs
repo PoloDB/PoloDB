@@ -11,12 +11,13 @@ use bson::oid::ObjectId;
 use hashbrown::HashMap;
 use wasm_bindgen::prelude::*;
 use js_sys::Reflect;
+use smallvec::smallvec;
 use crate::{DbErr, DbResult};
 use crate::lsm::lsm_backend::indexeddb_backend::models::{IdbLog, IdbSegment};
 use crate::lsm::lsm_backend::{format, lsm_log, LsmBackend, LsmLog};
 use crate::lsm::lsm_backend::lsm_log::LsmCommitResult;
 use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
-use crate::lsm::lsm_snapshot::LsmSnapshot;
+use crate::lsm::lsm_snapshot::{LsmLevel, LsmSnapshot};
 use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
 use crate::lsm::mem_table::MemTable;
 use super::models::IdbMeta;
@@ -207,6 +208,25 @@ impl IndexeddbBackend {
         Ok(())
     }
 
+    fn merge_last_two_levels(&self, snapshot: &mut LsmSnapshot) -> DbResult<ImLsmSegment> {
+        let level_len = snapshot.levels.len();
+        let last2 = &snapshot.levels[level_len - 2];
+        let last1 = &snapshot.levels[level_len - 1];
+
+        let cursor = {
+            let cursor_repo: Vec<CursorRepr> = vec![
+                last2.content[0].segments.open_cursor().into(),
+                last1.content[0].segments.open_cursor().into(),
+            ];
+
+            MultiCursor::new(cursor_repo)
+        };
+
+        let segment = self.merge_level(snapshot, cursor, false)?;
+
+        Ok(segment)
+    }
+
 }
 
 fn write_tuple_to_buffer(
@@ -333,8 +353,35 @@ impl LsmBackend for IndexeddbBackend {
         Ok(())
     }
 
-    fn major_compact(&self, _snapshot: &mut LsmSnapshot) -> DbResult<()> {
-        todo!()
+    fn major_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        assert!(snapshot.levels.len() > 3);
+        let new_segment = self.merge_last_two_levels(snapshot)?;
+
+        let segments_to_delete = js_sys::Array::new();
+
+        let mut level_len = snapshot.levels.len();
+        let last2: &LsmLevel = &snapshot.levels[level_len - 2];
+        let last1: &LsmLevel = &snapshot.levels[level_len - 1];
+
+        let last2_oid = last2.content[0].to_object_id().to_hex();
+        let last1_oid = last1.content[0].to_object_id().to_hex();
+
+        segments_to_delete.push(JsValue::from_str(&last2_oid).as_ref());
+        segments_to_delete.push(JsValue::from_str(&last1_oid).as_ref());
+
+        snapshot.levels.remove(level_len - 1);
+        level_len -= 1;
+        snapshot.levels[level_len - 1] = LsmLevel {
+            age: 0,
+            content: smallvec![new_segment],
+        };
+
+        {
+            let inner = self.inner.lock()?;
+            inner.adapter.batch_delete_segments(JsValue::from(segments_to_delete));
+        }
+
+        Ok(())
     }
 
     fn checkpoint_snapshot(&self, new_snapshot: &mut LsmSnapshot) -> DbResult<()> {
