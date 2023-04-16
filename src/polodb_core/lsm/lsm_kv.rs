@@ -399,8 +399,9 @@ impl LsmKvInner {
 
     #[inline]
     fn should_sync(&self, store_bytes: usize) -> bool {
+        let sync_loc_count = self.config.get_sync_log_count();
         let op_count = self.op_count.load(Ordering::SeqCst);
-        if op_count % 1000 == 0 && op_count != 0 {
+        if op_count % sync_loc_count == 0 && op_count != 0 {
             return true;
         }
 
