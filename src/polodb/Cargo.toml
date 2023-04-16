@@ -1,6 +1,6 @@
 [package]
 name = "polodb"
-version = "4.0.0"
+version = "4.0.1"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 license = "MPL-2.0"
 edition = "2018"
