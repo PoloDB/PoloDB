@@ -15,7 +15,7 @@ use smallvec::smallvec;
 use crate::{Config, DbErr, DbResult};
 use crate::lsm::lsm_backend::file_writer::FileWriter;
 use crate::lsm::lsm_backend::format;
-use crate::lsm::lsm_backend::lsm_backend::LsmBackend;
+use crate::lsm::lsm_backend::lsm_backend::{lsm_backend_utils, LsmBackend};
 use crate::lsm::lsm_backend::snapshot_reader::SnapshotReader;
 use crate::lsm::mem_table::MemTable;
 use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
@@ -454,65 +454,9 @@ impl LsmFileBackendInner {
         Ok(segment)
     }
 
-    fn merge_level(&mut self, snapshot: &mut LsmSnapshot, mut cursor: MultiCursor, preserve_delete: bool) -> DbResult<ImLsmSegment> {
-        cursor.go_to_min()?;
-
-        let mut tuples = Vec::<(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)>::new();
-
-        while !cursor.done() {
-            let key_opt = cursor.key();
-            match key_opt {
-                Some(key) => {
-                    let value = cursor.unwrap_tuple_ptr()?;
-
-                    if preserve_delete {
-                        tuples.push((key, value));
-                        cursor.next()?;
-                        continue;
-                    }
-
-                    if value.is_value() {
-                        tuples.push((key, value));
-                    }
-                }
-                None => break,
-            }
-
-            cursor.next()?;
-        }
-
-        let estimate_size = LsmFileBackendInner::estimate_merge_tuples_byte_size(&tuples);
-
-        self.write_merged_tuples(snapshot, &tuples, estimate_size)
-    }
-
-    fn estimate_merge_tuples_byte_size(tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)]) -> usize {
-        let mut result: usize = 0;
-
-        for (key, value) in tuples {
-            let value_size = match value {
-                LsmTreeValueMarker::Value(tuple) => tuple.byte_size as usize,
-                _ => {
-                    LsmFileBackendInner::estimate_key_size(key)
-                }
-            };
-
-            result += value_size;
-        }
-
-        result
-    }
-
-    fn estimate_key_size(key: &Arc<[u8]>) -> usize {
-        let mut result: usize = 0;
-
-        result += 1;
-
-        result += vli::vli_len_u64(key.len() as u64);
-
-        result += key.len();
-
-        result
+    fn merge_level(&mut self, snapshot: &mut LsmSnapshot, cursor: MultiCursor, preserve_delete: bool) -> DbResult<ImLsmSegment> {
+        let result = lsm_backend_utils::merge_level(cursor, preserve_delete)?;
+        self.write_merged_tuples(snapshot, &result.tuples, result.estimate_size)
     }
 
     fn estimate_mem_table_byte_size(mem_table: &MemTable) -> usize {
@@ -524,7 +468,7 @@ impl LsmFileBackendInner {
         while !cursor.done() {
             let tuple = cursor.tuple();
             if let Some((key, value)) = &tuple {
-                result += LsmFileBackendInner::estimate_key_size(key);
+                result += lsm_backend_utils::estimate_key_size(key);
 
                 match value {
                     LsmTreeValueMarker::Value(v) => {
