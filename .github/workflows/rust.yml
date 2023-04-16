@@ -25,20 +25,20 @@ jobs:
       - name: Build Clib
         run: cargo build --release --package polodb_clib
 
-#  Wasm32:
-#    name: Test Wasm32
-#    runs-on: ubuntu-latest
-#    steps:
-#      - uses: actions/checkout@v3
-#      - uses: actions/setup-node@v2
-#        with:
-#          node-version: '16'
-#      - name: Install wasm32
-#        run: |
-#          rustup target add wasm32-unknown-unknown
-#          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-#      - name: Build wasm
-#        run: wasm-pack build src/polodb_wasm
+  Wasm32:
+    name: Test Wasm32
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+      - name: Install wasm32
+        run: |
+          rustup target add wasm32-unknown-unknown
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build wasm
+        run: wasm-pack build src/polodb_wasm
 
   Windows:
     name: Test on Windows

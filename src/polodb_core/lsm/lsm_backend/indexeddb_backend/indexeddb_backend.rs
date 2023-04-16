@@ -200,11 +200,11 @@ impl LsmBackend for IndexeddbBackend {
         Ok(())
     }
 
-    fn minor_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn minor_compact(&self, _snapshot: &mut LsmSnapshot) -> DbResult<()> {
         todo!()
     }
 
-    fn major_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn major_compact(&self, _snapshot: &mut LsmSnapshot) -> DbResult<()> {
         todo!()
     }
 
@@ -320,6 +320,7 @@ unsafe impl Send for IndexeddbLog {}
 
 impl IndexeddbLog {
 
+    #[allow(dead_code)]
     pub fn new(session_id: ObjectId, init_data: JsValue) -> IndexeddbLog {
         let db = Reflect::get(&init_data, JsValue::from_str("db").as_ref()).unwrap();
         let init_logs = Reflect::get(&init_data, JsValue::from_str("logs_data").as_ref()).unwrap();

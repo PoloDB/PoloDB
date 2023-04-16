@@ -12,6 +12,7 @@ use std::io::Write;
 use std::num::NonZeroU32;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(crate) struct RawPage {
     pub page_id:    u32,
     pub data:       Vec<u8>,
@@ -20,6 +21,7 @@ pub(crate) struct RawPage {
 
 impl RawPage {
 
+    #[allow(dead_code)]
     pub fn new(page_id: u32, size: NonZeroU32) -> RawPage {
         let mut v: Vec<u8> = Vec::new();
         v.resize(size.get() as usize, 0);

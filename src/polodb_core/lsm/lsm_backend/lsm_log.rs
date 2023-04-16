@@ -175,7 +175,6 @@ pub(crate) mod lsm_log_utils {
 
         if flush_remain {
             flush_commands_to_mem_table(commands, mem_table);
-            commands = vec![];
         }
 
         (start_offset, reset)

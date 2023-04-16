@@ -133,7 +133,7 @@ impl<T>  Collection<T>
 
     /// release in 0.12
     #[allow(dead_code)]
-    fn create_index(&self, keys: &Document, options: Option<&Document>) -> DbResult<()> {
+    fn create_index(&self, _keys: &Document, _options: Option<&Document>) -> DbResult<()> {
         // let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         // let mut db = db_ref.lock()?;
         // let mut session = db.start_session()?;

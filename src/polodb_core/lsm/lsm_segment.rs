@@ -8,6 +8,7 @@ use bson::oid::ObjectId;
 use crate::lsm::lsm_tree::LsmTree;
 
 #[derive(Copy, Clone)]
+#[allow(dead_code)]
 pub(crate) struct LsmTuplePtr {
     pub pid:       u64,
     pub pid_ext:   u32,   // reserved for ObjectId
