@@ -359,6 +359,12 @@ impl DatabaseInner {
     }
 
     fn validate_col_name(col_name: &str) -> DbResult<()> {
+        for ch in col_name.chars() {
+            if ch == '$' || ch == '\n' || ch == '\t' || ch == '\r' {
+                return Err(DbErr::IllegalCollectionName(col_name.to_string()))
+            }
+        }
+
         Ok(())
     }
 
@@ -665,7 +671,7 @@ impl DatabaseInner {
     // }
 
     pub fn count(&mut self, name: &str, session: &mut SessionInner) -> DbResult<u64> {
-        DatabaseInner::validate_col_name(col_name)?;
+        DatabaseInner::validate_col_name(name)?;
 
         let col = self.get_collection_meta_by_name_advanced_auto(
             name,
@@ -864,4 +870,17 @@ fn collection_metas_to_names(doc_meta: Vec<Document>) -> Vec<String> {
             name
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::db::db_inner::DatabaseInner;
+
+    #[test]
+    fn test_validate_col_name() {
+        assert!(DatabaseInner::validate_col_name("test").is_ok());
+        assert!(DatabaseInner::validate_col_name("$test$").is_err());
+        assert!(DatabaseInner::validate_col_name("test\n").is_err());
+    }
+
 }

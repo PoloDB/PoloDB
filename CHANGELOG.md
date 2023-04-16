@@ -1,4 +1,9 @@
 
+# 4.0.1
+
+- Implement IndexedDB backen(alpha)
+- Validate collection's name
+
 # 4.0.0
 
 - **Breaking change:** use LSM-Tree as backend data structure
