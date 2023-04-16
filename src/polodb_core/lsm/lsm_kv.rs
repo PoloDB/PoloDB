@@ -6,16 +6,23 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::JsValue;
 use crate::{Config, DbErr, DbResult, TransactionType};
 use crate::lsm::kv_cursor::KvCursor;
+use crate::lsm::lsm_backend::LsmBackend;
 use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_session::LsmSession;
 use crate::lsm::LsmMetrics;
 use crate::lsm::lsm_snapshot::LsmSnapshot;
-use super::lsm_backend::{LsmFileBackend, LsmLog};
 use crate::lsm::mem_table::MemTable;
 use crate::lsm::multi_cursor::{CursorRepr, MultiCursor};
 use crate::transaction::TransactionState;
+use super::lsm_backend::LsmLog;
+#[cfg(not(target_arch = "wasm32"))]
+use super::lsm_backend::{LsmFileBackend, LsmFileLog};
+#[cfg(target_arch = "wasm32")]
+use super::lsm_backend::{IndexeddbLog, IndexeddbBackend};
 
 #[derive(Clone)]
 pub struct LsmKv {
@@ -24,13 +31,23 @@ pub struct LsmKv {
 
 impl LsmKv {
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file(path: &Path) -> DbResult<LsmKv> {
         let config = Config::default();
         LsmKv::open_file_with_config(path, config)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file_with_config(path: &Path, config: Config) -> DbResult<LsmKv> {
         let inner = LsmKvInner::open_file(path, config)?;
+        LsmKv::open_with_inner(inner)
+    }
+
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn open_indexeddb(init_data: JsValue) -> DbResult<LsmKv> {
+        let config = Config::default();
+        let inner = LsmKvInner::open_indexeddb(init_data, config)?;
         LsmKv::open_with_inner(inner)
     }
 
@@ -137,8 +154,8 @@ impl LsmKv {
 }
 
 pub(crate) struct LsmKvInner {
-    backend: Option<Box<LsmFileBackend>>,
-    log: Option<LsmLog>,
+    backend: Option<Box<dyn LsmBackend>>,
+    log: Option<Box<dyn LsmLog>>,
     snapshot: Mutex<LsmSnapshot>,
     main_mem_table: Mutex<MemTable>,
     transaction: Mutex<TransactionState>,
@@ -164,22 +181,41 @@ impl LsmKvInner {
         buf
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn open_file(path: &Path, config: Config) -> DbResult<LsmKvInner> {
         let metrics = LsmMetrics::new();
         let backend = LsmFileBackend::open(path, metrics.clone(), config.clone())?;
         let log_file = LsmKvInner::mk_log_path(path);
-        let log = LsmLog::open(log_file.as_path(), config.clone())?;
+        let log = LsmFileLog::open(log_file.as_path(), config.clone())?;
         LsmKvInner::open_with_backend(
             Some(Box::new(backend)),
-            Some(log),
+            Some(Box::new(log)),
+            metrics,
+            config,
+        )
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn open_indexeddb(init_data: JsValue, config: Config) -> DbResult<LsmKvInner> {
+        let metrics = LsmMetrics::new();
+        let backend = IndexeddbBackend::open(
+            init_data.clone(),
+        )?;
+
+        let session_id = backend.session_id();
+
+        let log = IndexeddbLog::new(session_id, init_data);
+        LsmKvInner::open_with_backend(
+            Some(Box::new(backend)),
+            Some(Box::new(log)),
             metrics,
             config,
         )
     }
 
     fn open_with_backend(
-        backend: Option<Box<LsmFileBackend>>,
-        log: Option<LsmLog>,
+        backend: Option<Box<dyn LsmBackend>>,
+        log: Option<Box<dyn LsmLog>>,
         metrics: LsmMetrics,
         config: Config,
     ) -> DbResult<LsmKvInner> {
@@ -331,9 +367,9 @@ impl LsmKvInner {
 
                 self.metrics.add_sync_count();
             } else if LsmKvInner::should_minor_compact(&snapshot) {
-                self.minor_compact(backend, &mut snapshot)?;
+                self.minor_compact(backend.as_ref(), &mut snapshot)?;
             } else if LsmKvInner::should_major_compact(&snapshot) {
-                self.major_compact(backend, &mut snapshot)?;
+                self.major_compact(backend.as_ref(), &mut snapshot)?;
             }
         }
 
@@ -343,7 +379,7 @@ impl LsmKvInner {
         Ok(())
     }
 
-    fn minor_compact(&self, backend: &LsmFileBackend, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn minor_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         backend.minor_compact(snapshot)?;
         backend.checkpoint_snapshot(snapshot)?;
 
@@ -352,7 +388,7 @@ impl LsmKvInner {
         Ok(())
     }
 
-    fn major_compact(&self, backend: &LsmFileBackend, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn major_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         backend.major_compact(snapshot)?;
         backend.checkpoint_snapshot(snapshot)?;
 
@@ -419,9 +455,8 @@ impl Drop for LsmKvInner {
         let sync_result = self.force_sync_last_segment();
         if sync_result.is_ok() {
             if let Some(log) = &self.log {
-                let path = log.path();
+                log.enable_safe_clear();
                 self.log = None;
-                let _ = std::fs::remove_file(&path);
             }
         }
     }

@@ -109,13 +109,19 @@ pub struct StartTransactionCommand {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CommitCommand {
+pub struct CommitTransactionCommand {
     pub session_id: ObjectId,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RollbackCommand {
+pub struct AbortTransactionCommand {
+    pub session_id: ObjectId,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DropSessionCommand {
     pub session_id: ObjectId,
 }
 
@@ -130,7 +136,31 @@ pub enum CommandMessage {
     DropCollection(DropCollectionCommand),
     CountDocuments(CountDocumentsCommand),
     StartTransaction(StartTransactionCommand),
-    Commit(CommitCommand),
-    Rollback(RollbackCommand),
+    CommitTransaction(CommitTransactionCommand),
+    AbortTransaction(AbortTransactionCommand),
+    StartSession,
+    DropSession(DropSessionCommand),
     SafelyQuit,
+}
+
+#[cfg(test)]
+mod tests {
+    use bson::oid::ObjectId;
+    use crate::commands::{CommandMessage, DropSessionCommand};
+
+    #[test]
+    fn test_commands() {
+        let start_session_command = CommandMessage::StartSession;
+        let doc = bson::to_document(&start_session_command).unwrap();
+        assert_eq!(doc.get_str("command").unwrap(), "StartSession");
+
+        let drop_session_command = CommandMessage::DropSession(DropSessionCommand {
+            session_id: ObjectId::new(),
+        });
+        let doc = bson::to_document(&drop_session_command).unwrap();
+        assert_eq!(doc.get_str("command").unwrap(), "DropSession");
+
+        assert!(doc.get("sessionId").is_some());
+    }
+
 }

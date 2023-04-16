@@ -3,13 +3,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+#[cfg(not(target_arch = "wasm32"))]
 mod lsm_file_backend;
 pub(crate) mod lsm_log;
 mod file_writer;
 mod snapshot_reader;
+mod lsm_backend;
+mod indexeddb_backend;
+mod lsm_file_log;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) use lsm_file_backend::LsmFileBackend;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use lsm_file_log::LsmFileLog;
+
 pub(crate) use lsm_log::LsmLog;
+pub(crate) use lsm_backend::LsmBackend;
+pub use indexeddb_backend::{IndexeddbBackend, IndexeddbLog};
 
 #[allow(unused)]
 pub(crate) mod format {

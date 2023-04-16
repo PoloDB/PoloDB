@@ -15,27 +15,27 @@ path="lib.rs"
 
 [dependencies]
 libc = "0.2"
-lru = "0.9.0"
 bson = "2.6.1"
 crc64fast = "1.0"
 hashbrown = "0.13.1"
 getrandom = { version = "0.2.3", features = ["js"] }
 byteorder = "1.4.3"
-num_enum = "0.5.4"
+num_enum = "0.6.0"
 serde = { version = "1.0.125", features = ["rc"] }
 uuid = { version = "1.3.0", features = ["atomic", "v1", "v4", "wasm-bindgen", "js", "getrandom"] }
 smallvec = { version = "1.10.0", features = ["union", "write", "const_new"] }
 memmap2 = "0.5.10"
+wasm-bindgen = "0.2.84"
+js-sys = "0.3.61"
+lz4_flex = "0.10.0"
+serde-wasm-bindgen = "0.5.0"
+wasm-bindgen-futures = "0.4.34"
 
 [dependencies.web-sys]
 version = "0.3.61"
 features = [
     'Window',
-    "IdbDatabase",
-    "IdbFactory",
-    "IdbObjectStore",
-    "IdbOpenDbRequest",
-    "IdbTransaction",
+    'console',
 ]
 
 [dev-dependencies]

@@ -168,6 +168,7 @@ pub enum DbErr {
     DbIsClosed,
     FromUtf8Error(Box<FromUtf8Error>),
     DataMalformed,
+    DbNotReady,
 }
 
 impl DbErr {
@@ -268,6 +269,7 @@ impl fmt::Display for DbErr {
             DbErr::DbIsClosed => write!(f, "the database is closed"),
             DbErr::FromUtf8Error(err) => write!(f, "{}", err),
             DbErr::DataMalformed => write!(f, "data malformed"),
+            DbErr::DbNotReady => write!(f, "the database is not ready"),
         }
     }
 

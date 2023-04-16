@@ -1,8 +1,18 @@
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::num::NonZeroU32;
+/*
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ */
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::{Read, Seek, SeekFrom};
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
 
+use std::io::Write;
+use std::num::NonZeroU32;
+
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(crate) struct RawPage {
     pub page_id:    u32,
     pub data:       Vec<u8>,
@@ -11,6 +21,7 @@ pub(crate) struct RawPage {
 
 impl RawPage {
 
+    #[allow(dead_code)]
     pub fn new(page_id: u32, size: NonZeroU32) -> RawPage {
         let mut v: Vec<u8> = Vec::new();
         v.resize(size.get() as usize, 0);

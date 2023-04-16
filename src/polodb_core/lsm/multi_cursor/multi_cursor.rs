@@ -263,6 +263,7 @@ impl MultiCursor {
         Ok(None)
     }
 
+    #[allow(dead_code)]
     pub fn unwrap_tuple_ptr(&self) -> DbResult<LsmTreeValueMarker<LsmTuplePtr>> {
         assert!(self.first_result >= 0);
 

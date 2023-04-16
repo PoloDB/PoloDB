@@ -154,6 +154,7 @@ impl<'a> SnapshotReader<'a> {
                         key_buffer.into(),
                         LsmTuplePtr {
                             pid: pid as u64,
+                            pid_ext: 0,
                             offset: offset as u32,
                             byte_size: (segment_slice.as_ptr() as usize - tuple_start_ptr) as u64,
                         },

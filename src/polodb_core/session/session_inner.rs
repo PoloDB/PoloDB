@@ -74,6 +74,20 @@ impl SessionInner {
         Ok(())
     }
 
+    pub fn auto_rollback(&mut self) -> DbResult<()> {
+        if let TransactionState::DbAuto(counter) = &self.transaction_state {
+            if counter.get() == 0 {
+                return Ok(());
+            }
+            counter.set(counter.get() - 1);
+            if counter.get() == 0 {
+                self.kv_session.abort_transaction()?;
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
         if self.transaction_state != TransactionState::NoTrans {
             return Err(DbErr::StartTransactionInAnotherTransaction);

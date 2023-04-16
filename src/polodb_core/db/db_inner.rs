@@ -5,8 +5,7 @@
  */
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::io::Read;
-use bson::{Binary, Bson, DateTime, Document};
+use bson::{Binary, Bson, Document};
 use serde::Serialize;
 use super::db::DbResult;
 use crate::error::DbErr;
@@ -15,13 +14,12 @@ use crate::Config;
 use crate::vm::SubProgram;
 use crate::meta_doc_helper::meta_doc_key;
 // use crate::index_ctx::{IndexCtx, merge_options_into_default};
-use crate::page::RawPage;
 use crate::db::db_handle::DbHandle;
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 #[cfg(target_arch = "wasm32")]
-use crate::backend::indexeddb::IndexedDbBackend;
+use wasm_bindgen::JsValue;
 use bson::oid::ObjectId;
 use bson::spec::BinarySubtype;
 use serde::de::DeserializeOwned;
@@ -29,6 +27,7 @@ use crate::collection_info::{CollectionSpecification, CollectionSpecificationInf
 use crate::cursor::Cursor;
 use crate::metrics::Metrics;
 use crate::session::SessionInner;
+use crate::utils::bson::bson_datetime_now;
 use crate::vm::VM;
 
 macro_rules! try_multiple {
@@ -91,14 +90,15 @@ impl DatabaseInner {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(ctx: crate::IndexedDbContext, config: Config) -> DbResult<DatabaseInner> {
+    pub fn open_indexeddb(init_data: JsValue, config: Config) -> DbResult<DatabaseInner> {
         let metrics = Metrics::new();
-        let page_size = NonZeroU32::new(4096).unwrap();
-        let config = Arc::new(config);
-        let backend = Box::new(IndexedDbBackend::open(
-            ctx, page_size, config.init_block_count
-        ));
-        DatabaseInner::open_with_backend(backend, page_size, config, metrics)
+        let kv_engine = LsmKv::open_indexeddb(init_data)?;
+
+        DatabaseInner::open_with_backend(
+            kv_engine,
+            config,
+            metrics,
+        )
     }
 
     pub fn open_memory(config: Config) -> DbResult<DatabaseInner> {
@@ -198,21 +198,6 @@ impl DatabaseInner {
         }
     }
 
-    fn check_first_page_valid(page: &RawPage) -> DbResult<()> {
-        let mut title_area: [u8; 32] = [0; 32];
-        title_area.copy_from_slice(&page.data[0..32]);
-
-        match std::str::from_utf8(&title_area) {
-            Ok(s) => {
-                if !s.starts_with("PoloDB") {
-                    return Err(DbErr::NotAValidDatabase);
-                }
-                Ok(())
-            },
-            Err(_) => Err(DbErr::NotAValidDatabase),
-        }
-    }
-
     fn auto_start_transaction(&mut self, session: &mut SessionInner, ty: TransactionType) -> DbResult<()> {
         session.auto_start_transaction(ty)
     }
@@ -222,8 +207,8 @@ impl DatabaseInner {
         Ok(())
     }
 
-    fn auto_rollback(&self, _session: &mut SessionInner) -> DbResult<()> {
-        // unimplemented!()
+    fn auto_rollback(&self, session: &mut SessionInner) -> DbResult<()> {
+        session.auto_rollback()?;
         Ok(())
     }
 
@@ -269,7 +254,7 @@ impl DatabaseInner {
                     bytes: uuid.as_bytes().to_vec(),
                 }),
 
-                create_at: DateTime::now(),
+                create_at: bson_datetime_now(),
             },
             indexes: HashMap::new(),
         };
@@ -592,40 +577,9 @@ impl DatabaseInner {
     }
 
     pub fn delete(&mut self, col_name: &str, query: Document, is_many: bool, session: &mut SessionInner) -> DbResult<usize> {
-        // {
-        //     let mut session = session.lock()?;
-        //     self.auto_start_transaction(&mut session, TransactionType::Write)?;
-        // }
-
         let result = self.internal_delete_by_query(session, col_name, query, is_many)?;
-
-        // let result = match self.internal_delete_by_query(session.clone(), col_name, query, is_many) {
-        //     Ok(result) => {
-        //         let mut session = session.lock()?;
-        //         self.auto_commit(&mut session)?;
-        //         result
-        //     }
-        //     Err(err) => {
-        //         let mut session = session.lock()?;
-        //         self.auto_rollback(&mut session)?;
-        //         return Err(err);
-        //     }
-        // };
-
         Ok(result)
     }
-
-    // fn internal_delete(&self, session: &mut SessionInner, col_name: &str, primary_keys: &[Bson]) -> DbResult<usize> {
-    //     let mut count: usize = 0;
-    //     for pkey in primary_keys {
-    //         let delete_result = self.internal_delete_by_pkey(session, col_name, pkey)?;
-    //         if delete_result.is_some() {
-    //             count += 1;
-    //         }
-    //     }
-    //
-    //     Ok(count)
-    // }
 
     fn internal_delete_by_query(&mut self, session: &mut SessionInner, col_name: &str, query: Document, is_many: bool) -> DbResult<usize> {
         let subprogram = SubProgram::compile_delete(
@@ -752,14 +706,6 @@ impl DatabaseInner {
         Ok(result)
     }
 
-    pub fn handle_request<R: Read>(&mut self, pipe_in: &mut R) -> DbResult<HandleRequestResult> {
-        unimplemented!()
-    }
-
-    pub fn handle_request_doc(&mut self, value: Bson) -> DbResult<HandleRequestResult> {
-        unimplemented!()
-    }
-
     pub fn find_one<T: DeserializeOwned>(
         &mut self,
         col_name: &str,
@@ -869,23 +815,6 @@ impl DatabaseInner {
             }),
             Err(err) => Err(err),
         }
-    }
-
-}
-
-#[derive(Clone)]
-pub struct HandleRequestResult {
-    pub is_quit: bool,
-    pub value: Bson,
-}
-
-impl Drop for DatabaseInner {
-
-    fn drop(&mut self) {
-        // TODO: FIXME
-        // if !self.base_session.transaction_state().is_no_trans() {
-        //     let _ = self.base_session.only_rollback_journal();
-        // }
     }
 
 }
