@@ -130,7 +130,7 @@ mod metrics;
 mod utils;
 
 pub use db::{Database, DatabaseServer, Collection, DbResult};
-pub use config::Config;
+pub use config::{Config, ConfigBuilder};
 pub use transaction::TransactionType;
 pub use db::db_handle::DbHandle;
 pub use error::DbErr;

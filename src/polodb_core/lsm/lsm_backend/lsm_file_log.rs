@@ -7,7 +7,7 @@
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use crc64fast::Digest;
 use getrandom::getrandom;
 use memmap2::Mmap;
@@ -40,7 +40,7 @@ pub(crate) struct LsmFileLog {
 
 impl LsmFileLog {
 
-    pub fn open(path: &Path, config: Config) -> DbResult<LsmFileLog> {
+    pub fn open(path: &Path, config: Arc<Config>) -> DbResult<LsmFileLog> {
         let inner = LsmFileLogInner::open(path, config)?;
         Ok(LsmFileLog {
             inner: Mutex::new(inner),
@@ -108,13 +108,13 @@ struct LsmFileLogInner {
     offset:      u64,
     salt1:       u32,
     salt2:       u32,
-    config:      Config,
+    config:      Arc<Config>,
     safe_clear:  bool,
 }
 
 impl LsmFileLogInner {
 
-    fn open(path: &Path, config: Config) -> DbResult<LsmFileLogInner> {
+    fn open(path: &Path, config: Arc<Config>) -> DbResult<LsmFileLogInner> {
         let file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -169,7 +169,7 @@ impl LsmFileLogInner {
 
         // copy version
         header48[32..36].copy_from_slice(&DATABASE_VERSION);
-        let page_size_be = self.config.get_lsm_page_size().to_be_bytes();
+        let page_size_be = self.config.lsm_page_size.to_be_bytes();
         header48[36..40].copy_from_slice(&page_size_be);
 
         let salt_1_be = self.salt1.to_be_bytes();

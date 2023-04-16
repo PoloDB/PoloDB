@@ -46,7 +46,7 @@ impl LsmKv {
 
     #[cfg(target_arch = "wasm32")]
     pub fn open_indexeddb(init_data: JsValue) -> DbResult<LsmKv> {
-        let config = Config::default();
+        let config = Arc::new(Config::default());
         let inner = LsmKvInner::open_indexeddb(init_data, config)?;
         LsmKv::open_with_inner(inner)
     }
@@ -57,6 +57,7 @@ impl LsmKv {
 
     pub fn open_memory_with_config(config: Config) -> DbResult<LsmKv> {
         let metrics = LsmMetrics::new();
+        let config = Arc::new(config);
         let inner = LsmKvInner::open_with_backend(None, None, metrics, config)?;
         LsmKv::open_with_inner(inner)
     }
@@ -163,7 +164,7 @@ pub(crate) struct LsmKvInner {
     /// including insert/delete
     op_count: AtomicU64,
     metrics: LsmMetrics,
-    pub(crate) config: Config,
+    pub(crate) config: Arc<Config>,
 }
 
 impl LsmKvInner {
@@ -184,6 +185,7 @@ impl LsmKvInner {
     #[cfg(not(target_arch = "wasm32"))]
     fn open_file(path: &Path, config: Config) -> DbResult<LsmKvInner> {
         let metrics = LsmMetrics::new();
+        let config = Arc::new(config);
         let backend = LsmFileBackend::open(path, metrics.clone(), config.clone())?;
         let log_file = LsmKvInner::mk_log_path(path);
         let log = LsmFileLog::open(log_file.as_path(), config.clone())?;
@@ -196,7 +198,7 @@ impl LsmKvInner {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn open_indexeddb(init_data: JsValue, config: Config) -> DbResult<LsmKvInner> {
+    fn open_indexeddb(init_data: JsValue, config: Arc<Config>) -> DbResult<LsmKvInner> {
         let metrics = LsmMetrics::new();
         let backend = IndexeddbBackend::open(
             init_data.clone(),
@@ -217,7 +219,7 @@ impl LsmKvInner {
         backend: Option<Box<dyn LsmBackend>>,
         log: Option<Box<dyn LsmLog>>,
         metrics: LsmMetrics,
-        config: Config,
+        config: Arc<Config>,
     ) -> DbResult<LsmKvInner> {
         let snapshot = match &backend {
             Some(backend) => backend.read_latest_snapshot()?,
@@ -399,13 +401,13 @@ impl LsmKvInner {
 
     #[inline]
     fn should_sync(&self, store_bytes: usize) -> bool {
-        let sync_loc_count = self.config.get_sync_log_count();
+        let sync_loc_count = self.config.sync_log_count;
         let op_count = self.op_count.load(Ordering::SeqCst);
         if op_count % sync_loc_count == 0 && op_count != 0 {
             return true;
         }
 
-        let block_size = self.config.get_lsm_block_size();
+        let block_size = self.config.lsm_block_size;
         return store_bytes > (block_size as usize);
     }
 

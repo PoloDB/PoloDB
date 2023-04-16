@@ -5,6 +5,7 @@
  */
 use std::io::{Seek, SeekFrom, Write};
 use std::fs::File;
+use std::sync::Arc;
 use byteorder::WriteBytesExt;
 use crate::{Config, DbResult};
 use crate::lsm::lsm_segment::LsmTuplePtr;
@@ -20,13 +21,13 @@ pub(crate) struct FileWriter<'a> {
     start_pid:     u64,
     page_size:     u32,
     written_bytes: u64,
-    config:        Config,
+    config:        Arc<Config>,
 }
 
 impl<'a> FileWriter<'a> {
 
-    pub fn open(file: &'a mut File, start_pid: u64, config: Config) -> FileWriter<'a> {
-        let page_size = config.get_lsm_page_size();
+    pub fn open(file: &'a mut File, start_pid: u64, config: Arc<Config>) -> FileWriter<'a> {
+        let page_size = config.lsm_page_size;
 
         FileWriter {
             file,
@@ -109,7 +110,7 @@ impl<'a> FileWriter<'a> {
     }
 
     pub fn begin(&mut self) -> DbResult<()> {
-        let page_size = self.config.get_lsm_page_size();
+        let page_size = self.config.lsm_page_size;
         let offset = (page_size as u64) * self.start_pid;
 
         self.file.seek(SeekFrom::Start(offset))?;
