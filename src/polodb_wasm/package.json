@@ -1,0 +1,24 @@
+{
+  "name": "polodb_wasm",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "homepage": "https://www.polodb.org/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PoloDB/PoloDB"
+  },
+  "keywords": [],
+  "author": "Vincent Chan <okcdz@diverse.space>",
+  "license": "MPL-2.0",
+  "dependencies": {
+    "bson": "^5.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.4"
+  }
+}
