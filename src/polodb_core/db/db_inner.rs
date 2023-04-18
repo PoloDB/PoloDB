@@ -9,12 +9,12 @@ use bson::{Binary, Bson, Document};
 use serde::Serialize;
 use super::db::DbResult;
 use crate::error::DbErr;
-use crate::{LsmKv, TransactionType};
+use crate::{ClientSessionCursor, LsmKv, TransactionType};
 use crate::Config;
 use crate::vm::SubProgram;
 use crate::meta_doc_helper::meta_doc_key;
 // use crate::index_ctx::{IndexCtx, merge_options_into_default};
-use crate::db::db_handle::DbHandle;
+use crate::db::client_cursor::ClientCursor;
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
@@ -273,9 +273,9 @@ impl DatabaseInner {
         Ok(spec)
     }
 
-    pub(crate) fn make_handle<'a>(&self, session: &'a mut SessionInner, program: SubProgram) -> DbResult<DbHandle<'a>> {
-        let vm = VM::new(self.kv_engine.clone(), session, program);
-        Ok(DbHandle::new(vm))
+    pub(crate) fn make_handle<T: DeserializeOwned>(&self, program: SubProgram) -> DbResult<ClientSessionCursor<T>> {
+        let vm = VM::new(self.kv_engine.clone(), program);
+        Ok(ClientSessionCursor::new(vm))
     }
 
     #[allow(dead_code)]
@@ -471,12 +471,11 @@ impl DatabaseInner {
         })
     }
 
-    fn find_internal<'b>(
+    fn find_internal<T: DeserializeOwned>(
         &self,
-        session: &'b mut SessionInner,
         col_spec: &CollectionSpecification,
         query: Option<Document>,
-    ) -> DbResult<DbHandle<'b>> {
+    ) -> DbResult<ClientSessionCursor<T>> {
         let subprogram = match query {
             Some(query) => SubProgram::compile_query(
                 col_spec,
@@ -486,7 +485,7 @@ impl DatabaseInner {
             None => SubProgram::compile_query_all(col_spec, true),
         }?;
 
-        let handle = self.make_handle(session, subprogram)?;
+        let handle = self.make_handle(subprogram)?;
         Ok(handle)
     }
 
@@ -540,9 +539,8 @@ impl DatabaseInner {
                     is_many,
                 )?;
 
-                let mut vm = VM::new(self.kv_engine.clone(), session, subprogram);
-                vm.set_rollback_on_drop(true);
-                vm.execute()?;
+                let mut vm = VM::new(self.kv_engine.clone(), subprogram);
+                vm.execute(session)?;
 
                 vm.r2 as u64
             },
@@ -572,9 +570,8 @@ impl DatabaseInner {
         )?;
 
         {
-            let mut vm = VM::new(self.kv_engine.clone(), session, subprogram);
-            vm.set_rollback_on_drop(true);
-            vm.execute()?;
+            let mut vm = VM::new(self.kv_engine.clone(), subprogram);
+            vm.execute(session)?;
         } // Delete content end
 
         self.delete_collection_meta(col_name, session)?;
@@ -609,9 +606,8 @@ impl DatabaseInner {
             is_many,
         )?;
 
-        let mut vm = VM::new(self.kv_engine.clone(), session, subprogram);
-        vm.set_rollback_on_drop(true);
-        vm.execute()?;
+        let mut vm = VM::new(self.kv_engine.clone(), subprogram);
+        vm.execute(session)?;
 
         Ok(vm.r2 as usize)
     }
@@ -624,9 +620,8 @@ impl DatabaseInner {
         )?;
 
         let delete_count = {
-            let mut vm = VM::new(self.kv_engine.clone(), session, subprogram);
-            vm.set_rollback_on_drop(true);
-            vm.execute()?;
+            let mut vm = VM::new(self.kv_engine.clone(), subprogram);
+            vm.execute(session)?;
 
             vm.r2 as usize
         }; // Delete content end
@@ -685,16 +680,11 @@ impl DatabaseInner {
         let col = col.unwrap();
         let mut count = 0;
 
-        let mut handle = self.find_internal(session, &col, None)?;
-        handle.step()?;
+        let mut handle = self.find_internal::<Document>(&col, None)?;
 
-        while handle.has_row() {
+        while handle.advance_inner(session)? {
             count += 1;
-
-            handle.step()?;
         }
-
-        handle.commit_and_close_vm()?;
 
         Ok(count)
     }
@@ -705,61 +695,56 @@ impl DatabaseInner {
     }
 
     pub(crate) fn query_all_meta(&mut self, session: &mut SessionInner) -> DbResult<Vec<Document>> {
-        let mut handle = {
+        let mut handle: ClientSessionCursor<Document> = {
             let subprogram = SubProgram::compile_query_all_by_name(
                 TABLE_META_PREFIX,
                 true
             )?;
 
-            self.make_handle(session, subprogram)?
+            self.make_handle(subprogram)?
         };
 
-        handle.step()?;
 
         let mut result = Vec::new();
 
-        while handle.has_row() {
+        while handle.advance_inner(session)? {
             let value = handle.get();
             result.push(value.as_document().unwrap().clone());
-
-            handle.step()?;
         }
 
         Ok(result)
     }
 
-    pub fn find_one<T: DeserializeOwned>(
+    pub fn find_with_owned_session<T: DeserializeOwned>(
         &mut self,
         col_name: &str,
         filter: impl Into<Option<Document>>,
-        session: &mut SessionInner,
-    ) -> DbResult<Option<T>> {
+        mut session: SessionInner,
+    ) -> DbResult<ClientCursor<T>> {
         DatabaseInner::validate_col_name(col_name)?;
         let filter_query = filter.into();
-        let col_spec = self.get_collection_meta_by_name_advanced_auto(col_name, false, session)?;
-        let result: Option<T> = if let Some(col_spec) = col_spec {
-            let mut handle = self.find_internal(
-                session,
-                &col_spec,
-                filter_query,
-            )?;
-            handle.step()?;
+        let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, &mut session)?;
+        match meta_opt {
+            Some(col_spec) => {
+                let subprogram = match filter_query {
+                    Some(query) => SubProgram::compile_query(
+                        &col_spec,
+                        &query,
+                        true
+                    ),
+                    None => SubProgram::compile_query_all(&col_spec, true),
+                }?;
 
-            if !handle.has_row() {
-                handle.commit_and_close_vm()?;
-                return Ok(None);
+                let vm = VM::new(self.kv_engine.clone(), subprogram);
+
+                let handle = ClientCursor::new(vm, session);
+
+                Ok(handle)
             }
-
-            let result_doc = handle.get().as_document().unwrap().clone();
-
-            handle.commit_and_close_vm()?;
-
-            bson::from_document(result_doc)?
-        } else {
-            None
-        };
-
-        Ok(result)
+            None => {
+                unreachable!()
+            }
+        }
     }
 
     pub fn find_many<T: DeserializeOwned>(
@@ -767,26 +752,21 @@ impl DatabaseInner {
         col_name: &str,
         filter: impl Into<Option<Document>>,
         session: &mut SessionInner
-    ) -> DbResult<Vec<T>> {
+    ) -> DbResult<ClientSessionCursor<T>> {
         DatabaseInner::validate_col_name(col_name)?;
         let filter_query = filter.into();
         let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, session)?;
         match meta_opt {
             Some(col_spec) => {
-                let mut handle = self.find_internal(
-                    session,
+                let handle = self.find_internal(
                     &col_spec,
                     filter_query,
                 )?;
 
-                let mut result: Vec<T> = Vec::new();
-                consume_handle_to_vec::<T>(&mut handle, &mut result)?;
-
-                Ok(result)
-
+                Ok(handle)
             }
             None => {
-                Ok(vec![])
+                unreachable!()
             }
         }
     }
@@ -846,20 +826,6 @@ impl DatabaseInner {
         }
     }
 
-}
-
-fn consume_handle_to_vec<T: DeserializeOwned>(handle: &mut DbHandle, result: &mut Vec<T>) -> DbResult<()> {
-    handle.step()?;
-
-    while handle.has_row() {
-        let doc_result = handle.get().as_document().unwrap();
-        let item: T = bson::from_document(doc_result.clone())?;
-        result.push(item);
-
-        handle.step()?;
-    }
-
-    Ok(())
 }
 
 fn collection_metas_to_names(doc_meta: Vec<Document>) -> Vec<String> {

@@ -8,7 +8,7 @@ use bson::Document;
 use std::borrow::Borrow;
 use std::sync::{Mutex, Weak};
 use serde::de::DeserializeOwned;
-use crate::{ClientSession, DbErr, DbResult};
+use crate::{ClientCursor, ClientSession, ClientSessionCursor, DbErr, DbResult};
 use crate::db::db_inner::DatabaseInner;
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 
@@ -208,35 +208,21 @@ impl<T>  Collection<T>
 {
     /// When query document is passed to the function. The result satisfies
     /// the query document.
-    pub fn find_many(&self, filter: impl Into<Option<Document>>) -> DbResult<Vec<T>> {
+    pub fn find(&self, filter: impl Into<Option<Document>>) -> DbResult<ClientCursor<T>> {
         let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let mut db = db_ref.lock()?;
-        let mut session = db.start_session()?;
-        db.find_many(&self.name, filter, &mut session)
+        let session = db.start_session()?;
+        db.find_with_owned_session(&self.name, filter, session)
     }
 
     /// When query document is passed to the function. The result satisfies
     /// the query document.
-    pub fn find_many_with_session(&self, filter: impl Into<Option<Document>>, session: &mut ClientSession) -> DbResult<Vec<T>> {
+    pub fn find_with_session(&self, filter: impl Into<Option<Document>>, session: &mut ClientSession) -> DbResult<ClientSessionCursor<T>> {
         let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let mut db = db_ref.lock()?;
         db.find_many(&self.name, filter, &mut session.inner)
     }
 
-    /// Return the first element in the collection satisfies the query.
-    pub fn find_one(&self, filter: impl Into<Option<Document>>) -> DbResult<Option<T>> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
-        let mut session = db.start_session()?;
-        db.find_one(&self.name, filter, &mut session)
-    }
-
-    /// Return the first element in the collection satisfies the query.
-    pub fn find_one_with_session(&self, filter: impl Into<Option<Document>>, session: &mut ClientSession) -> DbResult<Option<T>> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
-        db.find_one(&self.name, filter, &mut session.inner)
-    }
 }
 
 // #[cfg(test)]

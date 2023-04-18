@@ -36,9 +36,8 @@ pub enum VmState {
     HasRow = 2,
 }
 
-pub struct VM<'a> {
+pub(crate) struct VM {
     kv_engine:           LsmKv,
-    session:             &'a mut SessionInner,
     pub(crate) state:    VmState,
     pc:                  *const u8,
     r0:                  i32,  // usually the logic register
@@ -47,7 +46,6 @@ pub struct VM<'a> {
     r3:                  usize,
     stack:               Vec<Bson>,
     pub(crate) program:  SubProgram,
-    rollback_on_drop:    bool,
 }
 
 fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> DbResult<bool> {
@@ -64,14 +62,13 @@ fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> DbResult<bool> {
     Ok(result)
 }
 
-impl<'a> VM<'a> {
+impl VM {
 
-    pub(crate) fn new(kv_engine: LsmKv, session: &'a mut SessionInner, program: SubProgram) -> VM {
+    pub(crate) fn new(kv_engine: LsmKv, program: SubProgram) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         VM {
             kv_engine,
-            session,
             state: VmState::Init,
             pc,
             r0: 0,
@@ -80,25 +77,20 @@ impl<'a> VM<'a> {
             r3: 0,
             stack,
             program,
-            rollback_on_drop: false,
         }
     }
 
-    fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
-        self.session.auto_start_transaction(ty)
-    }
-
-    fn open_read(&mut self, prefix: Bson) -> DbResult<()> {
-        self.auto_start_transaction(TransactionType::Read)?;
-        let mut cursor = self.kv_engine.open_multi_cursor(Some(self.session.kv_session())) ;
+    fn open_read(&mut self, session: &mut SessionInner, prefix: Bson) -> DbResult<()> {
+        session.auto_start_transaction(TransactionType::Read)?;
+        let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
         cursor.go_to_min()?;
         self.r1 = Some(Cursor::new(prefix, cursor));
         Ok(())
     }
 
-    fn open_write(&mut self, prefix: Bson) -> DbResult<()> {
-        self.auto_start_transaction(TransactionType::Write)?;
-        let mut cursor = self.kv_engine.open_multi_cursor(Some(self.session.kv_session()));
+    fn open_write(&mut self, session: &mut SessionInner, prefix: Bson) -> DbResult<()> {
+        session.auto_start_transaction(TransactionType::Write)?;
+        let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
         cursor.go_to_min()?;
         self.r1 = Some(Cursor::new(prefix, cursor));
         Ok(())
@@ -336,7 +328,7 @@ impl<'a> VM<'a> {
         Ok(())
     }
 
-    pub(crate) fn execute(&mut self) -> DbResult<()> {
+    pub(crate) fn execute(&mut self, session: &mut SessionInner) -> DbResult<()> {
         if self.state == VmState::Halt {
             return Err(DbErr::VmIsHalt);
         }
@@ -540,7 +532,7 @@ impl<'a> VM<'a> {
 
                         let updated = {
                             let cursor = self.r1.as_mut().unwrap();
-                            self.session.update_cursor_current(
+                            session.update_cursor_current(
                                 cursor.multi_cursor_mut(),
                                 &doc_buf,
                             )?
@@ -555,7 +547,7 @@ impl<'a> VM<'a> {
                     DbOp::DeleteCurrent => {
                         let deleted = {
                             let cursor = self.r1.as_mut().unwrap();
-                            self.session.delete_cursor_current(cursor.multi_cursor_mut())?
+                            session.delete_cursor_current(cursor.multi_cursor_mut())?
                         };
                         if deleted {
                             self.r2 += 1;
@@ -619,7 +611,7 @@ impl<'a> VM<'a> {
                         let prefix_idx = self.pc.add(1).cast::<u32>().read();
                         let prefix = self.program.static_values[prefix_idx as usize].clone();
 
-                        try_vm!(self, self.open_read(prefix));
+                        try_vm!(self, self.open_read(session, prefix));
 
                         self.pc = self.pc.add(5);
                     }
@@ -628,7 +620,7 @@ impl<'a> VM<'a> {
                         let prefix_idx = self.pc.add(1).cast::<u32>().read();
                         let prefix = self.program.static_values[prefix_idx as usize].clone();
 
-                        try_vm!(self, self.open_write(prefix));
+                        try_vm!(self, self.open_write(session, prefix));
 
                         self.pc = self.pc.add(5);
                     }
@@ -641,10 +633,7 @@ impl<'a> VM<'a> {
 
                     DbOp::Close => {
                         self.r1 = None;
-                        if self.rollback_on_drop {
-                            self.session.auto_commit()?;
-                            self.rollback_on_drop = false;
-                        }
+                        session.auto_commit()?;
 
                         self.pc = self.pc.add(1);
                     }
@@ -668,31 +657,6 @@ impl<'a> VM<'a> {
 
                 }
             }
-        }
-    }
-
-    pub(crate) fn commit_and_close(mut self) -> DbResult<()> {
-        self.session.auto_commit()?;
-        self.rollback_on_drop = false;
-        Ok(())
-    }
-
-    pub(crate) fn set_rollback_on_drop(&mut self, value: bool) {
-        self.rollback_on_drop = value;
-    }
-
-}
-
-impl Drop for VM<'_> {
-
-    fn drop(&mut self) {
-        if self.rollback_on_drop {
-            // TODO: FIXME
-            // let _result = self.session.rollback();
-            // #[cfg(debug_assertions)]
-            // if let Err(err) = _result {
-            //     panic!("rollback fatal: {}", err);
-            // }
         }
     }
 
