@@ -6,7 +6,7 @@
 mod db;
 mod collection;
 mod db_inner;
-pub mod db_handle;
+pub mod client_cursor;
 mod server;
 
 pub use collection::Collection;

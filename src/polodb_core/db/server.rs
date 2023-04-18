@@ -110,24 +110,22 @@ impl DatabaseServer {
         let session_ref = self.get_session_by_session_id(session_id)?;
         let mut session = session_ref.lock()?;
         let collection = self.db.collection::<Document>(col_name);
-        let result = if find.multi {
-            collection.find_many_with_session(find.filter, &mut session)?
-        } else {
-            let result = collection.find_one_with_session(find.filter, &mut session)?;
-            match result {
-                Some(doc) => vec![doc],
-                None => vec![],
-            }
-        };
+        let mut result = collection.find_with_session(find.filter, &mut session)?;
 
         let mut value_arr = bson::Array::new();
 
-        for item in result {
-            value_arr.push(Bson::Document(item));
+        let mut counter : usize = 0;
+        while result.advance(&mut session)? {
+            if !find.multi && counter > 0 {
+                break;
+            }
+
+            value_arr.push(result.get().clone());
+
+            counter += 1;
         }
 
         let result_value = Bson::Array(value_arr);
-
         Ok(result_value)
     }
 
