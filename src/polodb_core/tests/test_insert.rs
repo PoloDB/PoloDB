@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use bson::Document;
 use bson::spec::ElementType;
 use serde::{Deserialize, Serialize};
-use polodb_core::Database;
+use polodb_core::{ClientCursor, Database, DbResult};
 use polodb_core::bson::{doc, Bson};
 
 mod common;
@@ -45,13 +45,14 @@ fn test_insert_struct() {
         // Insert the books into "mydb.books" collection, no manual conversion to BSON necessary.
         typed_collection.insert_many(books).unwrap();
 
-        let result = typed_collection.find_one(doc! {
+        let mut cursor = typed_collection.find(doc! {
             "title": "The Grapes of Wrath",
         }).unwrap();
-        let book = result.unwrap();
+        assert!(cursor.advance().unwrap());
+        let book = cursor.deserialize_current().unwrap();
         assert_eq!(book.author, "John Steinbeck");
 
-        let result = typed_collection.find_many(doc! {
+        let cursor = typed_collection.find(doc! {
             "$or": [
                 {
                     "title": "The Grapes of Wrath",
@@ -61,6 +62,7 @@ fn test_insert_struct() {
                 }
             ]
         }).unwrap();
+        let result: Vec<DbResult<Book>> = cursor.collect();
         assert_eq!(result.len(), 2);
     });
 }
@@ -114,9 +116,13 @@ fn test_very_large_binary() {
         let result = collection.insert_one(doc).unwrap();
 
         let new_id = result.inserted_id;
-        let back = collection.find_one(doc! {
-                "_id": new_id,
-            }).unwrap().unwrap();
+        let mut cursor: ClientCursor<Document> = collection.find(doc! {
+            "_id": new_id,
+        }).unwrap();
+
+        assert!(cursor.advance().unwrap());
+
+        let back = cursor.deserialize_current().unwrap();
 
         let back_bin = back.get("content").unwrap();
 
@@ -161,9 +167,12 @@ fn test_insert_after_delete() {
             "content": "Hello World",
         }).unwrap();
 
-        let one = collection.find_one(doc! {
+        let mut cursor = collection.find(doc! {
             "_id": "500",
-        }).unwrap().unwrap();
+        }).unwrap();
+        assert!(cursor.advance().unwrap());
+
+        let one = cursor.deserialize_current().unwrap();
 
         assert_eq!(one.get("content").unwrap().as_str().unwrap(), "Hello World");
     });
@@ -182,9 +191,10 @@ fn test_insert_different_types_as_key() {
         "_id": "0",
     }).unwrap();
 
-    let result = collection.find_many(doc! {}).unwrap();
+    let cursor = collection.find(doc! {}).unwrap();
+    let result: Vec<DbResult<Document>> = cursor.collect();
     assert_eq!(result.len(), 2);
 
-    assert_eq!(result[0].get("_id").unwrap().element_type(), ElementType::String);
-    assert_eq!(result[1].get("_id").unwrap().element_type(), ElementType::Int32);
+    assert_eq!(result[0].as_ref().unwrap().get("_id").unwrap().element_type(), ElementType::String);
+    assert_eq!(result[1].as_ref().unwrap().get("_id").unwrap().element_type(), ElementType::Int32);
 }

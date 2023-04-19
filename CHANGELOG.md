@@ -1,4 +1,8 @@
 
+# 4.1.0
+
+- Use `Cursor<T>` api for `find()` method
+
 # 4.0.1
 
 - Implement IndexedDB backen(alpha)
