@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use polodb_core::Database;
+use polodb_core::{Database, DbResult};
 use polodb_core::bson::{doc, Document};
 
 mod common;
@@ -134,7 +134,11 @@ fn test_delete_all_items() {
             let find_doc = doc! {
                 "_id": key.clone(),
             };
-            let result = collection.find_many(find_doc).unwrap();
+            let result = collection
+                .find(find_doc)
+                .unwrap()
+                .collect::<DbResult<Vec<Document>>>()
+                .unwrap();
             assert_eq!(result.len(), 0, "item with key: {}", key);
             counter += 1;
         }

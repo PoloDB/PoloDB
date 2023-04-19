@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use polodb_core::{Collection, Database};
+use polodb_core::{Collection, Database, DbResult};
 use polodb_core::bson::{Document, doc};
 
 mod common;
@@ -76,11 +76,12 @@ fn test_update_gte_set() {
         },
     }).unwrap();
     assert_eq!(update_result.modified_count, 500);
-    let result = col.find_many(doc! {
+    let cursor = col.find(doc! {
         "content": "updated!",
     }).unwrap();
+    let result: Vec<DbResult<Document>> = cursor.collect();
     assert_eq!(result.len(), 500);
-    assert_eq!(result[0].get("_id").unwrap().as_i32().unwrap(), 500);
+    assert_eq!(result[0].as_ref().unwrap().get("_id").unwrap().as_i32().unwrap(), 500);
 }
 
 #[test]
@@ -108,9 +109,11 @@ fn test_update_inc() {
             "num": 100,
         },
     }).unwrap();
-    let result = col.find_one(doc! {
+    let mut cursor = col.find(doc! {
         "_id": 0,
-    }).unwrap().unwrap();
+    }).unwrap();
+    assert!(cursor.advance().unwrap());
+    let result = cursor.deserialize_current().unwrap();
     assert_eq!(result.get("num").unwrap().as_i32().unwrap(), 100);
 }
 
@@ -125,9 +128,11 @@ fn test_update_rename() {
             "num": "num2",
         },
     }).unwrap();
-    let result = col.find_one(doc! {
+    let mut cursor = col.find(doc! {
         "_id": 0,
-    }).unwrap().unwrap();
+    }).unwrap();
+    assert!(cursor.advance().unwrap());
+    let result = cursor.deserialize_current().unwrap();
     println!("result: {}", result);
     assert_eq!(result.get("_id").unwrap().as_i32().unwrap(), 0);
     assert!(result.get("num").is_none());
@@ -145,9 +150,11 @@ fn test_update_unset() {
             "num": "",
         },
     }).unwrap();
-    let result = col.find_one(doc! {
+    let mut cursor = col.find(doc! {
         "_id": 0,
-    }).unwrap().unwrap();
+    }).unwrap();
+    assert!(cursor.advance().unwrap());
+    let result = cursor.deserialize_current().unwrap();
     assert!(result.get("num").is_none());
 }
 
@@ -162,9 +169,11 @@ fn test_update_max() {
             "num": 0,
         },
     }).unwrap();
-    let result = col.find_one(doc! {
+    let mut cursor = col.find(doc! {
         "_id": 1,
-    }).unwrap().unwrap();
+    }).unwrap();
+    assert!(cursor.advance().unwrap());
+    let result = cursor.deserialize_current().unwrap();
     assert_eq!(result.get("num").unwrap().as_i32().unwrap(), 1);
     col.update_many(doc! {
         "_id": 1,
@@ -173,9 +182,11 @@ fn test_update_max() {
             "num": 2,
         },
     }).unwrap();
-    let result = col.find_one(doc! {
+    let mut cursor = col.find(doc! {
         "_id": 1,
-    }).unwrap().unwrap();
+    }).unwrap();
+    assert!(cursor.advance().unwrap());
+    let result = cursor.deserialize_current().unwrap();
     assert_eq!(result.get("num").unwrap().as_i32().unwrap(), 2);
 }
 
@@ -196,9 +207,11 @@ fn test_update_push() {
         },
     }).unwrap();
     assert_eq!(update_result.modified_count, 1);
-    let result = col.find_one(doc! {
+    let mut cursor = col.find(doc! {
         "_id": 0,
-    }).unwrap().unwrap();
+    }).unwrap();
+    assert!(cursor.advance().unwrap());
+    let result = cursor.deserialize_current().unwrap();
     let content = result.get_array("content").unwrap();
     assert_eq!(content.len(), 4);
 }

@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use polodb_core::{Database, DbErr};
+use polodb_core::{Database, DbErr, DbResult};
 use polodb_core::bson::{Document, doc};
 
 mod common;
@@ -32,7 +32,11 @@ fn test_transaction_commit() {
 
         session.commit_transaction().unwrap();
 
-        let doc = collection.find_many(doc! {}).unwrap();
+        let doc = collection
+            .find(None)
+            .unwrap()
+            .collect::<DbResult<Vec<Document>>>()
+            .unwrap();
         assert_eq!(doc.len(), 10);
     });
 }

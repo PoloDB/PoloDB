@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use polodb_core::bson::{Document, doc};
-use polodb_core::{Database, Collection};
+use polodb_core::{Database, Collection, DbResult};
 mod common;
 
 use common::{
@@ -22,11 +22,18 @@ fn test_create_collection_and_find_all() {
         create_memory_and_return_db_with_items(TEST_SIZE),
     ].iter().for_each(|db| {
         let test_collection = db.collection::<Document>("test");
-        let all = test_collection.find_many(None).unwrap();
+        let cursor = test_collection.find(None).unwrap();
 
-        let second = test_collection.find_one(doc! {
+        let all = cursor.collect::<DbResult<Vec<Document>>>().unwrap();
+
+        let mut second_cursor = test_collection.find(doc! {
             "content": "1",
-        }).unwrap().unwrap();
+        }).unwrap();
+
+        assert!(second_cursor.advance().unwrap());
+
+        let second = second_cursor.deserialize_current().unwrap();
+
         assert_eq!(second.get("content").unwrap().as_str().unwrap(), "1");
         assert!(second.get("content").is_some());
 
@@ -92,7 +99,11 @@ fn test_create_collection_with_number_pkey() {
         let count = collection.count_documents().unwrap();
         assert_eq!(TEST_SIZE, count as usize);
 
-        let all = collection.find_many(None).unwrap();
+        let all = collection
+            .find(None)
+            .unwrap()
+            .collect::<DbResult<Vec<Document>>>()
+            .unwrap();
 
         assert_eq!(TEST_SIZE, all.len())
     });
@@ -106,15 +117,23 @@ fn test_create_collection_and_find_by_pkey() {
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
 
-        let all = collection.find_many(None).unwrap();
+        let all = collection
+            .find(None)
+            .unwrap()
+            .collect::<DbResult<Vec<Document>>>()
+            .unwrap();
 
         assert_eq!(all.len(), 10);
 
         let first_key = &all[0].get("_id").unwrap();
 
-        let result = collection.find_many(doc! {
+        let result = collection
+            .find(doc! {
                 "_id": first_key.clone(),
-            }).unwrap();
+            })
+            .unwrap()
+            .collect::<DbResult<Vec<Document>>>()
+            .unwrap();
 
         assert_eq!(result.len(), 1);
     });
