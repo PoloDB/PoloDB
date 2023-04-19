@@ -11,6 +11,11 @@ use crate::{ClientSession, DbResult};
 use crate::session::SessionInner;
 use crate::vm::{VM, VmState};
 
+/// A `ClientCursor` is used get the result of a query.
+/// You can move the cursor forward using the `advance()`.
+///
+/// Additionally, you can use deserialize_current() method to
+/// deserialize the documents returned by advance()
 pub struct ClientCursor<T: DeserializeOwned> {
     vm: VM,
     session: SessionInner,
@@ -77,6 +82,7 @@ impl<T> Iterator for ClientCursor<T>
     }
 }
 
+/// A `ClientSessionCursor` is used get the result of a query.
 pub struct ClientSessionCursor<T: DeserializeOwned> {
     vm: VM,
     _phantom: PhantomData<T>,

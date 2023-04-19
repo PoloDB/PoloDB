@@ -73,6 +73,35 @@
 //! collection.insert_many(docs).unwrap();
 //! ```
 //!
+//! ## Finding documents in a collection
+//!
+//! ```rust
+//! use polodb_core::Database;
+//! use polodb_core::bson::{Document, doc};
+//! use serde::{Deserialize, Serialize};
+//!
+//! #[derive(Debug, Serialize, Deserialize)]
+//! struct Book {
+//!    title: String,
+//!    author: String,
+//! }
+//!
+//! let db = Database::open_memory().unwrap();
+//! let collection = db.collection::<Book>("books");
+//!
+//! let docs = vec![
+//!     Book { title: "1984".to_string(), author: "George Orwell".to_string() },
+//!     Book { title: "Animal Farm".to_string(), author: "George Orwell".to_string() },
+//!     Book { title: "The Great Gatsby".to_string(), author: "F. Scott Fitzgerald".to_string() },
+//! ];
+//! collection.insert_many(docs).unwrap();
+//!
+//! let books = collection.find(None).unwrap();
+//! for book in books {
+//!     println!("name: {:?}", book);
+//! }
+//! ```
+//!
 //! # Session
 //!
 //! A [`ClientSession`] represents a logical session used for ordering sequential

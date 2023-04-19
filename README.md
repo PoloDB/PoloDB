@@ -7,7 +7,7 @@
 
 PoloDB is an embedded document database.
 
-| [Documentations](https://www.polodb.org/docs) | [中文版](README_CN.md) |
+| [Documentations](https://www.polodb.org/docs) |
 
 # Introduction
 
