@@ -59,6 +59,14 @@ impl LsmMetrics {
         self.inner.use_free_segment_count()
     }
 
+    pub fn add_clone_snapshot_count(&self) {
+        self.inner.clone_snapshot_count.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn clone_snapshot_count(&self) -> usize {
+        self.inner.clone_snapshot_count.load(Ordering::SeqCst)
+    }
+
 }
 
 macro_rules! test_enable {
@@ -76,6 +84,7 @@ struct LsmMetricsInner {
     major_compact: AtomicUsize,
     free_segments_count: AtomicUsize,
     use_free_segment_count: AtomicUsize,
+    clone_snapshot_count: AtomicUsize,
 }
 
 impl LsmMetricsInner {
@@ -136,6 +145,7 @@ impl Default for LsmMetricsInner {
             major_compact: AtomicUsize::new(0),
             free_segments_count: AtomicUsize::new(0),
             use_free_segment_count: AtomicUsize::new(0),
+            clone_snapshot_count: AtomicUsize::new(0),
         }
     }
 

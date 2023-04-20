@@ -1,9 +1,10 @@
 use std::io::Write;
-use std::sync::Weak;
+use std::sync::{Arc, Mutex, Weak};
 use byteorder::WriteBytesExt;
 use crate::lsm::mem_table::MemTable;
 use crate::{DbErr, DbResult, TransactionType};
 use crate::lsm::lsm_backend::lsm_log::format;
+use crate::lsm::lsm_snapshot::LsmSnapshot;
 use crate::lsm::LsmKvInner;
 use crate::lsm::multi_cursor::MultiCursor;
 use crate::utils::vli;
@@ -13,6 +14,7 @@ pub struct LsmSession {
     id: u64,
     prev_mem_table: MemTable,
     pub(crate) mem_table: MemTable,
+    pub(crate) snapshot: Arc<Mutex<LsmSnapshot>>,
     log_buffer: Option<Vec<u8>>,
     transaction: Option<TransactionType>,
 }
@@ -28,6 +30,7 @@ impl LsmSession {
         engine: Weak<LsmKvInner>,
         id: u64,
         mem_table: MemTable,
+        snapshot: Arc<Mutex<LsmSnapshot>>,
         has_log: bool,
     ) -> LsmSession {
         let log_buffer = if has_log {
@@ -40,6 +43,7 @@ impl LsmSession {
             id,
             prev_mem_table: mem_table.clone(),
             mem_table,
+            snapshot,
             log_buffer,
             transaction: None,
         }

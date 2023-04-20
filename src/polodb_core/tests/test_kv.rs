@@ -277,7 +277,7 @@ fn test_dataset_7500() {
 fn test_dataset_18k() {
     let dir = env!("CARGO_MANIFEST_DIR");
     let data_set_path = dir.to_string() + "/tests/dataset/CrimeDataFrom2020.csv";
-    let file = std::fs::File::open(data_set_path).unwrap();
+    let file = File::open(data_set_path).unwrap();
 
     let db_path = mk_db_path("test-kv-dataset-18k");
     println!("18k data: {}", db_path.to_str().unwrap());
