@@ -74,6 +74,11 @@ impl LsmKv {
         KvCursor::new(self.inner.clone(), multi_cursor)
     }
 
+    fn open_cursor_with_session(&self, session: Option<&LsmSession>) -> KvCursor {
+        let multi_cursor = self.inner.open_multi_cursor(session);
+        KvCursor::new(self.inner.clone(), multi_cursor)
+    }
+
     pub(crate) fn open_multi_cursor(&self, session: Option<&LsmSession>) -> MultiCursor {
         self.inner.open_multi_cursor(session)
     }
@@ -112,7 +117,22 @@ impl LsmKv {
     where
         K: AsRef<[u8]>,
     {
-        let cursor = self.open_cursor();
+        self.get_internal(key, None)
+    }
+
+    pub fn get_with_session<'a, K>(&self, key: K, session: &LsmSession) -> DbResult<Option<Arc<[u8]>>>
+        where
+            K: AsRef<[u8]>,
+    {
+        self.get_internal(key, Some(session))
+    }
+
+    #[inline]
+    fn get_internal<'a, K>(&self, key: K, session: Option<&LsmSession>) -> DbResult<Option<Arc<[u8]>>>
+        where
+            K: AsRef<[u8]>,
+    {
+        let cursor = self.open_cursor_with_session(session);
         cursor.seek(key.as_ref())?;
         let test_key = cursor.key()?;
 
@@ -148,6 +168,21 @@ impl LsmKv {
         Ok(string)
     }
 
+    pub fn get_string_with_session<'a, K>(&self, key: K, session: &LsmSession) -> DbResult<Option<String>>
+        where
+            K: AsRef<[u8]>,
+    {
+        let bytes = self.get_with_session(key, session)?;
+        let string = match bytes {
+            None => None,
+            Some(bytes) => {
+                let result = String::from_utf8(bytes.to_vec())?;
+                Some(result)
+            }
+        };
+        Ok(string)
+    }
+
     pub fn metrics(&self) -> LsmMetrics {
         self.inner.metrics()
     }
@@ -157,7 +192,7 @@ impl LsmKv {
 pub(crate) struct LsmKvInner {
     backend: Option<Box<dyn LsmBackend>>,
     log: Option<Box<dyn LsmLog>>,
-    snapshot: Mutex<LsmSnapshot>,
+    snapshot: Mutex<Arc<Mutex<LsmSnapshot>>>,
     main_mem_table: Mutex<MemTable>,
     transaction: Mutex<TransactionState>,
     /// Operation count after last sync,
@@ -237,7 +272,7 @@ impl LsmKvInner {
         Ok(LsmKvInner {
             backend,
             log,
-            snapshot: Mutex::new(snapshot),
+            snapshot: Mutex::new(Arc::new(Mutex::new(snapshot))),
             main_mem_table: Mutex::new(mem_table),
             transaction: Mutex::new(TransactionState::NoTrans),
             op_count: AtomicU64::new(0),
@@ -262,7 +297,11 @@ impl LsmKvInner {
             }
         };
 
-        let snapshot = self.snapshot.lock().unwrap();
+        let snapshot_ref = match session {
+            Some(session) => session.snapshot.clone(),
+            None => self.current_snapshot_ref(),
+        };
+        let snapshot = snapshot_ref.lock().unwrap();
 
         let mut cursors: Vec<CursorRepr> = vec![
             mem_table_cursor.into(),
@@ -313,10 +352,12 @@ impl LsmKvInner {
             let m = self.main_mem_table.lock().unwrap();
             m.clone()
         };
+        let snapshot = self.current_snapshot_ref();
         LsmSession::new(
             engine,
             id,
             mem_table,
+            snapshot,
             self.log.is_some(),
         )
     }
@@ -328,6 +369,18 @@ impl LsmKvInner {
         }
 
         false
+    }
+
+    #[inline]
+    fn current_snapshot_ref(&self) -> Arc<Mutex<LsmSnapshot>>  {
+        let ptr = self.snapshot.lock().unwrap();
+        ptr.clone()
+    }
+
+    #[inline]
+    fn set_current_snapshot_ref(&self, v: Arc<Mutex<LsmSnapshot>>) {
+        let mut ptr = self.snapshot.lock().unwrap();
+        *ptr = v;
     }
 
     pub(crate) fn commit(&self, session: &mut LsmSession) -> DbResult<()> {
@@ -351,7 +404,23 @@ impl LsmKvInner {
         *mem_table_col = session.mem_table.clone();
 
         if let Some(backend) = &self.backend {
-            let mut snapshot = self.snapshot.lock()?;
+            let current_snapshot = self.current_snapshot_ref();
+            let snapshot_ref: Arc<Mutex<LsmSnapshot>> = if Arc::strong_count(&current_snapshot) == 3 {
+                current_snapshot
+            } else {
+                let cloned = {
+                    let origin = current_snapshot.lock()?;
+                    origin.clone()
+                };
+                let snapshot_ref = Arc::new(Mutex::new(cloned));
+                self.set_current_snapshot_ref(snapshot_ref.clone());
+                session.snapshot = snapshot_ref.clone();
+
+                self.metrics.add_clone_snapshot_count();
+
+                snapshot_ref
+            };
+            let mut snapshot = snapshot_ref.lock()?;
 
             let store_bytes = mem_table_col.store_bytes();
             if self.should_sync(store_bytes) {
@@ -425,16 +494,21 @@ impl LsmKvInner {
         snapshot.levels.len() > 4
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn meta_id(&self) -> u64 {
-        let snapshot = self.snapshot.lock().unwrap();
-        snapshot.meta_id
-    }
-
+    // #[allow(dead_code)]
+    // pub(crate) fn meta_id(&self) -> u64 {
+    //     let snapshot_ref = {
+    //         let snapshot_ref = self.snapshot.lock().unwrap();
+    //         snapshot_ref.clone()
+    //     };
+    //     let snapshot = snapshot_ref.lock().unwrap();
+    //     snapshot.meta_id
+    // }
+    //
     fn force_sync_last_segment(&mut self) -> DbResult<()> {
         if let Some(backend) = &self.backend {
             let mem_table = self.main_mem_table.lock().unwrap();
-            let mut snapshot = self.snapshot.lock()?;
+            let snapshot_ref = self.current_snapshot_ref();
+            let mut snapshot = snapshot_ref.lock()?;
 
             if mem_table.len() == 0 {
                 return Ok(())

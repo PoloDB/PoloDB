@@ -379,6 +379,10 @@ impl LsmFileBackendInner {
     }
 
     fn normalize_free_segments(snapshot: &mut LsmSnapshot) -> DbResult<()> {
+        if snapshot.free_segments.is_empty() {
+            return Ok(());
+        }
+
         snapshot.free_segments.sort_by(|a, b| {
             a.start_pid.cmp(&b.start_pid)
         });
