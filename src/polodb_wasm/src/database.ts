@@ -38,6 +38,14 @@ export class DatabaseDelegate {
         return new DatabaseDelegate(database);
     }
 
+    static drop(name: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const req = window.indexedDB.deleteDatabase(name);
+            req.onsuccess = () => resolve();
+            req.onerror = reject;
+        });
+    }
+
     constructor(private _db: Database) {}
 
     collection(name: string): Collection {
@@ -48,6 +56,10 @@ export class DatabaseDelegate {
         const buffer = serialize(doc)
         const result = this._db.handleMessage(buffer);
         return deserialize(result);
+    }
+
+    close() {
+        this._db.free();
     }
 
 }
