@@ -5,3 +5,4 @@
  */
 
 export { DatabaseDelegate, Collection } from "./database";
+export { default, initSync } from "../pkg/polodb_wasm";
