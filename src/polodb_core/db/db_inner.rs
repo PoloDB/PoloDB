@@ -737,9 +737,7 @@ impl DatabaseInner {
 
                 subprogram
             }
-            None => {
-                SubProgram::compile_empty_query()?
-            }
+            None => SubProgram::compile_empty_query(),
         };
 
         let vm = VM::new(self.kv_engine.clone(), subprogram);
@@ -749,7 +747,7 @@ impl DatabaseInner {
         Ok(handle)
     }
 
-    pub fn find_many<T: DeserializeOwned>(
+    pub fn find_with_borrowed_session<T: DeserializeOwned>(
         &mut self,
         col_name: &str,
         filter: impl Into<Option<Document>>,
@@ -768,7 +766,10 @@ impl DatabaseInner {
                 Ok(handle)
             }
             None => {
-                unreachable!()
+                let subprogram = SubProgram::compile_empty_query();
+                let vm = VM::new(self.kv_engine.clone(), subprogram);
+                let cursor = ClientSessionCursor::new(vm);
+                Ok(cursor)
             }
         }
     }

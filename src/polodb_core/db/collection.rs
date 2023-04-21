@@ -220,7 +220,7 @@ impl<T>  Collection<T>
     pub fn find_with_session(&self, filter: impl Into<Option<Document>>, session: &mut ClientSession) -> DbResult<ClientSessionCursor<T>> {
         let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let mut db = db_ref.lock()?;
-        db.find_many(&self.name, filter, &mut session.inner)
+        db.find_with_borrowed_session(&self.name, filter, &mut session.inner)
     }
 
 }

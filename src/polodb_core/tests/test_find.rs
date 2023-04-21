@@ -118,9 +118,19 @@ fn test_find() {
 fn test_find_empty_collection() {
     let db = Database::open_memory().unwrap();
 
+    {
+        let collection = db.collection::<Document>("test");
+
+        let mut cursor = collection.find(None).unwrap();
+
+        assert!(!cursor.advance().unwrap());
+    }
+
+    let mut session = db.start_session().unwrap();
+
     let collection = db.collection::<Document>("test");
 
-    let mut cursor = collection.find(None).unwrap();
+    let mut cursor = collection.find_with_session(None, &mut session).unwrap();
 
-    assert!(!cursor.advance().unwrap());
+    assert!(!cursor.advance(&mut session).unwrap());
 }

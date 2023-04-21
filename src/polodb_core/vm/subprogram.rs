@@ -27,12 +27,12 @@ impl SubProgram {
         }
     }
 
-    pub(crate) fn compile_empty_query() -> DbResult<SubProgram> {
+    pub(crate) fn compile_empty_query() -> SubProgram {
         let mut codegen = Codegen::new(true);
 
         codegen.emit(DbOp::Halt);
 
-        Ok(codegen.take())
+        codegen.take()
     }
 
     pub(crate) fn compile_query(
