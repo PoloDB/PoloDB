@@ -3,6 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use std::fs;
+use std::io::{Seek, SeekFrom, Write};
 use polodb_core::{Database, Config, DbErr};
 use polodb_core::bson::{doc, Document};
 
@@ -42,6 +44,52 @@ fn test_reopen_db() {
         let book = cursor.deserialize_current().unwrap();
         assert_eq!(book.get("author").unwrap().as_str().unwrap(), "Liu Cixin");
     }
+}
+
+#[test]
+fn test_reopen_db_file_size() {
+    let db_name = "test-reopen-size";
+    let db_path = mk_db_path(db_name);
+    let journal_path = mk_journal_path(db_name);
+
+    let _ = fs::remove_file(db_path.as_path());
+    let _ = fs::remove_file(journal_path);
+
+    {
+        let db = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
+
+        let collection = db.collection("books");
+        collection.insert_one(doc! {
+           "title": "The Three-Body Problem",
+           "author": "Liu Cixin",
+        }).unwrap();
+    }
+
+    let metadata = fs::metadata(&db_path).unwrap();
+
+    // append something to the end
+    {
+        let mut file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&db_path)
+            .unwrap();
+        file.seek(SeekFrom::End(0)).unwrap();
+        file.write("Liu Cixin".as_bytes()).unwrap();
+    }
+
+    {
+        let db = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
+        let collection = db.collection::<Document>("books");
+        let mut cursor = collection.find(doc! {}).unwrap();
+        assert!(cursor.advance().unwrap());
+        let book = cursor.deserialize_current().unwrap();
+        assert_eq!(book.get("author").unwrap().as_str().unwrap(), "Liu Cixin");
+    }
+
+    let metadata2 = fs::metadata(&db_path).unwrap();
+
+    assert_eq!(metadata.len(), metadata2.len());
 }
 
 #[test]

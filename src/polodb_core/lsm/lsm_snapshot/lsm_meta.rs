@@ -66,7 +66,7 @@ impl<'a> LsmMetaDelegate<'a> {
     }
 
     #[inline]
-    fn set_db_file_size(&mut self, db_file_size: u64) {
+    pub fn set_db_file_size(&mut self, db_file_size: u64) {
         self.0.seek(DB_FILE_SIZE_OFFSET);
         self.0.put_u64(db_file_size);
     }

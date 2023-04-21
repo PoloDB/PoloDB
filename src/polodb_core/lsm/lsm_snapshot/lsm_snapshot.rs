@@ -95,6 +95,7 @@ impl LsmSnapshot {
             delegate.write_level(level);
         }
 
+        delegate.set_db_file_size(self.file_size);
         delegate.write_free_segments(&self.free_segments);
     }
 
