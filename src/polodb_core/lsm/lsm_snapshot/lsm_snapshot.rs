@@ -86,6 +86,7 @@ impl LsmSnapshot {
         let mut delegate = LsmMetaDelegate(page);
         delegate.set_meta_id(self.meta_id);
         delegate.set_log_offset(self.log_offset);
+        delegate.set_db_file_size(self.file_size);
 
         assert!(self.levels.len() < u8::MAX as usize);
         delegate.set_level_count(self.levels.len() as u8);
@@ -95,7 +96,6 @@ impl LsmSnapshot {
             delegate.write_level(level);
         }
 
-        delegate.set_db_file_size(self.file_size);
         delegate.write_free_segments(&self.free_segments);
     }
 

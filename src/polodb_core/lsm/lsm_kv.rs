@@ -431,11 +431,12 @@ impl LsmKvInner {
                     &mem_table_col,
                     &mut snapshot,
                 )?;
-                backend.checkpoint_snapshot(&mut snapshot)?;
 
                 if let Some(log) = &self.log {
                     log.shrink(&mut snapshot)?;
                 }
+
+                backend.checkpoint_snapshot(&mut snapshot)?;
 
                 mem_table_col.clear();
 
@@ -523,6 +524,11 @@ impl LsmKvInner {
                 &mem_table,
                 &mut snapshot,
             )?;
+
+            if let Some(log) = &self.log {
+                log.shrink(&mut snapshot)?;
+            }
+
             backend.checkpoint_snapshot(&mut snapshot)?;
         }
 
@@ -540,6 +546,8 @@ impl Drop for LsmKvInner {
                 log.enable_safe_clear();
                 self.log = None;
             }
+        } else {
+            eprintln!("drop error: {}", sync_result.unwrap_err());
         }
     }
 

@@ -247,6 +247,8 @@ impl LsmFileBackendInner {
             reader.read_snapshot_from(1, meta2)?
         };
 
+        drop(mmap);
+
         self.metrics.set_free_segments_count(snapshot.free_segments.len());
 
         self.file.set_len(snapshot.file_size)?;
