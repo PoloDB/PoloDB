@@ -136,6 +136,7 @@ impl IdbMeta {
             log_offset: 0,
             free_segments: self.free_segments.clone(),
             levels,
+            pending_free_segments: Vec::new(),
         }
     }
 

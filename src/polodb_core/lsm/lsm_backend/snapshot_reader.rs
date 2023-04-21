@@ -60,6 +60,7 @@ impl<'a> SnapshotReader<'a> {
             log_offset,
             levels,
             free_segments,
+            pending_free_segments: Vec::new(),
         };
 
         Ok(result)

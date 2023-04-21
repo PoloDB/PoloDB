@@ -76,7 +76,8 @@ impl LsmSession {
 
     pub fn commit_transaction(&mut self) -> DbResult<()> {
         let engine = self.engine.upgrade().ok_or(DbErr::DbIsClosed)?;
-        engine.commit(self)
+        let weak_count = Arc::weak_count(&engine);
+        engine.commit(self, weak_count)
     }
 
     pub fn abort_transaction(&mut self) -> DbResult<()> {

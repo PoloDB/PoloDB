@@ -38,14 +38,15 @@ pub(crate) struct  FreeSegmentRecord {
 
 #[derive(Clone)]
 pub(crate) struct LsmSnapshot {
-    pub meta_pid:    u8,   // The page id of the meta page
+    pub meta_pid:              u8,   // The page id of the meta page
     /// Incremental counter.
     /// Default is 1, so it's bigger than null(0)
-    pub meta_id:     u64,
-    pub file_size:   u64,
-    pub log_offset:  u64,
-    pub levels:      Vec<LsmLevel>,
-    pub free_segments: Vec<FreeSegmentRecord>,
+    pub meta_id:               u64,
+    pub file_size:             u64,
+    pub log_offset:            u64,
+    pub levels:                Vec<LsmLevel>,
+    pub free_segments:         Vec<FreeSegmentRecord>,
+    pub pending_free_segments: Vec<FreeSegmentRecord>,
 }
 
 impl LsmSnapshot {
@@ -58,6 +59,7 @@ impl LsmSnapshot {
             log_offset: 0,
             free_segments: Vec::with_capacity(4),
             levels: Vec::with_capacity(4),
+            pending_free_segments: Vec::new(),
         }
     }
 
@@ -94,6 +96,40 @@ impl LsmSnapshot {
         }
 
         delegate.write_free_segments(&self.free_segments);
+    }
+
+    pub fn flush_pending_segments(&mut self) {
+        for seg in &self.pending_free_segments {
+            self.free_segments.push(seg.clone());
+        }
+        self.pending_free_segments.clear();
+    }
+
+    pub fn normalize_free_segments(&mut self) {
+        if self.free_segments.is_empty() {
+            return;
+        }
+
+        self.free_segments.sort_by(|a, b| {
+            a.start_pid.cmp(&b.start_pid)
+        });
+
+        let mut index: usize = 0;
+
+        while index < self.free_segments.len() - 1 {
+            let (next_start_pid, next_end_pid) = {
+                let next = &self.free_segments[index + 1];
+                (next.start_pid, next.end_pid)
+            };
+            let this = &mut self.free_segments[index];
+
+            if this.end_pid + 1 == next_start_pid {
+                this.end_pid = next_end_pid;
+                self.free_segments.remove(index + 1);
+            } else {
+                index += 1;
+            }
+        }
     }
 
 }
