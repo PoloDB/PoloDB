@@ -340,7 +340,7 @@ impl LsmBackend for IndexeddbBackend {
         Ok(())
     }
 
-    fn minor_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn minor_compact(&self, snapshot: &mut LsmSnapshot, _db_weak_count: usize) -> DbResult<()> {
         let new_segment = self.merge_level0_except_last(snapshot)?;
 
         lsm_backend_utils::insert_new_segment_to_right_level(new_segment, snapshot);
@@ -353,7 +353,7 @@ impl LsmBackend for IndexeddbBackend {
         Ok(())
     }
 
-    fn major_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn major_compact(&self, snapshot: &mut LsmSnapshot, _db_weak_count: usize) -> DbResult<()> {
         assert!(snapshot.levels.len() > 3);
         let new_segment = self.merge_last_two_levels(snapshot)?;
 

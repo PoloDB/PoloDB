@@ -14,8 +14,8 @@ pub(crate) trait LsmBackend: Send + Sync {
     fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>>;
     fn read_latest_snapshot(&self) -> DbResult<LsmSnapshot>;
     fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()>;
-    fn minor_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()>;
-    fn major_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()>;
+    fn minor_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()>;
+    fn major_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()>;
     fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> DbResult<()>;
 }
 

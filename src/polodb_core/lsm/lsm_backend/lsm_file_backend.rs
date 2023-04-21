@@ -116,14 +116,14 @@ impl LsmBackend for LsmFileBackend {
         inner.sync_latest_segment(segment, snapshot)
     }
 
-    fn minor_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn minor_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
-        inner.minor_compact(snapshot)
+        inner.minor_compact(snapshot, db_weak_count)
     }
 
-    fn major_compact(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn major_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
         let mut inner = self.inner.lock()?;
-        inner.major_compact(snapshot)
+        inner.major_compact(snapshot, db_weak_count)
     }
 
     fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
@@ -313,7 +313,7 @@ impl LsmFileBackendInner {
         }
     }
 
-    fn minor_compact(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn minor_compact(&mut self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
         let new_segment = self.merge_level0_except_last(snapshot)?;
 
         lsm_backend_utils::insert_new_segment_to_right_level(new_segment, snapshot);
@@ -323,25 +323,29 @@ impl LsmFileBackendInner {
         snapshot.levels[0].clear_except_last();
         snapshot.levels[0].age += 1;
 
-        LsmFileBackendInner::normalize_free_segments(snapshot)?;
+        // indicates that there is only one session
+        if db_weak_count == 1 {
+            snapshot.flush_pending_segments();
+            snapshot.normalize_free_segments();
+        }
 
         snapshot.file_size = self.file.seek(SeekFrom::End(0))?;
 
         Ok(())
     }
 
-    fn major_compact(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn major_compact(&mut self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
         assert!(snapshot.levels.len() > 3);
         let new_segment = self.merge_last_two_levels(snapshot)?;
 
         let mut level_len = snapshot.levels.len();
         let last2 = &snapshot.levels[level_len - 2];
         let last1 = &snapshot.levels[level_len - 1];
-        snapshot.free_segments.push(FreeSegmentRecord {
+        snapshot.pending_free_segments.push(FreeSegmentRecord {
             start_pid: last2.content[0].start_pid,
             end_pid: last2.content[0].end_pid,
         });
-        snapshot.free_segments.push(FreeSegmentRecord {
+        snapshot.pending_free_segments.push(FreeSegmentRecord {
             start_pid: last1.content[0].start_pid,
             end_pid: last1.content[0].end_pid,
         });
@@ -353,7 +357,11 @@ impl LsmFileBackendInner {
             content: smallvec![new_segment],
         };
 
-        LsmFileBackendInner::normalize_free_segments(snapshot)?;
+        if db_weak_count == 1 {
+            snapshot.flush_pending_segments();
+            snapshot.normalize_free_segments();
+        }
+
         snapshot.file_size = self.file.seek(SeekFrom::End(0))?;
 
         Ok(())
@@ -378,35 +386,6 @@ impl LsmFileBackendInner {
         Ok(segment)
     }
 
-    fn normalize_free_segments(snapshot: &mut LsmSnapshot) -> DbResult<()> {
-        if snapshot.free_segments.is_empty() {
-            return Ok(());
-        }
-
-        snapshot.free_segments.sort_by(|a, b| {
-            a.start_pid.cmp(&b.start_pid)
-        });
-
-        let mut index: usize = 0;
-
-        while index < snapshot.free_segments.len() - 1 {
-            let (next_start_pid, next_end_pid) = {
-                let next = &snapshot.free_segments[index + 1];
-                (next.start_pid, next.end_pid)
-            };
-            let this = &mut snapshot.free_segments[index];
-
-            if this.end_pid + 1 == next_start_pid {
-                this.end_pid = next_end_pid;
-                snapshot.free_segments.remove(index + 1);
-            } else {
-                index += 1;
-            }
-        }
-
-        Ok(())
-    }
-
     fn free_pages_of_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
         let level0 = &snapshot.levels[0];
 
@@ -414,7 +393,7 @@ impl LsmFileBackendInner {
 
         while index < level0.content.len() - 1 {
             let segment = &level0.content[index];
-            snapshot.free_segments.push(FreeSegmentRecord {
+            snapshot.pending_free_segments.push(FreeSegmentRecord {
                 start_pid: segment.start_pid,
                 end_pid: segment.end_pid,
             });

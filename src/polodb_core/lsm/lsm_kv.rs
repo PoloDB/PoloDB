@@ -100,7 +100,8 @@ impl LsmKv {
         let mut session = self.new_session();
         session.start_transaction(TransactionType::Write)?;
         session.put(key.as_ref(), value.as_ref())?;
-        self.inner.commit(&mut session)
+        let weak_count = Arc::weak_count(&self.inner);
+        self.inner.commit(&mut session, weak_count)
     }
 
     pub fn delete<K>(&self, key: K) -> DbResult<()>
@@ -110,7 +111,8 @@ impl LsmKv {
         let mut session = self.new_session();
         session.start_transaction(TransactionType::Write)?;
         session.delete(key.as_ref())?;
-        self.inner.commit(&mut session)
+        let weak_count = Arc::weak_count(&self.inner);
+        self.inner.commit(&mut session, weak_count)
     }
 
     pub fn get<'a, K>(&self, key: K) -> DbResult<Option<Arc<[u8]>>>
@@ -383,7 +385,7 @@ impl LsmKvInner {
         *ptr = v;
     }
 
-    pub(crate) fn commit(&self, session: &mut LsmSession) -> DbResult<()> {
+    pub(crate) fn commit(&self, session: &mut LsmSession, db_weak_count: usize) -> DbResult<()> {
         if !LsmKvInner::is_write_transaction(session.transaction()) {
             session.finished_transaction();
             return Ok(())
@@ -405,7 +407,8 @@ impl LsmKvInner {
 
         if let Some(backend) = &self.backend {
             let current_snapshot = self.current_snapshot_ref();
-            let snapshot_ref: Arc<Mutex<LsmSnapshot>> = if Arc::strong_count(&current_snapshot) == 3 {
+            let snapshot_count = Arc::strong_count(&current_snapshot);
+            let snapshot_ref: Arc<Mutex<LsmSnapshot>> = if snapshot_count == 3 {
                 current_snapshot
             } else {
                 let cloned = {
@@ -438,9 +441,9 @@ impl LsmKvInner {
 
                 self.metrics.add_sync_count();
             } else if LsmKvInner::should_minor_compact(&snapshot) {
-                self.minor_compact(backend.as_ref(), &mut snapshot)?;
+                self.minor_compact(backend.as_ref(), &mut snapshot, db_weak_count)?;
             } else if LsmKvInner::should_major_compact(&snapshot) {
-                self.major_compact(backend.as_ref(), &mut snapshot)?;
+                self.major_compact(backend.as_ref(), &mut snapshot, db_weak_count)?;
             }
         }
 
@@ -450,8 +453,8 @@ impl LsmKvInner {
         Ok(())
     }
 
-    fn minor_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot) -> DbResult<()> {
-        backend.minor_compact(snapshot)?;
+    fn minor_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
+        backend.minor_compact(snapshot, db_weak_count)?;
         backend.checkpoint_snapshot(snapshot)?;
 
         self.metrics.add_minor_compact();
@@ -459,8 +462,8 @@ impl LsmKvInner {
         Ok(())
     }
 
-    fn major_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot) -> DbResult<()> {
-        backend.major_compact(snapshot)?;
+    fn major_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
+        backend.major_compact(snapshot, db_weak_count)?;
         backend.checkpoint_snapshot(snapshot)?;
 
         self.metrics.add_major_compact();
@@ -509,6 +512,8 @@ impl LsmKvInner {
             let mem_table = self.main_mem_table.lock().unwrap();
             let snapshot_ref = self.current_snapshot_ref();
             let mut snapshot = snapshot_ref.lock()?;
+            snapshot.flush_pending_segments();
+            snapshot.normalize_free_segments();
 
             if mem_table.len() == 0 {
                 return Ok(())
