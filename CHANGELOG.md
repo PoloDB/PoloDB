@@ -1,11 +1,17 @@
 
+# 4.1.1
+
+- feat: preserve file size after reopen the database
+- fix: `find()` empty collection
+- fix: recycle free segments
+
 # 4.1.0
 
 - Use `Cursor<T>` api for `find()` method
 
 # 4.0.1
 
-- Implement IndexedDB backen(alpha)
+- Implement IndexedDB backend(alpha)
 - Validate collection's name
 
 # 4.0.0

@@ -96,21 +96,23 @@ fn test_reopen_db_file_size() {
 fn test_db_occupied() {
     const DB_NAME: &'static str = "test-db-lock";
     let db_path = mk_db_path(DB_NAME);
-    let _ = std::fs::remove_file(&db_path);
-    {
-        let config = Config::default();
-        let _db1 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
-        let config = Config::default();
-        let db2 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config);
-        match db2 {
-            Err(DbErr::DatabaseOccupied) => assert!(true),
-            Err(other_error) => {
-                println!("{:?}", other_error);
-                assert!(false);
-            }
-            _ => assert!(false),
+    let _ = fs::remove_file(&db_path);
+
+    let config = Config::default();
+    let db1 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
+    let config = Config::default();
+    let db2 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config);
+    match db2 {
+        Err(DbErr::DatabaseOccupied) => assert!(true),
+        Err(other_error) => {
+            println!("{:?}", other_error);
+            assert!(false);
         }
+        _ => assert!(false),
     }
+
+    drop(db1);
+
     let config = Config::default();
     let _db3 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
 }
