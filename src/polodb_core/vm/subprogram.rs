@@ -27,6 +27,14 @@ impl SubProgram {
         }
     }
 
+    pub(crate) fn compile_empty_query() -> DbResult<SubProgram> {
+        let mut codegen = Codegen::new(true);
+
+        codegen.emit(DbOp::Halt);
+
+        Ok(codegen.take())
+    }
+
     pub(crate) fn compile_query(
         col_spec: &CollectionSpecification,
         query: &Document,

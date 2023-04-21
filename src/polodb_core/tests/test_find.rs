@@ -21,7 +21,7 @@ fn test_multiple_find_one() {
     vec![
         (prepare_db("test-multiple-find-one").unwrap(), true),
         (Database::open_memory().unwrap(), false),
-    ].iter().for_each(|(db, is_file)| {
+    ].iter().for_each(|(db, _is_file)| {
         let metrics = db.metrics();
         metrics.enable();
 
@@ -112,4 +112,15 @@ fn test_find() {
         let one = result[0].clone();
         assert_eq!(one.get("content").unwrap().as_str().unwrap(), "3");
     });
+}
+
+#[test]
+fn test_find_empty_collection() {
+    let db = Database::open_memory().unwrap();
+
+    let collection = db.collection::<Document>("test");
+
+    let mut cursor = collection.find(None).unwrap();
+
+    assert!(!cursor.advance().unwrap());
 }

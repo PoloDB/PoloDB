@@ -724,7 +724,7 @@ impl DatabaseInner {
         DatabaseInner::validate_col_name(col_name)?;
         let filter_query = filter.into();
         let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, &mut session)?;
-        match meta_opt {
+        let subprogram = match meta_opt {
             Some(col_spec) => {
                 let subprogram = match filter_query {
                     Some(query) => SubProgram::compile_query(
@@ -735,16 +735,18 @@ impl DatabaseInner {
                     None => SubProgram::compile_query_all(&col_spec, true),
                 }?;
 
-                let vm = VM::new(self.kv_engine.clone(), subprogram);
-
-                let handle = ClientCursor::new(vm, session);
-
-                Ok(handle)
+                subprogram
             }
             None => {
-                unreachable!()
+                SubProgram::compile_empty_query()?
             }
-        }
+        };
+
+        let vm = VM::new(self.kv_engine.clone(), subprogram);
+
+        let handle = ClientCursor::new(vm, session);
+
+        Ok(handle)
     }
 
     pub fn find_many<T: DeserializeOwned>(
