@@ -167,8 +167,6 @@ impl LsmFileBackendInner {
         let meta_size = (page_size * 2) as u64;
 
         self.file.set_len(meta_size)?;
-        self.file.seek(SeekFrom::End(0))?;
-
         result.file_size = meta_size;
 
         Ok(result)
@@ -250,6 +248,8 @@ impl LsmFileBackendInner {
         };
 
         self.metrics.set_free_segments_count(snapshot.free_segments.len());
+
+        self.file.set_len(snapshot.file_size)?;
 
         Ok(snapshot)
     }
