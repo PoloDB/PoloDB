@@ -134,7 +134,7 @@ impl DatabaseInner {
         self.metrics.clone()
     }
 
-    pub fn start_session(&mut self) -> DbResult<SessionInner> {
+    pub fn start_session(&self) -> DbResult<SessionInner> {
         let kv_session = self.kv_engine.new_session();
         let inner = SessionInner::new(kv_session);
         Ok(inner)
@@ -163,7 +163,7 @@ impl DatabaseInner {
     }
 
     pub fn get_collection_meta_by_name_advanced_auto(
-        &mut self,
+        &self,
         name: &str,
         create_if_not_exist: bool,
         session: &mut SessionInner,
@@ -198,7 +198,7 @@ impl DatabaseInner {
         }
     }
 
-    fn auto_start_transaction(&mut self, session: &mut SessionInner, ty: TransactionType) -> DbResult<()> {
+    fn auto_start_transaction(&self, session: &mut SessionInner, ty: TransactionType) -> DbResult<()> {
         session.auto_start_transaction(ty)
     }
 
@@ -212,14 +212,14 @@ impl DatabaseInner {
         Ok(())
     }
 
-    pub fn create_collection(&mut self, name: &str) -> DbResult<CollectionSpecification> {
+    pub fn create_collection(&self, name: &str) -> DbResult<CollectionSpecification> {
         DatabaseInner::validate_col_name(name)?;
 
         let mut session = self.start_session()?;
         self.create_collection_internal(name, &mut session)
     }
 
-    pub fn create_collection_internal(&mut self, name: &str, session: &mut SessionInner) -> DbResult<CollectionSpecification> {
+    pub fn create_collection_internal(&self, name: &str, session: &mut SessionInner) -> DbResult<CollectionSpecification> {
         self.auto_start_transaction(session, TransactionType::Write)?;
 
         let meta = try_db_op!(self, session, self.internal_create_collection(session, name, &self.node_id));
@@ -279,7 +279,7 @@ impl DatabaseInner {
     }
 
     #[allow(dead_code)]
-    pub fn create_index(&mut self, prefix: Bson, keys: &Document, options: Option<&Document>, session: &mut SessionInner) -> DbResult<()> {
+    pub fn create_index(&self, prefix: Bson, keys: &Document, options: Option<&Document>, session: &mut SessionInner) -> DbResult<()> {
         self.auto_start_transaction(session, TransactionType::Write)?;
 
         try_db_op!(self, session, DatabaseInner::internal_create_index(session, prefix, keys, options));
@@ -368,7 +368,7 @@ impl DatabaseInner {
         Ok(())
     }
 
-    pub fn insert_one(&mut self, col_name: &str, doc: Document, session: &mut SessionInner) -> DbResult<InsertOneResult> {
+    pub fn insert_one(&self, col_name: &str, doc: Document, session: &mut SessionInner) -> DbResult<InsertOneResult> {
         DatabaseInner::validate_col_name(col_name)?;
 
         self.auto_start_transaction(session, TransactionType::Write)?;
@@ -431,7 +431,7 @@ impl DatabaseInner {
     }
 
     pub fn insert_many<T: Serialize>(
-        &mut self,
+        &self,
         col_name: &str,
         docs: impl IntoIterator<Item = impl Borrow<T>>,
         session: &mut SessionInner
@@ -490,7 +490,7 @@ impl DatabaseInner {
     }
 
     pub fn update_one(
-        &mut self,
+        &self,
         col_name: &str,
         query: Option<&Document>,
         update: &Document,
@@ -505,7 +505,7 @@ impl DatabaseInner {
     }
 
     pub(super) fn update_many(
-        &mut self,
+        &self,
         col_name: &str,
         query: Document,
         update: Document,
@@ -520,7 +520,7 @@ impl DatabaseInner {
     }
 
     fn internal_update(
-        &mut self,
+        &self,
         col_name: &str,
         query: Option<&Document>,
         update: &Document,
@@ -552,7 +552,7 @@ impl DatabaseInner {
         })
     }
 
-    pub fn drop_collection(&mut self, col_name: &str, session: &mut SessionInner) -> DbResult<()> {
+    pub fn drop_collection(&self, col_name: &str, session: &mut SessionInner) -> DbResult<()> {
         DatabaseInner::validate_col_name(col_name)?;
 
         self.auto_start_transaction(session, TransactionType::Write)?;
@@ -562,7 +562,7 @@ impl DatabaseInner {
         Ok(())
     }
 
-    fn drop_collection_internal(&mut self, col_name: &str, session: &mut SessionInner) -> DbResult<()> {
+    fn drop_collection_internal(&self, col_name: &str, session: &mut SessionInner) -> DbResult<()> {
         // Delete content begin
         let subprogram = SubProgram::compile_delete_all(
             col_name,
@@ -579,7 +579,7 @@ impl DatabaseInner {
         Ok(())
     }
 
-    fn delete_collection_meta(&mut self, col_name: &str, session: &mut SessionInner) -> DbResult<()> {
+    fn delete_collection_meta(&self, col_name: &str, session: &mut SessionInner) -> DbResult<()> {
         let mut cursor = {
             let multi_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
             Cursor::new(TABLE_META_PREFIX, multi_cursor)
@@ -593,12 +593,12 @@ impl DatabaseInner {
         Ok(())
     }
 
-    pub fn delete(&mut self, col_name: &str, query: Document, is_many: bool, session: &mut SessionInner) -> DbResult<usize> {
+    pub fn delete(&self, col_name: &str, query: Document, is_many: bool, session: &mut SessionInner) -> DbResult<usize> {
         let result = self.internal_delete_by_query(session, col_name, query, is_many)?;
         Ok(result)
     }
 
-    fn internal_delete_by_query(&mut self, session: &mut SessionInner, col_name: &str, query: Document, is_many: bool) -> DbResult<usize> {
+    fn internal_delete_by_query(&self, session: &mut SessionInner, col_name: &str, query: Document, is_many: bool) -> DbResult<usize> {
         let subprogram = SubProgram::compile_delete(
             col_name,
             Some(&query),
@@ -612,7 +612,7 @@ impl DatabaseInner {
         Ok(vm.r2 as usize)
     }
 
-    fn internal_delete_all(&mut self, session: &mut SessionInner, col_name: &str) -> DbResult<usize> {
+    fn internal_delete_all(&self, session: &mut SessionInner, col_name: &str) -> DbResult<usize> {
         // Delete content begin
         let subprogram = SubProgram::compile_delete_all(
             col_name,
@@ -629,7 +629,7 @@ impl DatabaseInner {
         Ok(delete_count)
     }
 
-    pub fn delete_all(&mut self, col_name: &str, session: &mut SessionInner) -> DbResult<usize> {
+    pub fn delete_all(&self, col_name: &str, session: &mut SessionInner) -> DbResult<usize> {
         self.auto_start_transaction(session, TransactionType::Write)?;
 
         let result = try_db_op!(
@@ -665,7 +665,7 @@ impl DatabaseInner {
     //     Ok(buffer)
     // }
 
-    pub fn count(&mut self, name: &str, session: &mut SessionInner) -> DbResult<u64> {
+    pub fn count(&self, name: &str, session: &mut SessionInner) -> DbResult<u64> {
         DatabaseInner::validate_col_name(name)?;
 
         let col = self.get_collection_meta_by_name_advanced_auto(
@@ -689,12 +689,12 @@ impl DatabaseInner {
         Ok(count)
     }
 
-    pub(crate) fn list_collection_names_with_session(&mut self, session: &mut SessionInner) -> DbResult<Vec<String>> {
+    pub(crate) fn list_collection_names_with_session(&self, session: &mut SessionInner) -> DbResult<Vec<String>> {
         let docs = self.query_all_meta(session)?;
         Ok(collection_metas_to_names(docs))
     }
 
-    pub(crate) fn query_all_meta(&mut self, session: &mut SessionInner) -> DbResult<Vec<Document>> {
+    pub(crate) fn query_all_meta(&self, session: &mut SessionInner) -> DbResult<Vec<Document>> {
         let mut handle: ClientSessionCursor<Document> = {
             let subprogram = SubProgram::compile_query_all_by_name(
                 TABLE_META_PREFIX,
@@ -716,7 +716,7 @@ impl DatabaseInner {
     }
 
     pub fn find_with_owned_session<T: DeserializeOwned>(
-        &mut self,
+        &self,
         col_name: &str,
         filter: impl Into<Option<Document>>,
         mut session: SessionInner,
@@ -748,7 +748,7 @@ impl DatabaseInner {
     }
 
     pub fn find_with_borrowed_session<T: DeserializeOwned>(
-        &mut self,
+        &self,
         col_name: &str,
         filter: impl Into<Option<Document>>,
         session: &mut SessionInner
@@ -774,7 +774,7 @@ impl DatabaseInner {
         }
     }
 
-    pub(super) fn count_documents(&mut self, col_name: &str, session: &mut SessionInner) -> DbResult<u64> {
+    pub(super) fn count_documents(&self, col_name: &str, session: &mut SessionInner) -> DbResult<u64> {
         DatabaseInner::validate_col_name(col_name)?;
         let test_result = self.count(col_name, session);
         match test_result {
@@ -785,7 +785,7 @@ impl DatabaseInner {
     }
 
     pub(super) fn delete_one(
-        &mut self,
+        &self,
         col_name: &str,
         query: Document,
         session: &mut SessionInner,
@@ -810,7 +810,7 @@ impl DatabaseInner {
         }
     }
 
-    pub(super) fn delete_many(&mut self, col_name: &str, query: Document, session: &mut SessionInner) -> DbResult<DeleteResult> {
+    pub(super) fn delete_many(&self, col_name: &str, query: Document, session: &mut SessionInner) -> DbResult<DeleteResult> {
         DatabaseInner::validate_col_name(col_name)?;
 
         let test_deleted_count = if query.len() == 0 {

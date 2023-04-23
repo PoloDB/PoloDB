@@ -8,7 +8,7 @@ use std::path::Path;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
 use serde::Serialize;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::error::DbErr;
 use crate::{ClientSession, Config};
@@ -34,7 +34,7 @@ pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 /// To obtain an exist collection, use [`Database::collection`],
 ///
 pub struct Database {
-    inner: Arc<Mutex<DatabaseInner>>,
+    inner: Arc<DatabaseInner>,
 }
 
 pub type DbResult<T> = Result<T, DbErr>;
@@ -59,7 +59,7 @@ impl Database {
         let inner = DatabaseInner::open_memory(config)?;
 
         Ok(Database {
-            inner: Arc::new(Mutex::new(inner)),
+            inner: Arc::new(inner),
         })
     }
 
@@ -73,7 +73,7 @@ impl Database {
         let inner = DatabaseInner::open_file(path.as_ref(), config)?;
 
         Ok(Database {
-            inner: Arc::new(Mutex::new(inner)),
+            inner: Arc::new(inner),
         })
     }
 
@@ -83,27 +83,24 @@ impl Database {
         let inner = DatabaseInner::open_indexeddb(init_data, config)?;
 
         Ok(Database {
-            inner: Arc::new(Mutex::new(inner)),
+            inner: Arc::new(inner),
         })
     }
 
     /// Return the metrics object of the database
     pub fn metrics(&self) -> Metrics {
-        let inner = self.inner.lock().unwrap();
-        inner.metrics()
+        self.inner.metrics()
     }
 
     /// Creates a new collection in the database with the given `name`.
     pub fn create_collection(&self, name: &str) -> DbResult<()> {
-        let mut inner = self.inner.lock()?;
-        let _ = inner.create_collection(name)?;
+        let _ = self.inner.create_collection(name)?;
         Ok(())
     }
 
     /// Creates a new collection in the database with the given `name`.
     pub fn create_collection_with_session(&self, name: &str, session: &mut ClientSession) -> DbResult<()> {
-        let mut inner = self.inner.lock()?;
-        let _ = inner.create_collection_internal(name, &mut session.inner)?;
+        let _ = self.inner.create_collection_internal(name, &mut session.inner)?;
         Ok(())
     }
 
@@ -118,22 +115,19 @@ impl Database {
     }
 
     pub fn start_session(&self) -> DbResult<ClientSession> {
-        let mut inner = self.inner.lock()?;
-        let inner = inner.start_session()?;
+        let inner = self.inner.start_session()?;
         Ok(ClientSession::new(inner))
     }
 
     /// Gets the names of the collections in the database.
     pub fn list_collection_names(&self) -> DbResult<Vec<String>> {
-        let mut inner = self.inner.lock()?;
-        let mut session = inner.start_session()?;
-        inner.list_collection_names_with_session(&mut session)
+        let mut session = self.inner.start_session()?;
+        self.inner.list_collection_names_with_session(&mut session)
     }
 
     /// Gets the names of the collections in the database.
     pub fn list_collection_names_with_session(&self, session: &mut ClientSession) -> DbResult<Vec<String>> {
-        let mut inner = self.inner.lock()?;
-        inner.list_collection_names_with_session(&mut session.inner)
+        self.inner.list_collection_names_with_session(&mut session.inner)
     }
 
 }
