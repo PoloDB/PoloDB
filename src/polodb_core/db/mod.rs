@@ -10,5 +10,5 @@ pub mod client_cursor;
 mod server;
 
 pub use collection::Collection;
-pub use db::{Database, DbResult};
+pub use db::Database;
 pub use server::DatabaseServer;

@@ -8,8 +8,8 @@ use bson::spec::ElementType;
 use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
-use crate::{DbResult, DbErr};
-use crate::error::{mk_field_name_type_unexpected, mk_invalid_query_field};
+use crate::{Result, ErrorKind};
+use crate::errors::{FieldTypeUnexpectedStruct, InvalidFieldStruct};
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
@@ -17,11 +17,10 @@ const PATH_DEFAULT_SIZE: usize = 8;
 mod update_op {
     use bson::Bson;
     use crate::vm::codegen::Codegen;
-    use crate::DbResult;
+    use crate::Result;
     use crate::vm::op::DbOp;
-    use crate::error::mk_field_name_type_unexpected;
 
-    pub(super) fn update_op_min_max(codegen: &mut Codegen, doc: &Bson, min: bool) -> DbResult<()> {
+    pub(super) fn update_op_min_max(codegen: &mut Codegen, doc: &Bson, min: bool) -> Result<()> {
         let doc = crate::try_unwrap_document!("$min", doc);
 
         for (key, value) in doc.iter() {
@@ -148,8 +147,8 @@ impl Codegen {
 
     fn emit_query_layout_has_pkey<F>(
         &mut self, pkey: Bson, query: &Document, result_callback: F
-    ) -> DbResult<()> where
-        F: FnOnce(&mut Codegen) -> DbResult<()> {
+    ) -> Result<()> where
+        F: FnOnce(&mut Codegen) -> Result<()> {
         let close_label = self.new_label();
         let result_label = self.new_label();
 
@@ -195,8 +194,8 @@ impl Codegen {
     pub(super) fn emit_query_layout<F>(
         &mut self, query: &Document,
         result_callback: F, is_many: bool
-    ) -> DbResult<()> where
-        F: FnOnce(&mut Codegen) -> DbResult<()> {
+    ) -> Result<()> where
+        F: FnOnce(&mut Codegen) -> Result<()> {
 
         if let Some(id_value) = query.get("_id") {
             if id_value.element_type() != ElementType::EmbeddedDocument {
@@ -273,7 +272,7 @@ impl Codegen {
                                result_label: Label,
                                get_field_failed_label: Label,
                                not_found_label: Label
-    ) -> DbResult<()> {
+    ) -> Result<()> {
         for (key, value) in query_doc.iter() {
             path_hint!(self, key.clone(), {
                 self.emit_query_tuple(
@@ -309,7 +308,7 @@ impl Codegen {
                       result_label: Label,
                       get_field_failed_label: Label,
                       not_found_label: Label
-    ) -> DbResult<()> {
+    ) -> Result<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
             path_hint!(self, path_msg, {
@@ -329,7 +328,7 @@ impl Codegen {
                      result_label: Label,
                      global_get_field_failed_label: Label,
                      not_found_label: Label
-    ) -> DbResult<()> {
+    ) -> Result<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
             path_hint!(self, path_msg, {
@@ -377,7 +376,7 @@ impl Codegen {
                         result_label: Label,
                         get_field_failed_label: Label,
                         not_found_label: Label
-    ) -> DbResult<()> {
+    ) -> Result<()> {
         if key.chars().next().unwrap() == '$' {
             match key {
                 "$and" => {
@@ -410,9 +409,13 @@ impl Codegen {
                     );
                 }
 
-                _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
-                    self.last_key().into(), self.gen_path())
-                )),
+                _ => {
+                    return Err(InvalidFieldStruct {
+                        field_type: "query",
+                        field_name: self.last_key().into(),
+                        path: Some(self.gen_path()),
+                    }.into());
+                },
 
             }
         } else {
@@ -424,10 +427,13 @@ impl Codegen {
                     );
                 }
 
-                Bson::Array(_) =>
-                    return Err(DbErr::InvalidField(mk_invalid_query_field(
-                        self.last_key().into(), self.gen_path())
-                    )),
+                Bson::Array(_) => {
+                    return Err(InvalidFieldStruct {
+                        field_type: "query",
+                        field_name: self.last_key().into(),
+                        path: Some(self.gen_path())
+                    }.into());
+                }
 
                 _ => {
                     let key_static_id = self.push_static(key.into());
@@ -463,7 +469,7 @@ impl Codegen {
                                     get_field_failed_label: Label,
                                     not_found_label: Label, sub_key: &str,
                                     sub_value: &Bson
-    ) -> DbResult<()> {
+    ) -> Result<()> {
         match sub_key {
             "$eq" => {
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -509,9 +515,13 @@ impl Codegen {
             "$in" => {
                 match sub_value {
                     Bson::Array(_) => (),
-                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
-                        self.last_key().into(), self.gen_path())
-                    )),
+                    _ => {
+                        return Err(InvalidFieldStruct {
+                            field_type: "query",
+                            field_name: self.last_key().into(),
+                            path: Some(self.gen_path()),
+                        }.into());
+                    },
                 }
 
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -570,9 +580,13 @@ impl Codegen {
             "$nin" => {
                 match sub_value {
                     Bson::Array(_) => (),
-                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
-                        self.last_key().into(), self.gen_path())
-                    )),
+                    _ => {
+                        return Err(InvalidFieldStruct {
+                            field_type: "query",
+                            field_name: self.last_key().into(),
+                            path: Some(self.gen_path()),
+                        }.into());
+                    }
                 }
 
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -590,9 +604,13 @@ impl Codegen {
             "$size" => {
                 let expected_size = match sub_value {
                     Bson::Int64(i) => *i,
-                    _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
-                        self.last_key().into(), self.gen_path()
-                    ))),
+                    _ => {
+                        return Err(InvalidFieldStruct {
+                            field_type: "query",
+                            field_name: self.last_key().into(),
+                            path: Some(self.gen_path()),
+                        }.into());
+                    },
                 };
 
                 let field_size = self.recursively_get_field(key, get_field_failed_label);
@@ -609,9 +627,13 @@ impl Codegen {
                 self.emit_u32((field_size + 1) as u32);
             }
 
-            _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
-                self.last_key().into(), self.gen_path())
-            )),
+            _ => {
+                return Err(InvalidFieldStruct {
+                    field_type: "query",
+                    field_name: self.last_key().into(),
+                    path: Some(self.gen_path()),
+                }.into());
+            },
         }
         Ok(())
     }
@@ -622,7 +644,7 @@ impl Codegen {
                                  value: &Document,
                                  get_field_failed_label: Label,
                                  not_found_label: Label
-    ) -> DbResult<()> {
+    ) -> Result<()> {
         for (sub_key, sub_value) in value.iter() {
             path_hint!(self, sub_key.clone(), {
                 self.emit_query_tuple_document_kv(
@@ -638,7 +660,7 @@ impl Codegen {
         self.emit(DbOp::DeleteCurrent);
     }
 
-    pub(super) fn emit_update_operation(&mut self, update: &Document) -> DbResult<()> {
+    pub(super) fn emit_update_operation(&mut self, update: &Document) -> Result<()> {
         for (key, value) in update.iter() {
             path_hint!(self, key.clone(), {
                 self.emit_update_operation_kv(key, value)?;
@@ -650,7 +672,7 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_update_operation_kv(&mut self, key: &str, value: &Bson) -> DbResult<()> {
+    fn emit_update_operation_kv(&mut self, key: &str, value: &Bson) -> Result<()> {
         match key.as_ref() {
             "$inc" => {
                 let doc = crate::try_unwrap_document!("$inc", value);
@@ -686,12 +708,11 @@ impl Codegen {
                         Bson::String(new_name) => new_name.as_str(),
                         t => {
                             let name = format!("{}", t);
-                            let err = mk_field_name_type_unexpected(
-                                key.into(),
-                                "String".into(),
-                                name
-                            );
-                            return Err(err);
+                            return Err(FieldTypeUnexpectedStruct {
+                                field_name: key.into(),
+                                expected_ty: "String".to_string(),
+                                actual_ty: name,
+                            }.into());
                         }
                     };
 
@@ -721,33 +742,39 @@ impl Codegen {
                 for (key, value) in doc.iter() {
                     let num = match value {
                         Bson::Int64(i) => *i,
-                        _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
-                            self.last_key().into(),
-                            self.gen_path()
-                        )))
+                        _ => {
+                            return Err(InvalidFieldStruct {
+                                field_type: "query",
+                                field_name: self.last_key().into(),
+                                path: Some(self.gen_path()),
+                            }.into());
+                        }
                     };
                     self.emit_pop_field(key.as_str(), match num {
                         1 => false,
                         -1 => true,
-                        _ => return Err(DbErr::InvalidField(mk_invalid_query_field(
-                            self.last_key().into(),
-                            self.gen_path()
-                        )))
+                        _ => {
+                            return Err(InvalidFieldStruct {
+                                field_type: "query",
+                                field_name: self.last_key().into(),
+                                path: Some(self.gen_path()),
+                            }.into());
+                        }
                     });
                 }
             }
 
-            _ => return Err(DbErr::UnknownUpdateOperation(key.into())),
+            _ => return Err(ErrorKind::UnknownUpdateOperation(key.into()).into()),
 
         }
 
         Ok(())
     }
 
-    fn iterate_add_op(&mut self, op: DbOp, doc: &Document) -> DbResult<()> {
+    fn iterate_add_op(&mut self, op: DbOp, doc: &Document) -> Result<()> {
         for (index, (key, value)) in doc.iter().enumerate() {
             if index == 0 && key == "_id" {
-                return Err(DbErr::UnableToUpdatePrimaryKey);
+                return Err(ErrorKind::UnableToUpdatePrimaryKey.into());
             }
 
             let value_id = self.push_static(value.clone());

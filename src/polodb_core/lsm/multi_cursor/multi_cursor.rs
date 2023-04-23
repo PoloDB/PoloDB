@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
-use crate::DbResult;
+use crate::Result;
 use crate::lsm::lsm_kv::LsmKvInner;
 use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker};
@@ -27,7 +27,7 @@ impl MultiCursor {
         }
     }
 
-    pub fn update_current(&mut self, value: &[u8]) -> DbResult<UpdateResult> {
+    pub fn update_current(&mut self, value: &[u8]) -> Result<UpdateResult> {
         let buf: Arc<[u8]> = value.into();
         if self.first_result == 0 {
             Ok(self.cursors[0].update_current(&LsmTreeValueMarker::Value(buf)))
@@ -43,7 +43,7 @@ impl MultiCursor {
         }
     }
 
-    pub fn delete_current(&mut self) -> DbResult<UpdateResult> {
+    pub fn delete_current(&mut self) -> Result<UpdateResult> {
         if self.first_result == 0 {
             Ok(self.cursors[0].update_current(&LsmTreeValueMarker::Deleted))
         } else {
@@ -66,7 +66,7 @@ impl MultiCursor {
         return self.keys[self.first_result as usize].clone();
     }
 
-    pub fn go_to_min(&mut self) -> DbResult<()> {
+    pub fn go_to_min(&mut self) -> Result<()> {
         self.first_result = -1;
         let mut idx: usize = 0;
         for cursor in &mut self.cursors {
@@ -80,7 +80,7 @@ impl MultiCursor {
         self.fin_min_key_and_seek_to_value()
     }
 
-    pub fn seek(&mut self, key: &[u8]) -> DbResult<()> {
+    pub fn seek(&mut self, key: &[u8]) -> Result<()> {
         self.first_result = -1;
         let mut idx: usize = 0;
 
@@ -102,7 +102,7 @@ impl MultiCursor {
     }
 
     /// seek to the min keys in the cursor vec
-    fn fin_min_key_and_seek_to_value(&mut self) -> DbResult<()> {
+    fn fin_min_key_and_seek_to_value(&mut self) -> Result<()> {
         let mut min_key_idx: i64 = -1;
         let mut min_key: Option<Arc<[u8]>> = None;
         let mut idx = 0;
@@ -140,7 +140,7 @@ impl MultiCursor {
     /// The returning boolean value represents if any cursor changes.
     /// Once some cursors changes, we need to find the min key and
     /// push all the following again.
-    fn seed_to_value(&mut self) -> DbResult<bool> {
+    fn seed_to_value(&mut self) -> Result<bool> {
         if self.first_result < 0 {
             return Ok(false)
         }
@@ -207,7 +207,7 @@ impl MultiCursor {
     }
 
     #[inline]
-    fn cursor_next(&mut self, index: usize) -> DbResult<()> {
+    fn cursor_next(&mut self, index: usize) -> Result<()> {
         self.cursors[index].next()?;
         self.keys[index] = self.cursors[index].key();
         Ok(())
@@ -215,7 +215,7 @@ impl MultiCursor {
 
     /// Push all the following cursors bigger than the `index_base`
     /// And make the cursor at `index_base` go next
-    fn push_following_cursor_bigger_than(&mut self, index_base: usize, key_base: &Arc<[u8]>) -> DbResult<bool> {
+    fn push_following_cursor_bigger_than(&mut self, index_base: usize, key_base: &Arc<[u8]>) -> Result<bool> {
         let mut result = false;
         for idx in (index_base + 1)..(self.cursors.len()) {
             let cursor = &mut self.cursors[idx];
@@ -241,7 +241,7 @@ impl MultiCursor {
         Ok(result)
     }
 
-    fn reset_following_cursors(&mut self, index_base: usize) -> DbResult<()> {
+    fn reset_following_cursors(&mut self, index_base: usize) -> Result<()> {
         for idx in (index_base + 1)..(self.cursors.len()) {
             self.cursors[idx].reset();
         }
@@ -249,7 +249,7 @@ impl MultiCursor {
         Ok(())
     }
 
-    pub fn value(&self, db: &LsmKvInner) -> DbResult<Option<Arc<[u8]>>> {
+    pub fn value(&self, db: &LsmKvInner) -> Result<Option<Arc<[u8]>>> {
         if self.first_result >= 0 {
             let cursor = &self.cursors[self.first_result as usize];
             let tmp = cursor.value(db)?;
@@ -264,14 +264,14 @@ impl MultiCursor {
     }
 
     #[allow(dead_code)]
-    pub fn unwrap_tuple_ptr(&self) -> DbResult<LsmTreeValueMarker<LsmTuplePtr>> {
+    pub fn unwrap_tuple_ptr(&self) -> Result<LsmTreeValueMarker<LsmTuplePtr>> {
         assert!(self.first_result >= 0);
 
         let cursor = &self.cursors[self.first_result as usize];
         return Ok(cursor.unwrap_tuple_ptr());
     }
 
-    pub fn next(&mut self) -> DbResult<()> {
+    pub fn next(&mut self) -> Result<()> {
         if self.first_result < 0 && self.first_result >= (self.keys.len() as i64) {
             return Ok(());
         }

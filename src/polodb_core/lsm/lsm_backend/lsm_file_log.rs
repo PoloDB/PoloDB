@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use crc64fast::Digest;
 use getrandom::getrandom;
 use memmap2::Mmap;
-use crate::{Config, DbErr, DbResult};
+use crate::{Config, ErrorKind, Result};
 use crate::lsm::lsm_backend::lsm_log::{LsmLog, format, LsmCommitResult, lsm_log_utils};
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use crate::lsm::mem_table::MemTable;
@@ -40,7 +40,7 @@ pub(crate) struct LsmFileLog {
 
 impl LsmFileLog {
 
-    pub fn open(path: &Path, config: Arc<Config>) -> DbResult<LsmFileLog> {
+    pub fn open(path: &Path, config: Arc<Config>) -> Result<LsmFileLog> {
         let inner = LsmFileLogInner::open(path, config)?;
         Ok(LsmFileLog {
             inner: Mutex::new(inner),
@@ -57,12 +57,12 @@ impl LsmFileLog {
 
 impl LsmLog for LsmFileLog {
 
-    fn start_transaction(&self) -> DbResult<()> {
+    fn start_transaction(&self) -> Result<()> {
         let mut inner = self.inner.lock()?;
         inner.start_transaction()
     }
 
-    fn commit(&self, buffer: Option<&[u8]>) -> DbResult<LsmCommitResult> {
+    fn commit(&self, buffer: Option<&[u8]>) -> Result<LsmCommitResult> {
         let mut inner = self.inner.lock()?;
         inner.commit(buffer)
     }
@@ -71,12 +71,12 @@ impl LsmLog for LsmFileLog {
         &self,
         snapshot: &LsmSnapshot,
         mem_table: &mut MemTable,
-    ) -> DbResult<()> {
+    ) -> Result<()> {
         let mut inner = self.inner.lock()?;
         inner.update_mem_table_with_latest_log(snapshot, mem_table)
     }
 
-    fn shrink(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn shrink(&self, snapshot: &mut LsmSnapshot) -> Result<()> {
         let mut inner = self.inner.lock()?;
         inner.shrink(snapshot)
     }
@@ -114,7 +114,7 @@ struct LsmFileLogInner {
 
 impl LsmFileLogInner {
 
-    fn open(path: &Path, config: Arc<Config>) -> DbResult<LsmFileLogInner> {
+    fn open(path: &Path, config: Arc<Config>) -> Result<LsmFileLogInner> {
         let file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -143,7 +143,7 @@ impl LsmFileLogInner {
         Ok(result)
     }
 
-    fn shrink(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn shrink(&mut self, snapshot: &mut LsmSnapshot) -> Result<()> {
         self.file.set_len(DATA_BEGIN_OFFSET)?;
         self.offset = self.file.seek(SeekFrom::End(0))?;
 
@@ -159,7 +159,7 @@ impl LsmFileLogInner {
     /// salt_2:     4bytes(offset 44)
     /// checksum before 48:   8bytes(offset 48)
     /// data begin: 64 bytes
-    fn force_init_header(&mut self) -> DbResult<()> {
+    fn force_init_header(&mut self) -> Result<()> {
         let mut header48: Vec<u8> = vec![];
         header48.resize(48, 0);
 
@@ -195,14 +195,14 @@ impl LsmFileLogInner {
         Ok(())
     }
 
-    fn read_and_check_from_file(&mut self) -> DbResult<()> {
+    fn read_and_check_from_file(&mut self) -> Result<()> {
         let mut header48: Vec<u8> = vec![0; 48];
         self.file.read_exact(&mut header48)?;
 
         let checksum = crc64(&header48);
         let checksum_from_file = self.read_checksum_from_file()?;
         if checksum != checksum_from_file {
-            return Err(DbErr::ChecksumMismatch);
+            return Err(ErrorKind::ChecksumMismatch.into());
         }
 
         // // copy version
@@ -222,7 +222,7 @@ impl LsmFileLogInner {
         Ok(())
     }
 
-    pub fn update_mem_table_with_latest_log(&mut self, snapshot: &LsmSnapshot, mem_table: &mut MemTable) -> DbResult<()> {
+    pub fn update_mem_table_with_latest_log(&mut self, snapshot: &LsmSnapshot, mem_table: &mut MemTable) -> Result<()> {
         let start_offset = (snapshot.log_offset + DATA_BEGIN_OFFSET) as usize;
 
         let (start_offset, reset) = {
@@ -241,7 +241,7 @@ impl LsmFileLogInner {
         Ok(())
     }
 
-    fn read_checksum_from_file(&mut self) -> DbResult<u64> {
+    fn read_checksum_from_file(&mut self) -> Result<u64> {
         self.file.seek(SeekFrom::Start(48))?;
         let mut buffer: [u8; 8] = [0; 8];
         self.file.read_exact(&mut buffer)?;
@@ -255,16 +255,16 @@ impl LsmFileLogInner {
     }
 
     /// Go to the end of the file
-    pub fn start_transaction(&mut self) -> DbResult<()> {
+    pub fn start_transaction(&mut self) -> Result<()> {
         let state = LogTransactionState::new();
         self.transaction = Some(state);
         self.offset = self.file.seek(SeekFrom::End(0))?;
         Ok(())
     }
 
-    pub fn commit(&mut self, buffer: Option<&[u8]>) -> DbResult<LsmCommitResult> {
+    pub fn commit(&mut self, buffer: Option<&[u8]>) -> Result<LsmCommitResult> {
         if self.transaction.is_none() {
-            return Err(DbErr::NoTransactionStarted);
+            return Err(ErrorKind::NoTransactionStarted.into());
         }
 
         if let Some(buffer) = buffer {

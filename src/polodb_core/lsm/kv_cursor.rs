@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use std::sync::{Arc, Mutex, Weak};
-use crate::{DbErr, DbResult};
+use crate::{ErrorKind, Result};
 use crate::lsm::lsm_kv::LsmKvInner;
 use crate::lsm::multi_cursor::MultiCursor;
 
@@ -24,7 +24,7 @@ impl KvCursor {
         }
     }
 
-    pub fn seek<K>(&self, key: K) -> DbResult<()>
+    pub fn seek<K>(&self, key: K) -> Result<()>
     where
         K: AsRef<[u8]>
     {
@@ -32,18 +32,18 @@ impl KvCursor {
         cursor.seek(key.as_ref())
     }
 
-    pub fn value(&self) -> DbResult<Option<Arc<[u8]>>> {
-        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
+    pub fn value(&self) -> Result<Option<Arc<[u8]>>> {
+        let db = self.db.upgrade().ok_or(ErrorKind::DbIsClosed)?;
         let cursor = self.inner.lock()?;
         cursor.value(db.as_ref())
     }
 
-    pub fn key(&self) -> DbResult<Option<Arc<[u8]>>> {
+    pub fn key(&self) -> Result<Option<Arc<[u8]>>> {
         let cursor = self.inner.lock()?;
         Ok(cursor.key())
     }
 
-    pub fn next(&self) -> DbResult<()> {
+    pub fn next(&self) -> Result<()> {
         let mut cursor = self.inner.lock()?;
         cursor.next()
     }

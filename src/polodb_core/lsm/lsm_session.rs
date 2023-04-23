@@ -2,7 +2,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex, Weak};
 use byteorder::WriteBytesExt;
 use crate::lsm::mem_table::MemTable;
-use crate::{DbErr, DbResult, TransactionType};
+use crate::{ErrorKind, Error, Result, TransactionType};
 use crate::lsm::lsm_backend::lsm_log::format;
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use crate::lsm::LsmKvInner;
@@ -58,29 +58,30 @@ impl LsmSession {
         self.transaction
     }
 
-    pub fn start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+    pub fn start_transaction(&mut self, ty: TransactionType) -> Result<()> {
         if self.transaction.is_some() {
-            return Err(DbErr::StartTransactionInAnotherTransaction);
+            return Err(ErrorKind::StartTransactionInAnotherTransaction.into());
         }
         self.prev_mem_table = self.mem_table.clone();
         self.transaction = Some(ty);
         Ok(())
     }
 
-    pub(crate) fn upgrade_to_write_if_needed(&mut self) -> DbResult<()> {
+    pub(crate) fn upgrade_to_write_if_needed(&mut self) -> Result<()> {
         if self.transaction.unwrap() == TransactionType::Read {
             self.transaction = Some(TransactionType::Write);
         }
         Ok(())
     }
 
-    pub fn commit_transaction(&mut self) -> DbResult<()> {
-        let engine = self.engine.upgrade().ok_or(DbErr::DbIsClosed)?;
+    pub fn commit_transaction(&mut self) -> Result<()> {
+        let engine = self.engine.upgrade()
+            .ok_or::<Error>(ErrorKind::DbIsClosed.into())?;
         let weak_count = Arc::weak_count(&engine);
         engine.commit(self, weak_count)
     }
 
-    pub fn abort_transaction(&mut self) -> DbResult<()> {
+    pub fn abort_transaction(&mut self) -> Result<()> {
         if let Some(log_buffer) = &mut self.log_buffer {
             log_buffer.clear();
         }
@@ -89,7 +90,7 @@ impl LsmSession {
         Ok(())
     }
 
-    pub fn put(&mut self, key: &[u8], value: &[u8]) -> DbResult<()> {
+    pub fn put(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         if let Some(log_buffer) = &mut self.log_buffer {
             LsmSession::put_log(log_buffer, key, value)?;
         }
@@ -99,7 +100,7 @@ impl LsmSession {
         Ok(())
     }
 
-    fn put_log<W: Write>(writer: &mut W, key: &[u8], value: &[u8]) -> DbResult<()> {
+    fn put_log<W: Write>(writer: &mut W, key: &[u8], value: &[u8]) -> Result<()> {
         writer.write_u8(format::WRITE)?;
 
         let key_len = key.len();
@@ -115,7 +116,7 @@ impl LsmSession {
         Ok(())
     }
 
-    pub fn delete(&mut self, key: &[u8]) -> DbResult<()> {
+    pub fn delete(&mut self, key: &[u8]) -> Result<()> {
         if let Some(log_buffer) = &mut self.log_buffer {
             LsmSession::delete_log(log_buffer, key)?;
         }
@@ -125,7 +126,7 @@ impl LsmSession {
         Ok(())
     }
 
-    fn delete_log<W: Write>(writer: &mut W, key: &[u8]) -> DbResult<()> {
+    fn delete_log<W: Write>(writer: &mut W, key: &[u8]) -> Result<()> {
         writer.write_u8(format::DELETE)?;
 
         let key_len = key.len();
@@ -136,7 +137,7 @@ impl LsmSession {
         Ok(())
     }
 
-    pub(crate) fn update_cursor_current(&mut self, cursor: &mut MultiCursor, value: &[u8]) -> DbResult<bool> {
+    pub(crate) fn update_cursor_current(&mut self, cursor: &mut MultiCursor, value: &[u8]) -> Result<bool> {
         let key = cursor.key();
         if key.is_none() {
             return Ok(false);
@@ -164,7 +165,7 @@ impl LsmSession {
         Ok(result)
     }
 
-    pub(crate) fn delete_cursor_current(&mut self, cursor: &mut MultiCursor) -> DbResult<bool> {
+    pub(crate) fn delete_cursor_current(&mut self, cursor: &mut MultiCursor) -> Result<bool> {
         let key = cursor.key();
         if key.is_none() {
             return Ok(false);

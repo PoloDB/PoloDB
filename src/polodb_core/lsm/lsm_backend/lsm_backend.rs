@@ -5,24 +5,24 @@
  */
 
 use std::sync::Arc;
-use crate::DbResult;
+use crate::Result;
 use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use crate::lsm::mem_table::MemTable;
 
 pub(crate) trait LsmBackend: Send + Sync {
-    fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>>;
-    fn read_latest_snapshot(&self) -> DbResult<LsmSnapshot>;
-    fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()>;
-    fn minor_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()>;
-    fn major_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()>;
-    fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> DbResult<()>;
+    fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> Result<Arc<[u8]>>;
+    fn read_latest_snapshot(&self) -> Result<LsmSnapshot>;
+    fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> Result<()>;
+    fn minor_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> Result<()>;
+    fn major_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> Result<()>;
+    fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> Result<()>;
 }
 
 pub(crate) mod lsm_backend_utils {
     use std::sync::Arc;
     use smallvec::smallvec;
-    use crate::DbResult;
+    use crate::Result;
     use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
     use crate::lsm::lsm_snapshot::{LsmLevel, LsmSnapshot};
     use crate::lsm::lsm_tree::LsmTreeValueMarker;
@@ -34,7 +34,7 @@ pub(crate) mod lsm_backend_utils {
         pub estimate_size: usize,
     }
 
-    pub(crate) fn merge_level(mut cursor: MultiCursor, preserve_delete: bool) -> DbResult<MergeLevelResult> {
+    pub(crate) fn merge_level(mut cursor: MultiCursor, preserve_delete: bool) -> Result<MergeLevelResult> {
         cursor.go_to_min()?;
 
         let mut tuples = Vec::<(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)>::new();

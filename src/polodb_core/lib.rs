@@ -139,7 +139,6 @@ extern crate core;
 
 mod page;
 mod vm;
-mod error;
 mod cursor;
 mod session;
 
@@ -157,12 +156,13 @@ mod collection_info;
 pub mod test_utils;
 mod metrics;
 mod utils;
+mod errors;
 
-pub use db::{Database, DatabaseServer, Collection, DbResult};
+pub use db::{Database, DatabaseServer, Collection};
 pub use config::{Config, ConfigBuilder};
 pub use transaction::TransactionType;
 pub use db::client_cursor::{ClientCursor, ClientSessionCursor};
-pub use error::DbErr;
+pub use errors::{Result, Error, ErrorKind};
 pub use session::ClientSession;
 pub use metrics::Metrics;
 pub use lsm::LsmKv;

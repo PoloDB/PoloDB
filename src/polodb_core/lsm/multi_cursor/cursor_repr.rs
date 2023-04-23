@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::cmp::Ordering;
-use crate::DbResult;
+use crate::Result;
 use crate::lsm::lsm_kv::LsmKvInner;
 use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_tree::{LsmTree, LsmTreeValueMarker, TreeCursor};
@@ -48,7 +48,7 @@ impl CursorRepr {
         }
     }
 
-    pub fn go_to_min(&mut self) -> DbResult<()> {
+    pub fn go_to_min(&mut self) -> Result<()> {
         match self {
             CursorRepr::MemTableCursor(cursor) => {
                 cursor.go_to_min();
@@ -68,7 +68,7 @@ impl CursorRepr {
         }
     }
 
-    pub fn value(&self, db: &LsmKvInner) -> DbResult<Option<LsmTreeValueMarker<Arc<[u8]>>>> {
+    pub fn value(&self, db: &LsmKvInner) -> Result<Option<LsmTreeValueMarker<Arc<[u8]>>>> {
         match self {
             CursorRepr::MemTableCursor(mem_table_cursor) => {
                 let result = mem_table_cursor.value();
@@ -94,7 +94,7 @@ impl CursorRepr {
         }
     }
 
-    pub fn marker(&self) -> DbResult<Option<LsmTreeValueMarker<()>>> {
+    pub fn marker(&self) -> Result<Option<LsmTreeValueMarker<()>>> {
         match self {
             CursorRepr::MemTableCursor(mem_table_cursor) => {
                 let result = mem_table_cursor.marker();
@@ -107,7 +107,7 @@ impl CursorRepr {
         }
     }
 
-    pub fn next(&mut self) -> DbResult<()> {
+    pub fn next(&mut self) -> Result<()> {
         match self {
             CursorRepr::MemTableCursor(mem_table_cursor) => {
                 mem_table_cursor.next();

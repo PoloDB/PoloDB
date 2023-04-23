@@ -5,7 +5,7 @@
  */
 use std::path::PathBuf;
 use std::env;
-use polodb_core::{Config, Database, DbResult};
+use polodb_core::{Config, Database, Result};
 use polodb_core::bson::{Document, doc};
 
 #[allow(dead_code)]
@@ -27,7 +27,7 @@ fn mk_journal_path(db_name: &str) -> PathBuf {
 }
 
 #[allow(dead_code)]
-pub fn prepare_db_with_config(db_name: &str, config: Config) -> DbResult<Database> {
+pub fn prepare_db_with_config(db_name: &str, config: Config) -> Result<Database> {
     let db_path = mk_db_path(db_name);
     let journal_path = mk_journal_path(db_name);
 
@@ -38,7 +38,7 @@ pub fn prepare_db_with_config(db_name: &str, config: Config) -> DbResult<Databas
 }
 
 #[allow(dead_code)]
-pub fn prepare_db(db_name: &str) -> DbResult<Database> {
+pub fn prepare_db(db_name: &str) -> Result<Database> {
     prepare_db_with_config(db_name, Config::default())
 }
 

@@ -5,7 +5,7 @@
  */
 use std::fs;
 use std::io::{Seek, SeekFrom, Write};
-use polodb_core::{Database, Config, DbErr};
+use polodb_core::{Database, Config, Error, ErrorKind};
 use polodb_core::bson::{doc, Document};
 
 mod common;
@@ -103,7 +103,7 @@ fn test_db_occupied() {
     let config = Config::default();
     let db2 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config);
     match db2 {
-        Err(DbErr::DatabaseOccupied) => assert!(true),
+        Err(Error(ErrorKind::DatabaseOccupied, _)) => assert!(true),
         Err(other_error) => {
             println!("{:?}", other_error);
             assert!(false);

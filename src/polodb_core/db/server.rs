@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use bson::{Bson, Document};
 use bson::oid::ObjectId;
 use hashbrown::HashMap;
-use crate::{ClientSession, Database, DbErr, DbResult};
+use crate::{ClientSession, Database, Error, ErrorKind, Result};
 use crate::commands::{CommandMessage, CommitTransactionCommand, CountDocumentsCommand, CreateCollectionCommand, DeleteCommand, DropCollectionCommand, FindCommand, InsertCommand, AbortTransactionCommand, StartTransactionCommand, UpdateCommand, DropSessionCommand};
 use crate::results::CountDocumentsResult;
 
@@ -31,7 +31,7 @@ impl DatabaseServer {
         }
     }
 
-    pub fn handle_request_doc(&self, value: Bson) -> DbResult<HandleRequestResult> {
+    pub fn handle_request_doc(&self, value: Bson) -> Result<HandleRequestResult> {
         let command_message = bson::from_bson::<CommandMessage>(value)?;
         let is_quit = if let CommandMessage::SafelyQuit = command_message {
             true
@@ -88,7 +88,7 @@ impl DatabaseServer {
         })
     }
 
-    fn get_session_by_session_id(&self, sid: Option<&ObjectId>) -> DbResult<Arc<Mutex<ClientSession>>> {
+    fn get_session_by_session_id(&self, sid: Option<&ObjectId>) -> Result<Arc<Mutex<ClientSession>>> {
         match sid {
             Some(sid) => {
                 let session_map = self.session_map.lock()?;
@@ -101,7 +101,7 @@ impl DatabaseServer {
         }
     }
 
-    fn handle_find_operation(&self, find: FindCommand) -> DbResult<Bson> {
+    fn handle_find_operation(&self, find: FindCommand) -> Result<Bson> {
         let col_name = find.ns.as_str();
         let session_id = find.options
             .as_ref()
@@ -129,7 +129,7 @@ impl DatabaseServer {
         Ok(result_value)
     }
 
-    fn handle_insert_operation(&self, insert: InsertCommand) -> DbResult<Bson> {
+    fn handle_insert_operation(&self, insert: InsertCommand) -> Result<Bson> {
         let col_name = insert.ns.as_str();
         let session_id = insert.options
             .as_ref()
@@ -143,7 +143,7 @@ impl DatabaseServer {
         Ok(bson_val)
     }
 
-    fn handle_update_operation(&self, update: UpdateCommand) -> DbResult<Bson> {
+    fn handle_update_operation(&self, update: UpdateCommand) -> Result<Bson> {
         let col_name: &str = &update.ns;
 
         let session_id = update.options
@@ -165,7 +165,7 @@ impl DatabaseServer {
         Ok(bson_val)
     }
 
-    fn handle_delete_operation(&self, delete: DeleteCommand) -> DbResult<Bson> {
+    fn handle_delete_operation(&self, delete: DeleteCommand) -> Result<Bson> {
         let col_name: &str = &delete.ns;
 
         let session_id = delete.options
@@ -187,7 +187,7 @@ impl DatabaseServer {
         Ok(bson_val)
     }
 
-    fn handle_create_collection(&self, create_collection: CreateCollectionCommand) -> DbResult<Bson> {
+    fn handle_create_collection(&self, create_collection: CreateCollectionCommand) -> Result<Bson> {
         let session_id = create_collection.options
             .as_ref()
             .map(|o| o.session_id.as_ref())
@@ -201,14 +201,14 @@ impl DatabaseServer {
             &mut session,
         ) {
             Ok(_) => true,
-            Err(DbErr::CollectionAlreadyExits(_)) => false,
+            Err(Error(ErrorKind::CollectionAlreadyExits(_), _)) => false,
             Err(err) => return Err(err),
         };
 
         Ok(Bson::Boolean(ret))
     }
 
-    fn handle_drop_collection(&self, drop_command: DropCollectionCommand) -> DbResult<Bson> {
+    fn handle_drop_collection(&self, drop_command: DropCollectionCommand) -> Result<Bson> {
         let col_name = &drop_command.ns;
         let session_id = drop_command.options
             .as_ref()
@@ -223,7 +223,7 @@ impl DatabaseServer {
         Ok(Bson::Null)
     }
 
-    fn handle_count_operation(&self, count_documents: CountDocumentsCommand) -> DbResult<Bson> {
+    fn handle_count_operation(&self, count_documents: CountDocumentsCommand) -> Result<Bson> {
         let session_id = count_documents.options
             .as_ref()
             .map(|o| o.session_id.as_ref())
@@ -240,28 +240,28 @@ impl DatabaseServer {
         Ok(bson_val)
     }
 
-    fn handle_start_transaction(&self, start_transaction_command: StartTransactionCommand) -> DbResult<Bson> {
+    fn handle_start_transaction(&self, start_transaction_command: StartTransactionCommand) -> Result<Bson> {
         let session_ref = self.get_session_by_session_id(Some(&start_transaction_command.session_id))?;
         let mut session = session_ref.lock()?;
         session.start_transaction(start_transaction_command.ty)?;
         Ok(Bson::Null)
     }
 
-    fn handle_commit(&self, commit_command: CommitTransactionCommand) -> DbResult<Bson> {
+    fn handle_commit(&self, commit_command: CommitTransactionCommand) -> Result<Bson> {
         let session_ref = self.get_session_by_session_id(Some(&commit_command.session_id))?;
         let mut session = session_ref.lock()?;
         session.commit_transaction()?;
         Ok(Bson::Null)
     }
 
-    fn handle_rollback(&self, rollback_command: AbortTransactionCommand) -> DbResult<Bson> {
+    fn handle_rollback(&self, rollback_command: AbortTransactionCommand) -> Result<Bson> {
         let session_ref = self.get_session_by_session_id(Some(&rollback_command.session_id))?;
         let mut session = session_ref.lock()?;
         session.abort_transaction()?;
         Ok(Bson::Null)
     }
 
-    fn handle_start_session(&self) -> DbResult<Bson> {
+    fn handle_start_session(&self) -> Result<Bson> {
         let mut session_map = self.session_map.lock()?;
         let sid = ObjectId::new();
         let session = self.db.start_session()?;
@@ -269,7 +269,7 @@ impl DatabaseServer {
         Ok(Bson::ObjectId(sid))
     }
 
-    fn handle_drop_session(&self, drop_session_command: DropSessionCommand) -> DbResult<Bson> {
+    fn handle_drop_session(&self, drop_session_command: DropSessionCommand) -> Result<Bson> {
         let mut session_map = self.session_map.lock()?;
         session_map.remove(&drop_session_command.session_id);
         Ok(Bson::Null)

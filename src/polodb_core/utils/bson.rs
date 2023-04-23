@@ -10,9 +10,9 @@ use bson::spec::ElementType;
 use byteorder::{BigEndian, WriteBytesExt};
 use bson::ser::Error as BsonErr;
 use bson::ser::Result as BsonResult;
-use crate::{DbErr, DbResult};
+use crate::{ErrorKind, Result};
 
-pub fn stacked_key<'a, T: IntoIterator<Item = &'a Bson>>(keys: T) -> DbResult<Vec<u8>> {
+pub fn stacked_key<'a, T: IntoIterator<Item = &'a Bson>>(keys: T) -> Result<Vec<u8>> {
     let mut result = Vec::<u8>::new();
 
     for key in keys {
@@ -22,7 +22,7 @@ pub fn stacked_key<'a, T: IntoIterator<Item = &'a Bson>>(keys: T) -> DbResult<Ve
     Ok(result)
 }
 
-pub fn stacked_key_bytes<W: Write>(writer: &mut W, key: &Bson) -> DbResult<()> {
+pub fn stacked_key_bytes<W: Write>(writer: &mut W, key: &Bson) -> Result<()> {
     match key {
         Bson::Double(dbl) => {
             writer.write_u8(ElementType::Double as u8)?;
@@ -93,7 +93,7 @@ pub fn stacked_key_bytes<W: Write>(writer: &mut W, key: &Bson) -> DbResult<()> {
 
         _ => {
             let val = format!("{:?}", key);
-            return Err(DbErr::NotAValidKeyType(val))
+            return Err(ErrorKind::NotAValidKeyType(val).into());
         }
     }
 

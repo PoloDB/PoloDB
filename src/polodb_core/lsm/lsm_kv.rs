@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
-use crate::{Config, DbErr, DbResult, TransactionType};
+use crate::{Config, ErrorKind, Result, TransactionType};
 use crate::lsm::kv_cursor::KvCursor;
 use crate::lsm::lsm_backend::LsmBackend;
 use crate::lsm::lsm_segment::LsmTuplePtr;
@@ -32,30 +32,30 @@ pub struct LsmKv {
 impl LsmKv {
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn open_file(path: &Path) -> DbResult<LsmKv> {
+    pub fn open_file(path: &Path) -> Result<LsmKv> {
         let config = Config::default();
         LsmKv::open_file_with_config(path, config)
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn open_file_with_config(path: &Path, config: Config) -> DbResult<LsmKv> {
+    pub fn open_file_with_config(path: &Path, config: Config) -> Result<LsmKv> {
         let inner = LsmKvInner::open_file(path, config)?;
         LsmKv::open_with_inner(inner)
     }
 
 
     #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(init_data: JsValue) -> DbResult<LsmKv> {
+    pub fn open_indexeddb(init_data: JsValue) -> Result<LsmKv> {
         let config = Arc::new(Config::default());
         let inner = LsmKvInner::open_indexeddb(init_data, config)?;
         LsmKv::open_with_inner(inner)
     }
 
-    pub fn open_memory() -> DbResult<LsmKv> {
+    pub fn open_memory() -> Result<LsmKv> {
         LsmKv::open_memory_with_config(Config::default())
     }
 
-    pub fn open_memory_with_config(config: Config) -> DbResult<LsmKv> {
+    pub fn open_memory_with_config(config: Config) -> Result<LsmKv> {
         let metrics = LsmMetrics::new();
         let config = Arc::new(config);
         let inner = LsmKvInner::open_with_backend(None, None, metrics, config)?;
@@ -63,7 +63,7 @@ impl LsmKv {
     }
 
     #[inline]
-    fn open_with_inner(inner: LsmKvInner) -> DbResult<LsmKv> {
+    fn open_with_inner(inner: LsmKvInner) -> Result<LsmKv> {
         Ok(LsmKv {
             inner: Arc::new(inner),
         })
@@ -88,11 +88,11 @@ impl LsmKv {
         self.inner.new_session(db_ref)
     }
 
-    pub fn start_transaction(&self) -> DbResult<()> {
+    pub fn start_transaction(&self) -> Result<()> {
         self.inner.indeed_start_transaction(TransactionState::User)
     }
 
-    pub fn put<K, V>(&self, key: K, value: V) -> DbResult<()>
+    pub fn put<K, V>(&self, key: K, value: V) -> Result<()>
     where
         K: AsRef<[u8]>,
         V: AsRef<[u8]>,
@@ -104,7 +104,7 @@ impl LsmKv {
         self.inner.commit(&mut session, weak_count)
     }
 
-    pub fn delete<K>(&self, key: K) -> DbResult<()>
+    pub fn delete<K>(&self, key: K) -> Result<()>
     where
         K: AsRef<[u8]>
     {
@@ -115,14 +115,14 @@ impl LsmKv {
         self.inner.commit(&mut session, weak_count)
     }
 
-    pub fn get<'a, K>(&self, key: K) -> DbResult<Option<Arc<[u8]>>>
+    pub fn get<'a, K>(&self, key: K) -> Result<Option<Arc<[u8]>>>
     where
         K: AsRef<[u8]>,
     {
         self.get_internal(key, None)
     }
 
-    pub fn get_with_session<'a, K>(&self, key: K, session: &LsmSession) -> DbResult<Option<Arc<[u8]>>>
+    pub fn get_with_session<'a, K>(&self, key: K, session: &LsmSession) -> Result<Option<Arc<[u8]>>>
         where
             K: AsRef<[u8]>,
     {
@@ -130,7 +130,7 @@ impl LsmKv {
     }
 
     #[inline]
-    fn get_internal<'a, K>(&self, key: K, session: Option<&LsmSession>) -> DbResult<Option<Arc<[u8]>>>
+    fn get_internal<'a, K>(&self, key: K, session: Option<&LsmSession>) -> Result<Option<Arc<[u8]>>>
         where
             K: AsRef<[u8]>,
     {
@@ -155,7 +155,7 @@ impl LsmKv {
         Ok(result)
     }
 
-    pub fn get_string<'a, K>(&self, key: K) -> DbResult<Option<String>>
+    pub fn get_string<'a, K>(&self, key: K) -> Result<Option<String>>
         where
             K: AsRef<[u8]>,
     {
@@ -170,7 +170,7 @@ impl LsmKv {
         Ok(string)
     }
 
-    pub fn get_string_with_session<'a, K>(&self, key: K, session: &LsmSession) -> DbResult<Option<String>>
+    pub fn get_string_with_session<'a, K>(&self, key: K, session: &LsmSession) -> Result<Option<String>>
         where
             K: AsRef<[u8]>,
     {
@@ -206,7 +206,7 @@ pub(crate) struct LsmKvInner {
 
 impl LsmKvInner {
 
-    pub(crate) fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
+    pub(crate) fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> Result<Arc<[u8]>> {
         let backend = self.backend.as_ref().expect("no file backend");
         backend.read_segment_by_ptr(ptr)
     }
@@ -220,7 +220,7 @@ impl LsmKvInner {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn open_file(path: &Path, config: Config) -> DbResult<LsmKvInner> {
+    fn open_file(path: &Path, config: Config) -> Result<LsmKvInner> {
         let metrics = LsmMetrics::new();
         let config = Arc::new(config);
         let backend = LsmFileBackend::open(path, metrics.clone(), config.clone())?;
@@ -235,7 +235,7 @@ impl LsmKvInner {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn open_indexeddb(init_data: JsValue, config: Arc<Config>) -> DbResult<LsmKvInner> {
+    fn open_indexeddb(init_data: JsValue, config: Arc<Config>) -> Result<LsmKvInner> {
         let metrics = LsmMetrics::new();
         let backend = IndexeddbBackend::open(
             init_data.clone(),
@@ -257,7 +257,7 @@ impl LsmKvInner {
         log: Option<Box<dyn LsmLog>>,
         metrics: LsmMetrics,
         config: Arc<Config>,
-    ) -> DbResult<LsmKvInner> {
+    ) -> Result<LsmKvInner> {
         let snapshot = match &backend {
             Some(backend) => backend.read_latest_snapshot()?,
             None => LsmSnapshot::new(),
@@ -328,11 +328,11 @@ impl LsmKvInner {
         MultiCursor::new(cursors)
     }
 
-    fn indeed_start_transaction(&self, state: TransactionState) -> DbResult<()> {
+    fn indeed_start_transaction(&self, state: TransactionState) -> Result<()> {
         {
             let t_ref = self.transaction.lock()?;
             if *t_ref != TransactionState::NoTrans {
-                return Err(DbErr::StartTransactionInAnotherTransaction);
+                return Err(ErrorKind::StartTransactionInAnotherTransaction.into());
             }
         }
 
@@ -385,14 +385,14 @@ impl LsmKvInner {
         *ptr = v;
     }
 
-    pub(crate) fn commit(&self, session: &mut LsmSession, db_weak_count: usize) -> DbResult<()> {
+    pub(crate) fn commit(&self, session: &mut LsmSession, db_weak_count: usize) -> Result<()> {
         if !LsmKvInner::is_write_transaction(session.transaction()) {
             session.finished_transaction();
             return Ok(())
         }
 
         if session.id() != self.op_count.load(Ordering::SeqCst) + 1 {
-            return Err(DbErr::SessionOutdated);
+            return Err(ErrorKind::SessionOutdated.into());
         }
 
         if let Some(log) = &self.log {
@@ -454,7 +454,7 @@ impl LsmKvInner {
         Ok(())
     }
 
-    fn minor_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
+    fn minor_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> Result<()> {
         backend.minor_compact(snapshot, db_weak_count)?;
         backend.checkpoint_snapshot(snapshot)?;
 
@@ -463,7 +463,7 @@ impl LsmKvInner {
         Ok(())
     }
 
-    fn major_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
+    fn major_compact(&self, backend: &dyn LsmBackend, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> Result<()> {
         backend.major_compact(snapshot, db_weak_count)?;
         backend.checkpoint_snapshot(snapshot)?;
 
@@ -508,7 +508,7 @@ impl LsmKvInner {
     //     snapshot.meta_id
     // }
     //
-    fn force_sync_last_segment(&mut self) -> DbResult<()> {
+    fn force_sync_last_segment(&mut self) -> Result<()> {
         if let Some(backend) = &self.backend {
             let mem_table = self.main_mem_table.lock().unwrap();
             let snapshot_ref = self.current_snapshot_ref();

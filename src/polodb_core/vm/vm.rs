@@ -6,9 +6,14 @@
 use bson::Bson;
 use std::cell::Cell;
 use std::cmp::Ordering;
-use crate::{DbErr, DbResult, LsmKv, TransactionType};
+use crate::{Result, LsmKv, TransactionType, Error};
 use crate::cursor::Cursor;
-use crate::error::{CannotApplyOperationForTypes, mk_field_name_type_unexpected, mk_unexpected_type_for_op};
+use crate::errors::{
+    ErrorKind,
+    CannotApplyOperationForTypes,
+    FieldTypeUnexpectedStruct,
+    UnexpectedTypeForOpStruct,
+};
 use crate::session::SessionInner;
 use crate::vm::op::DbOp;
 use crate::vm::SubProgram;
@@ -48,7 +53,7 @@ pub(crate) struct VM {
     pub(crate) program:  SubProgram,
 }
 
-fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> DbResult<bool> {
+fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> Result<bool> {
     let ord = crate::utils::bson::value_cmp(val1, val2)?;
     let result = matches!((op, ord),
         (DbOp::Equal, Ordering::Equal) |
@@ -80,7 +85,7 @@ impl VM {
         }
     }
 
-    fn open_read(&mut self, session: &mut SessionInner, prefix: Bson) -> DbResult<()> {
+    fn open_read(&mut self, session: &mut SessionInner, prefix: Bson) -> Result<()> {
         session.auto_start_transaction(TransactionType::Read)?;
         let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
         cursor.go_to_min()?;
@@ -88,7 +93,7 @@ impl VM {
         Ok(())
     }
 
-    fn open_write(&mut self, session: &mut SessionInner, prefix: Bson) -> DbResult<()> {
+    fn open_write(&mut self, session: &mut SessionInner, prefix: Bson) -> Result<()> {
         session.auto_start_transaction(TransactionType::Write)?;
         let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
         cursor.go_to_min()?;
@@ -96,7 +101,7 @@ impl VM {
         Ok(())
     }
 
-    fn reset_cursor(&mut self, is_empty: &Cell<bool>) -> DbResult<()> {
+    fn reset_cursor(&mut self, is_empty: &Cell<bool>) -> Result<()> {
         let cursor = self.r1.as_mut().unwrap();
         cursor.reset()?;
         if cursor.has_next() {
@@ -110,7 +115,7 @@ impl VM {
         Ok(())
     }
 
-    fn find_by_primary_key(&mut self) -> DbResult<bool> {
+    fn find_by_primary_key(&mut self) -> Result<bool> {
         let cursor = self.r1.as_mut().unwrap();
 
         let top_index = self.stack.len() - 1;
@@ -127,7 +132,7 @@ impl VM {
         Ok(true)
     }
 
-    fn next(&mut self) -> DbResult<()> {
+    fn next(&mut self) -> Result<()> {
         let cursor = self.r1.as_mut().unwrap();
         cursor.next()?;
         match cursor.peek_data(self.kv_engine.inner.as_ref())? {
@@ -162,7 +167,7 @@ impl VM {
         &self.program.static_values[index]
     }
 
-    fn inc_numeric(key: &str, a: &Bson, b: &Bson) -> DbResult<Bson> {
+    fn inc_numeric(key: &str, a: &Bson, b: &Bson) -> Result<Bson> {
         let val = match (a, b) {
             (Bson::Int32(a), Bson::Int32(b)) => Bson::Int32(*a + *b),
             (Bson::Int32(a), Bson::Int64(b)) => Bson::Int64(*a as i64 + *b),
@@ -175,18 +180,18 @@ impl VM {
             (Bson::Double(a), Bson::Int64(b)) => Bson::Double(*a + *b as f64),
 
             _ => {
-                return Err(DbErr::CannotApplyOperation(Box::new(CannotApplyOperationForTypes {
+                return Err(CannotApplyOperationForTypes {
                     op_name: "$inc".into(),
                     field_name: key.into(),
                     field_type: a.to_string(),
                     target_type: b.to_string(),
-                })));
+                }.into());
             }
         };
         Ok(val)
     }
 
-    fn mul_numeric(key: &str, a: &Bson, b: &Bson) -> DbResult<Bson> {
+    fn mul_numeric(key: &str, a: &Bson, b: &Bson) -> Result<Bson> {
         let val = match (a, b) {
             (Bson::Int32(a), Bson::Int32(b)) => Bson::Int32(*a * *b),
             (Bson::Int32(a), Bson::Int64(b)) => Bson::Int64(*a as i64 * *b),
@@ -199,18 +204,18 @@ impl VM {
             (Bson::Double(a), Bson::Int64(b)) => Bson::Double(*a * *b as f64),
 
             _ => {
-                return Err(DbErr::CannotApplyOperation(Box::new(CannotApplyOperationForTypes {
+                return Err(CannotApplyOperationForTypes {
                     op_name: "$mul".into(),
                     field_name: key.into(),
                     field_type: a.to_string(),
                     target_type: b.to_string(),
-                })));
+                }.into());
             }
         };
         Ok(val)
     }
 
-    fn inc_field(&mut self, field_id: usize) -> DbResult<()> {
+    fn inc_field(&mut self, field_id: usize) -> Result<()> {
         let key = self.program.static_values[field_id].as_str().unwrap();
 
         let value_index = self.stack.len() - 1;
@@ -222,7 +227,7 @@ impl VM {
 
         match mut_doc.get(key) {
             Some(Bson::Null) => {
-                return Err(DbErr::IncrementNullField);
+                return Err(ErrorKind::IncrementNullField.into());
             }
 
             Some(original_value) => {
@@ -238,7 +243,7 @@ impl VM {
         Ok(())
     }
 
-    fn mul_field(&mut self, field_id: usize) -> DbResult<()> {
+    fn mul_field(&mut self, field_id: usize) -> Result<()> {
         let key = self.program.static_values[field_id].as_str().unwrap();
 
         let value_index = self.stack.len() - 1;
@@ -262,7 +267,7 @@ impl VM {
         Ok(())
     }
 
-    fn unset_field(&mut self, field_id: u32) -> DbResult<()> {
+    fn unset_field(&mut self, field_id: u32) -> Result<()> {
         let key = self.program.static_values[field_id as usize].as_str().unwrap();
 
         let doc_index = self.stack.len() - 1;
@@ -273,22 +278,24 @@ impl VM {
         Ok(())
     }
 
-    fn array_size(&mut self) -> DbResult<usize> {
+    fn array_size(&mut self) -> Result<usize> {
         let top = self.stack.len() - 1;
         let doc = crate::try_unwrap_array!("ArraySize", &self.stack[top]);
         Ok(doc.len())
     }
 
-    fn array_push(&mut self) -> DbResult<()> {
+    fn array_push(&mut self) -> Result<()> {
         let st = self.stack.len();
         let val = self.stack[st - 1].clone();
         let mut array_value = match &self.stack[st - 2] {
             Bson::Array(arr) => arr.clone(),
             _ => {
                 let name = format!("{}", self.stack[st-  2]);
-                return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                    "$push", "Array", name
-                )))
+                return Err(UnexpectedTypeForOpStruct {
+                    operation: "$push",
+                    expected_ty: "Array",
+                    actual_ty: name,
+                }.into());
             }
         };
         array_value.push(val);
@@ -296,15 +303,17 @@ impl VM {
         Ok(())
     }
 
-    fn array_pop_first(&mut self) -> DbResult<()> {
+    fn array_pop_first(&mut self) -> Result<()> {
         let st = self.stack.len();
         let array_value = match &mut self.stack[st - 1] {
             Bson::Array(arr) => arr,
             _ => {
                 let name = format!("{}", self.stack[st - 1]);
-                return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                    "$pop", "Array", name
-                )))
+                return Err(UnexpectedTypeForOpStruct {
+                    operation: "$pop",
+                    expected_ty: "Array",
+                    actual_ty: name
+                }.into());
             }
         };
         array_value.drain(0..1);
@@ -312,15 +321,17 @@ impl VM {
         Ok(())
     }
 
-    fn array_pop_last(&mut self) -> DbResult<()> {
+    fn array_pop_last(&mut self) -> Result<()> {
         let st = self.stack.len();
         let array_value = match &mut self.stack[st - 1] {
             Bson::Array(arr) => arr,
             _ => {
                 let name = format!("{}", self.stack[st - 1]);
-                return Err(DbErr::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                    "$pop", "Array", name
-                )))
+                return Err(UnexpectedTypeForOpStruct {
+                    operation: "$pop",
+                    expected_ty: "Array",
+                    actual_ty: name,
+                }.into());
             }
         };
         array_value.pop();
@@ -328,9 +339,9 @@ impl VM {
         Ok(())
     }
 
-    pub(crate) fn execute(&mut self, session: &mut SessionInner) -> DbResult<()> {
+    pub(crate) fn execute(&mut self, session: &mut SessionInner) -> Result<()> {
         if self.state == VmState::Halt {
-            return Err(DbErr::VmIsHalt);
+            return Err(ErrorKind::VmIsHalt.into());
         }
         self.state = VmState::Running;
         unsafe {
@@ -433,10 +444,11 @@ impl VM {
                             Bson::Document(doc) => doc,
                             _ => {
                                 let name = format!("{}", top);
-                                let err = mk_field_name_type_unexpected(
-                                    key_name.into(),
-                                    "Document".into(),
-                                    name);
+                                let err = Error::from(FieldTypeUnexpectedStruct {
+                                    field_name: key_name.into(),
+                                    expected_ty: "Document".into(),
+                                    actual_ty: name,
+                                });
                                 self.state = VmState::Halt;
                                 return Err(err)
                             }

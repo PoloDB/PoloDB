@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use std::fs::File;
-use polodb_core::{Database, DbErr, DbResult, LsmKv};
+use polodb_core::{Database, Error, ErrorKind, Result, LsmKv};
 use polodb_core::bson::{Document, doc};
 use csv::Reader;
 
@@ -39,7 +39,7 @@ fn test_transaction_commit() {
         let doc = collection
             .find(None)
             .unwrap()
-            .collect::<DbResult<Vec<Document>>>()
+            .collect::<Result<Vec<Document>>>()
             .unwrap();
         assert_eq!(doc.len(), 10);
     });
@@ -63,7 +63,7 @@ fn test_session_outdated() {
 
     let result = session.commit_transaction();
     assert!(match result {
-        Err(DbErr::SessionOutdated) => true,
+        Err(Error(ErrorKind::SessionOutdated, _)) => true,
         _ => false,
     })
 }

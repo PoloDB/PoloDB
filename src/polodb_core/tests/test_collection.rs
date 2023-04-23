@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use polodb_core::bson::{Document, doc};
-use polodb_core::{Database, Collection, DbResult};
+use polodb_core::{Database, Collection, Result};
 mod common;
 
 use common::{
@@ -24,7 +24,7 @@ fn test_create_collection_and_find_all() {
         let test_collection = db.collection::<Document>("test");
         let cursor = test_collection.find(None).unwrap();
 
-        let all = cursor.collect::<DbResult<Vec<Document>>>().unwrap();
+        let all = cursor.collect::<Result<Vec<Document>>>().unwrap();
 
         let mut second_cursor = test_collection.find(doc! {
             "content": "1",
@@ -102,7 +102,7 @@ fn test_create_collection_with_number_pkey() {
         let all = collection
             .find(None)
             .unwrap()
-            .collect::<DbResult<Vec<Document>>>()
+            .collect::<Result<Vec<Document>>>()
             .unwrap();
 
         assert_eq!(TEST_SIZE, all.len())
@@ -120,7 +120,7 @@ fn test_create_collection_and_find_by_pkey() {
         let all = collection
             .find(None)
             .unwrap()
-            .collect::<DbResult<Vec<Document>>>()
+            .collect::<Result<Vec<Document>>>()
             .unwrap();
 
         assert_eq!(all.len(), 10);
@@ -132,7 +132,7 @@ fn test_create_collection_and_find_by_pkey() {
                 "_id": first_key.clone(),
             })
             .unwrap()
-            .collect::<DbResult<Vec<Document>>>()
+            .collect::<Result<Vec<Document>>>()
             .unwrap();
 
         assert_eq!(result.len(), 1);

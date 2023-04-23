@@ -3,7 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use crate::{DbErr, DbResult, TransactionType};
+use crate::ErrorKind;
+use crate::{Result, TransactionType};
 use crate::lsm::LsmSession;
 use crate::lsm::multi_cursor::MultiCursor;
 use crate::transaction::TransactionState;
@@ -28,21 +29,21 @@ impl SessionInner {
     }
 
     #[inline]
-    pub fn update_cursor_current(&mut self, cursor: &mut MultiCursor, value: &[u8]) -> DbResult<bool> {
+    pub fn update_cursor_current(&mut self, cursor: &mut MultiCursor, value: &[u8]) -> Result<bool> {
         self.kv_session.update_cursor_current(cursor, value)
     }
 
     #[inline]
-    pub fn put(&mut self, key: &[u8], value: &[u8]) -> DbResult<()> {
+    pub fn put(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         self.kv_session.put(key, value)
     }
 
     #[inline]
-    pub fn delete_cursor_current(&mut self, cursor: &mut MultiCursor) -> DbResult<bool> {
+    pub fn delete_cursor_current(&mut self, cursor: &mut MultiCursor) -> Result<bool> {
         self.kv_session.delete_cursor_current(cursor)
     }
 
-    pub fn auto_start_transaction(&mut self, ty: TransactionType) -> DbResult<()> {
+    pub fn auto_start_transaction(&mut self, ty: TransactionType) -> Result<()> {
         match &self.transaction_state {
             TransactionState::DbAuto(counter) => {
                 counter.set(counter.get() + 1)
@@ -60,7 +61,7 @@ impl SessionInner {
         Ok(())
     }
 
-    pub fn auto_commit(&mut self) -> DbResult<()> {
+    pub fn auto_commit(&mut self) -> Result<()> {
         if let TransactionState::DbAuto(counter) = &self.transaction_state {
             if counter.get() == 0 {
                 return Ok(());
@@ -74,7 +75,7 @@ impl SessionInner {
         Ok(())
     }
 
-    pub fn auto_rollback(&mut self) -> DbResult<()> {
+    pub fn auto_rollback(&mut self) -> Result<()> {
         if let TransactionState::DbAuto(counter) = &self.transaction_state {
             if counter.get() == 0 {
                 return Ok(());
@@ -88,18 +89,18 @@ impl SessionInner {
         Ok(())
     }
 
-    pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
+    pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> Result<()> {
         if self.transaction_state != TransactionState::NoTrans {
-            return Err(DbErr::StartTransactionInAnotherTransaction);
+            return Err(ErrorKind::StartTransactionInAnotherTransaction.into());
         }
         self.kv_session.start_transaction(ty.unwrap_or(TransactionType::Read))?;
         self.transaction_state = TransactionState::User;
         Ok(())
     }
 
-    pub fn commit_transaction(&mut self) -> DbResult<()> {
+    pub fn commit_transaction(&mut self) -> Result<()> {
         if self.transaction_state != TransactionState::User {
-            return Err(DbErr::NoTransactionStarted);
+            return Err(ErrorKind::NoTransactionStarted.into());
         }
 
         self.kv_session.commit_transaction()?;
@@ -108,7 +109,7 @@ impl SessionInner {
         Ok(())
     }
 
-    pub fn abort_transaction(&mut self) -> DbResult<()> {
+    pub fn abort_transaction(&mut self) -> Result<()> {
         self.kv_session.abort_transaction()?;
         self.transaction_state = TransactionState::NoTrans;
         Ok(())

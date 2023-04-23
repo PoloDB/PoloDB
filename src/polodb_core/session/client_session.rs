@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use crate::{DbResult, TransactionType};
+use crate::{Result, TransactionType};
 use crate::session::SessionInner;
 
 /// A PoloDB client session. This struct represents a logical session used for ordering sequential
@@ -30,15 +30,15 @@ impl ClientSession {
     /// auto mode. The PoloDB will go into read mode firstly, once the users
     /// execute write operations(insert/update/delete), the DB will turn into
     /// write mode.
-    pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> DbResult<()> {
+    pub fn start_transaction(&mut self, ty: Option<TransactionType>) -> Result<()> {
         self.inner.start_transaction(ty)
     }
 
-    pub fn commit_transaction(&mut self) -> DbResult<()> {
+    pub fn commit_transaction(&mut self) -> Result<()> {
         self.inner.commit_transaction()
     }
 
-    pub fn abort_transaction(&mut self) -> DbResult<()> {
+    pub fn abort_transaction(&mut self) -> Result<()> {
         self.inner.abort_transaction()
     }
 }

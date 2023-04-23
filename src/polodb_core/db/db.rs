@@ -10,8 +10,7 @@ use wasm_bindgen::JsValue;
 use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::error::DbErr;
-use crate::{ClientSession, Config};
+use crate::{ClientSession, Result, Config};
 use super::db_inner::DatabaseInner;
 use crate::db::collection::Collection;
 use crate::metrics::Metrics;
@@ -37,8 +36,6 @@ pub struct Database {
     inner: Arc<DatabaseInner>,
 }
 
-pub type DbResult<T> = Result<T, DbErr>;
-
 impl Database {
     pub fn set_log(v: bool) {
         SHOULD_LOG.store(v, Ordering::SeqCst);
@@ -51,11 +48,11 @@ impl Database {
         VERSION.into()
     }
 
-    pub fn open_memory() -> DbResult<Database> {
+    pub fn open_memory() -> Result<Database> {
         Database::open_memory_with_config(Config::default())
     }
 
-    pub fn open_memory_with_config(config: Config) -> DbResult<Database> {
+    pub fn open_memory_with_config(config: Config) -> Result<Database> {
         let inner = DatabaseInner::open_memory(config)?;
 
         Ok(Database {
@@ -64,12 +61,12 @@ impl Database {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn open_file<P: AsRef<Path>>(path: P) -> DbResult<Database>  {
+    pub fn open_file<P: AsRef<Path>>(path: P) -> Result<Database>  {
         Database::open_file_with_config(path, Config::default())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn open_file_with_config<P: AsRef<Path>>(path: P, config: Config) -> DbResult<Database>  {
+    pub fn open_file_with_config<P: AsRef<Path>>(path: P, config: Config) -> Result<Database>  {
         let inner = DatabaseInner::open_file(path.as_ref(), config)?;
 
         Ok(Database {
@@ -78,7 +75,7 @@ impl Database {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(init_data: JsValue) -> DbResult<Database> {
+    pub fn open_indexeddb(init_data: JsValue) -> Result<Database> {
         let config = Config::default();
         let inner = DatabaseInner::open_indexeddb(init_data, config)?;
 
@@ -93,13 +90,13 @@ impl Database {
     }
 
     /// Creates a new collection in the database with the given `name`.
-    pub fn create_collection(&self, name: &str) -> DbResult<()> {
+    pub fn create_collection(&self, name: &str) -> Result<()> {
         let _ = self.inner.create_collection(name)?;
         Ok(())
     }
 
     /// Creates a new collection in the database with the given `name`.
-    pub fn create_collection_with_session(&self, name: &str, session: &mut ClientSession) -> DbResult<()> {
+    pub fn create_collection_with_session(&self, name: &str, session: &mut ClientSession) -> Result<()> {
         let _ = self.inner.create_collection_internal(name, &mut session.inner)?;
         Ok(())
     }
@@ -114,19 +111,19 @@ impl Database {
         Collection::new(Arc::downgrade(&self.inner), col_name)
     }
 
-    pub fn start_session(&self) -> DbResult<ClientSession> {
+    pub fn start_session(&self) -> Result<ClientSession> {
         let inner = self.inner.start_session()?;
         Ok(ClientSession::new(inner))
     }
 
     /// Gets the names of the collections in the database.
-    pub fn list_collection_names(&self) -> DbResult<Vec<String>> {
+    pub fn list_collection_names(&self) -> Result<Vec<String>> {
         let mut session = self.inner.start_session()?;
         self.inner.list_collection_names_with_session(&mut session)
     }
 
     /// Gets the names of the collections in the database.
-    pub fn list_collection_names_with_session(&self, session: &mut ClientSession) -> DbResult<Vec<String>> {
+    pub fn list_collection_names_with_session(&self, session: &mut ClientSession) -> Result<Vec<String>> {
         self.inner.list_collection_names_with_session(&mut session.inner)
     }
 

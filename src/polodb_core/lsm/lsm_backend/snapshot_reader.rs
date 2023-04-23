@@ -9,7 +9,7 @@ use std::sync::Arc;
 use byteorder::ReadBytesExt;
 use memmap2::Mmap;
 use smallvec::{SmallVec, smallvec};
-use crate::{DbErr, DbResult};
+use crate::{ErrorKind, Result};
 use crate::lsm::lsm_segment::{ImLsmSegment, LsmTuplePtr};
 use crate::lsm::lsm_snapshot::lsm_meta::{
     DB_FILE_SIZE_OFFSET,
@@ -37,7 +37,7 @@ impl<'a> SnapshotReader<'a> {
         }
     }
 
-    pub fn read_snapshot_from(&self, meta_pid: u8, meta_id: u64) -> DbResult<LsmSnapshot> {
+    pub fn read_snapshot_from(&self, meta_pid: u8, meta_id: u64) -> Result<LsmSnapshot> {
         let meta_start_offset = (meta_pid as usize) * (self.page_size as usize);
         let meta_slice = &self.mmap[meta_start_offset..(meta_start_offset + self.page_size as usize)];
 
@@ -66,7 +66,7 @@ impl<'a> SnapshotReader<'a> {
         Ok(result)
     }
 
-    fn read_level_from_page(&self, meta_slice: &[u8]) -> DbResult<Vec<LsmLevel>> {
+    fn read_level_from_page(&self, meta_slice: &[u8]) -> Result<Vec<LsmLevel>> {
         let level_count = meta_slice[LEVEL_COUNT_OFFSET as usize] as usize;
         let mut levels = Vec::with_capacity(level_count);
 
@@ -128,7 +128,7 @@ impl<'a> SnapshotReader<'a> {
         Ok(levels)
     }
 
-    fn read_segment(&self, start_pid: u64, end_pid: u64, tuple_len: u64) -> DbResult<ImLsmSegment> {
+    fn read_segment(&self, start_pid: u64, end_pid: u64, tuple_len: u64) -> Result<ImLsmSegment> {
         let start_offset = (start_pid as usize) * (self.page_size as usize);
         let end_offset = (end_pid + 1) as usize * (self.page_size as usize);
         let mut segment_slice = &self.mmap[start_offset..end_offset];
@@ -180,7 +180,7 @@ impl<'a> SnapshotReader<'a> {
                     );
                 }
                 _ => {
-                    return Err(DbErr::DataMalformed);
+                    return Err(ErrorKind::DataMalformed.into());
                 }
             }
         }
@@ -192,7 +192,7 @@ impl<'a> SnapshotReader<'a> {
         })
     }
 
-    fn read_free_segments_from_page(&self, meta_slice: &[u8]) -> DbResult<Vec<FreeSegmentRecord>> {
+    fn read_free_segments_from_page(&self, meta_slice: &[u8]) -> Result<Vec<FreeSegmentRecord>> {
         let mut free_list_start_offset_be: [u8; 2] = [0; 2];
         free_list_start_offset_be.copy_from_slice(&meta_slice[(FREELIST_START_OFFSET as usize)..(FREELIST_START_OFFSET as usize + 2)]);
 
