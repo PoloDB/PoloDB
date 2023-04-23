@@ -6,7 +6,7 @@
 use serde::Serialize;
 use bson::Document;
 use std::borrow::Borrow;
-use std::sync::{Mutex, Weak};
+use std::sync::Weak;
 use serde::de::DeserializeOwned;
 use crate::{ClientCursor, ClientSession, ClientSessionCursor, DbErr, DbResult};
 use crate::db::db_inner::DatabaseInner;
@@ -18,7 +18,7 @@ use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResu
 ///
 /// It can be used to perform collection-level operations such as CRUD operations.
 pub struct Collection<T> {
-    db: Weak<Mutex<DatabaseInner>>,
+    db: Weak<DatabaseInner>,
     name: String,
     _phantom: std::marker::PhantomData<T>,
 }
@@ -26,7 +26,7 @@ pub struct Collection<T> {
 impl<T>  Collection<T>
 {
 
-    pub(super) fn new(db: Weak<Mutex<DatabaseInner>>, name: &str) -> Collection<T> {
+    pub(super) fn new(db: Weak<DatabaseInner>, name: &str) -> Collection<T> {
         Collection {
             db,
             name: name.into(),
@@ -40,24 +40,21 @@ impl<T>  Collection<T>
 
     /// Return the size of all data in the collection.
     pub fn count_documents(&self) -> DbResult<u64> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let mut session = db.start_session()?;
         db.count_documents(&self.name, &mut session)
     }
 
     /// Return the size of all data in the collection.
     pub fn count_documents_with_session(&self, session: &mut ClientSession) -> DbResult<u64> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         db.count_documents(&self.name, &mut session.inner)
     }
 
     /// Updates up to one document matching `query` in the collection.
     /// [documentation](https://www.polodb.org/docs/curd/update) for more information on specifying updates.
     pub fn update_one(&self, query: Document, update: Document) -> DbResult<UpdateResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let mut session = db.start_session()?;
         db.update_one(
             &self.name,
@@ -70,8 +67,7 @@ impl<T>  Collection<T>
     /// Updates up to one document matching `query` in the collection.
     /// [documentation](https://www.polodb.org/docs/curd/update) for more information on specifying updates.
     pub fn update_one_with_session(&self, query: Document, update: Document, session: &mut ClientSession) -> DbResult<UpdateResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         db.update_one(
             &self.name,
             Some(&query),
@@ -83,8 +79,7 @@ impl<T>  Collection<T>
     /// Updates all documents matching `query` in the collection.
     /// [documentation](https://www.polodb.org/docs/curd/update) for more information on specifying updates.
     pub fn update_many(&self, query: Document, update: Document) -> DbResult<UpdateResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let mut session = db.start_session()?;
         db.update_many(&self.name, query, update, &mut session)
     }
@@ -92,23 +87,20 @@ impl<T>  Collection<T>
     /// Updates all documents matching `query` in the collection.
     /// [documentation](https://www.polodb.org/docs/curd/update) for more information on specifying updates.
     pub fn update_many_with_session(&self, query: Document, update: Document, session: &mut ClientSession) -> DbResult<UpdateResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         db.update_many(&self.name, query, update, &mut session.inner)
     }
 
     /// Deletes up to one document found matching `query`.
     pub fn delete_one(&self, query: Document) -> DbResult<DeleteResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let mut session = db.start_session()?;
         db.delete_one(&self.name, query, &mut session)
     }
 
     /// Deletes up to one document found matching `query`.
     pub fn delete_one_with_session(&self, query: Document, session: &mut ClientSession) -> DbResult<DeleteResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         db.delete_one(&self.name, query, &mut session.inner)
     }
 
@@ -116,8 +108,7 @@ impl<T>  Collection<T>
     ///
     /// The size of data deleted returns.
     pub fn delete_many(&self, query: Document) -> DbResult<DeleteResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let mut session = db.start_session()?;
         db.delete_many(&self.name, query, &mut session)
     }
@@ -126,8 +117,7 @@ impl<T>  Collection<T>
     ///
     /// The size of data deleted returns.
     pub fn delete_many_with_session(&self, query: Document, session: &mut ClientSession) -> DbResult<DeleteResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         db.delete_many(&self.name, query, &mut session.inner)
     }
 
@@ -142,15 +132,13 @@ impl<T>  Collection<T>
     }
 
     pub fn drop(&self) -> DbResult<()> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let mut session = db.start_session()?;
         db.drop_collection(&self.name, &mut session)
     }
 
     pub fn drop_with_session(&self, session: &mut ClientSession) -> DbResult<()> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         db.drop_collection(&self.name, &mut session.inner)
     }
 }
@@ -161,8 +149,7 @@ where
 {
     /// Inserts `doc` into the collection.
     pub fn insert_one(&self, doc: impl Borrow<T>) -> DbResult<InsertOneResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let mut session = db.start_session()?;
         db.insert_one(
             &self.name,
@@ -173,8 +160,7 @@ where
 
     /// Inserts `doc` into the collection.
     pub fn insert_one_with_session(&self, doc: impl Borrow<T>, session: &mut ClientSession) -> DbResult<InsertOneResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         db.insert_one(
             &self.name,
             bson::to_document(doc.borrow())?,
@@ -184,8 +170,7 @@ where
 
     /// Inserts the data in `docs` into the collection.
     pub fn insert_many(&self, docs: impl IntoIterator<Item = impl Borrow<T>>) -> DbResult<InsertManyResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let mut session = db.start_session()?;
         db.insert_many(&self.name, docs, &mut session)
     }
@@ -196,8 +181,7 @@ where
         docs: impl IntoIterator<Item = impl Borrow<T>>,
         session: &mut ClientSession
     ) -> DbResult<InsertManyResult> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         db.insert_many(&self.name, docs, &mut session.inner)
     }
 }
@@ -209,8 +193,7 @@ impl<T>  Collection<T>
     /// When query document is passed to the function. The result satisfies
     /// the query document.
     pub fn find(&self, filter: impl Into<Option<Document>>) -> DbResult<ClientCursor<T>> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         let session = db.start_session()?;
         db.find_with_owned_session(&self.name, filter, session)
     }
@@ -218,8 +201,7 @@ impl<T>  Collection<T>
     /// When query document is passed to the function. The result satisfies
     /// the query document.
     pub fn find_with_session(&self, filter: impl Into<Option<Document>>, session: &mut ClientSession) -> DbResult<ClientSessionCursor<T>> {
-        let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        let mut db = db_ref.lock()?;
+        let db = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
         db.find_with_borrowed_session(&self.name, filter, &mut session.inner)
     }
 
