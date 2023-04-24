@@ -100,6 +100,12 @@ pub struct VersionMismatchError {
     pub expect_version: [u8; 4],
 }
 
+#[derive(Debug)]
+pub struct IOErrorWrapper {
+    pub source: io::Error,
+    pub backtrace: std::backtrace::Backtrace,
+}
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("unexpected id type, expected: {0}, actual: {1}")]
@@ -120,11 +126,8 @@ pub enum Error {
     UnexpectedTypeForOp(Box<UnexpectedTypeForOpStruct>),
     #[error("parse error: {0}")]
     ParseError(String),
-    #[error("io error: {source}")]
-    IOErr {
-        #[from]
-        source: io::Error,
-    },
+    #[error("io error: {}, backtrace: {}", .0.source, .0.backtrace)]
+    IOErr(Box<IOErrorWrapper>) ,
     #[error("utf8 error: {source}")]
     UTF8Err {
         #[from]
@@ -263,8 +266,18 @@ impl From<FromUtf8Error> for Error {
 
 }
 
+impl From<io::Error> for Error {
+    fn from(value: io::Error) -> Self {
+        Error::IOErr(Box::new(IOErrorWrapper {
+            source: value,
+            backtrace: std::backtrace::Backtrace::capture(),
+        }))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use byteorder::ReadBytesExt;
     use crate::Error;
 
     #[test]
