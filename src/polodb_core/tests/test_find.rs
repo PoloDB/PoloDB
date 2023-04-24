@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use polodb_core::{Database, DbResult};
+use polodb_core::{Database, Result};
 use polodb_core::bson::{doc, Document};
 
 mod common;
@@ -104,7 +104,7 @@ fn test_find() {
                 "content": "3",
             })
             .unwrap()
-            .collect::<DbResult<Vec<Document>>>()
+            .collect::<Result<Vec<Document>>>()
             .unwrap();
 
         assert_eq!(result.len(), 1);

@@ -12,7 +12,7 @@ use hashbrown::HashMap;
 use wasm_bindgen::prelude::*;
 use js_sys::Reflect;
 use smallvec::smallvec;
-use crate::{DbErr, DbResult};
+use crate::{Error, Result};
 use crate::lsm::lsm_backend::indexeddb_backend::models::{IdbLog, IdbSegment};
 use crate::lsm::lsm_backend::{format, lsm_log, LsmBackend, LsmLog};
 use crate::lsm::lsm_backend::lsm_log::LsmCommitResult;
@@ -79,7 +79,7 @@ impl IndexeddbBackend {
         load_snapshot(db_name).await
     }
 
-    pub fn open(init_data: JsValue) -> DbResult<IndexeddbBackend> {
+    pub fn open(init_data: JsValue) -> Result<IndexeddbBackend> {
         let oid_js = Reflect::get(&init_data, JsValue::from_str("session_id").as_ref()).unwrap();
 
         let session_id = if oid_js.is_string() {
@@ -101,7 +101,7 @@ impl IndexeddbBackend {
         Ok(result)
     }
 
-    fn merge_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> DbResult<ImLsmSegment> {
+    fn merge_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> Result<ImLsmSegment> {
         let level0 = &snapshot.levels[0];
         assert!(level0.content.len() > 1);
 
@@ -125,7 +125,7 @@ impl IndexeddbBackend {
         Ok(segment)
     }
 
-    fn merge_level(&self, snapshot: &mut LsmSnapshot, cursor: MultiCursor, preserve_delete: bool) -> DbResult<ImLsmSegment> {
+    fn merge_level(&self, snapshot: &mut LsmSnapshot, cursor: MultiCursor, preserve_delete: bool) -> Result<ImLsmSegment> {
         let result = lsm_backend_utils::merge_level(cursor, preserve_delete)?;
         self.write_merged_tuples(snapshot, &result.tuples)
     }
@@ -134,7 +134,7 @@ impl IndexeddbBackend {
         &self,
         _snapshot: &mut LsmSnapshot,
         tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)],
-    ) -> DbResult<ImLsmSegment> {
+    ) -> Result<ImLsmSegment> {
         let mut result = vec![];
         let oid = ObjectId::new();
 
@@ -183,7 +183,7 @@ impl IndexeddbBackend {
         Ok(im_seg)
     }
 
-    fn free_pages_of_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn free_pages_of_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> Result<()> {
         let level0 = &snapshot.levels[0];
 
         let mut index: usize = 0;
@@ -208,7 +208,7 @@ impl IndexeddbBackend {
         Ok(())
     }
 
-    fn merge_last_two_levels(&self, snapshot: &mut LsmSnapshot) -> DbResult<ImLsmSegment> {
+    fn merge_last_two_levels(&self, snapshot: &mut LsmSnapshot) -> Result<ImLsmSegment> {
         let level_len = snapshot.levels.len();
         let last2 = &snapshot.levels[level_len - 2];
         let last1 = &snapshot.levels[level_len - 1];
@@ -234,7 +234,7 @@ fn write_tuple_to_buffer(
     segments_id: &ObjectId,
     key: &[u8],
     value: LsmTreeValueMarker<&[u8]>
-) -> DbResult<LsmTreeValueMarker<LsmTuplePtr>> {
+) -> Result<LsmTreeValueMarker<LsmTuplePtr>> {
     let offset = writer.len();
     match value {
         LsmTreeValueMarker::Value(insert_buffer) => {
@@ -276,7 +276,7 @@ fn write_tuple_to_buffer(
     }
 }
 
-fn mem_table_to_segments(oid: ObjectId, mem_table: &MemTable) -> DbResult<(IdbSegment, LsmTree<Arc<[u8]>, LsmTuplePtr>)> {
+fn mem_table_to_segments(oid: ObjectId, mem_table: &MemTable) -> Result<(IdbSegment, LsmTree<Arc<[u8]>, LsmTuplePtr>)> {
     let mut result = vec![];
 
     let mut segments = LsmTree::<Arc<[u8]>, LsmTuplePtr>::new();
@@ -305,10 +305,10 @@ fn mem_table_to_segments(oid: ObjectId, mem_table: &MemTable) -> DbResult<(IdbSe
 
 impl LsmBackend for IndexeddbBackend {
 
-    fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
+    fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> Result<Arc<[u8]>> {
         let inner = self.inner.lock()?;
         let oid = ptr.object_id();
-        let segments = inner.data_value.get(&oid).ok_or(DbErr::DbNotReady)?.clone();
+        let segments = inner.data_value.get(&oid).ok_or(Error::DbNotReady)?.clone();
 
         let mut buffer = vec![0u8; ptr.byte_size as usize];
 
@@ -319,12 +319,12 @@ impl LsmBackend for IndexeddbBackend {
         Ok(buffer.into())
     }
 
-    fn read_latest_snapshot(&self) -> DbResult<LsmSnapshot> {
+    fn read_latest_snapshot(&self) -> Result<LsmSnapshot> {
         let inner = self.inner.lock()?;
         Ok(inner.snapshot.clone())
     }
 
-    fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> Result<()> {
         let inner = self.inner.lock()?;
 
         let segment_oid = ObjectId::new();
@@ -340,7 +340,7 @@ impl LsmBackend for IndexeddbBackend {
         Ok(())
     }
 
-    fn minor_compact(&self, snapshot: &mut LsmSnapshot, _db_weak_count: usize) -> DbResult<()> {
+    fn minor_compact(&self, snapshot: &mut LsmSnapshot, _db_weak_count: usize) -> Result<()> {
         let new_segment = self.merge_level0_except_last(snapshot)?;
 
         lsm_backend_utils::insert_new_segment_to_right_level(new_segment, snapshot);
@@ -353,7 +353,7 @@ impl LsmBackend for IndexeddbBackend {
         Ok(())
     }
 
-    fn major_compact(&self, snapshot: &mut LsmSnapshot, _db_weak_count: usize) -> DbResult<()> {
+    fn major_compact(&self, snapshot: &mut LsmSnapshot, _db_weak_count: usize) -> Result<()> {
         assert!(snapshot.levels.len() > 3);
         let new_segment = self.merge_last_two_levels(snapshot)?;
 
@@ -384,7 +384,7 @@ impl LsmBackend for IndexeddbBackend {
         Ok(())
     }
 
-    fn checkpoint_snapshot(&self, new_snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn checkpoint_snapshot(&self, new_snapshot: &mut LsmSnapshot) -> Result<()> {
         let mut inner = self.inner.lock()?;
         inner.snapshot = new_snapshot.clone();
 
@@ -429,7 +429,7 @@ impl IndexeddbBackendInner {
         result
     }
 
-    fn new(session_id: ObjectId, init_data: JsValue) -> DbResult<IndexeddbBackendInner> {
+    fn new(session_id: ObjectId, init_data: JsValue) -> Result<IndexeddbBackendInner> {
         let db = Reflect::get(&init_data, JsValue::from_str("db").as_ref()).unwrap();
         let meta_snapshot = Reflect::get(&init_data, JsValue::from_str("snapshot").as_ref()).unwrap();
 
@@ -513,11 +513,11 @@ impl IndexeddbLog {
 }
 
 impl LsmLog for IndexeddbLog {
-    fn start_transaction(&self) -> DbResult<()> {
+    fn start_transaction(&self) -> Result<()> {
         Ok(())
     }
 
-    fn commit(&self, buffer: Option<&[u8]>) -> DbResult<LsmCommitResult> {
+    fn commit(&self, buffer: Option<&[u8]>) -> Result<LsmCommitResult> {
         if buffer.is_none() {
             return Ok(LsmCommitResult {
                 offset: 0,
@@ -537,7 +537,7 @@ impl LsmLog for IndexeddbLog {
         })
     }
 
-    fn update_mem_table_with_latest_log(&self, _snapshot: &LsmSnapshot, mem_table: &mut MemTable) -> DbResult<()> {
+    fn update_mem_table_with_latest_log(&self, _snapshot: &LsmSnapshot, mem_table: &mut MemTable) -> Result<()> {
         use js_sys::Array;
 
         if self.init_logs.is_array() {
@@ -559,7 +559,7 @@ impl LsmLog for IndexeddbLog {
         Ok(())
     }
 
-    fn shrink(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn shrink(&self, snapshot: &mut LsmSnapshot) -> Result<()> {
         let hex_id = self.session_id.to_hex();
         let val = serde_wasm_bindgen::to_value(&hex_id).unwrap();
         self.adapter.shrink(val);

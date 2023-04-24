@@ -5,7 +5,7 @@
  */
 
 use std::sync::Arc;
-use crate::DbResult;
+use crate::Result;
 use crate::lsm::lsm_snapshot::LsmSnapshot;
 use crate::lsm::mem_table::MemTable;
 
@@ -33,17 +33,17 @@ pub(crate) struct LsmCommitResult {
 
 pub(crate) trait LsmLog: Send + Sync {
 
-    fn start_transaction(&self) -> DbResult<()>;
+    fn start_transaction(&self) -> Result<()>;
 
-    fn commit(&self, buffer: Option<&[u8]>) -> DbResult<LsmCommitResult>;
+    fn commit(&self, buffer: Option<&[u8]>) -> Result<LsmCommitResult>;
 
     fn update_mem_table_with_latest_log(
         &self,
         snapshot: &LsmSnapshot,
         mem_table: &mut MemTable,
-    ) -> DbResult<()>;
+    ) -> Result<()>;
 
-    fn shrink(&self, snapshot: &mut LsmSnapshot) -> DbResult<()>;
+    fn shrink(&self, snapshot: &mut LsmSnapshot) -> Result<()>;
 
     /// Sometimes we need to clear the log
     /// when the database is closing.
@@ -60,7 +60,7 @@ pub(crate) trait LsmLog: Send + Sync {
 pub(crate) mod lsm_log_utils {
     use std::io::Read;
     use crc64fast::Digest;
-    use crate::DbResult;
+    use crate::Result;
     use crate::lsm::lsm_backend::lsm_log::{format, LogCommand};
     use crate::lsm::mem_table::MemTable;
     use crate::utils::vli;
@@ -78,7 +78,7 @@ pub(crate) mod lsm_log_utils {
         }
     }
 
-    pub(crate) fn read_write_command(mmap: &[u8], commands: &mut Vec<LogCommand>, ptr: &mut usize) -> DbResult<()> {
+    pub(crate) fn read_write_command(mmap: &[u8], commands: &mut Vec<LogCommand>, ptr: &mut usize) -> Result<()> {
         let mut remain = &mmap[*ptr..];
 
         let key_len = vli::decode_u64(&mut remain)?;
@@ -96,7 +96,7 @@ pub(crate) mod lsm_log_utils {
         Ok(())
     }
 
-    pub(crate) fn read_delete_command(mmap: &[u8], commands: &mut Vec<LogCommand>, ptr: &mut usize) -> DbResult<()> {
+    pub(crate) fn read_delete_command(mmap: &[u8], commands: &mut Vec<LogCommand>, ptr: &mut usize) -> Result<()> {
         let mut remain = &mmap[*ptr..];
 
         let key_len = vli::decode_u64(&mut remain)?;

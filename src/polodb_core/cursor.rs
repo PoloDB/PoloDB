@@ -6,7 +6,7 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 use bson::Bson;
-use crate::DbResult;
+use crate::Result;
 use crate::lsm::LsmKvInner;
 use crate::lsm::multi_cursor::MultiCursor;
 
@@ -38,7 +38,7 @@ impl Cursor {
         &mut self.kv_cursor
     }
 
-    pub fn reset(&mut self) -> DbResult<()> {
+    pub fn reset(&mut self) -> Result<()> {
         let key_buffer = crate::utils::bson::stacked_key([
             &self.prefix,
         ])?;
@@ -50,7 +50,7 @@ impl Cursor {
         Ok(())
     }
 
-    pub fn reset_by_pkey(&mut self, pkey: &Bson) -> DbResult<bool> {
+    pub fn reset_by_pkey(&mut self, pkey: &Bson) -> Result<bool> {
         let key_buffer = crate::utils::bson::stacked_key([
             &self.prefix,
             pkey,
@@ -70,7 +70,7 @@ impl Cursor {
         self.current_key.clone()
     }
 
-    pub fn peek_data(&self, db: &LsmKvInner) -> DbResult<Option<Arc<[u8]>>> {
+    pub fn peek_data(&self, db: &LsmKvInner) -> Result<Option<Arc<[u8]>>> {
         if let Some(current_key) = &self.current_key {
             if !is_prefix_with(&current_key, &self.prefix_bytes) {
                 return Ok(None);
@@ -97,7 +97,7 @@ impl Cursor {
         }
     }
 
-    pub fn next(&mut self) -> DbResult<()> {
+    pub fn next(&mut self) -> Result<()> {
         self.kv_cursor.next()?;
         self.current_key = self.kv_cursor.key();
         Ok(())

@@ -12,7 +12,7 @@ use std::sync::{Mutex, Arc};
 use byteorder::ReadBytesExt;
 use memmap2::Mmap;
 use smallvec::smallvec;
-use crate::{Config, DbErr, DbResult};
+use crate::{Config, Error, Result};
 use crate::lsm::lsm_backend::file_writer::FileWriter;
 use crate::lsm::lsm_backend::format;
 use crate::lsm::lsm_backend::lsm_backend::{lsm_backend_utils, LsmBackend};
@@ -33,7 +33,7 @@ mod winerror {
 }
 
 #[cfg(target_os = "windows")]
-fn open_file_native(path: &Path) -> DbResult<File> {
+fn open_file_native(path: &Path) -> Result<File> {
     use std::os::windows::prelude::OpenOptionsExt;
 
     let file_result = std::fs::OpenOptions::new()
@@ -49,7 +49,7 @@ fn open_file_native(path: &Path) -> DbResult<File> {
             let os_error = err.raw_os_error();
             if let Some(error_code) = os_error {
                 if error_code == winerror::ERROR_SHARING_VIOLATION {
-                    return Err(DbErr::DatabaseOccupied);
+                    return Err(Error::DatabaseOccupied);
                 }
             }
             Err(err.into())
@@ -58,7 +58,7 @@ fn open_file_native(path: &Path) -> DbResult<File> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn open_file_native(path: &Path) -> DbResult<File> {
+fn open_file_native(path: &Path) -> Result<File> {
     use crate::utils::file_lock::exclusive_lock_file;
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -67,8 +67,8 @@ fn open_file_native(path: &Path) -> DbResult<File> {
         .open(path)?;
 
     match exclusive_lock_file(&file) {
-        Err(DbErr::Busy) => {
-            return Err(DbErr::DatabaseOccupied);
+        Err(Error::Busy) => {
+            return Err(Error::DatabaseOccupied);
         }
         Err(err) => {
             return Err(err);
@@ -90,7 +90,7 @@ impl LsmFileBackend {
         path: &Path,
         metrics: LsmMetrics,
         config: Arc<Config>,
-    ) -> DbResult<LsmFileBackend> {
+    ) -> Result<LsmFileBackend> {
         let inner = LsmFileBackendInner::open(path, metrics, config)?;
         Ok(LsmFileBackend {
             inner: Mutex::new(inner),
@@ -101,32 +101,32 @@ impl LsmFileBackend {
 
 impl LsmBackend for LsmFileBackend {
 
-    fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
+    fn read_segment_by_ptr(&self, ptr: LsmTuplePtr) -> Result<Arc<[u8]>> {
         let mut inner = self.inner.lock()?;
         inner.read_segment_by_ptr(ptr)
     }
 
-    fn read_latest_snapshot(&self) -> DbResult<LsmSnapshot> {
+    fn read_latest_snapshot(&self) -> Result<LsmSnapshot> {
         let mut inner = self.inner.lock()?;
         inner.read_latest_snapshot()
     }
 
-    fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn sync_latest_segment(&self, segment: &MemTable, snapshot: &mut LsmSnapshot) -> Result<()> {
         let mut inner = self.inner.lock()?;
         inner.sync_latest_segment(segment, snapshot)
     }
 
-    fn minor_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
+    fn minor_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> Result<()> {
         let mut inner = self.inner.lock()?;
         inner.minor_compact(snapshot, db_weak_count)
     }
 
-    fn major_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
+    fn major_compact(&self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> Result<()> {
         let mut inner = self.inner.lock()?;
         inner.major_compact(snapshot, db_weak_count)
     }
 
-    fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn checkpoint_snapshot(&self, snapshot: &mut LsmSnapshot) -> Result<()> {
         let mut inner = self.inner.lock()?;
         inner.checkpoint_snapshot(snapshot)
     }
@@ -145,7 +145,7 @@ impl LsmFileBackendInner {
         path: &Path,
         metrics: LsmMetrics,
         config: Arc<Config>,
-    ) -> DbResult<LsmFileBackendInner> {
+    ) -> Result<LsmFileBackendInner> {
         let file = open_file_native(path)?;
         Ok(LsmFileBackendInner {
             file,
@@ -154,7 +154,7 @@ impl LsmFileBackendInner {
         })
     }
 
-    fn force_init_file(&mut self) -> DbResult<LsmSnapshot> {
+    fn force_init_file(&mut self) -> Result<LsmSnapshot> {
         let mut result = LsmSnapshot::new();
         let mut first_page = RawPage::new(0, NonZeroU32::new(self.config.lsm_page_size).unwrap());
 
@@ -172,7 +172,7 @@ impl LsmFileBackendInner {
         Ok(result)
     }
 
-    fn read_segment_by_ptr(&mut self, tuple: LsmTuplePtr) -> DbResult<Arc<[u8]>> {
+    fn read_segment_by_ptr(&mut self, tuple: LsmTuplePtr) -> Result<Arc<[u8]>> {
         let page_size = self.config.lsm_page_size;
         let offset = (tuple.pid as u64) * (page_size as u64) + (tuple.offset as u64);
         self.file.seek(SeekFrom::Start(offset))?;
@@ -190,26 +190,26 @@ impl LsmFileBackendInner {
         Ok(buffer.into())
     }
 
-    fn check_first_page_valid(data: &[u8]) -> DbResult<()> {
+    fn check_first_page_valid(data: &[u8]) -> Result<()> {
         let mut title_area: [u8; 32] = [0; 32];
         if data.len() < 32 {
-            return Err(DbErr::NotAValidDatabase);
+            return Err(Error::NotAValidDatabase);
         }
         title_area.copy_from_slice(&data[0..32]);
 
         match std::str::from_utf8(&title_area) {
             Ok(s) => {
                 if !s.starts_with("PoloDB") {
-                    return Err(DbErr::NotAValidDatabase);
+                    return Err(Error::NotAValidDatabase);
                 }
                 Ok(())
             },
-            Err(_) => Err(DbErr::NotAValidDatabase),
+            Err(_) => Err(Error::NotAValidDatabase),
         }
     }
 
 
-    fn read_latest_snapshot(&mut self) -> DbResult<LsmSnapshot> {
+    fn read_latest_snapshot(&mut self) -> Result<LsmSnapshot> {
         let meta = self.file.metadata()?;
         if meta.len() == 0 { // new file
             return self.force_init_file();
@@ -258,7 +258,7 @@ impl LsmFileBackendInner {
 
     /// Sync the `mem_table` to the disk,
     /// Add the segment on the top of level 0
-    fn sync_latest_segment(&mut self, mem_table: &MemTable, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn sync_latest_segment(&mut self, mem_table: &MemTable, snapshot: &mut LsmSnapshot) -> Result<()> {
         let config = self.config.clone();
 
         let estimate_size = LsmFileBackendInner::estimate_mem_table_byte_size(mem_table);
@@ -315,7 +315,7 @@ impl LsmFileBackendInner {
         }
     }
 
-    fn minor_compact(&mut self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
+    fn minor_compact(&mut self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> Result<()> {
         let new_segment = self.merge_level0_except_last(snapshot)?;
 
         lsm_backend_utils::insert_new_segment_to_right_level(new_segment, snapshot);
@@ -336,7 +336,7 @@ impl LsmFileBackendInner {
         Ok(())
     }
 
-    fn major_compact(&mut self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> DbResult<()> {
+    fn major_compact(&mut self, snapshot: &mut LsmSnapshot, db_weak_count: usize) -> Result<()> {
         assert!(snapshot.levels.len() > 3);
         let new_segment = self.merge_last_two_levels(snapshot)?;
 
@@ -369,7 +369,7 @@ impl LsmFileBackendInner {
         Ok(())
     }
 
-    fn merge_last_two_levels(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<ImLsmSegment> {
+    fn merge_last_two_levels(&mut self, snapshot: &mut LsmSnapshot) -> Result<ImLsmSegment> {
         let level_len = snapshot.levels.len();
         let last2 = &snapshot.levels[level_len - 2];
         let last1 = &snapshot.levels[level_len - 1];
@@ -388,7 +388,7 @@ impl LsmFileBackendInner {
         Ok(segment)
     }
 
-    fn free_pages_of_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn free_pages_of_level0_except_last(&self, snapshot: &mut LsmSnapshot) -> Result<()> {
         let level0 = &snapshot.levels[0];
 
         let mut index: usize = 0;
@@ -407,7 +407,7 @@ impl LsmFileBackendInner {
         Ok(())
     }
 
-    fn merge_level0_except_last(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<ImLsmSegment> {
+    fn merge_level0_except_last(&mut self, snapshot: &mut LsmSnapshot) -> Result<ImLsmSegment> {
         let level0 = &snapshot.levels[0];
         assert!(level0.content.len() > 1);
 
@@ -431,7 +431,7 @@ impl LsmFileBackendInner {
         Ok(segment)
     }
 
-    fn merge_level(&mut self, snapshot: &mut LsmSnapshot, cursor: MultiCursor, preserve_delete: bool) -> DbResult<ImLsmSegment> {
+    fn merge_level(&mut self, snapshot: &mut LsmSnapshot, cursor: MultiCursor, preserve_delete: bool) -> Result<ImLsmSegment> {
         let result = lsm_backend_utils::merge_level(cursor, preserve_delete)?;
         self.write_merged_tuples(snapshot, &result.tuples, result.estimate_size)
     }
@@ -498,7 +498,7 @@ impl LsmFileBackendInner {
         snapshot: &mut LsmSnapshot,
         tuples: &[(Arc<[u8]>, LsmTreeValueMarker<LsmTuplePtr>)],
         estimate_size: usize,
-    ) -> DbResult<ImLsmSegment> {
+    ) -> Result<ImLsmSegment> {
         let config = self.config.clone();
         let page_size = config.lsm_page_size;
 
@@ -551,7 +551,7 @@ impl LsmFileBackendInner {
         Ok(im_seg)
     }
 
-    fn checkpoint_snapshot(&mut self, snapshot: &mut LsmSnapshot) -> DbResult<()> {
+    fn checkpoint_snapshot(&mut self, snapshot: &mut LsmSnapshot) -> Result<()> {
         let meta_pid = snapshot.meta_pid as u64;
         let next_meta_pid = snapshot.next_meta_pid();
         let mut meta_page = self.read_page(meta_pid)?;
@@ -568,7 +568,7 @@ impl LsmFileBackendInner {
         Ok(())
     }
 
-    fn read_page(&mut self, pid: u64) -> DbResult<RawPage> {
+    fn read_page(&mut self, pid: u64) -> Result<RawPage> {
         let page_size = self.config.lsm_page_size;
         let offset = (page_size as u64) * pid;
 
@@ -578,7 +578,7 @@ impl LsmFileBackendInner {
         Ok(result)
     }
 
-    fn write_page(&mut self, page: &RawPage) -> DbResult<()> {
+    fn write_page(&mut self, page: &RawPage) -> Result<()> {
         let page_size = self.config.lsm_page_size;
         let offset = (page_size as u64) * (page.page_id as u64);
         page.sync_to_file(&mut self.file, offset)?;
