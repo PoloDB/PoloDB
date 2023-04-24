@@ -10,7 +10,7 @@ use std::process::exit;
 use std::sync::{Arc, Mutex};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
-use crate::ErrorKind;
+use crate::Error;
 use crate::ipc::{Connection, IPC};
 use polodb_core::bson;
 use polodb_core::bson::{doc, Document};
@@ -78,7 +78,7 @@ impl AppContext {
         let req_body = match req_doc.get("body") {
             Some(body) => body,
             None => {
-                return Err(ErrorKind::RequstBodyNotFound.into());
+                return Err(Error::RequestBodyNotFound);
             }
         };
 
@@ -212,8 +212,8 @@ fn start_app_async(app: AppContext, socket_addr: &str) {
                         },
 
                         Err(err) => {
-                            match err.0 {
-                                ErrorKind::Io(_) => {
+                            match err {
+                                Error::Io(_) => {
                                     eprintln!("io error: {}", err);
                                     break;
                                 }
