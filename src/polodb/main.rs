@@ -8,24 +8,21 @@ mod server;
 
 use polodb_core::Database;
 use clap::{App, Arg};
-use error_chain::error_chain;
+use thiserror::Error;
 
-error_chain! {
-
-    foreign_links {
-        Db( polodb_core::Error);
-        BsonDe(polodb_core::bson::de::Error);
-        Fmt(::std::fmt::Error);
-        Io(::std::io::Error);
-    }
-
-    errors {
-        RequstBodyNotFound {
-            display("unwrap request body failed")
-        }
-    }
-
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("db error: {0}")]
+    Db(#[from] polodb_core::Error),
+    #[error("bson error: {0}")]
+    BsonDe(#[from] polodb_core::bson::de::Error),
+    #[error("io error: {0}")]
+    Io(#[from]::std::io::Error),
+    #[error("unwrap request body failed")]
+    RequestBodyNotFound,
 }
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 fn main() {
     let version = Database::get_version();
