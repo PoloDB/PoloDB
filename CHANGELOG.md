@@ -1,4 +1,9 @@
 
+# 4.2.0
+
+- Introduce `thiserror` for error handling
+- Rename `DbErr` to `Error`
+
 # 4.1.1
 
 - feat: preserve file size after reopen the database

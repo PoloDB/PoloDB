@@ -13,7 +13,7 @@ use error_chain::error_chain;
 error_chain! {
 
     foreign_links {
-        Db( polodb_core::DbErr);
+        Db( polodb_core::Error);
         BsonDe(polodb_core::bson::de::Error);
         Fmt(::std::fmt::Error);
         Io(::std::io::Error);
