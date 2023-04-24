@@ -9,7 +9,7 @@ use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
 use crate::{Result, Error};
-use crate::errors::{mk_field_name_type_unexpected, mk_invalid_query_field};
+use crate::errors::{FieldTypeUnexpectedStruct, mk_invalid_query_field};
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
@@ -19,7 +19,6 @@ mod update_op {
     use crate::vm::codegen::Codegen;
     use crate::Result;
     use crate::vm::op::DbOp;
-    use crate::errors::mk_field_name_type_unexpected;
 
     pub(super) fn update_op_min_max(codegen: &mut Codegen, doc: &Bson, min: bool) -> Result<()> {
         let doc = crate::try_unwrap_document!("$min", doc);
@@ -686,12 +685,11 @@ impl Codegen {
                         Bson::String(new_name) => new_name.as_str(),
                         t => {
                             let name = format!("{}", t);
-                            let err = mk_field_name_type_unexpected(
-                                key.into(),
-                                "String".into(),
-                                name
-                            );
-                            return Err(err);
+                            return Err(FieldTypeUnexpectedStruct {
+                                field_name: key.into(),
+                                expected_ty: "String".into(),
+                                actual_ty: name,
+                            }.into());
                         }
                     };
 

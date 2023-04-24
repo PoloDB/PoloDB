@@ -18,12 +18,24 @@ pub struct FieldTypeUnexpectedStruct {
     pub actual_ty: String,
 }
 
+impl From<FieldTypeUnexpectedStruct> for Error {
+    fn from(value: FieldTypeUnexpectedStruct) -> Self {
+        Error::FieldTypeUnexpected(Box::new(value))
+    }
+}
+
 #[derive(Debug)]
 pub struct CannotApplyOperationForTypes {
     pub op_name: String,
     pub field_name: String,
     pub field_type: String,
     pub target_type: String,
+}
+
+impl From<CannotApplyOperationForTypes> for Error {
+    fn from(value: CannotApplyOperationForTypes) -> Self {
+        Error::CannotApplyOperation(Box::new(value))
+    }
 }
 
 impl fmt::Display for FieldTypeUnexpectedStruct {
@@ -33,16 +45,6 @@ impl fmt::Display for FieldTypeUnexpectedStruct {
                self.field_name, self.expected_ty, self.actual_ty)
     }
 
-}
-
-pub(crate) fn mk_field_name_type_unexpected(
-    option_name: String, expected_ty: String, actual_ty: String
-) -> Error {
-    Error::FieldTypeUnexpected(Box::new(FieldTypeUnexpectedStruct {
-        field_name: option_name.into(),
-        expected_ty,
-        actual_ty,
-    }))
 }
 
 #[derive(Debug)]
@@ -86,12 +88,10 @@ pub struct UnexpectedTypeForOpStruct {
     pub actual_ty: String,
 }
 
-pub fn mk_unexpected_type_for_op(op: &'static str, expected_ty: &'static str, actual_ty: String) -> Box<UnexpectedTypeForOpStruct> {
-    Box::new(UnexpectedTypeForOpStruct {
-        operation: op,
-        expected_ty,
-        actual_ty
-    })
+impl From<UnexpectedTypeForOpStruct> for Error {
+    fn from(value: UnexpectedTypeForOpStruct) -> Self {
+        Error::UnexpectedTypeForOp(Box::new(value))
+    }
 }
 
 #[derive(Debug)]
@@ -103,6 +103,11 @@ pub struct VersionMismatchError {
 #[derive(Debug)]
 pub struct IOErrorWrapper {
     pub source: io::Error,
+    pub backtrace: std::backtrace::Backtrace,
+}
+
+#[derive(Debug)]
+pub struct DataMalformedReason {
     pub backtrace: std::backtrace::Backtrace,
 }
 
@@ -213,8 +218,8 @@ pub enum Error {
     DbIsClosed,
     #[error("{0}")]
     FromUtf8Error(Box<FromUtf8Error>),
-    #[error("data malformed")]
-    DataMalformed,
+    #[error("data malformed, backtrace: {}", .0.backtrace)]
+    DataMalformed(Box<DataMalformedReason>),
     #[error("the database is not ready")]
     DbNotReady,
 }
@@ -232,6 +237,13 @@ impl Error {
                 Error::Multiple(result)
             }
         }
+    }
+
+    #[inline]
+    pub(crate) fn data_malformed() -> Error {
+        Error::DataMalformed(Box::new(DataMalformedReason {
+            backtrace: std::backtrace::Backtrace::capture(),
+        }))
     }
 
 }

@@ -20,7 +20,11 @@ macro_rules! try_unwrap_document {
             Bson::Document(doc) => doc,
             t => {
                 let name = format!("{}", t);
-                let err = mk_field_name_type_unexpected($op_name.into(), "Document".into(), name);
+                let err = crate::errors::FieldTypeUnexpectedStruct {
+                    field_name: $op_name.into(),
+                    expected_ty: "Document".into(),
+                    actual_ty: name,
+                }.into();
                 return Err(err);
             },
         }
@@ -34,7 +38,11 @@ macro_rules! try_unwrap_array {
             Bson::Array(arr) => arr,
             t => {
                 let name = format!("{}", t);
-                let err = mk_field_name_type_unexpected($op_name.into(), "Array".into(), name);
+                let err = crate::errors::FieldTypeUnexpectedStruct {
+                    field_name: $op_name.into(),
+                    expected_ty: "Array".into(),
+                    actual_ty: name,
+                }.into();
                 return Err(err);
             },
         }

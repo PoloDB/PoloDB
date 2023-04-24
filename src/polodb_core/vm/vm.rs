@@ -8,7 +8,11 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 use crate::{Error, Result, LsmKv, TransactionType};
 use crate::cursor::Cursor;
-use crate::errors::{CannotApplyOperationForTypes, mk_field_name_type_unexpected, mk_unexpected_type_for_op};
+use crate::errors::{
+    CannotApplyOperationForTypes,
+    FieldTypeUnexpectedStruct,
+    UnexpectedTypeForOpStruct,
+};
 use crate::session::SessionInner;
 use crate::vm::op::DbOp;
 use crate::vm::SubProgram;
@@ -175,12 +179,12 @@ impl VM {
             (Bson::Double(a), Bson::Int64(b)) => Bson::Double(*a + *b as f64),
 
             _ => {
-                return Err(Error::CannotApplyOperation(Box::new(CannotApplyOperationForTypes {
+                return Err(CannotApplyOperationForTypes {
                     op_name: "$inc".into(),
                     field_name: key.into(),
                     field_type: a.to_string(),
                     target_type: b.to_string(),
-                })));
+                }.into());
             }
         };
         Ok(val)
@@ -199,12 +203,12 @@ impl VM {
             (Bson::Double(a), Bson::Int64(b)) => Bson::Double(*a * *b as f64),
 
             _ => {
-                return Err(Error::CannotApplyOperation(Box::new(CannotApplyOperationForTypes {
+                return Err(CannotApplyOperationForTypes {
                     op_name: "$mul".into(),
                     field_name: key.into(),
                     field_type: a.to_string(),
                     target_type: b.to_string(),
-                })));
+                }.into());
             }
         };
         Ok(val)
@@ -286,9 +290,11 @@ impl VM {
             Bson::Array(arr) => arr.clone(),
             _ => {
                 let name = format!("{}", self.stack[st-  2]);
-                return Err(Error::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                    "$push", "Array", name
-                )))
+                return Err(UnexpectedTypeForOpStruct {
+                    operation: "$push",
+                    expected_ty: "Array",
+                    actual_ty: name
+                }.into());
             }
         };
         array_value.push(val);
@@ -302,9 +308,11 @@ impl VM {
             Bson::Array(arr) => arr,
             _ => {
                 let name = format!("{}", self.stack[st - 1]);
-                return Err(Error::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                    "$pop", "Array", name
-                )))
+                return Err(UnexpectedTypeForOpStruct {
+                    operation: "$pop",
+                    expected_ty: "Array",
+                    actual_ty: name,
+                }.into());
             }
         };
         array_value.drain(0..1);
@@ -318,9 +326,11 @@ impl VM {
             Bson::Array(arr) => arr,
             _ => {
                 let name = format!("{}", self.stack[st - 1]);
-                return Err(Error::UnexpectedTypeForOp(mk_unexpected_type_for_op(
-                    "$pop", "Array", name
-                )))
+                return Err(UnexpectedTypeForOpStruct {
+                    operation: "$pop",
+                    expected_ty: "Array",
+                    actual_ty: name,
+                }.into());
             }
         };
         array_value.pop();
@@ -433,12 +443,13 @@ impl VM {
                             Bson::Document(doc) => doc,
                             _ => {
                                 let name = format!("{}", top);
-                                let err = mk_field_name_type_unexpected(
-                                    key_name.into(),
-                                    "Document".into(),
-                                    name);
+                                let err = FieldTypeUnexpectedStruct {
+                                    field_name: key_name.into(),
+                                    expected_ty: "Document".into(),
+                                    actual_ty: name,
+                                };
                                 self.state = VmState::Halt;
-                                return Err(err)
+                                return Err(err.into())
                             }
                         };
 

@@ -180,7 +180,7 @@ impl<'a> SnapshotReader<'a> {
                     );
                 }
                 _ => {
-                    return Err(Error::DataMalformed);
+                    return Err(Error::data_malformed());
                 }
             }
         }
