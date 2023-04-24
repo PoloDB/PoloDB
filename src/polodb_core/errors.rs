@@ -9,6 +9,7 @@ use std::string::FromUtf8Error;
 use std::sync::PoisonError;
 use bson::oid::ObjectId;
 use bson::ser::Error as BsonErr;
+use thiserror::Error;
 
 #[derive(Debug)]
 pub struct FieldTypeUnexpectedStruct {
@@ -112,7 +113,7 @@ pub struct VersionMismatchError {
     pub expect_version: [u8; 4],
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum DbErr {
     UnexpectedIdType(u8, u8),
     NotAValidKeyType(String),
@@ -320,8 +321,6 @@ impl From<FromUtf8Error> for DbErr {
     }
 
 }
-
-impl std::error::Error for DbErr {}
 
 #[cfg(test)]
 mod tests {

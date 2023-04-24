@@ -139,7 +139,7 @@ extern crate core;
 
 mod page;
 mod vm;
-mod error;
+mod errors;
 mod cursor;
 mod session;
 
@@ -162,7 +162,7 @@ pub use db::{Database, DatabaseServer, Collection, DbResult};
 pub use config::{Config, ConfigBuilder};
 pub use transaction::TransactionType;
 pub use db::client_cursor::{ClientCursor, ClientSessionCursor};
-pub use error::DbErr;
+pub use errors::DbErr;
 pub use session::ClientSession;
 pub use metrics::Metrics;
 pub use lsm::LsmKv;
