@@ -8,7 +8,7 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 use crate::{DbErr, DbResult, LsmKv, TransactionType};
 use crate::cursor::Cursor;
-use crate::error::{CannotApplyOperationForTypes, mk_field_name_type_unexpected, mk_unexpected_type_for_op};
+use crate::errors::{CannotApplyOperationForTypes, mk_field_name_type_unexpected, mk_unexpected_type_for_op};
 use crate::session::SessionInner;
 use crate::vm::op::DbOp;
 use crate::vm::SubProgram;

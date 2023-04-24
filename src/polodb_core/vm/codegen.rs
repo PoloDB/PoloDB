@@ -9,7 +9,7 @@ use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
 use crate::{DbResult, DbErr};
-use crate::error::{mk_field_name_type_unexpected, mk_invalid_query_field};
+use crate::errors::{mk_field_name_type_unexpected, mk_invalid_query_field};
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
@@ -19,7 +19,7 @@ mod update_op {
     use crate::vm::codegen::Codegen;
     use crate::DbResult;
     use crate::vm::op::DbOp;
-    use crate::error::mk_field_name_type_unexpected;
+    use crate::errors::mk_field_name_type_unexpected;
 
     pub(super) fn update_op_min_max(codegen: &mut Codegen, doc: &Bson, min: bool) -> DbResult<()> {
         let doc = crate::try_unwrap_document!("$min", doc);

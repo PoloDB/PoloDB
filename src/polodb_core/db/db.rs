@@ -10,7 +10,7 @@ use wasm_bindgen::JsValue;
 use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::error::DbErr;
+use crate::errors::DbErr;
 use crate::{ClientSession, Config};
 use super::db_inner::DatabaseInner;
 use crate::db::collection::Collection;

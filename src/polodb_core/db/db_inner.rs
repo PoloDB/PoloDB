@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use bson::{Binary, Bson, Document};
 use serde::Serialize;
 use super::db::DbResult;
-use crate::error::DbErr;
+use crate::errors::DbErr;
 use crate::{ClientSessionCursor, LsmKv, TransactionType};
 use crate::Config;
 use crate::vm::SubProgram;
