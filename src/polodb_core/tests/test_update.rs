@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use polodb_core::{Collection, Database, DbResult};
+use polodb_core::{Collection, Database, Result};
 use polodb_core::bson::{Document, doc};
 
 mod common;
@@ -79,7 +79,7 @@ fn test_update_gte_set() {
     let cursor = col.find(doc! {
         "content": "updated!",
     }).unwrap();
-    let result: Vec<DbResult<Document>> = cursor.collect();
+    let result: Vec<Result<Document>> = cursor.collect();
     assert_eq!(result.len(), 500);
     assert_eq!(result[0].as_ref().unwrap().get("_id").unwrap().as_i32().unwrap(), 500);
 }

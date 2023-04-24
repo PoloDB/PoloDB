@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use bson::Document;
 use bson::spec::ElementType;
 use serde::{Deserialize, Serialize};
-use polodb_core::{ClientCursor, Database, DbResult};
+use polodb_core::{ClientCursor, Database, Result};
 use polodb_core::bson::{doc, Bson};
 
 mod common;
@@ -62,7 +62,7 @@ fn test_insert_struct() {
                 }
             ]
         }).unwrap();
-        let result: Vec<DbResult<Book>> = cursor.collect();
+        let result: Vec<Result<Book>> = cursor.collect();
         assert_eq!(result.len(), 2);
     });
 }
@@ -192,7 +192,7 @@ fn test_insert_different_types_as_key() {
     }).unwrap();
 
     let cursor = collection.find(doc! {}).unwrap();
-    let result: Vec<DbResult<Document>> = cursor.collect();
+    let result: Vec<Result<Document>> = cursor.collect();
     assert_eq!(result.len(), 2);
 
     assert_eq!(result[0].as_ref().unwrap().get("_id").unwrap().element_type(), ElementType::String);

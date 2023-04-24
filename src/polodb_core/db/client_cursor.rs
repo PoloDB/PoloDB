@@ -7,7 +7,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use bson::Bson;
 use serde::de::DeserializeOwned;
-use crate::{ClientSession, DbResult};
+use crate::{ClientSession, Result};
 use crate::session::SessionInner;
 use crate::vm::{VM, VmState};
 
@@ -42,12 +42,12 @@ impl<T: DeserializeOwned> ClientCursor<T> {
         self.vm.stack_top()
     }
 
-    pub fn advance(&mut self) -> DbResult<bool> {
+    pub fn advance(&mut self) -> Result<bool> {
         self.vm.execute(&mut self.session)?;
         Ok(self.has_row())
     }
 
-    pub fn deserialize_current(&self) -> DbResult<T> {
+    pub fn deserialize_current(&self) -> Result<T> {
         let result: T = bson::from_bson(self.get().clone())?;
         Ok(result)
     }
@@ -66,7 +66,7 @@ impl<T> Iterator for ClientCursor<T>
     where
         T: DeserializeOwned + Unpin + Send + Sync,
 {
-    type Item = DbResult<T>;
+    type Item = Result<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let test = self.advance();
@@ -107,17 +107,17 @@ impl<T: DeserializeOwned> ClientSessionCursor<T> {
         self.vm.stack_top()
     }
 
-    pub fn advance(&mut self, session: &mut ClientSession) -> DbResult<bool> {
+    pub fn advance(&mut self, session: &mut ClientSession) -> Result<bool> {
         self.advance_inner(&mut session.inner)
     }
 
     #[inline]
-    pub(crate) fn advance_inner(&mut self, session: &mut SessionInner) -> DbResult<bool> {
+    pub(crate) fn advance_inner(&mut self, session: &mut SessionInner) -> Result<bool> {
         self.vm.execute(session)?;
         Ok(self.has_row())
     }
 
-    pub fn deserialize_current(&self) -> DbResult<T> {
+    pub fn deserialize_current(&self) -> Result<T> {
         let result: T = bson::from_bson(self.get().clone())?;
         Ok(result)
     }
@@ -148,7 +148,7 @@ impl<T> Iterator for ClientSessionCursorIter<'_, '_, T>
     where
         T: DeserializeOwned + Unpin + Send + Sync,
 {
-    type Item = DbResult<T>;
+    type Item = Result<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let test = self.cursor.advance(self.session);

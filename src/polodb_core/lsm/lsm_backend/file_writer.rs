@@ -7,7 +7,7 @@ use std::io::{Seek, SeekFrom, Write};
 use std::fs::File;
 use std::sync::Arc;
 use byteorder::WriteBytesExt;
-use crate::{Config, DbResult};
+use crate::{Config, Result};
 use crate::lsm::lsm_segment::LsmTuplePtr;
 use crate::lsm::lsm_tree::LsmTreeValueMarker;
 use crate::utils::vli;
@@ -67,7 +67,7 @@ impl<'a> FileWriter<'a> {
         &mut self,
         key: &[u8],
         value: LsmTreeValueMarker<&[u8]>,
-    ) -> DbResult<LsmTreeValueMarker<LsmTuplePtr>> {
+    ) -> Result<LsmTreeValueMarker<LsmTuplePtr>> {
         let start_mark = self.start_mark();
         match value {
             LsmTreeValueMarker::Value(insert_buffer) => {
@@ -101,7 +101,7 @@ impl<'a> FileWriter<'a> {
         }
     }
 
-    pub fn write_buffer(&mut self, buffer: &[u8]) -> DbResult<LsmTuplePtr> {
+    pub fn write_buffer(&mut self, buffer: &[u8]) -> Result<LsmTuplePtr> {
         let start_mark = self.start_mark();
 
         self.write_all(buffer)?;
@@ -109,7 +109,7 @@ impl<'a> FileWriter<'a> {
         Ok(self.end_mark(&start_mark))
     }
 
-    pub fn begin(&mut self) -> DbResult<()> {
+    pub fn begin(&mut self) -> Result<()> {
         let page_size = self.config.lsm_page_size;
         let offset = (page_size as u64) * self.start_pid;
 
@@ -119,7 +119,7 @@ impl<'a> FileWriter<'a> {
     }
 
     /// write padding to align page
-    pub fn end(&mut self) -> DbResult<LsmTuplePtr> {
+    pub fn end(&mut self) -> Result<LsmTuplePtr> {
         let start_mark = self.start_mark();
         let remain_to_next_page = self.page_size - start_mark.offset;
 

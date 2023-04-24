@@ -158,11 +158,11 @@ pub mod test_utils;
 mod metrics;
 mod utils;
 
-pub use db::{Database, DatabaseServer, Collection, DbResult};
+pub use db::{Database, DatabaseServer, Collection, Result};
 pub use config::{Config, ConfigBuilder};
 pub use transaction::TransactionType;
 pub use db::client_cursor::{ClientCursor, ClientSessionCursor};
-pub use errors::DbErr;
+pub use errors::Error;
 pub use session::ClientSession;
 pub use metrics::Metrics;
 pub use lsm::LsmKv;

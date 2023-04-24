@@ -37,8 +37,8 @@ impl fmt::Display for FieldTypeUnexpectedStruct {
 
 pub(crate) fn mk_field_name_type_unexpected(
     option_name: String, expected_ty: String, actual_ty: String
-) -> DbErr {
-    DbErr::FieldTypeUnexpected(Box::new(FieldTypeUnexpectedStruct {
+) -> Error {
+    Error::FieldTypeUnexpected(Box::new(FieldTypeUnexpectedStruct {
         field_name: option_name.into(),
         expected_ty,
         actual_ty,
@@ -53,12 +53,12 @@ pub struct UnexpectedHeader {
 }
 
 #[allow(dead_code)]
-pub(crate) fn mk_unexpected_header_for_btree_page(page_id: u32, actual: &[u8], expected: &[u8]) -> DbErr {
+pub(crate) fn mk_unexpected_header_for_btree_page(page_id: u32, actual: &[u8], expected: &[u8]) -> Error {
     let mut actual_header: [u8; 2] = [0; 2];
     let mut expected_header: [u8; 2] = [0; 2];
     actual_header.copy_from_slice(actual);
     expected_header.copy_from_slice(expected);
-    DbErr::UnexpectedHeaderForBtreePage(Box::new(UnexpectedHeader {
+    Error::UnexpectedHeaderForBtreePage(Box::new(UnexpectedHeader {
         page_id,
         actual_header,
         expected_header,
@@ -114,7 +114,7 @@ pub struct VersionMismatchError {
 }
 
 #[derive(Error, Debug)]
-pub enum DbErr {
+pub enum Error {
     #[error("unexpected id type, expected: {0}, actual: {1}")]
     UnexpectedIdType(u8, u8),
     #[error("type '{0}' is not a valid key type")]
@@ -204,7 +204,7 @@ pub enum DbErr {
     #[error("this file is occupied by another connection")]
     DatabaseOccupied,
     #[error("multiple errors")]
-    Multiple(Vec<DbErr>),
+    Multiple(Vec<Error>),
     #[error("db version mismatched, please upgrade")]
     VersionMismatch(Box<VersionMismatchError>),
     #[error("the mutex is poisoned")]
@@ -227,17 +227,17 @@ pub enum DbErr {
     DbNotReady,
 }
 
-impl DbErr {
+impl Error {
 
-    pub(crate) fn add(self, next: DbErr) -> DbErr {
+    pub(crate) fn add(self, next: Error) -> Error {
         match self {
-            DbErr::Multiple(mut result) => {
+            Error::Multiple(mut result) => {
                 result.push(next);
-                DbErr::Multiple(result)
+                Error::Multiple(result)
             }
             _ => {
                 let result = vec![self, next];
-                DbErr::Multiple(result)
+                Error::Multiple(result)
             }
         }
     }
@@ -331,59 +331,59 @@ impl DbErr {
 //
 // }
 
-impl From<bson::de::Error> for DbErr {
+impl From<bson::de::Error> for Error {
 
     fn from(error: bson::de::Error) -> Self {
-        DbErr::BsonDeErr(Box::new(error))
+        Error::BsonDeErr(Box::new(error))
     }
 
 }
 
-impl From<BsonErr> for DbErr {
+impl From<BsonErr> for Error {
 
     fn from(error: BsonErr) -> Self {
-        DbErr::BsonErr(Box::new(error))
+        Error::BsonErr(Box::new(error))
     }
 
 }
 
-impl From<io::Error> for DbErr {
+impl From<io::Error> for Error {
 
     fn from(error: io::Error) -> Self {
-        DbErr::IOErr(Box::new(error))
+        Error::IOErr(Box::new(error))
     }
 
 }
 
-impl From<std::str::Utf8Error> for DbErr {
+impl From<std::str::Utf8Error> for Error {
 
     fn from(error: std::str::Utf8Error) -> Self {
-        DbErr::UTF8Err(Box::new(error))
+        Error::UTF8Err(Box::new(error))
     }
 
 }
 
-impl<T> From<PoisonError<T>> for DbErr {
+impl<T> From<PoisonError<T>> for Error {
     fn from(_: PoisonError<T>) -> Self {
-        DbErr::LockError
+        Error::LockError
     }
 }
 
-impl From<FromUtf8Error> for DbErr {
+impl From<FromUtf8Error> for Error {
 
     fn from(value: FromUtf8Error) -> Self {
-        DbErr::FromUtf8Error(Box::new(value))
+        Error::FromUtf8Error(Box::new(value))
     }
 
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::DbErr;
+    use crate::Error;
 
     #[test]
     fn print_value_size() {
-        let size = std::mem::size_of::<DbErr>();
+        let size = std::mem::size_of::<Error>();
         assert_eq!(size, 32);
     }
 

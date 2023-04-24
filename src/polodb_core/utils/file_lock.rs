@@ -4,13 +4,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use std::fs::File;
-use crate::{DbErr, DbResult};
+use crate::{Error, Result};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::io::AsRawHandle;
 
 #[cfg(target_os = "windows")]
-pub(crate) fn exclusive_lock_file(file: &File) -> DbResult<()> {
+pub(crate) fn exclusive_lock_file(file: &File) -> Result<()> {
     use winapi::um::fileapi::LockFileEx;
     use winapi::um::minwinbase::OVERLAPPED;
     use winapi::um::minwinbase::{LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY};
@@ -30,14 +30,14 @@ pub(crate) fn exclusive_lock_file(file: &File) -> DbResult<()> {
     };
 
     if bl == 0 {
-        return Err(DbErr::Busy);
+        return Err(Error::Busy);
     }
 
     Ok(())
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn shared_lock_file(file: &File) -> DbResult<()> {
+pub(crate) fn shared_lock_file(file: &File) -> Result<()> {
     use winapi::um::fileapi::LockFileEx;
     use winapi::um::minwinbase::OVERLAPPED;
     use winapi::um::minwinbase::LOCKFILE_FAIL_IMMEDIATELY;
@@ -54,14 +54,14 @@ pub(crate) fn shared_lock_file(file: &File) -> DbResult<()> {
     };
 
     if bl == 0 {
-        return Err(DbErr::Busy);
+        return Err(Error::Busy);
     }
 
     Ok(())
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn unlock_file(file: &File) -> DbResult<()> {
+pub(crate) fn unlock_file(file: &File) -> Result<()> {
     use winapi::um::fileapi::UnlockFileEx;
     use winapi::um::minwinbase::OVERLAPPED;
     use winapi::ctypes;
@@ -77,14 +77,14 @@ pub(crate) fn unlock_file(file: &File) -> DbResult<()> {
     };
 
     if bl == 0 {
-        return Err(DbErr::Busy);
+        return Err(Error::Busy);
     }
 
     Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn exclusive_lock_file(file: &File) -> DbResult<()> {
+pub(crate) fn exclusive_lock_file(file: &File) -> Result<()> {
     use std::os::unix::prelude::*;
     use libc::{flock, LOCK_EX, LOCK_NB};
 
@@ -96,13 +96,13 @@ pub(crate) fn exclusive_lock_file(file: &File) -> DbResult<()> {
     if result == 0 {
         Ok(())
     } else {
-        Err(DbErr::Busy)
+        Err(Error::Busy)
     }
 }
 
 #[cfg(not(target_os = "windows"))]
 #[allow(dead_code)]
-pub(crate) fn shared_lock_file(file: &File) -> DbResult<()> {
+pub(crate) fn shared_lock_file(file: &File) -> Result<()> {
     use std::os::unix::prelude::*;
     use libc::{flock, LOCK_SH, LOCK_NB};
 
@@ -114,7 +114,7 @@ pub(crate) fn shared_lock_file(file: &File) -> DbResult<()> {
     if result == 0 {
         Ok(())
     } else {
-        Err(DbErr::Busy)
+        Err(Error::Busy)
     }
 }
 
@@ -122,7 +122,7 @@ pub(crate) fn shared_lock_file(file: &File) -> DbResult<()> {
 /// LOCK_NB: non-blocking
 #[cfg(not(target_os = "windows"))]
 #[allow(dead_code)]
-pub(crate) fn unlock_file(file: &File) -> DbResult<()> {
+pub(crate) fn unlock_file(file: &File) -> Result<()> {
     use std::os::unix::prelude::*;
     use libc::{flock, LOCK_UN, LOCK_NB};
 
@@ -134,6 +134,6 @@ pub(crate) fn unlock_file(file: &File) -> DbResult<()> {
     if result == 0 {
         Ok(())
     } else {
-        Err(DbErr::Busy)
+        Err(Error::Busy)
     }
 }
