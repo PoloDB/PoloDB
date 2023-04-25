@@ -7,7 +7,7 @@ use std::io;
 use std::fmt;
 use std::string::FromUtf8Error;
 use std::sync::PoisonError;
-use bson::oid::ObjectId;
+use bson::Document;
 use bson::ser::Error as BsonErr;
 use thiserror::Error;
 
@@ -176,6 +176,8 @@ pub enum Error {
     RollbackNotInTransaction,
     #[error("collection name '{0}' is illegal")]
     IllegalCollectionName(String),
+    #[error("index name '{0}' is illegal")]
+    IllegalIndexName(String),
     #[error("unexpected page header")]
     UnexpectedPageHeader,
     #[error("unexpected page type")]
@@ -210,8 +212,6 @@ pub enum Error {
     CannotApplyOperation(Box<CannotApplyOperationForTypes>),
     #[error("no transaction started")]
     NoTransactionStarted,
-    #[error("invalid session: {0}")]
-    InvalidSession(Box<ObjectId>),
     #[error("session is outdated")]
     SessionOutdated,
     #[error("the database is closed")]
@@ -222,6 +222,10 @@ pub enum Error {
     DataMalformed(Box<DataMalformedReason>),
     #[error("the database is not ready")]
     DbNotReady,
+    #[error("only support single field indexes currently: {0:?}")]
+    OnlySupportSingleFieldIndexes(Box<Document>),
+    #[error("only support ascending order index currently: {0}")]
+    OnlySupportsAscendingOrder(String),
 }
 
 impl Error {
@@ -289,7 +293,6 @@ impl From<io::Error> for Error {
 
 #[cfg(test)]
 mod tests {
-    use byteorder::ReadBytesExt;
     use crate::Error;
 
     #[test]

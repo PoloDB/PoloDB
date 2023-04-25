@@ -4,17 +4,26 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use std::collections::HashMap;
-use bson::{Binary, DateTime, Document};
+use bson::{Binary, DateTime};
 use serde::{Deserialize, Serialize};
+use indexmap::IndexMap;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexInfo {
-    key: Document,
+    pub keys: IndexMap<String, i8>,
+}
 
-    /// Internal
-    #[serde(serialize_with = "crate::bson::serde_helpers::serialize_u32_as_i32")]
-    pub root_pid: u32,
+impl IndexInfo {
+
+    pub fn single_index(name: String, order: i8) -> IndexInfo {
+        let mut keys = IndexMap::new();
+        keys.insert(name, order);
+        IndexInfo {
+            keys,
+        }
+    }
+
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
