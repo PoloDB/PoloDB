@@ -23,7 +23,7 @@ use wasm_bindgen::JsValue;
 use bson::oid::ObjectId;
 use bson::spec::BinarySubtype;
 use serde::de::DeserializeOwned;
-use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
+use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType, IndexInfo};
 use crate::cursor::Cursor;
 use crate::metrics::Metrics;
 use crate::session::SessionInner;
@@ -278,73 +278,84 @@ impl DatabaseInner {
         Ok(ClientSessionCursor::new(vm))
     }
 
-    #[allow(dead_code)]
-    pub fn create_index(&self, prefix: Bson, keys: &Document, options: Option<&Document>, session: &mut SessionInner) -> Result<()> {
+    pub fn create_index(&self, col_name: &str, keys: Document, options: impl Into<Option<Document>>, session: &mut SessionInner) -> Result<()> {
+        DatabaseInner::validate_col_name(col_name)?;
+
         self.auto_start_transaction(session, TransactionType::Write)?;
 
-        try_db_op!(self, session, DatabaseInner::internal_create_index(session, prefix, keys, options));
+        try_db_op!(self, session, self.internal_create_index(session, col_name, keys, options));
 
         Ok(())
     }
 
-    fn internal_create_index(_session: &mut SessionInner, _prefix: Bson, _keys: &Document, _options: Option<&Document>) -> Result<()> {
-        unimplemented!()
-        // let meta_source = DbContext::get_meta_source(session)?;
-        // let mut meta_doc = DbContext::find_collection_root_pid_by_id(
-        //     session, 0, meta_source.meta_pid, col_id
-        // )?;
-        //
-        // for (key_name, value_of_key) in keys.iter() {
-        //     if let Bson::Int32(1) = value_of_key {
-        //         // nothing
-        //     } else if let Bson::Int64(1) = value_of_key {
-        //         // nothing
-        //     } else {
-        //         return Err(DbErr::InvalidOrderOfIndex(key_name.clone()));
-        //     }
-        //
-        //     match meta_doc.doc_ref().get(meta_doc_key::INDEXES) {
-        //         Some(indexes_obj) => match indexes_obj {
-        //             Bson::Document(index_doc) => {
-        //                 if index_already_exists(index_doc.borrow(), key_name) {
-        //                     return Err(DbErr::IndexAlreadyExists(key_name.clone()));
-        //                 }
-        //
-        //                 unimplemented!()
-        //             }
-        //
-        //             _ => {
-        //                 panic!("unexpected: indexes object is not a Document");
-        //             }
-        //
-        //         },
-        //
-        //         None => {
-        //             // create indexes
-        //             let mut doc = doc!();
-        //
-        //             let root_pid = session.alloc_page_id()?;
-        //             let options_doc = merge_options_into_default(root_pid, options)?;
-        //             doc.insert(key_name.clone(), Bson::Document(options_doc));
-        //
-        //             meta_doc.set_indexes(doc);
-        //         }
-        //
-        //     }
-        // }
-        //
-        // let key_col = Bson::from(col_id);
-        //
-        // let meta_source = DbContext::get_meta_source(session)?;
-        // let inserted = DbContext::update_by_root_pid(
-        //     session, 0, meta_source.meta_pid,
-        //     &key_col, meta_doc.doc_ref()
-        // )?;
-        // if !inserted {
-        //     panic!("update failed");
-        // }
-        //
-        // Ok(())
+    fn internal_create_index(&self, session: &mut SessionInner, col_name: &str, keys: Document, options: impl Into<Option<Document>>) -> Result<()> {
+        let options = options.into();
+
+        if keys.len() != 1 {
+            return Err(Error::OnlySupportSingleFieldIndexes(Box::new(keys)));
+        }
+
+        let tuples = keys.iter().collect::<Vec<(&String, &Bson)>>();
+        let first_tuple = tuples.first().unwrap();
+
+        let (key, value) = first_tuple;
+
+        self.create_single_index(session, col_name, key.as_str(), value, options)
+    }
+
+    fn create_single_index(&self, session: &mut SessionInner, col_name: &str, key: &str, order: &Bson, options: Option<Document>) -> Result<()> {
+        if !DatabaseInner::is_num_1(order) {
+            return Err(Error::OnlySupportsAscendingOrder(key.to_string()));
+        }
+
+        let index_name = DatabaseInner::make_index_name(key, 1, &options)?;
+
+        let mut collection_spec = self.internal_get_collection_id_by_name(session, col_name)?;
+
+        if collection_spec.indexes.get(&index_name).is_some() {
+            return Ok(())
+        }
+
+        let index_info = IndexInfo::single_index(key.to_string(), 1);
+        collection_spec.indexes.insert(index_name, index_info);
+
+        let stacked_key = crate::utils::bson::stacked_key(&[
+            Bson::String(TABLE_META_PREFIX.to_string()),
+            Bson::String(col_name.to_string()),
+        ])?;
+
+        let buffer = bson::to_vec(&collection_spec)?;
+
+        session.put(stacked_key.as_slice(), buffer.as_ref())?;
+
+        Ok(())
+    }
+
+    fn make_index_name(key: &str, order: i32, index_options: &Option<Document>) -> Result<String> {
+        if let Some(doc) = index_options {
+            let name = doc.get("name");
+            if let Some(Bson::String(name)) = name {
+                DatabaseInner::validate_index_name(name)?;
+                return Ok(name.clone());
+            }
+        }
+
+        let mut index_name = key.to_string();
+
+        index_name += "_";
+        let num_str = order.to_string();
+        index_name += &num_str;
+
+        Ok(index_name)
+    }
+
+    #[inline]
+    fn is_num_1(val: &Bson) -> bool {
+        match val {
+            Bson::Int32(1) => true,
+            Bson::Int64(1) => true,
+            _ => false,
+        }
     }
 
     #[inline]
@@ -362,6 +373,16 @@ impl DatabaseInner {
         for ch in col_name.chars() {
             if ch == '$' || ch == '\n' || ch == '\t' || ch == '\r' {
                 return Err(Error::IllegalCollectionName(col_name.to_string()))
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_index_name(col_name: &str) -> Result<()> {
+        for ch in col_name.chars() {
+            if ch == '$' || ch == '\n' || ch == '\t' || ch == '\r' {
+                return Err(Error::IllegalIndexName(col_name.to_string()))
             }
         }
 

@@ -121,14 +121,10 @@ impl<T>  Collection<T>
         db.delete_many(&self.name, query, &mut session.inner)
     }
 
-    /// release in 0.12
-    #[allow(dead_code)]
-    fn create_index(&self, _keys: &Document, _options: Option<&Document>) -> Result<()> {
-        // let db_ref = self.db.upgrade().ok_or(DbErr::DbIsClosed)?;
-        // let mut db = db_ref.lock()?;
-        // let mut session = db.start_session()?;
-        // db.create_index(self.name.insert())
-        unimplemented!()
+    pub fn create_index(&self, keys: Document, options: impl Into<Option<Document>>) -> Result<()> {
+        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
+        let mut session = db.start_session()?;
+        db.create_index(&self.name, keys, options, &mut session)
     }
 
     pub fn drop(&self) -> Result<()> {
