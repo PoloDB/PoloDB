@@ -14,6 +14,13 @@ PoloDB is an embedded document database.
 PoloDB is a library written in Rust
 that implements a lightweight [MongoDB](https://www.mongodb.com/).
 
+# Why
+
+PoloDB aims to offer a modern alternative to SQLite, which is currently the almost exclusive option for client-side data storage.
+Although SQLite is an old and stable software, it lacks some modern features.
+That's why we developed PoloDB, which is NoSQL, supports multi-threading and multi-sessions,
+and retains the embedded and lightweight features of SQLite.
+
 # Features
 
 - Simple and Lightweight
@@ -54,11 +61,11 @@ collection.insert_one(Book {
 
 ## Filesystem Backend
 
-With the filesystem backend, PoloDB stores data in ONE file.
+With the filesystem backend, PoloDB stores data in a single file.
 All the data are saved persistently on the disk.
 
 It's designed to be flexible, universal, and easy to be searched.
-All the data are encoded in [bson](http://bsonspec.org/) format and stored in the PoloDB's btree format.
+All the data are encoded in [bson](http://bsonspec.org/) format and stored in the PoloDB's lsm-tree format.
 
 PoloDB uses WAL(write-ahead logging) to implement transactional writing and protect your data from program crashes.
 
