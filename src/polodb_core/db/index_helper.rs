@@ -66,12 +66,11 @@ impl<'a, 'b, 'c, 'd> IndexHelper<'a, 'b, 'c, 'd> {
             return Ok(())
         }
 
-        let index_key = crate::utils::bson::stacked_key([
-            &Bson::String(INDEX_PREFIX.to_string()),
-            &Bson::String(self.col_spec._id.clone()),
-            &Bson::String(index_name.to_string()),
+        let index_key = IndexHelper::make_index_key(
+            self.col_spec._id.as_str(),
+            index_name,
             value.as_ref().unwrap(),
-        ])?;
+        )?;
 
         let value = Bson::Array(vec![
             self.pkey.clone()
@@ -82,6 +81,42 @@ impl<'a, 'b, 'c, 'd> IndexHelper<'a, 'b, 'c, 'd> {
         self.session.put(index_key.as_slice(), value_buf.as_ref())?;
 
         Ok(())
+    }
+
+    #[inline]
+    fn make_index_key(col_name: &str, index_name: &str, value: &Bson) -> Result<Vec<u8>> {
+        crate::utils::bson::stacked_key([
+            &Bson::String(INDEX_PREFIX.to_string()),
+            &Bson::String(col_name.to_string()),
+            &Bson::String(index_name.to_string()),
+            value,
+        ])
+    }
+
+}
+
+#[cfg(test)]
+mod tests {
+    use bson::Bson;
+    use crate::db::index_helper::IndexHelper;
+
+    #[test]
+    fn test_make_index_key() {
+        let index_key = IndexHelper::make_index_key(
+            "users",
+            "name",
+            &Bson::String("value".to_string()),
+        ).unwrap() ;
+
+        let escaped_string = String::from_utf8(
+        index_key
+            .iter()
+            .flat_map(|b| std::ascii::escape_default(*b))
+            .collect::<Vec<u8>>(),
+        )
+        .unwrap();
+
+        assert_eq!(escaped_string, "\\x02$I\\x00\\x02users\\x00\\x02name\\x00\\x02value\\x00");
     }
 
 }
