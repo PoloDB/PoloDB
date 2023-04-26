@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use std::collections::HashMap;
 use bson::{Binary, DateTime};
 use serde::{Deserialize, Serialize};
 use indexmap::IndexMap;
@@ -11,6 +10,8 @@ use indexmap::IndexMap;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexInfo {
+    /// The key of the map is prevserd the original format
+    /// For example, `author.age` is "author.age"
     pub keys: IndexMap<String, i8>,
 }
 
@@ -53,7 +54,9 @@ pub struct CollectionSpecification {
     pub info: CollectionSpecificationInfo,
 
     /// name -> info
-    pub indexes: HashMap<String, IndexInfo>,
+    /// The name is converted to the underline format.
+    /// For examples, `author.age` is converted to `author_age`
+    pub indexes: IndexMap<String, IndexInfo>,
 }
 
 impl CollectionSpecification {
@@ -79,9 +82,9 @@ pub enum CollectionType {
 
 #[cfg(test)]
 mod test {
-    use std::collections::HashMap;
     use bson::{Binary, DateTime};
     use bson::spec::BinarySubtype;
+    use indexmap::IndexMap;
     use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
 
     #[test]
@@ -98,7 +101,7 @@ mod test {
 
                 create_at: DateTime::now(),
             },
-            indexes: HashMap::new(),
+            indexes: IndexMap::new(),
         };
         let doc = bson::to_document(&spec).unwrap();
         assert_eq!(doc.get("_id").unwrap().as_str().unwrap(), "test");

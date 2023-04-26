@@ -396,8 +396,8 @@ impl fmt::Display for SubProgram {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use bson::{DateTime, doc};
+    use indexmap::IndexMap;
     use polodb_line_diff::assert_eq;
     use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
     use crate::vm::SubProgram;
@@ -410,7 +410,7 @@ mod tests {
                 uuid: None,
                 create_at: DateTime::now(),
             },
-            indexes: HashMap::new(),
+            indexes: IndexMap::new(),
         }
     }
 

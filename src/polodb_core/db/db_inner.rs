@@ -22,9 +22,11 @@ use std::path::Path;
 use wasm_bindgen::JsValue;
 use bson::oid::ObjectId;
 use bson::spec::BinarySubtype;
+use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType, IndexInfo};
 use crate::cursor::Cursor;
+use crate::db::index_helper::IndexHelper;
 use crate::metrics::Metrics;
 use crate::session::SessionInner;
 use crate::utils::bson::bson_datetime_now;
@@ -258,7 +260,7 @@ impl DatabaseInner {
 
                 create_at: bson_datetime_now(),
             },
-            indexes: HashMap::new(),
+            indexes: IndexMap::new(),
         };
 
         let stacked_key = crate::utils::bson::stacked_key(&[
@@ -308,7 +310,7 @@ impl DatabaseInner {
             return Err(Error::OnlySupportsAscendingOrder(key.to_string()));
         }
 
-        let index_name = DatabaseInner::make_index_name(key, 1, &options)?;
+        let index_name = DatabaseInner::make_index_name(key, 1, options.as_ref())?;
 
         let mut collection_spec = self.internal_get_collection_id_by_name(session, col_name)?;
 
@@ -331,7 +333,7 @@ impl DatabaseInner {
         Ok(())
     }
 
-    fn make_index_name(key: &str, order: i32, index_options: &Option<Document>) -> Result<String> {
+    fn make_index_name(key: &str, order: i32, index_options: Option<&Document>) -> Result<String> {
         if let Some(doc) = index_options {
             let name = doc.get("name");
             if let Some(Bson::String(name)) = name {
@@ -340,7 +342,7 @@ impl DatabaseInner {
             }
         }
 
-        let mut index_name = key.to_string();
+        let mut index_name = key.to_string().replace(".", "_");
 
         index_name += "_";
         let num_str = order.to_string();
@@ -371,7 +373,7 @@ impl DatabaseInner {
 
     fn validate_col_name(col_name: &str) -> Result<()> {
         for ch in col_name.chars() {
-            if ch == '$' || ch == '\n' || ch == '\t' || ch == '\r' {
+            if ch == '$' || ch == '\n' || ch == '\t' || ch == '\r' || ch == '.' {
                 return Err(Error::IllegalCollectionName(col_name.to_string()))
             }
         }
@@ -381,7 +383,7 @@ impl DatabaseInner {
 
     fn validate_index_name(col_name: &str) -> Result<()> {
         for ch in col_name.chars() {
-            if ch == '$' || ch == '\n' || ch == '\t' || ch == '\r' {
+            if ch == '$' || ch == '\n' || ch == '\t' || ch == '\r' || ch == '.' {
                 return Err(Error::IllegalIndexName(col_name.to_string()))
             }
         }
@@ -425,30 +427,17 @@ impl DatabaseInner {
             &doc_buf,
         )?;
 
-        // // insert index begin
-        // let mut index_ctx_opt = IndexCtx::from_meta_doc(col_spec);
-        // if let Some(index_ctx) = &mut index_ctx_opt {
-        //     let mut is_ctx_changed = false;
-        //
-        //     index_ctx.insert_index_by_content(
-        //         &doc,
-        //         &pkey,
-        //         &mut is_ctx_changed,
-        //         session,
-        //     )?;
-        //
-        //     if is_ctx_changed {
-        //         index_ctx.merge_to_meta_doc(&mut collection_meta);
-        //         is_meta_changed = true;
-        //     }
-        // }
-        // // insert index end
-
+        self.try_insert_index(session, &col_spec, &doc, pkey)?;
 
         Ok((
             InsertOneResult { inserted_id: pkey.clone() },
             col_spec
         ))
+    }
+
+    fn try_insert_index(&self, session: &mut SessionInner, col_spec: &CollectionSpecification, doc: &Document, pkey: &Bson) -> Result<()> {
+        let mut index_helper = IndexHelper::new(session, col_spec, doc, pkey);
+        index_helper.execute()
     }
 
     pub fn insert_many<T: Serialize>(
@@ -865,12 +854,35 @@ fn collection_metas_to_names(doc_meta: Vec<Document>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use crate::db::db_inner::DatabaseInner;
+    use bson::Bson;
 
     #[test]
     fn test_validate_col_name() {
         assert!(DatabaseInner::validate_col_name("test").is_ok());
         assert!(DatabaseInner::validate_col_name("$test$").is_err());
         assert!(DatabaseInner::validate_col_name("test\n").is_err());
+        assert!(DatabaseInner::validate_col_name("test.ok").is_err());
+    }
+
+    #[test]
+    fn test_validate_index_name() {
+        assert!(DatabaseInner::validate_index_name("test").is_ok());
+        assert!(DatabaseInner::validate_index_name("$test$").is_err());
+        assert!(DatabaseInner::validate_index_name("test\n").is_err());
+        assert!(DatabaseInner::validate_index_name("test.ok").is_err());
+    }
+
+    #[test]
+    fn test_make_index_name() {
+        assert_eq!(DatabaseInner::make_index_name("test", 1, None).unwrap(), "test_1");
+        assert_eq!(DatabaseInner::make_index_name("test.ok", 1, None).unwrap(), "test_ok_1");
+    }
+
+    #[test]
+    fn test_is_is_num_1() {
+        assert!(DatabaseInner::is_num_1(&Bson::Int32(1)));
+        assert!(!DatabaseInner::is_num_1(&Bson::Int32(2)));
+        assert!(!DatabaseInner::is_num_1(&Bson::String("a".to_string())))
     }
 
 }
