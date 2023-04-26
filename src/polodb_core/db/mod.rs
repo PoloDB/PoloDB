@@ -8,6 +8,7 @@ mod collection;
 mod db_inner;
 pub mod client_cursor;
 mod server;
+mod index_helper;
 
 pub use collection::Collection;
 pub use db::{Database, Result};

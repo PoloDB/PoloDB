@@ -5,7 +5,7 @@
  */
 use std::cmp::Ordering;
 use std::io::Write;
-use bson::Bson;
+use bson::{Bson, Document};
 use bson::spec::ElementType;
 use byteorder::{BigEndian, WriteBytesExt};
 use bson::ser::Error as BsonErr;
@@ -149,6 +149,34 @@ pub fn value_cmp(a: &Bson, b: &Bson) -> BsonResult<Ordering> {
     }
 }
 
+pub fn try_get_document_value(doc: &Document, key: &str) -> Option<Bson> {
+    let keys = key.split('.').collect::<Vec<&str>>();
+    let keys_slice = keys.as_slice();
+    try_get_document_by_slices(doc, keys_slice)
+}
+
+fn try_get_document_by_slices(doc: &Document, keys: &[&str]) -> Option<Bson> {
+    let first = keys.first();
+    first
+        .map(|first_str| {
+            let remains = &keys[1..];
+            let value = doc.get(first_str);
+            match value {
+                Some(Bson::Document(doc)) => {
+                    try_get_document_by_slices(doc, remains)
+                }
+                Some(v) => {
+                    if remains.is_empty() {
+                        return Some(v.clone());
+                    }
+                    return None;
+                }
+                _ => None,
+            }
+        })
+        .flatten()
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn bson_datetime_now() -> bson::datetime::DateTime {
     return bson::datetime::DateTime::now()
@@ -164,7 +192,7 @@ pub fn bson_datetime_now() -> bson::datetime::DateTime {
 #[cfg(test)]
 mod tests {
     use std::cmp::Ordering;
-    use bson::Bson;
+    use bson::{Bson, doc};
     use crate::utils::bson::value_cmp;
 
     #[test]
@@ -175,6 +203,18 @@ mod tests {
         assert_eq!(value_cmp(&Bson::Int64(2), &Bson::Int32(3)).unwrap(), Ordering::Less);
         assert_eq!(value_cmp(&Bson::Int64(2), &Bson::Int32(1)).unwrap(), Ordering::Greater);
         assert_eq!(value_cmp(&Bson::Int64(1), &Bson::Int32(1)).unwrap(), Ordering::Equal);
+    }
+
+
+    #[test]
+    fn test_try_get_document_value() {
+        assert_eq!(super::try_get_document_value(&doc!{}, "a"), None);
+        assert_eq!(super::try_get_document_value(&doc!{"a": 1}, "a"), Some(Bson::Int32(1)));
+        assert_eq!(super::try_get_document_value(&doc!{"a": 1}, "b"), None);
+        assert_eq!(super::try_get_document_value(&doc!{"a": { "b": 1 }}, "a.b"), Some(Bson::Int32(1)));
+        assert_eq!(super::try_get_document_value(&doc!{"a": { "b": 1 }}, "a.c"), None);
+        assert_eq!(super::try_get_document_value(&doc!{"a": { "b": { "c": 1 }}}, "a.b.c"), Some(Bson::Int32(1)));
+        assert_eq!(super::try_get_document_value(&doc!{"a": { "b": { "c": 1 }}}, "a.b.d"), None);
     }
 
 }
