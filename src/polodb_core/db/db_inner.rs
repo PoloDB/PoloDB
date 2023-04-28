@@ -5,7 +5,7 @@
  */
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use bson::{Binary, Bson, Document};
+use bson::{Bson, Document};
 use serde::Serialize;
 use super::db::Result;
 use crate::errors::Error;
@@ -21,15 +21,15 @@ use std::path::Path;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsValue;
 use bson::oid::ObjectId;
-use bson::spec::BinarySubtype;
-use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
-use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType, IndexInfo};
+use crate::coll::collection_info::{
+    CollectionSpecification,
+    IndexInfo,
+};
 use crate::cursor::Cursor;
 use crate::index::IndexHelper;
 use crate::metrics::Metrics;
 use crate::session::SessionInner;
-use crate::utils::bson::bson_datetime_now;
 use crate::vm::VM;
 
 macro_rules! try_multiple {
@@ -248,20 +248,7 @@ impl DatabaseInner {
         }
 
         let uuid = uuid::Uuid::now_v1(node_id);
-
-        let spec = CollectionSpecification {
-            _id: name.to_string(),
-            collection_type: CollectionType::Collection,
-            info: CollectionSpecificationInfo {
-                uuid: Some(Binary {
-                    subtype: BinarySubtype::Uuid,
-                    bytes: uuid.as_bytes().to_vec(),
-                }),
-
-                create_at: bson_datetime_now(),
-            },
-            indexes: IndexMap::new(),
-        };
+        let spec = CollectionSpecification::new(name.to_string(), uuid);
 
         let stacked_key = crate::utils::bson::stacked_key(&[
             Bson::String(TABLE_META_PREFIX.to_string()),
@@ -517,7 +504,7 @@ impl DatabaseInner {
         Ok(result)
     }
 
-    pub(super) fn update_many(
+    pub(crate) fn update_many(
         &self,
         col_name: &str,
         query: Document,
@@ -787,7 +774,7 @@ impl DatabaseInner {
         }
     }
 
-    pub(super) fn count_documents(&self, col_name: &str, session: &mut SessionInner) -> Result<u64> {
+    pub(crate) fn count_documents(&self, col_name: &str, session: &mut SessionInner) -> Result<u64> {
         DatabaseInner::validate_col_name(col_name)?;
         let test_result = self.count(col_name, session);
         match test_result {
@@ -797,7 +784,7 @@ impl DatabaseInner {
         }
     }
 
-    pub(super) fn delete_one(
+    pub(crate) fn delete_one(
         &self,
         col_name: &str,
         query: Document,
@@ -823,7 +810,7 @@ impl DatabaseInner {
         }
     }
 
-    pub(super) fn delete_many(&self, col_name: &str, query: Document, session: &mut SessionInner) -> Result<DeleteResult> {
+    pub(crate) fn delete_many(&self, col_name: &str, query: Document, session: &mut SessionInner) -> Result<DeleteResult> {
         DatabaseInner::validate_col_name(col_name)?;
 
         let test_deleted_count = if query.len() == 0 {

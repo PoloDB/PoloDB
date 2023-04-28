@@ -6,7 +6,10 @@
 
 use bson::Bson;
 use crate::Result;
-use crate::collection_info::{CollectionSpecification, IndexInfo};
+use crate::coll::collection_info::{
+    CollectionSpecification,
+    IndexInfo,
+};
 use crate::session::SessionInner;
 
 const INDEX_PREFIX: &'static str = "$I";
