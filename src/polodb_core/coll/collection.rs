@@ -26,7 +26,7 @@ pub struct Collection<T> {
 impl<T>  Collection<T>
 {
 
-    pub(super) fn new(db: Weak<DatabaseInner>, name: &str) -> Collection<T> {
+    pub(crate) fn new(db: Weak<DatabaseInner>, name: &str) -> Collection<T> {
         Collection {
             db,
             name: name.into(),

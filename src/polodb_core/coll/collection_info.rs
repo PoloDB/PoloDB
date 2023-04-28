@@ -4,9 +4,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use bson::{Binary, DateTime};
+use bson::spec::BinarySubtype;
 use serde::{Deserialize, Serialize};
 use indexmap::IndexMap;
+use uuid::Uuid;
 use crate::IndexOptions;
+use crate::utils::bson::bson_datetime_now;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +73,24 @@ impl CollectionSpecification {
         self._id.as_str()
     }
 
+    #[inline]
+    pub(crate) fn new(id: String, uuid: Uuid) -> CollectionSpecification {
+        CollectionSpecification {
+            _id: id,
+
+            collection_type: CollectionType::Collection,
+            info: CollectionSpecificationInfo {
+                uuid: Some(Binary {
+                    subtype: BinarySubtype::Uuid,
+                    bytes: uuid.as_bytes().to_vec(),
+                }),
+                create_at: bson_datetime_now(),
+            },
+
+            indexes: IndexMap::new(),
+        }
+    }
+
 }
 
 /// Describes the type of data store returned when executing
@@ -86,27 +107,14 @@ pub enum CollectionType {
 
 #[cfg(test)]
 mod test {
-    use bson::{Binary, DateTime};
-    use bson::spec::BinarySubtype;
-    use indexmap::IndexMap;
-    use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
+    use crate::coll::collection_info::{
+        CollectionSpecification,
+    };
 
     #[test]
     fn test_serial() {
         let u = uuid::Uuid::new_v4();
-        let spec = CollectionSpecification {
-            _id: "test".to_string(),
-            collection_type: CollectionType::Collection,
-            info: CollectionSpecificationInfo {
-                uuid: Some(Binary {
-                    subtype: BinarySubtype::Uuid,
-                    bytes: u.as_bytes().to_vec(),
-                }),
-
-                create_at: DateTime::now(),
-            },
-            indexes: IndexMap::new(),
-        };
+        let spec = CollectionSpecification::new("test".to_string(), u);
         let doc = bson::to_document(&spec).unwrap();
         assert_eq!(doc.get("_id").unwrap().as_str().unwrap(), "test");
 

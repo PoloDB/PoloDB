@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::errors::Error;
 use crate::{ClientSession, Config};
 use super::db_inner::DatabaseInner;
-use crate::db::collection::Collection;
+use crate::coll::Collection;
 use crate::metrics::Metrics;
 
 pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);

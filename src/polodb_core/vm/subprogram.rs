@@ -5,7 +5,7 @@
  */
 use std::fmt;
 use bson::{Bson, Document};
-use crate::collection_info::CollectionSpecification;
+use crate::coll::collection_info::CollectionSpecification;
 use crate::Result;
 use super::op::DbOp;
 use super::label::LabelSlot;
@@ -396,22 +396,16 @@ impl fmt::Display for SubProgram {
 
 #[cfg(test)]
 mod tests {
-    use bson::{DateTime, doc};
-    use indexmap::IndexMap;
+    use bson::doc;
     use polodb_line_diff::assert_eq;
-    use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType};
+    use crate::coll::collection_info::{
+        CollectionSpecification,
+    };
     use crate::vm::SubProgram;
 
+    #[inline]
     fn new_spec<T: Into<String>>(name: T) -> CollectionSpecification {
-        CollectionSpecification {
-            _id: name.into(),
-            collection_type: CollectionType::Collection,
-            info: CollectionSpecificationInfo {
-                uuid: None,
-                create_at: DateTime::now(),
-            },
-            indexes: IndexMap::new(),
-        }
+        CollectionSpecification::new(name.into(), uuid::Uuid::new_v4())
     }
 
     #[test]

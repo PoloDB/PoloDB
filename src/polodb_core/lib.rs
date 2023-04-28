@@ -151,15 +151,16 @@ mod transaction;
 pub mod lsm;
 pub mod results;
 pub mod commands;
-mod collection_info;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod test_utils;
 mod metrics;
 mod utils;
 mod index;
+mod coll;
 
-pub use db::{Database, DatabaseServer, Collection, Result};
+pub use db::{Database, DatabaseServer, Result};
+pub use coll::Collection;
 pub use config::{Config, ConfigBuilder};
 pub use transaction::TransactionType;
 pub use db::client_cursor::{ClientCursor, ClientSessionCursor};
