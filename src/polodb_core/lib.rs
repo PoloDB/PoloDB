@@ -157,6 +157,7 @@ mod collection_info;
 pub mod test_utils;
 mod metrics;
 mod utils;
+mod index;
 
 pub use db::{Database, DatabaseServer, Collection, Result};
 pub use config::{Config, ConfigBuilder};
@@ -166,5 +167,6 @@ pub use errors::Error;
 pub use session::ClientSession;
 pub use metrics::Metrics;
 pub use lsm::LsmKv;
+pub use index::{IndexModel, IndexOptions};
 
 pub extern crate bson;

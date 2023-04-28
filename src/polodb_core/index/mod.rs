@@ -3,12 +3,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-mod db;
-mod collection;
-mod db_inner;
-pub mod client_cursor;
-mod server;
 
-pub use collection::Collection;
-pub use db::{Database, Result};
-pub use server::DatabaseServer;
+mod index_helper;
+mod index_model;
+
+pub(crate) use index_helper::IndexHelper;
+pub use index_model::{IndexModel, IndexOptions};

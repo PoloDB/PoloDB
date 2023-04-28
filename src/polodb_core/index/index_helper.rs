@@ -98,7 +98,7 @@ impl<'a, 'b, 'c, 'd> IndexHelper<'a, 'b, 'c, 'd> {
 #[cfg(test)]
 mod tests {
     use bson::Bson;
-    use crate::db::index_helper::IndexHelper;
+    use super::IndexHelper;
 
     #[test]
     fn test_make_index_key() {

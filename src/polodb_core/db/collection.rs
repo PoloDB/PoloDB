@@ -8,7 +8,7 @@ use bson::Document;
 use std::borrow::Borrow;
 use std::sync::Weak;
 use serde::de::DeserializeOwned;
-use crate::{ClientCursor, ClientSession, ClientSessionCursor, Error, Result};
+use crate::{ClientCursor, ClientSession, ClientSessionCursor, Error, IndexModel, Result};
 use crate::db::db_inner::DatabaseInner;
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 
@@ -121,10 +121,10 @@ impl<T>  Collection<T>
         db.delete_many(&self.name, query, &mut session.inner)
     }
 
-    pub fn create_index(&self, keys: Document, options: impl Into<Option<Document>>) -> Result<()> {
+    pub fn create_index(&self, index: IndexModel) -> Result<()> {
         let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
         let mut session = db.start_session()?;
-        db.create_index(&self.name, keys, options, &mut session)
+        db.create_index(&self.name, index, &mut session)
     }
 
     pub fn drop(&self) -> Result<()> {
