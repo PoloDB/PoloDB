@@ -6,6 +6,7 @@
 use bson::{Binary, DateTime};
 use serde::{Deserialize, Serialize};
 use indexmap::IndexMap;
+use crate::IndexOptions;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,15 +14,18 @@ pub struct IndexInfo {
     /// The key of the map is prevserd the original format
     /// For example, `author.age` is "author.age"
     pub keys: IndexMap<String, i8>,
+
+    pub options: Option<IndexOptions>,
 }
 
 impl IndexInfo {
 
-    pub fn single_index(name: String, order: i8) -> IndexInfo {
+    pub fn single_index(name: String, order: i8, options: Option<IndexOptions>) -> IndexInfo {
         let mut keys = IndexMap::new();
         keys.insert(name, order);
         IndexInfo {
             keys,
+            options,
         }
     }
 

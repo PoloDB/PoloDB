@@ -13,7 +13,7 @@ use crate::{ClientSessionCursor, LsmKv, TransactionType};
 use crate::Config;
 use crate::vm::SubProgram;
 use crate::meta_doc_helper::meta_doc_key;
-// use crate::index_ctx::{IndexCtx, merge_options_into_default};
+use crate::index::{IndexModel, IndexOptions};
 use crate::db::client_cursor::ClientCursor;
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 #[cfg(not(target_arch = "wasm32"))]
@@ -26,7 +26,7 @@ use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 use crate::collection_info::{CollectionSpecification, CollectionSpecificationInfo, CollectionType, IndexInfo};
 use crate::cursor::Cursor;
-use crate::db::index_helper::IndexHelper;
+use crate::index::IndexHelper;
 use crate::metrics::Metrics;
 use crate::session::SessionInner;
 use crate::utils::bson::bson_datetime_now;
@@ -280,24 +280,24 @@ impl DatabaseInner {
         Ok(ClientSessionCursor::new(vm))
     }
 
-    pub fn create_index(&self, col_name: &str, keys: Document, options: impl Into<Option<Document>>, session: &mut SessionInner) -> Result<()> {
+    pub fn create_index(&self, col_name: &str, index: IndexModel, session: &mut SessionInner) -> Result<()> {
         DatabaseInner::validate_col_name(col_name)?;
 
         self.auto_start_transaction(session, TransactionType::Write)?;
 
-        try_db_op!(self, session, self.internal_create_index(session, col_name, keys, options));
+        try_db_op!(self, session, self.internal_create_index(session, col_name, index));
 
         Ok(())
     }
 
-    fn internal_create_index(&self, session: &mut SessionInner, col_name: &str, keys: Document, options: impl Into<Option<Document>>) -> Result<()> {
-        let options = options.into();
-
-        if keys.len() != 1 {
-            return Err(Error::OnlySupportSingleFieldIndexes(Box::new(keys)));
+    fn internal_create_index(&self, session: &mut SessionInner, col_name: &str, index: IndexModel) -> Result<()> {
+        if index.keys.len() != 1 {
+            return Err(Error::OnlySupportSingleFieldIndexes(Box::new(index.keys)));
         }
 
-        let tuples = keys.iter().collect::<Vec<(&String, &Bson)>>();
+        let options = index.options.as_ref();
+
+        let tuples = index.keys.iter().collect::<Vec<(&String, &Bson)>>();
         let first_tuple = tuples.first().unwrap();
 
         let (key, value) = first_tuple;
@@ -305,12 +305,12 @@ impl DatabaseInner {
         self.create_single_index(session, col_name, key.as_str(), value, options)
     }
 
-    fn create_single_index(&self, session: &mut SessionInner, col_name: &str, key: &str, order: &Bson, options: Option<Document>) -> Result<()> {
+    fn create_single_index(&self, session: &mut SessionInner, col_name: &str, key: &str, order: &Bson, options: Option<&IndexOptions>) -> Result<()> {
         if !DatabaseInner::is_num_1(order) {
             return Err(Error::OnlySupportsAscendingOrder(key.to_string()));
         }
 
-        let index_name = DatabaseInner::make_index_name(key, 1, options.as_ref())?;
+        let index_name = DatabaseInner::make_index_name(key, 1, options)?;
 
         let mut collection_spec = self.internal_get_collection_id_by_name(session, col_name)?;
 
@@ -318,7 +318,11 @@ impl DatabaseInner {
             return Ok(())
         }
 
-        let index_info = IndexInfo::single_index(key.to_string(), 1);
+        let index_info = IndexInfo::single_index(
+            key.to_string(),
+            1,
+            options.map(|x| x.clone()),
+        );
         collection_spec.indexes.insert(index_name, index_info);
 
         let stacked_key = crate::utils::bson::stacked_key(&[
@@ -333,10 +337,9 @@ impl DatabaseInner {
         Ok(())
     }
 
-    fn make_index_name(key: &str, order: i32, index_options: Option<&Document>) -> Result<String> {
-        if let Some(doc) = index_options {
-            let name = doc.get("name");
-            if let Some(Bson::String(name)) = name {
+    fn make_index_name(key: &str, order: i32, index_options: Option<&IndexOptions>) -> Result<String> {
+        if let Some(options) = index_options {
+            if let Some(name) = &options.name {
                 DatabaseInner::validate_index_name(name)?;
                 return Ok(name.clone());
             }
