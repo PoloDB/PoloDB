@@ -4,7 +4,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use bson::{Bson, doc};
+use bson::Bson;
+use bson::spec::ElementType;
 use crate::Result;
 use crate::coll::collection_info::{
     CollectionSpecification,
@@ -73,26 +74,23 @@ impl<'a, 'b, 'c, 'd> IndexHelper<'a, 'b, 'c, 'd> {
             self.col_spec._id.as_str(),
             index_name,
             value.as_ref().unwrap(),
+            self.pkey,
         )?;
 
-        let value = doc! {
-            "v": [self.pkey.clone()],
-        };
-
-        let value_buf = bson::to_vec(&value)?;
-
-        self.session.put(index_key.as_slice(), value_buf.as_ref())?;
+        let value_buf = [ElementType::Null as u8];
+        self.session.put(index_key.as_slice(), &value_buf)?;
 
         Ok(())
     }
 
     #[inline]
-    fn make_index_key(col_name: &str, index_name: &str, value: &Bson) -> Result<Vec<u8>> {
+    fn make_index_key(col_name: &str, index_name: &str, value: &Bson, pkey: &Bson) -> Result<Vec<u8>> {
         crate::utils::bson::stacked_key([
             &Bson::String(INDEX_PREFIX.to_string()),
             &Bson::String(col_name.to_string()),
             &Bson::String(index_name.to_string()),
             value,
+            pkey,
         ])
     }
 
@@ -109,6 +107,7 @@ mod tests {
             "users",
             "name",
             &Bson::String("value".to_string()),
+            &Bson::String("Vincent".to_string()),
         ).unwrap() ;
 
         let escaped_string = String::from_utf8(
@@ -119,7 +118,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(escaped_string, "\\x02$I\\x00\\x02users\\x00\\x02name\\x00\\x02value\\x00");
+        assert_eq!(escaped_string, "\\x02$I\\x00\\x02users\\x00\\x02name\\x00\\x02value\\x00\\x02Vincent\\x00");
     }
 
 }
