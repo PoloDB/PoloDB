@@ -101,8 +101,8 @@ pub struct VersionMismatchError {
 }
 
 #[derive(Debug)]
-pub struct IOErrorWrapper {
-    pub source: io::Error,
+pub struct BtWrapper<T> {
+    pub source: T,
     pub backtrace: std::backtrace::Backtrace,
 }
 
@@ -132,14 +132,14 @@ pub enum Error {
     #[error("parse error: {0}")]
     ParseError(String),
     #[error("io error: {}, backtrace: {}", .0.source, .0.backtrace)]
-    IOErr(Box<IOErrorWrapper>) ,
+    IOErr(Box<BtWrapper<io::Error>>) ,
     #[error("utf8 error: {source}")]
     UTF8Err {
         #[from]
         source: std::str::Utf8Error,
     },
-    #[error("bson error: {0}")]
-    BsonErr(Box<BsonErr>),
+    #[error("bson error: {}, , backtrace: {}", .0.source, .0.backtrace)]
+    BsonErr(Box<BtWrapper<BsonErr>>),
     #[error("bson de error: {0}")]
     BsonDeErr(Box<bson::de::Error>),
     #[error("data size too large, expected: {0}, actual: {1}")]
@@ -263,7 +263,10 @@ impl From<bson::de::Error> for Error {
 impl From<BsonErr> for Error {
 
     fn from(error: BsonErr) -> Self {
-        Error::BsonErr(Box::new(error))
+        Error::BsonErr(Box::new(BtWrapper {
+            source: error,
+            backtrace: std::backtrace::Backtrace::capture(),
+        }))
     }
 
 }
@@ -284,7 +287,7 @@ impl From<FromUtf8Error> for Error {
 
 impl From<io::Error> for Error {
     fn from(value: io::Error) -> Self {
-        Error::IOErr(Box::new(IOErrorWrapper {
+        Error::IOErr(Box::new(BtWrapper {
             source: value,
             backtrace: std::backtrace::Backtrace::capture(),
         }))
