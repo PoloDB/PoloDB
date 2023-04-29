@@ -299,7 +299,17 @@ impl DatabaseInner {
 
         let index_name = DatabaseInner::make_index_name(key, 1, options)?;
 
-        let mut collection_spec = self.internal_get_collection_id_by_name(session, col_name)?;
+        let test_collection_spec = self.internal_get_collection_id_by_name(session, col_name);
+        let mut collection_spec = match test_collection_spec {
+            Ok(spec) => spec,
+            Err(Error::CollectionNotFound(_)) => {
+                let uuid = uuid::Uuid::now_v1(&self.node_id);
+                CollectionSpecification::new(col_name.to_string(), uuid)
+            }
+            Err(err) => {
+                return Err(err);
+            }
+        };
 
         if collection_spec.indexes.get(&index_name).is_some() {
             return Ok(())

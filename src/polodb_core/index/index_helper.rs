@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use bson::Bson;
+use bson::{Bson, doc};
 use crate::Result;
 use crate::coll::collection_info::{
     CollectionSpecification,
@@ -75,9 +75,9 @@ impl<'a, 'b, 'c, 'd> IndexHelper<'a, 'b, 'c, 'd> {
             value.as_ref().unwrap(),
         )?;
 
-        let value = Bson::Array(vec![
-            self.pkey.clone()
-        ]);
+        let value = doc! {
+            "v": [self.pkey.clone()],
+        };
 
         let value_buf = bson::to_vec(&value)?;
 
