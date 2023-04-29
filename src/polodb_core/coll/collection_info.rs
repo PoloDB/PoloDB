@@ -32,6 +32,15 @@ impl IndexInfo {
         }
     }
 
+    #[inline]
+    pub fn is_unique(&self) -> bool {
+        self.options
+            .as_ref()
+            .map(|options| options.unique)
+            .flatten()
+            .unwrap_or(false)
+    }
+
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

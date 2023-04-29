@@ -19,7 +19,6 @@ pub struct IndexModel {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[non_exhaustive]
 pub struct IndexOptions {
 
     /// Specifies a name outside the default generated name.
