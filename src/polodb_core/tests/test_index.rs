@@ -64,7 +64,7 @@ fn test_create_index() {
 #[test]
 fn test_create_unique_index() {
     vec![
-        prepare_db("test-create-index").unwrap(),
+        prepare_db("test-create-unique-index").unwrap(),
         Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let col = db.collection("teacher");
