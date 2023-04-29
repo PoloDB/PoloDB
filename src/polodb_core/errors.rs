@@ -111,6 +111,13 @@ pub struct DataMalformedReason {
     pub backtrace: std::backtrace::Backtrace,
 }
 
+#[derive(Debug)]
+pub struct DuplicateKeyError {
+    pub name: String,  // index name
+    pub key: String,   // key name
+    pub ns: String,    // collection name
+}
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("unexpected id type, expected: {0}, actual: {1}")]
@@ -226,6 +233,8 @@ pub enum Error {
     OnlySupportSingleFieldIndexes(Box<Document>),
     #[error("only support ascending order index currently: {0}")]
     OnlySupportsAscendingOrder(String),
+    #[error("duplicate key error collection: {}, index: {}, key: {}", .0.ns, .0.name, .0.key)]
+    DuplicateKey(Box<DuplicateKeyError>),
 }
 
 impl Error {
@@ -281,6 +290,14 @@ impl From<FromUtf8Error> for Error {
 
     fn from(value: FromUtf8Error) -> Self {
         Error::FromUtf8Error(Box::new(value))
+    }
+
+}
+
+impl From<DuplicateKeyError> for Error {
+
+    fn from(value: DuplicateKeyError) -> Self {
+        Error::DuplicateKey(Box::new(value))
     }
 
 }

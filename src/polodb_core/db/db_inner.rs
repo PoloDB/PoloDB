@@ -436,7 +436,13 @@ impl DatabaseInner {
     }
 
     fn try_insert_index(&self, session: &mut SessionInner, col_spec: &CollectionSpecification, doc: &Document, pkey: &Bson) -> Result<()> {
-        let mut index_helper = IndexHelper::new(session, col_spec, doc, pkey);
+        let mut index_helper = IndexHelper::new(
+            &self.kv_engine,
+            session,
+            col_spec,
+            doc,
+            pkey,
+        );
         index_helper.execute()
     }
 
