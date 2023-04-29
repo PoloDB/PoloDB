@@ -9,6 +9,7 @@ use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
 use crate::{Result, Error};
+use crate::coll::collection_info::CollectionSpecification;
 use crate::errors::{FieldTypeUnexpectedStruct, mk_invalid_query_field};
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
@@ -146,7 +147,10 @@ impl Codegen {
     }
 
     fn emit_query_layout_has_pkey<F>(
-        &mut self, pkey: Bson, query: &Document, result_callback: F
+        &mut self,
+        pkey: Bson,
+        query: &Document,
+        result_callback: F
     ) -> Result<()> where
         F: FnOnce(&mut Codegen) -> Result<()> {
         let close_label = self.new_label();
@@ -192,8 +196,11 @@ impl Codegen {
     }
 
     pub(super) fn emit_query_layout<F>(
-        &mut self, query: &Document,
-        result_callback: F, is_many: bool
+        &mut self,
+        _col_spec: &CollectionSpecification,
+        query: &Document,
+        result_callback: F,
+        is_many: bool,
     ) -> Result<()> where
         F: FnOnce(&mut Codegen) -> Result<()> {
 
