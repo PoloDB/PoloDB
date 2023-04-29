@@ -151,8 +151,10 @@ impl Codegen {
         pkey: Bson,
         query: &Document,
         result_callback: F
-    ) -> Result<()> where
-        F: FnOnce(&mut Codegen) -> Result<()> {
+    ) -> Result<()>
+        where
+            F: FnOnce(&mut Codegen) -> Result<()>
+    {
         let close_label = self.new_label();
         let result_label = self.new_label();
 
@@ -201,8 +203,10 @@ impl Codegen {
         query: &Document,
         result_callback: F,
         is_many: bool,
-    ) -> Result<()> where
-        F: FnOnce(&mut Codegen) -> Result<()> {
+    ) -> Result<()>
+        where
+            F: FnOnce(&mut Codegen) -> Result<()>
+    {
 
         if let Some(id_value) = query.get("_id") {
             if id_value.element_type() != ElementType::EmbeddedDocument {
@@ -274,11 +278,12 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_standard_query_doc(&mut self,
-                               query_doc: &Document,
-                               result_label: Label,
-                               get_field_failed_label: Label,
-                               not_found_label: Label
+    fn emit_standard_query_doc(
+        &mut self,
+        query_doc: &Document,
+        result_label: Label,
+        get_field_failed_label: Label,
+        not_found_label: Label,
     ) -> Result<()> {
         for (key, value) in query_doc.iter() {
             path_hint!(self, key.clone(), {
@@ -310,11 +315,12 @@ impl Codegen {
         self.paths.last().unwrap().as_str()
     }
 
-    fn emit_logic_and(&mut self,
-                      arr: &Array,
-                      result_label: Label,
-                      get_field_failed_label: Label,
-                      not_found_label: Label
+    fn emit_logic_and(
+        &mut self,
+        arr: &Array,
+        result_label: Label,
+        get_field_failed_label: Label,
+        not_found_label: Label
     ) -> Result<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
@@ -330,11 +336,12 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_logic_or(&mut self,
-                     arr: &Array,
-                     result_label: Label,
-                     global_get_field_failed_label: Label,
-                     not_found_label: Label
+    fn emit_logic_or(
+        &mut self,
+        arr: &Array,
+        result_label: Label,
+        global_get_field_failed_label: Label,
+        not_found_label: Label
     ) -> Result<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
@@ -377,12 +384,13 @@ impl Codegen {
     // case1: "$and" | "$or" -> [ Document ]
     // case2: "$not" -> Document
     // case3: "_id" -> Document
-    fn emit_query_tuple(&mut self,
-                        key: &str,
-                        value: &Bson,
-                        result_label: Label,
-                        get_field_failed_label: Label,
-                        not_found_label: Label
+    fn emit_query_tuple(
+        &mut self,
+        key: &str,
+        value: &Bson,
+        result_label: Label,
+        get_field_failed_label: Label,
+        not_found_label: Label,
     ) -> Result<()> {
         if key.chars().next().unwrap() == '$' {
             match key {
@@ -464,11 +472,12 @@ impl Codegen {
         slices.len()
     }
 
-    fn emit_query_tuple_document_kv(&mut self,
-                                    key: &str,
-                                    get_field_failed_label: Label,
-                                    not_found_label: Label, sub_key: &str,
-                                    sub_value: &Bson
+    fn emit_query_tuple_document_kv(
+        &mut self,
+        key: &str,
+        get_field_failed_label: Label,
+        not_found_label: Label, sub_key: &str,
+        sub_value: &Bson
     ) -> Result<()> {
         match sub_key {
             "$eq" => {
@@ -623,11 +632,12 @@ impl Codegen {
     }
 
     // very complex query document
-    fn emit_query_tuple_document(&mut self,
-                                 key: &str,
-                                 value: &Document,
-                                 get_field_failed_label: Label,
-                                 not_found_label: Label
+    fn emit_query_tuple_document(
+        &mut self,
+        key: &str,
+        value: &Document,
+        get_field_failed_label: Label,
+        not_found_label: Label
     ) -> Result<()> {
         for (sub_key, sub_value) in value.iter() {
             path_hint!(self, sub_key.clone(), {
