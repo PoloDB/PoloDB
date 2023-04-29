@@ -40,14 +40,12 @@ impl SubProgram {
         query: &Document,
         skip_annotation: bool,
     ) -> Result<SubProgram> {
-        // let _indexes = meta_doc.get(meta_doc_key::INDEXES);
-        // let _tuples = doc_to_tuples(doc);
-
         let mut codegen = Codegen::new(skip_annotation);
 
         codegen.emit_open_read(col_spec._id.clone().into());
 
         codegen.emit_query_layout(
+            col_spec,
             query,
             |codegen| -> Result<()> {
                 codegen.emit(DbOp::ResultRow);
@@ -71,6 +69,7 @@ impl SubProgram {
         codegen.emit_open_write(col_spec._id.clone().into());
 
         codegen.emit_query_layout(
+            col_spec,
             query.unwrap(),
             |codegen| -> Result<()> {
                 codegen.emit_update_operation(update)?;
@@ -84,6 +83,7 @@ impl SubProgram {
     }
 
     pub(crate) fn compile_delete(
+        col_spec: &CollectionSpecification,
         col_name: &str,
         query: Option<&Document>,
         skip_annotation: bool, is_many: bool,
@@ -93,6 +93,7 @@ impl SubProgram {
         codegen.emit_open_write(col_name.into());
 
         codegen.emit_query_layout(
+            col_spec,
             query.unwrap(),
             |codegen| -> Result<()> {
                 codegen.emit_delete_operation();

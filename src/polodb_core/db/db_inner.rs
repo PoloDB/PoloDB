@@ -615,7 +615,14 @@ impl DatabaseInner {
     }
 
     fn internal_delete_by_query(&self, session: &mut SessionInner, col_name: &str, query: Document, is_many: bool) -> Result<usize> {
+        let col_spec = self.get_collection_meta_by_name_advanced(session, col_name, true, &self.node_id)?;
+        if col_spec.is_none() {
+            return Ok(0);
+        }
+        let col_spec = col_spec.unwrap();
+
         let subprogram = SubProgram::compile_delete(
+            &col_spec,
             col_name,
             Some(&query),
             true,
