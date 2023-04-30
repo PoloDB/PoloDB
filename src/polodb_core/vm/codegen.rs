@@ -199,20 +199,30 @@ impl Codegen {
 
     pub(super) fn emit_query_layout<F>(
         &mut self,
-        _col_spec: &CollectionSpecification,
+        col_spec: &CollectionSpecification,
         query: &Document,
         result_callback: F,
         is_many: bool,
     ) -> Result<()>
-        where
-            F: FnOnce(&mut Codegen) -> Result<()>
+    where
+        F: FnOnce(&mut Codegen) -> Result<()>
     {
-
-        if let Some(id_value) = query.get("_id") {
-            if id_value.element_type() != ElementType::EmbeddedDocument {
-                return self.emit_query_layout_has_pkey(id_value.clone(), query, result_callback);
-            }
+        let try_pkey_result = self.try_query_by_pkey(query, result_callback)?;
+        if try_pkey_result.is_none() {
+            return Ok(());
         }
+
+        let result_callback: F = try_pkey_result.unwrap();
+
+        let try_index_result = self.try_query_by_index(
+            col_spec,
+            query,
+            result_callback,
+        )?;
+        if try_index_result.is_none() {
+            return Ok(());
+        }
+        let result_callback: F = try_index_result.unwrap();
 
         let compare_label = self.new_label();
         let next_label = self.new_label();
@@ -276,6 +286,56 @@ impl Codegen {
         self.emit_goto(DbOp::Goto, result_label);
 
         Ok(())
+    }
+
+    fn try_query_by_pkey<F>(&mut self, query: &Document, result_callback: F) -> Result<Option<F>>
+    where
+        F: FnOnce(&mut Codegen) -> Result<()>
+    {
+        if let Some(id_value) = query.get("_id") {
+            if id_value.element_type() != ElementType::EmbeddedDocument {
+                self.emit_query_layout_has_pkey(id_value.clone(), query, result_callback)?;
+                return Ok(None);
+            }
+        }
+
+        Ok(Some(result_callback))
+    }
+
+    fn try_query_by_index<F>(
+        &mut self,
+        col_spec: &CollectionSpecification,
+        query: &Document,
+        result_callback: F,
+    ) -> Result<Option<F>>
+    where
+        F: FnOnce(&mut Codegen) -> Result<()>
+    {
+        let index_meta = &col_spec.indexes;
+        for (_key, index_info) in index_meta {
+            let (key, _order) = index_info.keys.iter().next().unwrap();
+            let test_result = crate::utils::bson::try_get_document_value(query, key);
+            if let Some(query_doc) = test_result {
+                self.indeed_emit_query_by_index(
+                    query_doc,
+                    result_callback,
+                )?;
+                return Ok(None);
+            }
+        }
+
+        Ok(Some(result_callback))
+    }
+
+    fn indeed_emit_query_by_index<F>(
+        &mut self,
+        _query_doc: Bson,
+        _result_callback: F,
+    ) -> Result<()>
+    where
+        F: FnOnce(&mut Codegen) -> Result<()>
+    {
+        unimplemented!()
     }
 
     fn emit_standard_query_doc(
