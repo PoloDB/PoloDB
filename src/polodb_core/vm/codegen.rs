@@ -324,6 +324,7 @@ impl Codegen {
                     remain_query.remove(key);
 
                     self.indeed_emit_query_by_index(
+                        col_spec._id.as_str(),
                         index_name.as_str(),
                         query_doc,
                         &remain_query,
@@ -339,6 +340,7 @@ impl Codegen {
 
     fn indeed_emit_query_by_index<F>(
         &mut self,
+        col_name: &str,
         index_name: &str,
         query_value: &Bson,
         remain_query: &Document,
@@ -356,12 +358,16 @@ impl Codegen {
         let index_name_id = self.push_static(Bson::String(index_name.to_string()));
         self.emit_push_value(index_name_id);
 
+        let col_name_id = self.push_static(Bson::String(col_name.to_string()));
+        self.emit_push_value(col_name_id);
+
         self.emit_goto(DbOp::FindByIndex, close_label);
 
         self.emit_goto(DbOp::Goto, result_label);
 
         self.emit_label(close_label);
 
+        self.emit(DbOp::Pop);  // pop the collection name
         self.emit(DbOp::Pop);  // pop the query value
         self.emit(DbOp::Pop);  // pop the index name
 

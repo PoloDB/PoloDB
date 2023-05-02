@@ -13,6 +13,7 @@ use crate::errors::{
     FieldTypeUnexpectedStruct,
     UnexpectedTypeForOpStruct,
 };
+use crate::index::IndexHelper;
 use crate::session::SessionInner;
 use crate::vm::op::DbOp;
 use crate::vm::SubProgram;
@@ -128,6 +129,51 @@ impl VM {
         let buf = cursor.peek_data(self.kv_engine.inner.as_ref())?.unwrap();
         let doc = bson::from_slice(buf.as_ref())?;
         self.stack.push(Bson::Document(doc));
+        Ok(true)
+    }
+
+    fn find_by_index(&mut self, session: &mut SessionInner) -> Result<bool> {
+        let stack_len = self.stack.len();
+        let col_name = &self.stack[stack_len - 1];
+        let index_name = &self.stack[stack_len - 2];
+        let query_value = &self.stack[stack_len - 3];
+
+        let index_key = IndexHelper::make_index_key(
+            col_name.as_str().unwrap(),
+            index_name.as_str().unwrap(),
+            query_value,
+            None,
+        )?;
+
+        let mut index_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
+        index_cursor.go_to_min()?;
+
+        index_cursor.seek(index_key.as_slice())?;
+
+        let current_key = index_cursor.key();
+        if current_key.is_none() {
+            return Ok(false);
+        }
+
+        let current_key = current_key.unwrap();
+
+        if !current_key.starts_with(index_key.as_slice()) {
+            return Ok(false);
+        }
+
+        let primary_key = &current_key[index_key.len()..];
+
+        let cursor = self.r1.as_mut().unwrap();
+
+        let result = cursor.reset_by_pkey_buf(primary_key)?;
+        if !result {
+            return Ok(false);
+        }
+
+        let buf = cursor.peek_data(self.kv_engine.inner.as_ref())?.unwrap();
+        let doc = bson::from_slice(buf.as_ref())?;
+        self.stack.push(Bson::Document(doc));
+
         Ok(true)
     }
 
@@ -405,7 +451,15 @@ impl VM {
                     }
 
                     DbOp::FindByIndex => {
-                        unimplemented!()
+                        let location = self.pc.add(1).cast::<u32>().read();
+
+                        let found = try_vm!(self, self.find_by_index(session));
+
+                        if !found {
+                            self.reset_location(location);
+                        } else {
+                            self.pc = self.pc.add(5);
+                        }
                     }
 
                     DbOp::Next => {

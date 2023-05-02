@@ -121,7 +121,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
         Ok(())
     }
 
-    fn make_index_key(col_name: &str, index_name: &str, value: &Bson, pkey: Option<&Bson>) -> Result<Vec<u8>> {
+    pub fn make_index_key(col_name: &str, index_name: &str, value: &Bson, pkey: Option<&Bson>) -> Result<Vec<u8>> {
         let b_prefix = Bson::String(INDEX_PREFIX.to_string());
         let b_col_name = Bson::String(col_name.to_string());
         let b_index_name = &Bson::String(index_name.to_string());

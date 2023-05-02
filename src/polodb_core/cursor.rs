@@ -56,11 +56,25 @@ impl Cursor {
             pkey,
         ])?;
 
-        self.kv_cursor.seek(&key_buffer)?;
+        self.reset_by_custom_key(key_buffer.as_slice())
+    }
+
+    pub fn reset_by_pkey_buf(&mut self, pkey_buffer: &[u8]) -> Result<bool> {
+        let mut key_buffer = crate::utils::bson::stacked_key([
+            &self.prefix,
+        ])?;
+
+        key_buffer.extend_from_slice(pkey_buffer);
+
+        self.reset_by_custom_key(key_buffer.as_slice())
+    }
+
+    fn reset_by_custom_key(&mut self, key_buffer: &[u8]) -> Result<bool> {
+        self.kv_cursor.seek(key_buffer)?;
 
         self.current_key = self.kv_cursor.key();
         if let Some(found) = &self.current_key {
-            return Ok(found.as_ref().cmp(key_buffer.as_slice()) == Ordering::Equal);
+            return Ok(found.as_ref().cmp(key_buffer) == Ordering::Equal);
         }
         return Ok(false)
     }
