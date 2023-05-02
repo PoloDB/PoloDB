@@ -51,6 +51,12 @@ pub enum DbOp {
     // op1. location: 4 bytes
     FindByPrimaryKey,
 
+    // reset the cursor pointer to the element
+    //
+    // 5 bytes
+    // op1. location: 4 bytes
+    FindByIndex,
+
     // next element of the cursor
     // if no next element, pass
     // otherwise, jump to location

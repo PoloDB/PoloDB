@@ -404,6 +404,10 @@ impl VM {
                         }
                     }
 
+                    DbOp::FindByIndex => {
+                        unimplemented!()
+                    }
+
                     DbOp::Next => {
                         try_vm!(self, self.next());
                         if self.r0 != 0 {
