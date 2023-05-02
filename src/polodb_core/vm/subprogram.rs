@@ -561,25 +561,27 @@ mod tests {
 0: OpenRead("test")
 5: PushValue(32)
 10: PushValue("age_1")
-15: FindByIndex(30)
-20: Goto(39)
+15: PushValue("test")
+20: FindByIndex(35)
+25: Goto(45)
 
-25: Label(0)
-30: Pop
-31: Pop
-32: Close
-33: Halt
+30: Label(0)
+35: Pop
+36: Pop
+37: Pop
+38: Close
+39: Halt
 
-34: Label(1)
-39: GetField("name", 30)
-48: PushValue("Vincent Chan")
-53: Equal
-54: FalseJump(30)
-59: Pop
-60: Pop
-61: ResultRow
-62: Pop
-63: Goto(30)
+40: Label(1)
+45: GetField("name", 35)
+54: PushValue("Vincent Chan")
+59: Equal
+60: FalseJump(35)
+65: Pop
+66: Pop
+67: ResultRow
+68: Pop
+69: Goto(35)
 "#;
         assert_eq!(expect, actual);
     }
