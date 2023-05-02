@@ -312,15 +312,25 @@ impl Codegen {
         F: FnOnce(&mut Codegen) -> Result<()>
     {
         let index_meta = &col_spec.indexes;
-        for (_key, index_info) in index_meta {
+        for (index_name, index_info) in index_meta {
             let (key, _order) = index_info.keys.iter().next().unwrap();
-            let test_result = crate::utils::bson::try_get_document_value(query, key);
+            // the key is ellipse representation, such as "a.b.c"
+            // the query is supposed to be ellipse too, such as
+            // { "a.b.c": 1 }
+            let test_result = query.get(key);
             if let Some(query_doc) = test_result {
-                self.indeed_emit_query_by_index(
-                    query_doc,
-                    result_callback,
-                )?;
-                return Ok(None);
+                if query_doc.element_type() != ElementType::EmbeddedDocument {
+                    let mut remain_query = query.clone();
+                    remain_query.remove(key);
+
+                    self.indeed_emit_query_by_index(
+                        index_name.as_str(),
+                        query_doc,
+                        &remain_query,
+                        result_callback,
+                    )?;
+                    return Ok(None);
+                }
             }
         }
 
@@ -329,13 +339,56 @@ impl Codegen {
 
     fn indeed_emit_query_by_index<F>(
         &mut self,
-        _query_doc: Bson,
-        _result_callback: F,
+        index_name: &str,
+        query_value: &Bson,
+        remain_query: &Document,
+        result_callback: F,
     ) -> Result<()>
     where
         F: FnOnce(&mut Codegen) -> Result<()>
     {
-        unimplemented!()
+        let close_label = self.new_label();
+        let result_label = self.new_label();
+
+        let value_id = self.push_static(query_value.clone());
+        self.emit_push_value(value_id);
+
+        let index_name_id = self.push_static(Bson::String(index_name.to_string()));
+        self.emit_push_value(index_name_id);
+
+        self.emit_goto(DbOp::FindByIndex, close_label);
+
+        self.emit_goto(DbOp::Goto, result_label);
+
+        self.emit_label(close_label);
+
+        self.emit(DbOp::Pop);  // pop the query value
+        self.emit(DbOp::Pop);  // pop the index name
+
+        self.emit(DbOp::Close);
+        self.emit(DbOp::Halt);
+
+        self.emit_label(result_label);
+        for (key, value) in remain_query.iter() {
+            let key_static_id = self.push_static(Bson::String(key.clone()));
+            let value_static_id = self.push_static(value.clone());
+
+            self.emit_goto2(DbOp::GetField, key_static_id, close_label); // push a value1
+            self.emit_push_value(value_static_id);  // push a value2
+
+            self.emit(DbOp::Equal);
+            // if not equal，go to next
+            self.emit_goto(DbOp::IfFalse, close_label);
+
+            self.emit(DbOp::Pop); // pop a value2
+            self.emit(DbOp::Pop); // pop a value1
+        }
+
+        result_callback(self)?;
+
+        self.emit_goto(DbOp::Goto, close_label);
+
+        Ok(())
     }
 
     fn emit_standard_query_doc(

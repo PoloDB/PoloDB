@@ -229,6 +229,12 @@ impl fmt::Display for SubProgram {
                         pc += 5;
                     }
 
+                    DbOp::FindByIndex => {
+                        let location = begin.add(pc + 1).cast::<u32>().read();
+                        writeln!(f, "{}: FindByIndex({})", pc, location)?;
+                        pc += 5;
+                    }
+
                     DbOp::Next => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
                         writeln!(f, "{}: Next({})", pc, location)?;
@@ -398,10 +404,9 @@ impl fmt::Display for SubProgram {
 #[cfg(test)]
 mod tests {
     use bson::doc;
+    use indexmap::indexmap;
     use polodb_line_diff::assert_eq;
-    use crate::coll::collection_info::{
-        CollectionSpecification,
-    };
+    use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
     use crate::vm::SubProgram;
 
     #[inline]
@@ -530,6 +535,53 @@ mod tests {
 57: Goto(25)
 "#;
         assert_eq!(expect, actual)
+    }
+
+    #[test]
+    fn print_query_by_index() {
+        let mut col_spec = new_spec("test");
+
+        col_spec.indexes.insert("age_1".into(), IndexInfo {
+            keys: indexmap! {
+                "age".into() => 1,
+            },
+            options: None,
+        });
+
+        let test_doc = doc! {
+            "age": 32,
+            "name": "Vincent Chan",
+        };
+
+        let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+
+        let expect = r#"Program:
+
+0: OpenRead("test")
+5: PushValue(32)
+10: PushValue("age_1")
+15: FindByIndex(30)
+20: Goto(39)
+
+25: Label(0)
+30: Pop
+31: Pop
+32: Close
+33: Halt
+
+34: Label(1)
+39: GetField("name", 30)
+48: PushValue("Vincent Chan")
+53: Equal
+54: FalseJump(30)
+59: Pop
+60: Pop
+61: ResultRow
+62: Pop
+63: Goto(30)
+"#;
+        assert_eq!(expect, actual);
     }
 
     #[test]
