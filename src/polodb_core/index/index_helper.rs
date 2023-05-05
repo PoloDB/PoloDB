@@ -5,7 +5,7 @@
  */
 
 use std::sync::Arc;
-use bson::Bson;
+use bson::{Bson, Document};
 use bson::spec::ElementType;
 use crate::{LsmKv, Result};
 use crate::coll::collection_info::{
@@ -21,7 +21,7 @@ pub(crate) struct IndexHelper<'a, 'b, 'c, 'd, 'e> {
     kv_engine: &'a LsmKv,
     session: &'b mut SessionInner,
     col_spec: &'c CollectionSpecification,
-    doc: &'d bson::Document,
+    doc: &'d Document,
     pkey: &'e Bson,
 }
 
@@ -32,7 +32,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
         kv_engine: &'a LsmKv,
         session: &'b mut SessionInner,
         col_spec: &'c CollectionSpecification,
-        doc: &'d bson::Document,
+        doc: &'d Document,
         pkey: &'e Bson,
     ) -> IndexHelper<'a, 'b, 'c, 'd, 'e> {
         IndexHelper {
@@ -50,9 +50,14 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
         let values = index_meta.iter().collect::<Vec<(&String, &IndexInfo)>>();
 
         for (index_name, index_info) in values {
-            self.try_insert_index_with_index_info(
+            IndexHelper::try_insert_index_with_index_info(
+                &self.doc,
+                self.col_spec._id.as_str(),
+                self.pkey,
                 index_name.as_str(),
                 index_info,
+                self.kv_engine,
+                self.session,
             )?;
         }
 
@@ -61,46 +66,62 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
 
     // The key of the collection value: collection_id + '\t' + primary_key
     // The key of the index in the table: '$I' + '\t' + collection_id + '\t' + index_name + '\t' + primary_key
-    fn try_insert_index_with_index_info(
-        &mut self,
+    pub(crate) fn try_insert_index_with_index_info(
+        data_doc: &Document,
+        col_name: &str,
+        pkey: &Bson,
         index_name: &str,
         index_info: &IndexInfo,
+        kv_engine: &'a LsmKv,
+        session: &mut SessionInner,
     ) -> Result<()> {
         let tuples = index_info.keys.iter().collect::<Vec<(&String, &i8)>>();
         let first_tuple = tuples.first().unwrap();
         let (keys, _order) = first_tuple;
 
-        let value = crate::utils::bson::try_get_document_value(self.doc, keys);
+        let value = crate::utils::bson::try_get_document_value(data_doc, keys);
         if value.is_none() {
             return Ok(())
         }
 
         if index_info.is_unique() {
-            self.check_unique_key(index_name, value.as_ref().unwrap())?;
+            IndexHelper::check_unique_key(
+                col_name,
+                index_name,
+                value.as_ref().unwrap(),
+                kv_engine,
+                session,
+            )?;
         }
 
         let index_key = IndexHelper::make_index_key(
-            self.col_spec._id.as_str(),
+            col_name,
             index_name,
             value.as_ref().unwrap(),
-            Some(self.pkey),
+            Some(pkey),
         )?;
 
         let value_buf = [ElementType::Null as u8];
-        self.session.put(index_key.as_slice(), &value_buf)?;
+        session.put(index_key.as_slice(), &value_buf)?;
 
         Ok(())
     }
 
-    fn check_unique_key(&self, index_name: &str, value: &Bson) -> Result<()> {
+    fn check_unique_key(
+        col_name: &str,
+        index_name: &str,
+        value: &Bson,
+        kv_engine: &'a LsmKv,
+        session: &mut SessionInner,
+    ) -> Result<()> {
         let index_key_tester = IndexHelper::make_index_key(
-            self.col_spec._id.as_str(),
+            col_name,
             index_name,
             value,
             None,
         )?;
 
-        let mut cursor = self.kv_engine.open_multi_cursor(Some(self.session.kv_session()));
+        let mut cursor = kv_engine.open_multi_cursor(Some(session.kv_session()));
         cursor.seek(&index_key_tester)?;
 
         let current_key = cursor.key();
@@ -114,7 +135,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
             return Err(DuplicateKeyError {
                 name: index_name.to_string(),
                 key: value.to_string(),
-                ns: self.col_spec._id.clone(),
+                ns: col_name.to_string(),
             }.into());
         }
 

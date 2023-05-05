@@ -13,7 +13,7 @@ use crate::{ClientSessionCursor, LsmKv, TransactionType};
 use crate::Config;
 use crate::vm::SubProgram;
 use crate::meta_doc_helper::meta_doc_key;
-use crate::index::{IndexModel, IndexOptions};
+use crate::index::{IndexBuilder, IndexModel, IndexOptions};
 use crate::db::client_cursor::ClientCursor;
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 #[cfg(not(target_arch = "wasm32"))]
@@ -296,7 +296,14 @@ impl DatabaseInner {
         self.create_single_index(session, col_name, key.as_str(), value, options)
     }
 
-    fn create_single_index(&self, session: &mut SessionInner, col_name: &str, key: &str, order: &Bson, options: Option<&IndexOptions>) -> Result<()> {
+    fn create_single_index(
+        &self,
+        session: &mut SessionInner,
+        col_name: &str,
+        key: &str,
+        order: &Bson,
+        options: Option<&IndexOptions>,
+    ) -> Result<()> {
         if !DatabaseInner::is_num_1(order) {
             return Err(Error::OnlySupportsAscendingOrder(key.to_string()));
         }
@@ -324,7 +331,7 @@ impl DatabaseInner {
             1,
             options.map(|x| x.clone()),
         );
-        collection_spec.indexes.insert(index_name, index_info);
+        collection_spec.indexes.insert(index_name.clone(), index_info.clone());
 
         let stacked_key = crate::utils::bson::stacked_key(&[
             Bson::String(TABLE_META_PREFIX.to_string()),
@@ -335,7 +342,30 @@ impl DatabaseInner {
 
         session.put(stacked_key.as_slice(), buffer.as_ref())?;
 
-        Ok(())
+        self.build_index(
+            session,
+            col_name,
+            index_name.as_str(),
+            &index_info,
+        )
+    }
+
+    fn build_index(
+        &self,
+        session: &mut SessionInner,
+        col_name: &str,
+        index_name: &str,
+        index_info: &IndexInfo,
+    ) -> Result<()> {
+        let mut builder = IndexBuilder::new(
+            &self.kv_engine,
+            session,
+            col_name,
+            index_name,
+            index_info,
+        );
+
+        builder.execute()
     }
 
     fn make_index_name(key: &str, order: i32, index_options: Option<&IndexOptions>) -> Result<String> {
