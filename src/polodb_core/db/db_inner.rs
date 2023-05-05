@@ -263,7 +263,11 @@ impl DatabaseInner {
     }
 
     pub(crate) fn make_handle<T: DeserializeOwned>(&self, program: SubProgram) -> Result<ClientSessionCursor<T>> {
-        let vm = VM::new(self.kv_engine.clone(), program);
+        let vm = VM::new(
+            self.kv_engine.clone(),
+            program,
+            self.metrics.clone(),
+        );
         Ok(ClientSessionCursor::new(vm))
     }
 
@@ -555,7 +559,11 @@ impl DatabaseInner {
                     is_many,
                 )?;
 
-                let mut vm = VM::new(self.kv_engine.clone(), subprogram);
+                let mut vm = VM::new(
+                    self.kv_engine.clone(),
+                    subprogram,
+                    self.metrics.clone(),
+                );
                 vm.execute(session)?;
 
                 vm.r2 as u64
@@ -586,7 +594,11 @@ impl DatabaseInner {
         )?;
 
         {
-            let mut vm = VM::new(self.kv_engine.clone(), subprogram);
+            let mut vm = VM::new(
+                self.kv_engine.clone(),
+                subprogram,
+                self.metrics.clone(),
+            );
             vm.execute(session)?;
         } // Delete content end
 
@@ -629,7 +641,11 @@ impl DatabaseInner {
             is_many,
         )?;
 
-        let mut vm = VM::new(self.kv_engine.clone(), subprogram);
+        let mut vm = VM::new(
+            self.kv_engine.clone(),
+            subprogram,
+            self.metrics.clone(),
+        );
         vm.execute(session)?;
 
         Ok(vm.r2 as usize)
@@ -643,7 +659,11 @@ impl DatabaseInner {
         )?;
 
         let delete_count = {
-            let mut vm = VM::new(self.kv_engine.clone(), subprogram);
+            let mut vm = VM::new(
+                self.kv_engine.clone(),
+                subprogram,
+                self.metrics.clone(),
+            );
             vm.execute(session)?;
 
             vm.r2 as usize
@@ -763,7 +783,11 @@ impl DatabaseInner {
             None => SubProgram::compile_empty_query(),
         };
 
-        let vm = VM::new(self.kv_engine.clone(), subprogram);
+        let vm = VM::new(
+            self.kv_engine.clone(),
+            subprogram,
+            self.metrics.clone(),
+        );
 
         let handle = ClientCursor::new(vm, session);
 
@@ -790,7 +814,11 @@ impl DatabaseInner {
             }
             None => {
                 let subprogram = SubProgram::compile_empty_query();
-                let vm = VM::new(self.kv_engine.clone(), subprogram);
+                let vm = VM::new(
+                    self.kv_engine.clone(),
+                    subprogram,
+                    self.metrics.clone(),
+                );
                 let cursor = ClientSessionCursor::new(vm);
                 Ok(cursor)
             }

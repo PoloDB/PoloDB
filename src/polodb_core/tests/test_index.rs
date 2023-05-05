@@ -62,6 +62,42 @@ fn test_create_index() {
 }
 
 #[test]
+fn test_find_by_index() {
+    vec![
+        prepare_db("test-find-by-index").unwrap(),
+        Database::open_memory().unwrap(),
+    ].iter().for_each(|db| {
+        let metrics = db.metrics();
+        metrics.enable();
+
+        let col = db.collection::<Document>("teacher");
+
+        col.create_index(IndexModel {
+            keys: doc! {
+                "age": 1,
+            },
+            options: None,
+        }).unwrap();
+
+        col.insert_one(doc! {
+            "name": "David",
+            "age": 33,
+        }).unwrap();
+
+        let mut cursor = col.find(doc! {
+            "age": 33
+        }).unwrap();
+
+        assert!(cursor.advance().unwrap());
+
+        let doc = cursor.deserialize_current().unwrap();
+        assert_eq!(doc.get_str("name").unwrap(), "David");
+
+        assert_eq!(metrics.find_by_index_count(), 1);
+    });
+}
+
+#[test]
 fn test_create_unique_index() {
     vec![
         prepare_db("test-create-unique-index").unwrap(),

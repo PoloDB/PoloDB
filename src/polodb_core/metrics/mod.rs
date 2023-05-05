@@ -6,4 +6,4 @@
 
 mod metrics;
 
-pub use metrics::{Metrics, MetricsData};
+pub use metrics::{Metrics};
