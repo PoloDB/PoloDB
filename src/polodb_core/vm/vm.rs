@@ -6,7 +6,7 @@
 use bson::Bson;
 use std::cell::Cell;
 use std::cmp::Ordering;
-use crate::{Error, Result, LsmKv, TransactionType};
+use crate::{Error, Result, LsmKv, TransactionType, Metrics};
 use crate::cursor::Cursor;
 use crate::errors::{
     CannotApplyOperationForTypes,
@@ -51,6 +51,7 @@ pub(crate) struct VM {
     r3:                  usize,
     stack:               Vec<Bson>,
     pub(crate) program:  SubProgram,
+    metrics:             Metrics,
 }
 
 fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> Result<bool> {
@@ -69,7 +70,7 @@ fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> Result<bool> {
 
 impl VM {
 
-    pub(crate) fn new(kv_engine: LsmKv, program: SubProgram) -> VM {
+    pub(crate) fn new(kv_engine: LsmKv, program: SubProgram, metrics: Metrics) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         VM {
@@ -82,6 +83,7 @@ impl VM {
             r3: 0,
             stack,
             program,
+            metrics,
         }
     }
 
@@ -173,6 +175,8 @@ impl VM {
         let buf = cursor.peek_data(self.kv_engine.inner.as_ref())?.unwrap();
         let doc = bson::from_slice(buf.as_ref())?;
         self.stack.push(Bson::Document(doc));
+
+        self.metrics.add_find_by_index_count();
 
         Ok(true)
     }
