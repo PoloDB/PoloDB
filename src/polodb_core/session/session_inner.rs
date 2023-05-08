@@ -38,6 +38,11 @@ impl SessionInner {
     }
 
     #[inline]
+    pub fn delete(&mut self, key: &[u8]) -> Result<()> {
+        self.kv_session.delete(key)
+    }
+
+    #[inline]
     pub fn delete_cursor_current(&mut self, cursor: &mut MultiCursor) -> Result<bool> {
         self.kv_session.delete_cursor_current(cursor)
     }

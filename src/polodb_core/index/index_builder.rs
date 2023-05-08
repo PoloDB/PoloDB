@@ -8,7 +8,7 @@ use bson::{Bson, Document};
 use crate::Result;
 use crate::coll::collection_info::IndexInfo;
 use crate::cursor::Cursor;
-use crate::index::IndexHelper;
+use crate::index::{IndexHelper, IndexHelperOperation};
 use crate::LsmKv;
 use crate::session::SessionInner;
 
@@ -66,7 +66,8 @@ impl<'a, 'b, 'c, 'd, 'e> IndexBuilder<'a, 'b, 'c, 'd, 'e> {
         let data_doc = bson::from_slice::<Document>(current_data)?;
         let pkey = data_doc.get("_id").unwrap();
 
-        IndexHelper::try_insert_index_with_index_info(
+        IndexHelper::try_execute_with_index_info(
+            IndexHelperOperation::Insert,
             &data_doc,
             self.col_name,
             &pkey,
