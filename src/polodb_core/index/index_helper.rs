@@ -108,7 +108,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
             Some(pkey),
         )?;
 
-        if op == IndexHelperOperation::Delete {
+        if op == IndexHelperOperation::Insert {
             let value_buf = [ElementType::Null as u8];
             session.put(index_key.as_slice(), &value_buf)?;
         } else {
