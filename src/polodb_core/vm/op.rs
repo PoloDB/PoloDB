@@ -151,7 +151,26 @@ pub enum DbOp {
     // 1 byte
     UpdateCurrent,
 
+    // delete current item on cursor
+    //
+    // 1 byte
     DeleteCurrent,
+
+    // insert the index of the top value on the stack
+    //
+    // top-1 is the value
+    //
+    // 5 byte
+    // op1. index info id: 4 bytes
+    InsertIndex,
+
+    // delete the index of the top value on the stack
+    //
+    // top-1 is the value
+    //
+    // 5 byte
+    // op1. index info id: 4 bytes
+    DeleteIndex,
 
     Pop,
 

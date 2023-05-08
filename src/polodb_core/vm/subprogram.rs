@@ -5,16 +5,26 @@
  */
 use std::fmt;
 use bson::{Bson, Document};
-use crate::coll::collection_info::CollectionSpecification;
+use indexmap::IndexMap;
+use crate::coll::collection_info::{
+    CollectionSpecification,
+    IndexInfo,
+};
 use crate::Result;
 use super::op::DbOp;
 use super::label::LabelSlot;
 use crate::vm::codegen::Codegen;
 
+pub(crate) struct SubProgramIndexItem {
+    pub col_name: String,
+    pub indexes: IndexMap<String, IndexInfo>,
+}
+
 pub(crate) struct SubProgram {
-    pub(super) static_values:    Vec<Bson>,
-    pub(super) instructions:     Vec<u8>,
-    pub(super) label_slots:      Vec<LabelSlot>,
+    pub(super) static_values: Vec<Bson>,
+    pub(super) instructions:  Vec<u8>,
+    pub(super) label_slots:   Vec<LabelSlot>,
+    pub(super) index_infos:   Vec<SubProgramIndexItem>,
 }
 
 impl SubProgram {
@@ -24,6 +34,7 @@ impl SubProgram {
             static_values: Vec::with_capacity(32),
             instructions: Vec::with_capacity(256),
             label_slots: Vec::with_capacity(32),
+            index_infos: Vec::new(),
         }
     }
 
@@ -66,13 +77,34 @@ impl SubProgram {
     ) -> Result<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation);
 
+        let has_indexes = !col_spec.indexes.is_empty();
+        let index_item_id: u32 = if has_indexes {
+            codegen.push_index_info(SubProgramIndexItem {
+                col_name: col_spec._id.to_string(),
+                indexes: col_spec.indexes.clone()
+            })
+        } else {
+            u32::MAX
+        };
+
         codegen.emit_open_write(col_spec._id.clone().into());
 
         codegen.emit_query_layout(
             col_spec,
             query.unwrap(),
             |codegen| -> Result<()> {
+                if has_indexes {
+                    codegen.emit(DbOp::DeleteIndex);
+                    codegen.emit_u32(index_item_id);
+                }
+
                 codegen.emit_update_operation(update)?;
+
+                if has_indexes {
+                    codegen.emit(DbOp::InsertIndex);
+                    codegen.emit_u32(index_item_id);
+                }
+
                 codegen.emit(DbOp::Pop);
                 Ok(())
             },

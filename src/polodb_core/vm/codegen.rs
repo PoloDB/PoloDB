@@ -11,6 +11,7 @@ use crate::vm::op::DbOp;
 use crate::{Result, Error};
 use crate::coll::collection_info::CollectionSpecification;
 use crate::errors::{FieldTypeUnexpectedStruct, mk_invalid_query_field};
+use crate::vm::subprogram::SubProgramIndexItem;
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
@@ -927,6 +928,12 @@ impl Codegen {
     pub(super) fn push_static(&mut self, value: Bson) -> u32 {
         let pos = self.program.static_values.len() as u32;
         self.program.static_values.push(value);
+        pos
+    }
+
+    pub(super) fn push_index_info(&mut self, index_item: SubProgramIndexItem) -> u32 {
+        let pos = self.program.index_infos.len() as u32;
+        self.program.index_infos.push(index_item);
         pos
     }
 
