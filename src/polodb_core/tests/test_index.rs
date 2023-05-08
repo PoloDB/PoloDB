@@ -165,3 +165,47 @@ fn test_create_unique_index() {
         assert!(result.unwrap_err().to_string().contains("duplicate key error"));
     });
 }
+
+#[test]
+fn test_update_with_index() {
+    vec![
+        prepare_db("test-update-with-index").unwrap(),
+        Database::open_memory().unwrap(),
+    ].iter().for_each(|db| {
+        let metrics = db.metrics();
+        metrics.enable();
+
+        let col = db.collection("teacher");
+
+        col.create_index(IndexModel {
+            keys: doc! {
+                "age": 1,
+            },
+            options: None,
+        }).unwrap();
+
+        col.insert_one(doc! {
+            "name": "David",
+            "age": 33,
+        }).unwrap();
+
+        col.update_many(doc! {
+            "age": 33,
+        }, doc! {
+            "$set": {
+                "age": 34,
+            },
+        }).unwrap();
+
+        let mut cursor = col.find(doc! {
+            "age": 34
+        }).unwrap();
+
+        assert!(cursor.advance().unwrap());
+
+        let doc = cursor.deserialize_current().unwrap();
+        assert_eq!(doc.get_str("name").unwrap(), "David");
+
+        assert_eq!(metrics.find_by_index_count(), 2);
+    });
+}
