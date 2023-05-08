@@ -28,8 +28,8 @@ impl SessionInner {
     }
 
     #[inline]
-    pub fn update_cursor_current(&mut self, cursor: &mut MultiCursor, value: &[u8]) -> Result<bool> {
-        self.kv_session.update_cursor_current(cursor, value)
+    pub fn kv_session_mut(&mut self) -> &mut LsmSession {
+        &mut self.kv_session
     }
 
     #[inline]
