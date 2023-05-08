@@ -9,6 +9,7 @@ use bson::Bson;
 use crate::Result;
 use crate::lsm::LsmKvInner;
 use crate::lsm::multi_cursor::MultiCursor;
+use crate::session::SessionInner;
 
 /// Cursor is struct pointing on
 /// a value on the kv engine
@@ -31,6 +32,10 @@ impl Cursor {
             kv_cursor,
             current_key: None,
         }
+    }
+
+    pub fn update_current(&mut self, session: &mut SessionInner, value: &[u8]) -> Result<bool> {
+        session.kv_session_mut().update_cursor_current(&mut self.kv_cursor, value)
     }
 
     #[inline]

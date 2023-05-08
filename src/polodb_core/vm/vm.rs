@@ -6,6 +6,7 @@
 use bson::Bson;
 use std::cell::Cell;
 use std::cmp::Ordering;
+use std::thread::current;
 use crate::{Error, Result, LsmKv, TransactionType, Metrics};
 use crate::cursor::Cursor;
 use crate::errors::{
@@ -388,6 +389,27 @@ impl VM {
         Ok(())
     }
 
+    fn update_current(&mut self, session: &mut SessionInner) -> Result<()> {
+        let top_index = self.stack.len() - 1;
+        let top_value = &self.stack[top_index];
+
+        let doc = top_value.as_document().unwrap();
+        let doc_buf = bson::to_vec(doc)?;
+
+        let updated = {
+            let cursor = self.r1.as_mut().unwrap();
+            cursor.update_current(session, &doc_buf)?
+        };
+
+        if updated {
+            // update the index
+
+            self.r2 += 1;
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn execute(&mut self, session: &mut SessionInner) -> Result<()> {
         if self.state == VmState::Halt {
             return Err(Error::VmIsHalt);
@@ -597,22 +619,7 @@ impl VM {
                     }
 
                     DbOp::UpdateCurrent => {
-                        let top_index = self.stack.len() - 1;
-                        let top_value = &self.stack[top_index];
-
-                        let doc = top_value.as_document().unwrap();
-                        let doc_buf = bson::to_vec(doc)?;
-
-                        let updated = {
-                            let cursor = self.r1.as_mut().unwrap();
-                            session.update_cursor_current(
-                                cursor.multi_cursor_mut(),
-                                &doc_buf,
-                            )?
-                        };
-                        if updated {
-                            self.r2 += 1;
-                        }
+                        try_vm!(self, self.update_current(session));
 
                         self.pc = self.pc.add(1);
                     }
