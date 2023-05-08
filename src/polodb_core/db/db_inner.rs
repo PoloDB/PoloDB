@@ -27,7 +27,7 @@ use crate::coll::collection_info::{
     IndexInfo,
 };
 use crate::cursor::Cursor;
-use crate::index::IndexHelper;
+use crate::index::{IndexHelper, IndexHelperOperation};
 use crate::metrics::Metrics;
 use crate::session::SessionInner;
 use crate::vm::VM;
@@ -477,7 +477,7 @@ impl DatabaseInner {
             doc,
             pkey,
         );
-        index_helper.execute()
+        index_helper.execute(IndexHelperOperation::Insert)
     }
 
     pub fn insert_many<T: Serialize>(

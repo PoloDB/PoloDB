@@ -17,6 +17,13 @@ use crate::session::SessionInner;
 
 const INDEX_PREFIX: &'static str = "$I";
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub(crate) enum IndexHelperOperation {
+    Insert,
+    Delete,
+}
+
 pub(crate) struct IndexHelper<'a, 'b, 'c, 'd, 'e> {
     kv_engine: &'a LsmKv,
     session: &'b mut SessionInner,
@@ -44,13 +51,14 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
         }
     }
 
-    pub fn execute(&mut self) -> Result<()> {
+    pub fn execute(&mut self, op: IndexHelperOperation) -> Result<()> {
         let index_meta = &self.col_spec.indexes;
 
         let values = index_meta.iter().collect::<Vec<(&String, &IndexInfo)>>();
 
         for (index_name, index_info) in values {
-            IndexHelper::try_insert_index_with_index_info(
+            IndexHelper::try_execute_with_index_info(
+                op,
                 &self.doc,
                 self.col_spec._id.as_str(),
                 self.pkey,
@@ -66,7 +74,8 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
 
     // The key of the collection value: collection_id + '\t' + primary_key
     // The key of the index in the table: '$I' + '\t' + collection_id + '\t' + index_name + '\t' + primary_key
-    pub(crate) fn try_insert_index_with_index_info(
+    pub(crate) fn try_execute_with_index_info(
+        op: IndexHelperOperation,
         data_doc: &Document,
         col_name: &str,
         pkey: &Bson,
@@ -101,8 +110,12 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
             Some(pkey),
         )?;
 
-        let value_buf = [ElementType::Null as u8];
-        session.put(index_key.as_slice(), &value_buf)?;
+        if op == IndexHelperOperation::Delete {
+            let value_buf = [ElementType::Null as u8];
+            session.put(index_key.as_slice(), &value_buf)?;
+        } else {
+            session.delete(index_key.as_slice())?;
+        }
 
         Ok(())
     }
