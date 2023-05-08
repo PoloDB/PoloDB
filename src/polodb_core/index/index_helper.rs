@@ -54,9 +54,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
     pub fn execute(&mut self, op: IndexHelperOperation) -> Result<()> {
         let index_meta = &self.col_spec.indexes;
 
-        let values = index_meta.iter().collect::<Vec<(&String, &IndexInfo)>>();
-
-        for (index_name, index_info) in values {
+        for (index_name, index_info) in index_meta.iter() {
             IndexHelper::try_execute_with_index_info(
                 op,
                 &self.doc,

@@ -6,7 +6,6 @@
 use bson::Bson;
 use std::cell::Cell;
 use std::cmp::Ordering;
-use std::thread::current;
 use crate::{Error, Result, LsmKv, TransactionType, Metrics};
 use crate::cursor::Cursor;
 use crate::errors::{
@@ -14,7 +13,7 @@ use crate::errors::{
     FieldTypeUnexpectedStruct,
     UnexpectedTypeForOpStruct,
 };
-use crate::index::IndexHelper;
+use crate::index::{IndexHelper, IndexHelperOperation};
 use crate::session::SessionInner;
 use crate::vm::op::DbOp;
 use crate::vm::SubProgram;
@@ -402,9 +401,55 @@ impl VM {
         };
 
         if updated {
-            // update the index
-
             self.r2 += 1;
+        }
+
+        Ok(())
+    }
+
+    fn insert_index(&mut self, index_info_id: u32, session: &mut SessionInner) -> Result<()> {
+        let info = &self.program.index_infos[index_info_id as usize];
+
+        let index_meta = &info.indexes;
+
+        let data_doc = self.stack[self.stack.len() - 1].as_document().unwrap();
+        let pkey = data_doc.get("_id").unwrap();
+
+        for (index_name, index_info) in index_meta {
+            IndexHelper::try_execute_with_index_info(
+                IndexHelperOperation::Insert,
+                data_doc,
+                info.col_name.as_str(),
+                pkey,
+                index_name.as_str(),
+                index_info,
+                &self.kv_engine,
+                session,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn delete_index(&mut self, index_info_id: u32, session: &mut SessionInner) -> Result<()> {
+        let info = &self.program.index_infos[index_info_id as usize];
+
+        let index_meta = &info.indexes;
+
+        let data_doc = self.stack[self.stack.len() - 1].as_document().unwrap();
+        let pkey = data_doc.get("_id").unwrap();
+
+        for (index_name, index_info) in index_meta {
+            IndexHelper::try_execute_with_index_info(
+                IndexHelperOperation::Delete,
+                data_doc,
+                info.col_name.as_str(),
+                pkey,
+                index_name.as_str(),
+                index_info,
+                &self.kv_engine,
+                session,
+            )?;
         }
 
         Ok(())
@@ -636,6 +681,22 @@ impl VM {
                         self.pc = self.pc.add(1);
                     }
 
+                    DbOp::InsertIndex => {
+                        let index_info_id = self.pc.add(1).cast::<u32>().read();
+
+                        self.insert_index(index_info_id, session)?;
+
+                        self.pc = self.pc.add(5);
+                    }
+
+                    DbOp::DeleteIndex => {
+                        let index_info_id = self.pc.add(1).cast::<u32>().read();
+
+                        self.delete_index(index_info_id, session)?;
+
+                        self.pc = self.pc.add(5);
+                    }
+
                     DbOp::Pop => {
                         self.stack.pop();
                         self.pc = self.pc.add(1);
@@ -644,7 +705,7 @@ impl VM {
                     DbOp::Pop2 => {
                         let offset = self.pc.add(1).cast::<u32>().read();
 
-                        self.stack.set_len(self.stack.len() - (offset as usize));
+                        self.stack.resize(self.stack.len() - (offset as usize), Bson::Null);
 
                         self.pc = self.pc.add(5);
                     }
