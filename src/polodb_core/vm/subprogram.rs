@@ -295,6 +295,25 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::DeleteCurrent => {
+                        writeln!(f, "{}: DeleteCurrent", pc)?;
+                        pc += 1;
+                    }
+
+                    DbOp::InsertIndex => {
+                        let index = begin.add(pc + 1).cast::<u32>().read();
+                        let index_info = &self.index_infos[index as usize];
+                        writeln!(f, "{}: InsertIndex(\"{}\")", pc, index_info.col_name)?;
+                        pc += 5;
+                    }
+
+                    DbOp::DeleteIndex => {
+                        let index = begin.add(pc + 1).cast::<u32>().read();
+                        let index_info = &self.index_infos[index as usize];
+                        writeln!(f, "{}: DeleteIndex(\"{}\")", pc, index_info.col_name)?;
+                        pc += 5;
+                    }
+
                     DbOp::Pop => {
                         writeln!(f, "{}: Pop", pc)?;
                         pc += 1;
@@ -921,6 +940,80 @@ mod tests {
 212: FalseJump(37)
 217: Pop2(2)
 222: Goto(61)
+"#;
+        assert_eq!(expect, actual);
+    }
+
+    #[test]
+    fn print_update_with_index() {
+        let mut col_spec = new_spec("test");
+
+        col_spec.indexes.insert("age_1".into(), IndexInfo {
+            keys: indexmap! {
+                "age".into() => 1,
+            },
+            options: None,
+        });
+
+        let query_doc = doc! {
+            "_id": {
+                "$gt": 3
+            },
+        };
+        let update_doc = doc! {
+            "$set": {
+                "name": "Alan Chan",
+            },
+        };
+        let program = SubProgram::compile_update(
+            &col_spec,
+            Some(&query_doc),
+            &update_doc,
+            false, true
+        ).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+
+        let expect = r#"Program:
+
+0: OpenWrite("test")
+5: Rewind(30)
+10: Goto(94)
+
+15: Label(1)
+20: Next(94)
+
+25: Label(5, "Close")
+30: Close
+31: Halt
+
+32: Label(4, "Not this item")
+37: RecoverStackPos
+38: Pop
+39: Goto(20)
+
+44: Label(3, "Get field failed")
+49: RecoverStackPos
+50: Pop
+51: Goto(20)
+
+56: Label(2, "Result")
+61: DeleteIndex("test")
+66: PushValue("Alan Chan")
+71: SetField("name")
+76: Pop
+77: UpdateCurrent
+78: InsertIndex("test")
+83: Pop
+84: Goto(20)
+
+89: Label(0, "Compare")
+94: SaveStackPos
+95: GetField("_id", 49)
+104: PushValue(3)
+109: Greater
+110: FalseJump(37)
+115: Pop2(2)
+120: Goto(61)
 "#;
         assert_eq!(expect, actual);
     }
