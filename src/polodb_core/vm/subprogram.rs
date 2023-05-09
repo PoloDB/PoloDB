@@ -122,12 +122,27 @@ impl SubProgram {
     ) -> Result<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation);
 
+        let has_indexes = !col_spec.indexes.is_empty();
+        let index_item_id: u32 = if has_indexes {
+            codegen.push_index_info(SubProgramIndexItem {
+                col_name: col_spec._id.to_string(),
+                indexes: col_spec.indexes.clone()
+            })
+        } else {
+            u32::MAX
+        };
+
         codegen.emit_open_write(col_name.into());
 
         codegen.emit_query_layout(
             col_spec,
             query.unwrap(),
             |codegen| -> Result<()> {
+                if has_indexes {
+                    codegen.emit(DbOp::DeleteIndex);
+                    codegen.emit_u32(index_item_id);
+                }
+
                 codegen.emit_delete_operation();
                 codegen.emit(DbOp::Pop);
                 Ok(())
@@ -140,10 +155,22 @@ impl SubProgram {
 
     // TODO: need test
     pub(crate) fn compile_delete_all(
+        col_spec: &CollectionSpecification,
         col_name: &str,
         skip_annotation: bool
     ) -> Result<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation);
+
+        let has_indexes = !col_spec.indexes.is_empty();
+        let index_item_id: u32 = if has_indexes {
+            codegen.push_index_info(SubProgramIndexItem {
+                col_name: col_spec._id.to_string(),
+                indexes: col_spec.indexes.clone()
+            })
+        } else {
+            u32::MAX
+        };
+
         let result_label = codegen.new_label();
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
@@ -162,6 +189,10 @@ impl SubProgram {
         codegen.emit(DbOp::Halt);
 
         codegen.emit_label(result_label);
+        if has_indexes {
+            codegen.emit(DbOp::DeleteIndex);
+            codegen.emit_u32(index_item_id);
+        }
         codegen.emit_delete_operation();
         codegen.emit(DbOp::Pop);
 

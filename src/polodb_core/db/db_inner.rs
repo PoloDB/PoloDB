@@ -333,14 +333,11 @@ impl DatabaseInner {
         );
         collection_spec.indexes.insert(index_name.clone(), index_info.clone());
 
-        let stacked_key = crate::utils::bson::stacked_key(&[
-            Bson::String(TABLE_META_PREFIX.to_string()),
-            Bson::String(col_name.to_string()),
-        ])?;
-
-        let buffer = bson::to_vec(&collection_spec)?;
-
-        session.put(stacked_key.as_slice(), buffer.as_ref())?;
+        DatabaseInner::update_collection_spec(
+            col_name,
+            &collection_spec,
+            session,
+        )?;
 
         self.build_index(
             session,
@@ -365,11 +362,60 @@ impl DatabaseInner {
             index_info,
         );
 
-        builder.execute()
+        builder.execute(IndexHelperOperation::Insert)
     }
 
-    pub fn drop_index(&self, _col_name: &str, _name: &str, _session: &mut SessionInner) -> Result<()> {
-        unimplemented!()
+    pub fn drop_index(&self, col_name: &str, index_name: &str, session: &mut SessionInner) -> Result<()> {
+        let test_collection_spec = self.internal_get_collection_id_by_name(session, col_name);
+        let mut collection_spec = match test_collection_spec {
+            Ok(spec) => spec,
+            Err(Error::CollectionNotFound(_)) => {
+                return Ok(());
+            }
+            Err(err) => {
+                return Err(err);
+            }
+        };
+
+        let index_info = collection_spec.indexes.get(index_name);
+        if index_info.is_none() {
+            return Ok(());
+        }
+
+        let index_info = index_info.unwrap();
+
+        let mut builder = IndexBuilder::new(
+            &self.kv_engine,
+            session,
+            col_name,
+            index_name,
+            index_info,
+        );
+
+        builder.execute(IndexHelperOperation::Delete)?;
+
+        collection_spec.indexes.remove(index_name);
+
+        DatabaseInner::update_collection_spec(
+            col_name,
+            &collection_spec,
+            session,
+        )?;
+
+        Ok(())
+    }
+
+    fn update_collection_spec(col_name: &str, collection_spec: &CollectionSpecification, session: &mut SessionInner) -> Result<()> {
+        let stacked_key = crate::utils::bson::stacked_key(&[
+            Bson::String(TABLE_META_PREFIX.to_string()),
+            Bson::String(col_name.to_string()),
+        ])?;
+
+        let buffer = bson::to_vec(&collection_spec)?;
+
+        session.put(stacked_key.as_slice(), buffer.as_ref())?;
+
+        Ok(())
     }
 
     fn make_index_name(key: &str, order: i32, index_options: Option<&IndexOptions>) -> Result<String> {
@@ -621,8 +667,16 @@ impl DatabaseInner {
     }
 
     fn drop_collection_internal(&self, col_name: &str, session: &mut SessionInner) -> Result<()> {
+        let test_collection_spec = self.internal_get_collection_id_by_name(session, col_name);
+        let collection_spec = match test_collection_spec {
+            Ok(collection_spec) => collection_spec,
+            Err(Error::CollectionNotFound(_)) => return Ok(()),
+            Err(err) => return Err(err),
+        };
+
         // Delete content begin
         let subprogram = SubProgram::compile_delete_all(
+            &collection_spec,
             col_name,
             true,
         )?;
@@ -686,8 +740,16 @@ impl DatabaseInner {
     }
 
     fn internal_delete_all(&self, session: &mut SessionInner, col_name: &str) -> Result<usize> {
+        let test_collection_spec = self.internal_get_collection_id_by_name(session, col_name);
+        let collection_spec = match test_collection_spec {
+            Ok(collection_spec) => collection_spec,
+            Err(Error::CollectionNotFound(_)) => return Ok(0),
+            Err(err) => return Err(err),
+        };
+
         // Delete content begin
         let subprogram = SubProgram::compile_delete_all(
+            &collection_spec,
             col_name,
             true,
         )?;
