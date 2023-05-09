@@ -366,6 +366,16 @@ impl DatabaseInner {
     }
 
     pub fn drop_index(&self, col_name: &str, index_name: &str, session: &mut SessionInner) -> Result<()> {
+        DatabaseInner::validate_col_name(col_name)?;
+
+        self.auto_start_transaction(session, TransactionType::Write)?;
+
+        try_db_op!(self, session, self.internal_drop_index(col_name, index_name, session));
+
+        Ok(())
+    }
+
+    fn internal_drop_index(&self, col_name: &str, index_name: &str, session: &mut SessionInner) -> Result<()> {
         let test_collection_spec = self.internal_get_collection_id_by_name(session, col_name);
         let mut collection_spec = match test_collection_spec {
             Ok(spec) => spec,
