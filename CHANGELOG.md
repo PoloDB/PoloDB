@@ -1,4 +1,8 @@
 
+# 4.3.0
+
+- Introduce `create_index` API
+
 # 4.2.0
 
 - Introduce `thiserror` for error handling

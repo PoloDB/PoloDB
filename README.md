@@ -101,7 +101,7 @@ The features will be implemented one by one in order.
   - [x] CRUD
   - [x] Transactions
   - [x] Serde
-  - [ ] Indexes
+  - [x] Indexes(Alpha)
   - [ ] Aggregation
 - [x] Command line Tools
 - [ ] Platforms
