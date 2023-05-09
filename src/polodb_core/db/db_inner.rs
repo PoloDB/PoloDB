@@ -368,6 +368,10 @@ impl DatabaseInner {
         builder.execute()
     }
 
+    pub fn drop_index(&self, _col_name: &str, _name: &str, _session: &mut SessionInner) -> Result<()> {
+        unimplemented!()
+    }
+
     fn make_index_name(key: &str, order: i32, index_options: Option<&IndexOptions>) -> Result<String> {
         if let Some(options) = index_options {
             if let Some(name) = &options.name {
