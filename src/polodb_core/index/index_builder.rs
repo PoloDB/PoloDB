@@ -39,7 +39,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexBuilder<'a, 'b, 'c, 'd, 'e> {
         }
     }
 
-    pub fn execute(&mut self) -> Result<()> {
+    pub fn execute(&mut self, op: IndexHelperOperation) -> Result<()> {
         let multi_cursor = self.kv_engine.open_multi_cursor(
             Some(self.session.kv_session()),
         );
@@ -54,7 +54,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexBuilder<'a, 'b, 'c, 'd, 'e> {
             // get the value and insert index
             let current_data = cursor.peek_data(self.kv_engine.inner.as_ref()).unwrap().unwrap();
 
-            self.insert_index(current_data.as_ref())?;
+            self.execute_index_item(op, current_data.as_ref())?;
 
             cursor.next()?;
         }
@@ -62,12 +62,12 @@ impl<'a, 'b, 'c, 'd, 'e> IndexBuilder<'a, 'b, 'c, 'd, 'e> {
         Ok(())
     }
 
-    fn insert_index(&mut self, current_data: &[u8]) -> Result<()> {
+    fn execute_index_item(&mut self, op: IndexHelperOperation, current_data: &[u8]) -> Result<()> {
         let data_doc = bson::from_slice::<Document>(current_data)?;
         let pkey = data_doc.get("_id").unwrap();
 
         IndexHelper::try_execute_with_index_info(
-            IndexHelperOperation::Insert,
+            op,
             &data_doc,
             self.col_name,
             &pkey,
