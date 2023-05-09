@@ -116,7 +116,11 @@ impl<T>  Collection<T>
     /// When query is `None`, all the data in the collection will be deleted.
     ///
     /// The size of data deleted returns.
-    pub fn delete_many_with_session(&self, query: Document, session: &mut ClientSession) -> Result<DeleteResult> {
+    pub fn delete_many_with_session(
+        &self,
+        query: Document,
+        session: &mut ClientSession,
+    ) -> Result<DeleteResult> {
         let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
         db.delete_many(&self.name, query, &mut session.inner)
     }
@@ -125,6 +129,23 @@ impl<T>  Collection<T>
         let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
         let mut session = db.start_session()?;
         db.create_index(&self.name, index, &mut session)
+    }
+
+    pub fn create_index_with_session(&self, index: IndexModel, session: &mut ClientSession) -> Result<()> {
+        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
+        db.create_index(&self.name, index, &mut session.inner)
+    }
+
+    /// Drops the index specified by `name` from this collection.
+    pub fn drop_index(&self, name: impl AsRef<str>) -> Result<()> {
+        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
+        let mut session = db.start_session()?;
+        db.drop_index(&self.name, name.as_ref(), &mut session)
+    }
+
+    pub fn drop_index_with_session(&self, name: impl AsRef<str>, session: &mut ClientSession) -> Result<()> {
+        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
+        db.drop_index(&self.name, name.as_ref(), &mut session.inner)
     }
 
     pub fn drop(&self) -> Result<()> {
