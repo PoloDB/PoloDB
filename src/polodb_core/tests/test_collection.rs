@@ -26,13 +26,9 @@ fn test_create_collection_and_find_all() {
 
         let all = cursor.collect::<Result<Vec<Document>>>().unwrap();
 
-        let mut second_cursor = test_collection.find(doc! {
+        let second = test_collection.find_one(doc! {
             "content": "1",
-        }).unwrap();
-
-        assert!(second_cursor.advance().unwrap());
-
-        let second = second_cursor.deserialize_current().unwrap();
+        }).unwrap().unwrap();
 
         assert_eq!(second.get("content").unwrap().as_str().unwrap(), "1");
         assert!(second.get("content").is_some());

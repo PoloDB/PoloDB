@@ -67,25 +67,17 @@ fn test_multiple_find_one() {
         }
 
         let collection = db.collection::<Document>("config");
-        let mut doc1_cursor = collection.find(doc! {
+        let doc1 = collection.find_one(doc! {
             "_id": "c1",
-        }).unwrap();
-
-        assert!(doc1_cursor.advance().unwrap());
-
-        let doc1 = doc1_cursor.deserialize_current().unwrap();
+        }).unwrap().unwrap();
 
         assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c1");
 
         let collection = db.collection::<Document>("config");
 
-        let mut doc1_cursor = collection.find(doc! {
+        let doc1 = collection.find_one(doc! {
             "_id": "c2",
-        }).unwrap();
-
-        assert!(doc1_cursor.advance().unwrap());
-
-        let doc1 = doc1_cursor.deserialize_current().unwrap();
+        }).unwrap().unwrap();
 
         assert_eq!(doc1.get("value").unwrap().as_str().unwrap(), "c22");
     });

@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use bson::Document;
 use bson::spec::ElementType;
 use serde::{Deserialize, Serialize};
-use polodb_core::{ClientCursor, Database, Result};
+use polodb_core::{Database, Result};
 use polodb_core::bson::{doc, Bson};
 
 mod common;
@@ -45,11 +45,9 @@ fn test_insert_struct() {
         // Insert the books into "mydb.books" collection, no manual conversion to BSON necessary.
         typed_collection.insert_many(books).unwrap();
 
-        let mut cursor = typed_collection.find(doc! {
+        let book = typed_collection.find_one(doc! {
             "title": "The Grapes of Wrath",
-        }).unwrap();
-        assert!(cursor.advance().unwrap());
-        let book = cursor.deserialize_current().unwrap();
+        }).unwrap().unwrap();
         assert_eq!(book.author, "John Steinbeck");
 
         let cursor = typed_collection.find(doc! {
@@ -116,13 +114,9 @@ fn test_very_large_binary() {
         let result = collection.insert_one(doc).unwrap();
 
         let new_id = result.inserted_id;
-        let mut cursor: ClientCursor<Document> = collection.find(doc! {
+        let back  = collection.find_one(doc! {
             "_id": new_id,
-        }).unwrap();
-
-        assert!(cursor.advance().unwrap());
-
-        let back = cursor.deserialize_current().unwrap();
+        }).unwrap().unwrap();
 
         let back_bin = back.get("content").unwrap();
 
@@ -167,12 +161,9 @@ fn test_insert_after_delete() {
             "content": "Hello World",
         }).unwrap();
 
-        let mut cursor = collection.find(doc! {
+        let one = collection.find_one(doc! {
             "_id": "500",
-        }).unwrap();
-        assert!(cursor.advance().unwrap());
-
-        let one = cursor.deserialize_current().unwrap();
+        }).unwrap().unwrap();
 
         assert_eq!(one.get("content").unwrap().as_str().unwrap(), "Hello World");
     });

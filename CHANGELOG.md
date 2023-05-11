@@ -1,4 +1,8 @@
 
+# 4.3.1
+
+- Introduce `find_one()` API
+
 # 4.3.0
 
 - Introduce `create_index` API

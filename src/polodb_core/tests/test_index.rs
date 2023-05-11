@@ -70,7 +70,7 @@ fn test_create_index_with_data() {
         let metrics = db.metrics();
         metrics.enable();
 
-        let col = db.collection("teacher");
+        let col = db.collection::<Document>("teacher");
 
         col.insert_one(doc! {
             "name": "David",
@@ -84,13 +84,10 @@ fn test_create_index_with_data() {
             options: None,
         }).unwrap();
 
-        let mut cursor = col.find(doc! {
+        let doc = col.find_one(doc! {
             "age": 33
-        }).unwrap();
+        }).unwrap().unwrap();
 
-        assert!(cursor.advance().unwrap());
-
-        let doc = cursor.deserialize_current().unwrap();
         assert_eq!(doc.get_str("name").unwrap(), "David");
 
         assert_eq!(metrics.find_by_index_count(), 1);
@@ -120,13 +117,10 @@ fn test_find_by_index() {
             "age": 33,
         }).unwrap();
 
-        let mut cursor = col.find(doc! {
+        let doc = col.find_one(doc! {
             "age": 33
-        }).unwrap();
+        }).unwrap().unwrap();
 
-        assert!(cursor.advance().unwrap());
-
-        let doc = cursor.deserialize_current().unwrap();
         assert_eq!(doc.get_str("name").unwrap(), "David");
 
         assert_eq!(metrics.find_by_index_count(), 1);
@@ -197,13 +191,10 @@ fn test_update_with_index() {
             },
         }).unwrap();
 
-        let mut cursor = col.find(doc! {
+        let doc = col.find_one(doc! {
             "age": 34
-        }).unwrap();
+        }).unwrap().unwrap();
 
-        assert!(cursor.advance().unwrap());
-
-        let doc = cursor.deserialize_current().unwrap();
         assert_eq!(doc.get_str("name").unwrap(), "David");
 
         assert_eq!(metrics.find_by_index_count(), 2);
@@ -219,7 +210,7 @@ fn test_delete_with_index() {
         let metrics = db.metrics();
         metrics.enable();
 
-        let col = db.collection("teacher");
+        let col = db.collection::<Document>("teacher");
 
         col.create_index(IndexModel {
             keys: doc! {
@@ -237,11 +228,9 @@ fn test_delete_with_index() {
             "age": 33,
         }).unwrap();
 
-        let mut cursor = col.find(doc! {
+        assert!(col.find_one(doc! {
             "age": 33
-        }).unwrap();
-
-        assert!(!cursor.advance().unwrap());
+        }).unwrap().is_none());
 
         assert_eq!(metrics.find_by_index_count(), 1);
     });
@@ -256,7 +245,7 @@ fn test_drop_index() {
         let metrics = db.metrics();
         metrics.enable();
 
-        let col = db.collection("teacher");
+        let col = db.collection::<Document>("teacher");
 
         col.create_index(IndexModel {
             keys: doc! {
@@ -273,13 +262,10 @@ fn test_drop_index() {
         col.drop_index("age_1").unwrap();
 
         {
-            let mut cursor = col.find(doc! {
+            let doc = col.find_one(doc! {
                 "age": 33,
-            }).unwrap();
+            }).unwrap().unwrap();
 
-            assert!(cursor.advance().unwrap());
-
-            let doc = cursor.deserialize_current().unwrap();
             assert_eq!(doc.get_str("name").unwrap(), "David");
         }
 

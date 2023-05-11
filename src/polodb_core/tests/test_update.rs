@@ -128,11 +128,9 @@ fn test_update_rename() {
             "num": "num2",
         },
     }).unwrap();
-    let mut cursor = col.find(doc! {
+    let result = col.find_one(doc! {
         "_id": 0,
-    }).unwrap();
-    assert!(cursor.advance().unwrap());
-    let result = cursor.deserialize_current().unwrap();
+    }).unwrap().unwrap();
     println!("result: {}", result);
     assert_eq!(result.get("_id").unwrap().as_i32().unwrap(), 0);
     assert!(result.get("num").is_none());
@@ -150,11 +148,9 @@ fn test_update_unset() {
             "num": "",
         },
     }).unwrap();
-    let mut cursor = col.find(doc! {
+    let result = col.find_one(doc! {
         "_id": 0,
-    }).unwrap();
-    assert!(cursor.advance().unwrap());
-    let result = cursor.deserialize_current().unwrap();
+    }).unwrap().unwrap();
     assert!(result.get("num").is_none());
 }
 
@@ -169,11 +165,9 @@ fn test_update_max() {
             "num": 0,
         },
     }).unwrap();
-    let mut cursor = col.find(doc! {
+    let result = col.find_one(doc! {
         "_id": 1,
-    }).unwrap();
-    assert!(cursor.advance().unwrap());
-    let result = cursor.deserialize_current().unwrap();
+    }).unwrap().unwrap();
     assert_eq!(result.get("num").unwrap().as_i32().unwrap(), 1);
     col.update_many(doc! {
         "_id": 1,
@@ -207,11 +201,9 @@ fn test_update_push() {
         },
     }).unwrap();
     assert_eq!(update_result.modified_count, 1);
-    let mut cursor = col.find(doc! {
+    let result = col.find_one(doc! {
         "_id": 0,
-    }).unwrap();
-    assert!(cursor.advance().unwrap());
-    let result = cursor.deserialize_current().unwrap();
+    }).unwrap().unwrap();
     let content = result.get_array("content").unwrap();
     assert_eq!(content.len(), 4);
 }

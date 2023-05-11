@@ -39,9 +39,7 @@ fn test_reopen_db() {
     {
         let db = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
         let collection = db.collection::<Document>("books");
-        let mut cursor = collection.find(doc! {}).unwrap();
-        assert!(cursor.advance().unwrap());
-        let book = cursor.deserialize_current().unwrap();
+        let book = collection.find_one(doc! {}).unwrap().unwrap();
         assert_eq!(book.get("author").unwrap().as_str().unwrap(), "Liu Cixin");
     }
 }
@@ -81,9 +79,7 @@ fn test_reopen_db_file_size() {
     {
         let db = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
         let collection = db.collection::<Document>("books");
-        let mut cursor = collection.find(doc! {}).unwrap();
-        assert!(cursor.advance().unwrap());
-        let book = cursor.deserialize_current().unwrap();
+        let book = collection.find_one(doc! {}).unwrap().unwrap();
         assert_eq!(book.get("author").unwrap().as_str().unwrap(), "Liu Cixin");
     }
 
@@ -138,9 +134,7 @@ fn test_multi_threads() {
     t.join().unwrap();
 
     let collection = db.collection::<Document>("test2");
-    let mut cursor = collection.find(doc! {}).unwrap();
-    assert!(cursor.advance().unwrap());
-    let one = cursor.deserialize_current().unwrap();
+    let one = collection.find_one(doc! {}).unwrap().unwrap();
     assert_eq!(one.get("content").unwrap().as_str().unwrap(), "Hello");
 }
 

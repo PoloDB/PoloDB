@@ -222,4 +222,29 @@ impl<T>  Collection<T>
         db.find_with_borrowed_session(&self.name, filter, &mut session.inner)
     }
 
+    /// Finds a single document in the collection matching `filter`.
+    pub fn find_one(&self, filter: impl Into<Option<Document>>) -> Result<Option<T>> {
+        let mut cursor = self.find(filter)?;
+        let test = cursor.advance()?;
+        if !test {
+            return Ok(None);
+        }
+        return Ok(Some(cursor.deserialize_current()?));
+    }
+
+    /// Finds a single document in the collection matching `filter` using the provided
+    /// `ClientSession`.
+    pub fn find_one_with_session(
+        &self,
+        filter: impl Into<Option<Document>>,
+        session: &mut ClientSession,
+    ) -> Result<Option<T>> {
+        let mut cursor = self.find_with_session(filter, session)?;
+        let test = cursor.advance(session)?;
+        if !test {
+            return Ok(None);
+        }
+        return Ok(Some(cursor.deserialize_current()?));
+    }
+
 }
