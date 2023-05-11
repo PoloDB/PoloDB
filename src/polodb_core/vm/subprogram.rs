@@ -583,6 +583,56 @@ mod tests {
     }
 
     #[test]
+    fn print_query_embedded_document() {
+        let query_doc = doc! {
+            "info.color": "yellow",
+        };
+        let col_spec = new_spec("test");
+        let program = SubProgram::compile_query(&col_spec, &query_doc, false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+
+        let expect = r#"Program:
+
+0: OpenRead("test")
+5: Rewind(30)
+10: Goto(73)
+
+15: Label(1)
+20: Next(73)
+
+25: Label(5, "Close")
+30: Close
+31: Halt
+
+32: Label(4, "Not this item")
+37: RecoverStackPos
+38: Pop
+39: Goto(20)
+
+44: Label(3, "Get field failed")
+49: RecoverStackPos
+50: Pop
+51: Goto(20)
+
+56: Label(2, "Result")
+61: ResultRow
+62: Pop
+63: Goto(20)
+
+68: Label(0, "Compare")
+73: SaveStackPos
+74: GetField("info.color", 49)
+83: PushValue("yellow")
+88: Equal
+89: FalseJump(37)
+94: Pop
+95: Pop
+96: Goto(61)
+"#;
+        assert_eq!(expect, actual)
+    }
+
+    #[test]
     fn print_query_by_primary_key() {
         let col_spec = new_spec("test");
         let test_doc = doc! {
