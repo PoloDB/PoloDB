@@ -134,3 +134,48 @@ fn test_create_collection_and_find_by_pkey() {
         assert_eq!(result.len(), 1);
     });
 }
+
+#[test]
+fn test_query_embedded_document() {
+    vec![
+        create_file_and_return_db_with_items("test-embedded-document", 10),
+        create_memory_and_return_db_with_items(10),
+    ].iter().for_each(|db| {
+        let collection = db.collection::<Document>("test");
+
+        collection.insert_one(doc! {
+            "name": "Apple",
+            "price": 100,
+            "info": {
+                "description": "This is an apple",
+                "color": "red",
+            }
+        }).unwrap();
+
+        collection.insert_one(doc! {
+            "name": "Banana",
+            "price": 200,
+            "info": {
+                "description": "This is a banana",
+                "color": "yellow",
+            }
+        }).unwrap();
+
+        collection.insert_one(doc! {
+            "name": "Orange",
+            "price": 300,
+            "info": {
+                "description": "This is an orange",
+                "color": "orange",
+            }
+        }).unwrap();
+
+        // query a fruit with color yellow
+        let result = collection.find(doc! {
+            "info.color": "yellow",
+        }).unwrap().collect::<Result<Vec<Document>>>().unwrap();
+
+        assert_eq!(result.len(), 1);
+    });
+
+}
