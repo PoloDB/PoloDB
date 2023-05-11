@@ -582,9 +582,9 @@ impl VM {
                             }
                         };
 
-                        match doc.get(key_name) {
+                        match crate::utils::bson::try_get_document_value(doc, key_name) {
                             Some(val) => {
-                                self.stack.push(val.clone());
+                                self.stack.push(val);
                                 self.pc = self.pc.add(9);
                             }
 
