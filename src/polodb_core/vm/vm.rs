@@ -5,8 +5,7 @@
  */
 use crate::cursor::Cursor;
 use crate::errors::{
-    CannotApplyOperationForTypes, FieldTypeUnexpectedStruct, RegexCompileError,
-    UnexpectedTypeForOpStruct,
+    CannotApplyOperationForTypes, FieldTypeUnexpectedStruct, RegexError, UnexpectedTypeForOpStruct,
 };
 use crate::index::{IndexHelper, IndexHelperOperation};
 use crate::session::SessionInner;
@@ -836,8 +835,6 @@ impl VM {
 
                         self.r0 = 0;
 
-                        println!("string: {:?}", val1);
-                        println!("regex: {:?}", val2);
                         if let Bson::RegularExpression(re) = val2 {
                             let mut re_build = RegexBuilder::new(re.pattern.as_str());
                             for char in re.pattern.chars() {
@@ -860,13 +857,19 @@ impl VM {
                                     'x' => {
                                         re_build.ignore_whitespace(true);
                                     }
-                                    _ => {}
+                                    _ => {
+                                        return Err(Error::from(RegexError {
+                                            error: format!("unknown regex option: {}", char),
+                                            expression: re.pattern.clone(),
+                                            options: re.options.clone(),
+                                        }))
+                                    }
                                 }
                             }
 
                             let re_build = re_build.build().map_err(|err| {
-                                Error::from(RegexCompileError {
-                                    error: err.to_string(),
+                                Error::from(RegexError {
+                                    error: format!("regex build error: {err}"),
                                     expression: re.pattern.clone(),
                                     options: re.options.clone(),
                                 })
