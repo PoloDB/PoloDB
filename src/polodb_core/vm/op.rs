@@ -203,6 +203,7 @@ pub enum DbOp {
     GreaterEqual,
     Less,
     LessEqual,
+    Regex,
 
     // check if top0 is in top2
     // the result is stored in r0

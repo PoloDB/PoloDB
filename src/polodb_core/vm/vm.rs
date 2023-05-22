@@ -3,20 +3,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use bson::Bson;
-use std::cell::Cell;
-use std::cmp::Ordering;
-use crate::{Error, Result, LsmKv, TransactionType, Metrics};
 use crate::cursor::Cursor;
 use crate::errors::{
-    CannotApplyOperationForTypes,
-    FieldTypeUnexpectedStruct,
+    CannotApplyOperationForTypes, FieldTypeUnexpectedStruct, RegexCompileError,
     UnexpectedTypeForOpStruct,
 };
 use crate::index::{IndexHelper, IndexHelperOperation};
 use crate::session::SessionInner;
 use crate::vm::op::DbOp;
 use crate::vm::SubProgram;
+use crate::{Error, LsmKv, Metrics, Result, TransactionType};
+use bson::Bson;
+use regex::RegexBuilder;
+use std::cell::Cell;
+use std::cmp::Ordering;
 
 macro_rules! try_vm {
     ($self:ident, $action:expr) => {
@@ -27,7 +27,7 @@ macro_rules! try_vm {
                 return Err(err);
             }
         }
-    }
+    };
 }
 
 const STACK_SIZE: usize = 256;
@@ -42,34 +42,34 @@ pub enum VmState {
 }
 
 pub(crate) struct VM {
-    kv_engine:           LsmKv,
-    pub(crate) state:    VmState,
-    pc:                  *const u8,
-    r0:                  i32,  // usually the logic register
-    r1:                  Option<Cursor>,
-    pub(crate) r2:       i64,  // usually the counter
-    r3:                  usize,
-    stack:               Vec<Bson>,
-    pub(crate) program:  SubProgram,
-    metrics:             Metrics,
+    kv_engine: LsmKv,
+    pub(crate) state: VmState,
+    pc: *const u8,
+    r0: i32, // usually the logic register
+    r1: Option<Cursor>,
+    pub(crate) r2: i64, // usually the counter
+    r3: usize,
+    stack: Vec<Bson>,
+    pub(crate) program: SubProgram,
+    metrics: Metrics,
 }
 
 fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> Result<bool> {
     let ord = crate::utils::bson::value_cmp(val1, val2)?;
-    let result = matches!((op, ord),
-        (DbOp::Equal, Ordering::Equal) |
-        (DbOp::Greater, Ordering::Greater) |
-        (DbOp::GreaterEqual, Ordering::Equal) |
-        (DbOp::GreaterEqual, Ordering::Greater) |
-        (DbOp::Less, Ordering::Less) |
-        (DbOp::LessEqual, Ordering::Equal) |
-        (DbOp::LessEqual, Ordering::Less)
+    let result = matches!(
+        (op, ord),
+        (DbOp::Equal, Ordering::Equal)
+            | (DbOp::Greater, Ordering::Greater)
+            | (DbOp::GreaterEqual, Ordering::Equal)
+            | (DbOp::GreaterEqual, Ordering::Greater)
+            | (DbOp::Less, Ordering::Less)
+            | (DbOp::LessEqual, Ordering::Equal)
+            | (DbOp::LessEqual, Ordering::Less)
     );
     Ok(result)
 }
 
 impl VM {
-
     pub(crate) fn new(kv_engine: LsmKv, program: SubProgram, metrics: Metrics) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
@@ -95,9 +95,7 @@ impl VM {
                 Ok(prefix_bytes)
             }
 
-            Bson::Binary(bin) => {
-                Ok(bin.bytes)
-            }
+            Bson::Binary(bin) => Ok(bin.bytes),
 
             _ => panic!("unexpected bson value: {:?}", val),
         }
@@ -105,7 +103,7 @@ impl VM {
 
     fn open_read(&mut self, session: &mut SessionInner, prefix: Bson) -> Result<()> {
         session.auto_start_transaction(TransactionType::Read)?;
-        let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
+        let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
         cursor.go_to_min()?;
 
         let prefix_bytes = VM::prefix_bytes_from_bson(prefix)?;
@@ -168,12 +166,9 @@ impl VM {
             return Ok(false);
         }
 
-        let key= cursor.peek_key().expect("key must exist");
+        let key = cursor.peek_key().expect("key must exist");
 
-        let index_value = self.read_index_value_by_index_key(
-            key.as_ref(),
-            session,
-        )?;
+        let index_value = self.read_index_value_by_index_key(key.as_ref(), session)?;
 
         if index_value.is_none() {
             return Ok(false);
@@ -196,12 +191,9 @@ impl VM {
 
         let col_name = &slices[1];
 
-        let pkey_in_kv = crate::utils::bson::stacked_key(vec![
-            col_name,
-            pkey,
-        ])?;
+        let pkey_in_kv = crate::utils::bson::stacked_key(vec![col_name, pkey])?;
 
-        let mut value_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
+        let mut value_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
         value_cursor.go_to_min()?;
 
         value_cursor.seek(pkey_in_kv.as_slice())?;
@@ -231,7 +223,11 @@ impl VM {
                 let doc = bson::from_slice(bytes.as_ref())?;
                 self.stack.push(Bson::Document(doc));
 
-                debug_assert!(self.stack.len() <= 64, "stack too large: {}", self.stack.len());
+                debug_assert!(
+                    self.stack.len() <= 64,
+                    "stack too large: {}",
+                    self.stack.len()
+                );
 
                 self.r0 = 1;
             }
@@ -303,7 +299,8 @@ impl VM {
                     field_name: key.into(),
                     field_type: a.to_string(),
                     target_type: b.to_string(),
-                }.into());
+                }
+                .into());
             }
         };
         Ok(val)
@@ -327,7 +324,8 @@ impl VM {
                     field_name: key.into(),
                     field_type: a.to_string(),
                     target_type: b.to_string(),
-                }.into());
+                }
+                .into());
             }
         };
         Ok(val)
@@ -356,7 +354,6 @@ impl VM {
             None => {
                 mut_doc.insert::<String, Bson>(key.into(), value);
             }
-
         }
         Ok(())
     }
@@ -380,13 +377,14 @@ impl VM {
             None => {
                 mut_doc.insert::<String, Bson>(key.into(), value);
             }
-
         }
         Ok(())
     }
 
     fn unset_field(&mut self, field_id: u32) -> Result<()> {
-        let key = self.program.static_values[field_id as usize].as_str().unwrap();
+        let key = self.program.static_values[field_id as usize]
+            .as_str()
+            .unwrap();
 
         let doc_index = self.stack.len() - 1;
         let mut_doc = self.stack[doc_index].as_document_mut().unwrap();
@@ -408,12 +406,13 @@ impl VM {
         let mut array_value = match &self.stack[st - 2] {
             Bson::Array(arr) => arr.clone(),
             _ => {
-                let name = format!("{}", self.stack[st-  2]);
+                let name = format!("{}", self.stack[st - 2]);
                 return Err(UnexpectedTypeForOpStruct {
                     operation: "$push",
                     expected_ty: "Array",
-                    actual_ty: name
-                }.into());
+                    actual_ty: name,
+                }
+                .into());
             }
         };
         array_value.push(val);
@@ -431,7 +430,8 @@ impl VM {
                     operation: "$pop",
                     expected_ty: "Array",
                     actual_ty: name,
-                }.into());
+                }
+                .into());
             }
         };
         array_value.drain(0..1);
@@ -449,7 +449,8 @@ impl VM {
                     operation: "$pop",
                     expected_ty: "Array",
                     actual_ty: name,
-                }.into());
+                }
+                .into());
             }
         };
         array_value.pop();
@@ -549,7 +550,8 @@ impl VM {
 
                     DbOp::IfTrue => {
                         let location = self.pc.add(1).cast::<u32>().read();
-                        if self.r0 != 0 {  // true
+                        if self.r0 != 0 {
+                            // true
                             self.reset_location(location);
                         } else {
                             self.pc = self.pc.add(5);
@@ -558,7 +560,8 @@ impl VM {
 
                     DbOp::IfFalse => {
                         let location = self.pc.add(1).cast::<u32>().read();
-                        if self.r0 == 0 {  // false
+                        if self.r0 == 0 {
+                            // false
                             self.reset_location(location);
                         } else {
                             self.pc = self.pc.add(5);
@@ -657,7 +660,7 @@ impl VM {
                                     actual_ty: name,
                                 };
                                 self.state = VmState::Halt;
-                                return Err(err.into())
+                                return Err(err.into());
                             }
                         };
 
@@ -670,9 +673,7 @@ impl VM {
                             None => {
                                 self.reset_location(location);
                             }
-
                         }
-
                     }
 
                     DbOp::UnsetField => {
@@ -702,7 +703,9 @@ impl VM {
                     DbOp::SetField => {
                         let filed_id = self.pc.add(1).cast::<u32>().read();
 
-                        let key = self.program.static_values[filed_id as usize].as_str().unwrap();
+                        let key = self.program.static_values[filed_id as usize]
+                            .as_str()
+                            .unwrap();
 
                         let value_index = self.stack.len() - 1;
                         let doc_index = self.stack.len() - 2;
@@ -784,23 +787,23 @@ impl VM {
                     DbOp::Pop2 => {
                         let offset = self.pc.add(1).cast::<u32>().read();
 
-                        self.stack.resize(self.stack.len() - (offset as usize), Bson::Null);
+                        self.stack
+                            .resize(self.stack.len() - (offset as usize), Bson::Null);
 
                         self.pc = self.pc.add(5);
                     }
 
-                    DbOp::Equal | DbOp::Greater | DbOp::GreaterEqual |
-                    DbOp::Less | DbOp::LessEqual => {
+                    DbOp::Equal
+                    | DbOp::Greater
+                    | DbOp::GreaterEqual
+                    | DbOp::Less
+                    | DbOp::LessEqual => {
                         let val1 = &self.stack[self.stack.len() - 2];
                         let val2 = &self.stack[self.stack.len() - 1];
 
                         let cmp = try_vm!(self, generic_cmp(op, val1, val2));
 
-                        self.r0 = if cmp {
-                            1
-                        } else {
-                            0
-                        };
+                        self.r0 = if cmp { 1 } else { 0 };
 
                         self.pc = self.pc.add(1);
                     }
@@ -821,6 +824,56 @@ impl VM {
                             if let Ok(Ordering::Equal) = cmp_result {
                                 self.r0 = 1;
                                 break;
+                            }
+                        }
+
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::Regex => {
+                        let val1 = &self.stack[self.stack.len() - 2];
+                        let val2 = &self.stack[self.stack.len() - 1];
+
+                        self.r0 = 0;
+
+                        println!("string: {:?}", val1);
+                        println!("regex: {:?}", val2);
+                        if let Bson::RegularExpression(re) = val2 {
+                            let mut re_build = RegexBuilder::new(re.pattern.as_str());
+                            for char in re.pattern.chars() {
+                                match char {
+                                    'i' => {
+                                        re_build.case_insensitive(true);
+                                    }
+                                    'm' => {
+                                        re_build.multi_line(true);
+                                    }
+                                    's' => {
+                                        re_build.dot_matches_new_line(true);
+                                    }
+                                    'u' => {
+                                        re_build.unicode(true);
+                                    }
+                                    'U' => {
+                                        re_build.swap_greed(true);
+                                    }
+                                    'x' => {
+                                        re_build.ignore_whitespace(true);
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            let re_build = re_build.build().map_err(|err| {
+                                Error::from(RegexCompileError {
+                                    error: err.to_string(),
+                                    expression: re.pattern.clone(),
+                                    options: re.options.clone(),
+                                })
+                            })?;
+
+                            if re_build.is_match(&val1.to_string()) {
+                                self.r0 = 1;
                             }
                         }
 
@@ -868,16 +921,13 @@ impl VM {
                         self.pc = self.pc.add(1);
                     }
 
-                    DbOp::_EOF |
-                    DbOp::Halt => {
+                    DbOp::_EOF | DbOp::Halt => {
                         self.r1 = None;
                         self.state = VmState::Halt;
                         return Ok(());
                     }
-
                 }
             }
         }
     }
-
 }

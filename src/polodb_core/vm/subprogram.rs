@@ -3,18 +3,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use std::fmt;
+use super::label::LabelSlot;
+use super::op::DbOp;
+use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
+use crate::utils::str::escape_binary_to_string;
+use crate::vm::codegen::Codegen;
+use crate::Result;
 use bson::{Bson, Document};
 use indexmap::IndexMap;
-use crate::coll::collection_info::{
-    CollectionSpecification,
-    IndexInfo,
-};
-use crate::Result;
-use crate::utils::str::escape_binary_to_string;
-use super::op::DbOp;
-use super::label::LabelSlot;
-use crate::vm::codegen::Codegen;
+use std::fmt;
 
 pub(crate) struct SubProgramIndexItem {
     pub col_name: String,
@@ -23,13 +20,12 @@ pub(crate) struct SubProgramIndexItem {
 
 pub(crate) struct SubProgram {
     pub(super) static_values: Vec<Bson>,
-    pub(super) instructions:  Vec<u8>,
-    pub(super) label_slots:   Vec<LabelSlot>,
-    pub(super) index_infos:   Vec<SubProgramIndexItem>,
+    pub(super) instructions: Vec<u8>,
+    pub(super) label_slots: Vec<LabelSlot>,
+    pub(super) index_infos: Vec<SubProgramIndexItem>,
 }
 
 impl SubProgram {
-
     pub(super) fn new() -> SubProgram {
         SubProgram {
             static_values: Vec::with_capacity(32),
@@ -62,7 +58,7 @@ impl SubProgram {
                 codegen.emit(DbOp::Pop);
                 Ok(())
             },
-            true
+            true,
         )?;
 
         Ok(codegen.take())
@@ -72,7 +68,8 @@ impl SubProgram {
         col_spec: &CollectionSpecification,
         query: Option<&Document>,
         update: &Document,
-        skip_annotation: bool, is_many: bool,
+        skip_annotation: bool,
+        is_many: bool,
     ) -> Result<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation, true);
 
@@ -80,7 +77,7 @@ impl SubProgram {
         let index_item_id: u32 = if has_indexes {
             codegen.push_index_info(SubProgramIndexItem {
                 col_name: col_spec._id.to_string(),
-                indexes: col_spec.indexes.clone()
+                indexes: col_spec.indexes.clone(),
             })
         } else {
             u32::MAX
@@ -105,7 +102,7 @@ impl SubProgram {
                 codegen.emit(DbOp::Pop);
                 Ok(())
             },
-            is_many
+            is_many,
         )?;
 
         Ok(codegen.take())
@@ -115,7 +112,8 @@ impl SubProgram {
         col_spec: &CollectionSpecification,
         col_name: &str,
         query: Option<&Document>,
-        skip_annotation: bool, is_many: bool,
+        skip_annotation: bool,
+        is_many: bool,
     ) -> Result<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation, true);
 
@@ -123,7 +121,7 @@ impl SubProgram {
         let index_item_id: u32 = if has_indexes {
             codegen.push_index_info(SubProgramIndexItem {
                 col_name: col_spec._id.to_string(),
-                indexes: col_spec.indexes.clone()
+                indexes: col_spec.indexes.clone(),
             })
         } else {
             u32::MAX
@@ -144,7 +142,7 @@ impl SubProgram {
                 codegen.emit(DbOp::Pop);
                 Ok(())
             },
-            is_many
+            is_many,
         )?;
 
         Ok(codegen.take())
@@ -154,7 +152,7 @@ impl SubProgram {
     pub(crate) fn compile_delete_all(
         col_spec: &CollectionSpecification,
         col_name: &str,
-        skip_annotation: bool
+        skip_annotation: bool,
     ) -> Result<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation, true);
 
@@ -162,7 +160,7 @@ impl SubProgram {
         let index_item_id: u32 = if has_indexes {
             codegen.push_index_info(SubProgramIndexItem {
                 col_name: col_spec._id.to_string(),
-                indexes: col_spec.indexes.clone()
+                indexes: col_spec.indexes.clone(),
             })
         } else {
             u32::MAX
@@ -198,11 +196,17 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_query_all(col_spec: &CollectionSpecification, skip_annotation: bool) -> Result<SubProgram> {
+    pub(crate) fn compile_query_all(
+        col_spec: &CollectionSpecification,
+        skip_annotation: bool,
+    ) -> Result<SubProgram> {
         SubProgram::compile_query_all_by_name(col_spec.name(), skip_annotation)
     }
 
-    pub(crate) fn compile_query_all_by_name(col_name: &str, skip_annotation: bool) -> Result<SubProgram> {
+    pub(crate) fn compile_query_all_by_name(
+        col_name: &str,
+        skip_annotation: bool,
+    ) -> Result<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation, false);
         let result_label = codegen.new_label();
         let next_label = codegen.new_label();
@@ -229,7 +233,6 @@ impl SubProgram {
 
         Ok(codegen.take())
     }
-
 }
 
 fn open_bson_to_str(val: &Bson) -> Result<String> {
@@ -251,7 +254,6 @@ fn open_bson_to_str(val: &Bson) -> Result<String> {
 }
 
 impl fmt::Display for SubProgram {
-
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         unsafe {
             let begin = self.instructions.as_ptr();
@@ -270,10 +272,12 @@ impl fmt::Display for SubProgram {
                         let label_id = begin.add(pc + 1).cast::<u32>().read();
                         match &self.label_slots[label_id as usize] {
                             LabelSlot::Empty => unreachable!(),
-                            LabelSlot::UnnamedLabel(_) =>
-                                writeln!(f, "{}: Label({})", pc, label_id)?,
-                            LabelSlot::LabelWithString(_, name) =>
-                                writeln!(f, "{}: Label({}, \"{}\")", pc, label_id, name)?,
+                            LabelSlot::UnnamedLabel(_) => {
+                                writeln!(f, "{}: Label({})", pc, label_id)?
+                            }
+                            LabelSlot::LabelWithString(_, name) => {
+                                writeln!(f, "{}: Label({}, \"{}\")", pc, label_id, name)?
+                            }
                         }
                         pc += 5;
                     }
@@ -402,6 +406,11 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::Regex => {
+                        writeln!(f, "{}: Regex", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::In => {
                         writeln!(f, "{}: In", pc)?;
                         pc += 1;
@@ -503,16 +512,15 @@ impl fmt::Display for SubProgram {
         }
         Ok(())
     }
-
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
+    use crate::vm::SubProgram;
     use bson::doc;
     use indexmap::indexmap;
     use polodb_line_diff::assert_eq;
-    use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
-    use crate::vm::SubProgram;
 
     #[inline]
     fn new_spec<T: Into<String>>(name: T) -> CollectionSpecification {
@@ -665,7 +673,6 @@ mod tests {
         let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
-
         let expect = r#"Program:
 
 0: OpenRead("test")
@@ -696,12 +703,15 @@ mod tests {
     fn print_query_by_index() {
         let mut col_spec = new_spec("test");
 
-        col_spec.indexes.insert("age_1".into(), IndexInfo {
-            keys: indexmap! {
-                "age".into() => 1,
+        col_spec.indexes.insert(
+            "age_1".into(),
+            IndexInfo {
+                keys: indexmap! {
+                    "age".into() => 1,
+                },
+                options: None,
             },
-            options: None,
-        });
+        );
 
         let test_doc = doc! {
             "age": 32,
@@ -966,12 +976,9 @@ mod tests {
                 "hello1": "hello2",
             },
         };
-        let program = SubProgram::compile_update(
-            &col_spec,
-            Some(&query_doc),
-            &update_doc,
-            false, true
-        ).unwrap();
+        let program =
+            SubProgram::compile_update(&col_spec, Some(&query_doc), &update_doc, false, true)
+                .unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -1053,12 +1060,15 @@ mod tests {
     fn print_update_with_index() {
         let mut col_spec = new_spec("test");
 
-        col_spec.indexes.insert("age_1".into(), IndexInfo {
-            keys: indexmap! {
-                "age".into() => 1,
+        col_spec.indexes.insert(
+            "age_1".into(),
+            IndexInfo {
+                keys: indexmap! {
+                    "age".into() => 1,
+                },
+                options: None,
             },
-            options: None,
-        });
+        );
 
         let query_doc = doc! {
             "_id": {
@@ -1070,12 +1080,9 @@ mod tests {
                 "name": "Alan Chan",
             },
         };
-        let program = SubProgram::compile_update(
-            &col_spec,
-            Some(&query_doc),
-            &update_doc,
-            false, true
-        ).unwrap();
+        let program =
+            SubProgram::compile_update(&col_spec, Some(&query_doc), &update_doc, false, true)
+                .unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -1122,5 +1129,4 @@ mod tests {
 "#;
         assert_eq!(expect, actual);
     }
-
 }
