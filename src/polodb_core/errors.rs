@@ -122,7 +122,7 @@ pub struct DuplicateKeyError {
 }
 
 #[derive(Debug)]
-pub struct RegexCompileError {
+pub struct RegexError {
     pub error: String,
     pub expression: String,
     pub options: String,
@@ -248,7 +248,7 @@ pub enum Error {
     #[error("the element type {0} is unknown")]
     UnknownBsonElementType(u8),
     #[error("failed to compile regex expression: {}, expression: {}, options: {}", .0.error, .0.expression, .0.options)]
-    RegexCompileError(Box<RegexCompileError>),
+    RegexCompileError(Box<RegexError>),
 }
 
 impl Error {
@@ -315,8 +315,8 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<RegexCompileError> for Error {
-    fn from(value: RegexCompileError) -> Self {
+impl From<RegexError> for Error {
+    fn from(value: RegexError) -> Self {
         Error::RegexCompileError(Box::new(value))
     }
 }
