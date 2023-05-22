@@ -3,12 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use std::io;
+use bson::ser::Error as BsonErr;
+use bson::Document;
 use std::fmt;
+use std::io;
 use std::string::FromUtf8Error;
 use std::sync::PoisonError;
-use bson::Document;
-use bson::ser::Error as BsonErr;
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -39,12 +39,13 @@ impl From<CannotApplyOperationForTypes> for Error {
 }
 
 impl fmt::Display for FieldTypeUnexpectedStruct {
-
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "unexpected type for field '{}', expected: {}, actual: {}",
-               self.field_name, self.expected_ty, self.actual_ty)
+        write!(
+            f,
+            "unexpected type for field '{}', expected: {}, actual: {}",
+            self.field_name, self.expected_ty, self.actual_ty
+        )
     }
-
 }
 
 #[derive(Debug)]
@@ -55,15 +56,17 @@ pub struct UnexpectedHeader {
 }
 
 impl fmt::Display for UnexpectedHeader {
-
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "page_id: {}, expected header: 0x{:02X} 0x{:02X}, actual: 0x{:02X} 0x{:02X}",
-               self.page_id,
-            self.expected_header[0], self.expected_header[1],
-            self.actual_header[0], self.actual_header[1]
+        write!(
+            f,
+            "page_id: {}, expected header: 0x{:02X} 0x{:02X}, actual: 0x{:02X} 0x{:02X}",
+            self.page_id,
+            self.expected_header[0],
+            self.expected_header[1],
+            self.actual_header[0],
+            self.actual_header[1]
         )
     }
-
 }
 
 #[derive(Debug)]
@@ -113,9 +116,16 @@ pub struct DataMalformedReason {
 
 #[derive(Debug)]
 pub struct DuplicateKeyError {
-    pub name: String,  // index name
-    pub key: String,   // key name
-    pub ns: String,    // collection name
+    pub name: String, // index name
+    pub key: String,  // key name
+    pub ns: String,   // collection name
+}
+
+#[derive(Debug)]
+pub struct RegexCompileError {
+    pub error: String,
+    pub expression: String,
+    pub options: String,
 }
 
 #[derive(Error, Debug)]
@@ -139,7 +149,7 @@ pub enum Error {
     #[error("parse error: {0}")]
     ParseError(String),
     #[error("io error: {}, backtrace: {}", .0.source, .0.backtrace)]
-    IOErr(Box<BtWrapper<io::Error>>) ,
+    IOErr(Box<BtWrapper<io::Error>>),
     #[error("utf8 error: {source}")]
     UTF8Err {
         #[from]
@@ -237,10 +247,11 @@ pub enum Error {
     DuplicateKey(Box<DuplicateKeyError>),
     #[error("the element type {0} is unknown")]
     UnknownBsonElementType(u8),
+    #[error("failed to compile regex expression: {}, expression: {}, options: {}", .0.error, .0.expression, .0.options)]
+    RegexCompileError(Box<RegexCompileError>),
 }
 
 impl Error {
-
     pub(crate) fn add(self, next: Error) -> Error {
         match self {
             Error::Multiple(mut result) => {
@@ -260,26 +271,21 @@ impl Error {
             backtrace: std::backtrace::Backtrace::capture(),
         }))
     }
-
 }
 
 impl From<bson::de::Error> for Error {
-
     fn from(error: bson::de::Error) -> Self {
         Error::BsonDeErr(Box::new(error))
     }
-
 }
 
 impl From<BsonErr> for Error {
-
     fn from(error: BsonErr) -> Self {
         Error::BsonErr(Box::new(BtWrapper {
             source: error,
             backtrace: std::backtrace::Backtrace::capture(),
         }))
     }
-
 }
 
 impl<T> From<PoisonError<T>> for Error {
@@ -289,19 +295,15 @@ impl<T> From<PoisonError<T>> for Error {
 }
 
 impl From<FromUtf8Error> for Error {
-
     fn from(value: FromUtf8Error) -> Self {
         Error::FromUtf8Error(Box::new(value))
     }
-
 }
 
 impl From<DuplicateKeyError> for Error {
-
     fn from(value: DuplicateKeyError) -> Self {
         Error::DuplicateKey(Box::new(value))
     }
-
 }
 
 impl From<io::Error> for Error {
@@ -310,6 +312,12 @@ impl From<io::Error> for Error {
             source: value,
             backtrace: std::backtrace::Backtrace::capture(),
         }))
+    }
+}
+
+impl From<RegexCompileError> for Error {
+    fn from(value: RegexCompileError) -> Self {
+        Error::RegexCompileError(Box::new(value))
     }
 }
 
@@ -322,5 +330,4 @@ mod tests {
         let size = std::mem::size_of::<Error>();
         assert_eq!(size, 32);
     }
-
 }
