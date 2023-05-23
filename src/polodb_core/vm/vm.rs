@@ -91,7 +91,11 @@ impl VM {
         session.auto_start_transaction(TransactionType::Read)?;
         let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
         cursor.go_to_min()?;
-        self.r1 = Some(Cursor::new(prefix, cursor));
+
+        let mut prefix_bytes = Vec::<u8>::new();
+        crate::utils::bson::stacked_key_bytes(&mut prefix_bytes, &prefix).unwrap();
+
+        self.r1 = Some(Cursor::new(prefix_bytes, cursor));
         Ok(())
     }
 
@@ -99,7 +103,11 @@ impl VM {
         session.auto_start_transaction(TransactionType::Write)?;
         let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
         cursor.go_to_min()?;
-        self.r1 = Some(Cursor::new(prefix, cursor));
+
+        let mut prefix_bytes = Vec::<u8>::new();
+        crate::utils::bson::stacked_key_bytes(&mut prefix_bytes, &prefix).unwrap();
+
+        self.r1 = Some(Cursor::new(prefix_bytes, cursor));
         Ok(())
     }
 
