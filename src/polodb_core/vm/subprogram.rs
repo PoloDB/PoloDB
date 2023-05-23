@@ -39,7 +39,7 @@ impl SubProgram {
     }
 
     pub(crate) fn compile_empty_query() -> SubProgram {
-        let mut codegen = Codegen::new(true);
+        let mut codegen = Codegen::new(true, false);
 
         codegen.emit(DbOp::Halt);
 
@@ -51,9 +51,7 @@ impl SubProgram {
         query: &Document,
         skip_annotation: bool,
     ) -> Result<SubProgram> {
-        let mut codegen = Codegen::new(skip_annotation);
-
-        codegen.emit_open_read(col_spec._id.clone().into());
+        let mut codegen = Codegen::new(skip_annotation, false);
 
         codegen.emit_query_layout(
             col_spec,
@@ -75,7 +73,7 @@ impl SubProgram {
         update: &Document,
         skip_annotation: bool, is_many: bool,
     ) -> Result<SubProgram> {
-        let mut codegen = Codegen::new(skip_annotation);
+        let mut codegen = Codegen::new(skip_annotation, true);
 
         let has_indexes = !col_spec.indexes.is_empty();
         let index_item_id: u32 = if has_indexes {
@@ -86,8 +84,6 @@ impl SubProgram {
         } else {
             u32::MAX
         };
-
-        codegen.emit_open_write(col_spec._id.clone().into());
 
         codegen.emit_query_layout(
             col_spec,
@@ -120,7 +116,7 @@ impl SubProgram {
         query: Option<&Document>,
         skip_annotation: bool, is_many: bool,
     ) -> Result<SubProgram> {
-        let mut codegen = Codegen::new(skip_annotation);
+        let mut codegen = Codegen::new(skip_annotation, true);
 
         let has_indexes = !col_spec.indexes.is_empty();
         let index_item_id: u32 = if has_indexes {
@@ -132,7 +128,7 @@ impl SubProgram {
             u32::MAX
         };
 
-        codegen.emit_open_write(col_name.into());
+        codegen.emit_open(col_name.into());
 
         codegen.emit_query_layout(
             col_spec,
@@ -159,7 +155,7 @@ impl SubProgram {
         col_name: &str,
         skip_annotation: bool
     ) -> Result<SubProgram> {
-        let mut codegen = Codegen::new(skip_annotation);
+        let mut codegen = Codegen::new(skip_annotation, true);
 
         let has_indexes = !col_spec.indexes.is_empty();
         let index_item_id: u32 = if has_indexes {
@@ -175,7 +171,7 @@ impl SubProgram {
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
 
-        codegen.emit_open_read(col_name.into());
+        codegen.emit_open(col_name.into());
 
         codegen.emit_goto(DbOp::Rewind, close_label);
 
@@ -206,12 +202,12 @@ impl SubProgram {
     }
 
     pub(crate) fn compile_query_all_by_name(col_name: &str, skip_annotation: bool) -> Result<SubProgram> {
-        let mut codegen = Codegen::new(skip_annotation);
+        let mut codegen = Codegen::new(skip_annotation, false);
         let result_label = codegen.new_label();
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
 
-        codegen.emit_open_read(col_name.into());
+        codegen.emit_open(col_name.into());
 
         codegen.emit_goto(DbOp::Rewind, close_label);
 
