@@ -4,10 +4,11 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use std::cmp::Ordering;
-use std::io::Write;
-use bson::{Bson, Document};
+use std::io::{BufRead, Read, Write};
+use bson::{Bson, DateTime, Decimal128, Document, Timestamp};
+use bson::oid::ObjectId;
 use bson::spec::ElementType;
-use byteorder::{BigEndian, WriteBytesExt};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use bson::ser::Error as BsonErr;
 use bson::ser::Result as BsonResult;
 use crate::{Error, Result};
@@ -98,6 +99,67 @@ pub fn stacked_key_bytes<W: Write>(writer: &mut W, key: &Bson) -> Result<()> {
     }
 
     Ok(())
+}
+
+pub fn split_stacked_keys(buffer: &[u8]) -> Result<Vec<Bson>> {
+    let mut result = Vec::<Bson>::new();
+    let mut reader = buffer;
+
+    loop {
+        let ch_result = reader.read_u8();
+        if ch_result.is_err() {
+            break;
+        }
+        let ch = ch_result.unwrap();
+        if ch == ElementType::Double as u8 {
+            let val = reader.read_f64::<BigEndian>()?;
+            result.push(Bson::Double(val));
+        } else if ch == ElementType::String as u8 {
+            let mut bytes = Vec::<u8>::new();
+            reader.read_until(0, &mut bytes)?;
+            result.push(Bson::String(String::from_utf8(bytes)?));
+        } else if ch == ElementType::Double as u8 {
+            let val = reader.read_u8()?;
+            result.push(Bson::Boolean(if val == 0 { false } else { true }));
+        } else if ch == ElementType::Null as u8 {
+            result.push(Bson::Null);
+        } else if ch == ElementType::Int32 as u8 {
+            let val = reader.read_i32::<BigEndian>()?;
+            result.push(Bson::Int32(val));
+        } else if ch == ElementType::Int64 as u8 {
+            let val = reader.read_i64::<BigEndian>()?;
+            result.push(Bson::Int64(val));
+        } else if ch == ElementType::Timestamp as u8 {
+            let val = reader.read_u64::<BigEndian>()?;
+            let timestamp = Timestamp {
+                time: (val >> 32) as u32,
+                increment: val as u32,
+            };
+            result.push(Bson::Timestamp(timestamp));
+        } else if ch == ElementType::ObjectId as u8 {
+            let mut bytes = [0u8; 12];
+            reader.read_exact(&mut bytes)?;
+            result.push(Bson::ObjectId(ObjectId::from_bytes(bytes)));
+        } else if ch == ElementType::DateTime as u8 {
+            let val = reader.read_i64::<BigEndian>()?;
+            let datetime = DateTime::from_millis(val);
+            result.push(Bson::DateTime(datetime));
+        } else if ch == ElementType::Symbol as u8 {
+            let mut bytes = Vec::<u8>::new();
+            reader.read_until(0, &mut bytes)?;
+            result.push(Bson::Symbol(String::from_utf8(bytes)?));
+        } else if ch == ElementType::Decimal128 as u8 {
+            let mut bytes = [0u8; 16];
+            reader.read_exact(&mut bytes)?;
+            result.push(Bson::Decimal128(Decimal128::from_bytes(bytes)));
+        } else if ch == ElementType::Undefined as u8 {
+            result.push(Bson::Undefined);
+        } else {
+            return Err(Error::NotAValidKeyType(format!("{}", ch)));
+        }
+    }
+
+    Ok(result)
 }
 
 pub fn value_cmp(a: &Bson, b: &Bson) -> BsonResult<Ordering> {
@@ -204,7 +266,6 @@ mod tests {
         assert_eq!(value_cmp(&Bson::Int64(2), &Bson::Int32(1)).unwrap(), Ordering::Greater);
         assert_eq!(value_cmp(&Bson::Int64(1), &Bson::Int32(1)).unwrap(), Ordering::Equal);
     }
-
 
     #[test]
     fn test_try_get_document_value() {

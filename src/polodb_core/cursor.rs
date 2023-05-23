@@ -67,6 +67,7 @@ impl Cursor {
         self.reset_by_custom_key(key_buffer.as_slice())
     }
 
+    #[allow(dead_code)]
     pub fn reset_by_pkey_buf(&mut self, pkey_buffer: &[u8]) -> Result<bool> {
         let mut key_buffer = self.prefix_bytes.clone();
 
@@ -85,14 +86,36 @@ impl Cursor {
         return Ok(false)
     }
 
-    #[allow(dead_code)]
+    pub fn reset_by_index_value(&mut self, index_value: &Bson) -> Result<bool> {
+        let key_buffer = {
+            let mut key_buffer = self.prefix_bytes.clone();
+            let primary_key_buffer = crate::utils::bson::stacked_key([
+                index_value,
+            ])?;
+
+            key_buffer.extend_from_slice(&primary_key_buffer);
+
+            key_buffer
+        };
+
+        self.kv_cursor.seek(key_buffer.as_slice())?;
+
+        self.current_key = self.kv_cursor.key();
+        if let Some(found) = &self.current_key {
+            let start_with = found.starts_with(key_buffer.as_slice());
+            return Ok(start_with);
+        }
+
+        return Ok(false);
+    }
+
     pub fn peek_key(&self) -> Option<Arc<[u8]>> {
         self.current_key.clone()
     }
 
     pub fn peek_data(&self, db: &LsmKvInner) -> Result<Option<Arc<[u8]>>> {
         if let Some(current_key) = &self.current_key {
-            if !is_prefix_with(&current_key, &self.prefix_bytes) {
+            if !current_key.starts_with(self.prefix_bytes.as_slice()) {
                 return Ok(None);
             }
 
@@ -108,7 +131,7 @@ impl Cursor {
         }
 
         if let Some(current_key) = &self.current_key {
-            if !is_prefix_with(&current_key, &self.prefix_bytes) {
+            if !current_key.starts_with(self.prefix_bytes.as_slice()) {
                 return false;
             }
             true
@@ -123,13 +146,4 @@ impl Cursor {
         Ok(())
     }
 
-}
-
-#[inline]
-fn is_prefix_with(target: &[u8], prefix: &[u8]) -> bool {
-    if target.len() < prefix.len() {
-        return false;
-    }
-
-    target[0..prefix.len()].cmp(prefix) == Ordering::Equal
 }

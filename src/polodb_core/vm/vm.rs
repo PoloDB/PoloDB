@@ -87,13 +87,28 @@ impl VM {
         }
     }
 
+    fn prefix_bytes_from_bson(val: Bson) -> Result<Vec<u8>> {
+        match val {
+            Bson::String(_) => {
+                let mut prefix_bytes = Vec::<u8>::new();
+                crate::utils::bson::stacked_key_bytes(&mut prefix_bytes, &val)?;
+                Ok(prefix_bytes)
+            }
+
+            Bson::Binary(bin) => {
+                Ok(bin.bytes)
+            }
+
+            _ => panic!("unexpected bson value: {:?}", val),
+        }
+    }
+
     fn open_read(&mut self, session: &mut SessionInner, prefix: Bson) -> Result<()> {
         session.auto_start_transaction(TransactionType::Read)?;
         let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
         cursor.go_to_min()?;
 
-        let mut prefix_bytes = Vec::<u8>::new();
-        crate::utils::bson::stacked_key_bytes(&mut prefix_bytes, &prefix).unwrap();
+        let prefix_bytes = VM::prefix_bytes_from_bson(prefix)?;
 
         self.r1 = Some(Cursor::new(prefix_bytes, cursor));
         Ok(())
@@ -104,8 +119,7 @@ impl VM {
         let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
         cursor.go_to_min()?;
 
-        let mut prefix_bytes = Vec::<u8>::new();
-        crate::utils::bson::stacked_key_bytes(&mut prefix_bytes, &prefix).unwrap();
+        let prefix_bytes = VM::prefix_bytes_from_bson(prefix)?;
 
         self.r1 = Some(Cursor::new(prefix_bytes, cursor));
         Ok(())
@@ -145,42 +159,42 @@ impl VM {
     fn find_by_index(&mut self, session: &mut SessionInner) -> Result<bool> {
         let stack_len = self.stack.len();
         let col_name = &self.stack[stack_len - 1];
-        let index_name = &self.stack[stack_len - 2];
-        let query_value = &self.stack[stack_len - 3];
+        let query_value = &self.stack[stack_len - 2];
 
-        let index_key = IndexHelper::make_index_key(
-            col_name.as_str().unwrap(),
-            index_name.as_str().unwrap(),
-            query_value,
-            None,
-        )?;
+        let cursor = self.r1.as_mut().unwrap();
+        let result = cursor.reset_by_index_value(query_value)?;
 
-        let mut index_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
-        index_cursor.go_to_min()?;
+        if !result {
+            return Ok(false);
+        }
 
-        index_cursor.seek(index_key.as_slice())?;
+        let key= cursor.peek_key().expect("key must exist");
 
-        let current_key = index_cursor.key();
+        let slices = crate::utils::bson::split_stacked_keys(key.as_ref())?;
+        let pkey = slices.last().expect("pkey must exist");
+
+        let pkey_in_kv = crate::utils::bson::stacked_key(vec![
+            col_name,
+            pkey,
+        ])?;
+
+        let mut value_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
+        value_cursor.go_to_min()?;
+
+        value_cursor.seek(pkey_in_kv.as_slice())?;
+
+        let current_key = value_cursor.key();
         if current_key.is_none() {
             return Ok(false);
         }
 
         let current_key = current_key.unwrap();
 
-        if !current_key.starts_with(index_key.as_slice()) {
+        if current_key.as_ref().cmp(pkey_in_kv.as_slice()) != Ordering::Equal {
             return Ok(false);
         }
 
-        let primary_key = &current_key[index_key.len()..];
-
-        let cursor = self.r1.as_mut().unwrap();
-
-        let result = cursor.reset_by_pkey_buf(primary_key)?;
-        if !result {
-            return Ok(false);
-        }
-
-        let buf = cursor.peek_data(self.kv_engine.inner.as_ref())?.unwrap();
+        let buf = value_cursor.value(self.kv_engine.inner.as_ref())?.unwrap();
         let doc = bson::from_slice(buf.as_ref())?;
         self.stack.push(Bson::Document(doc));
 

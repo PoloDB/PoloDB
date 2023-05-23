@@ -3,11 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use bson::{Bson, Document, Array};
-use bson::spec::ElementType;
+use bson::{Bson, Document, Array, Binary};
+use bson::spec::{BinarySubtype, ElementType};
 use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
+use crate::index::INDEX_PREFIX;
 use crate::{Result, Error};
 use crate::coll::collection_info::CollectionSpecification;
 use crate::errors::{FieldTypeUnexpectedStruct, mk_invalid_query_field};
@@ -365,16 +366,29 @@ impl Codegen {
     where
         F: FnOnce(&mut Codegen) -> Result<()>
     {
-        self.emit_open(col_name.into());
+        let prefix_bytes = {
+            let b_prefix = Bson::String(INDEX_PREFIX.to_string());
+            let b_col_name = Bson::String(col_name.to_string());
+            let b_index_name = &Bson::String(index_name.to_string());
+
+            let buf: Vec<&Bson> = vec![
+                &b_prefix,
+                &b_col_name,
+                &b_index_name,
+            ];
+            crate::utils::bson::stacked_key(buf)?
+        };
+
+        self.emit_open(Bson::Binary(Binary {
+            subtype: BinarySubtype::Generic,
+            bytes: prefix_bytes,
+        }));
 
         let close_label = self.new_label();
         let result_label = self.new_label();
 
         let value_id = self.push_static(query_value.clone());
         self.emit_push_value(value_id);
-
-        let index_name_id = self.push_static(Bson::String(index_name.to_string()));
-        self.emit_push_value(index_name_id);
 
         let col_name_id = self.push_static(Bson::String(col_name.to_string()));
         self.emit_push_value(col_name_id);
@@ -387,7 +401,6 @@ impl Codegen {
 
         self.emit(DbOp::Pop);  // pop the collection name
         self.emit(DbOp::Pop);  // pop the query value
-        self.emit(DbOp::Pop);  // pop the index name
 
         self.emit(DbOp::Close);
         self.emit(DbOp::Halt);

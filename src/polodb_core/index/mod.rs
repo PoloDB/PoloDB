@@ -8,6 +8,6 @@ mod index_helper;
 mod index_model;
 mod index_builder;
 
-pub(crate) use index_helper::{IndexHelper, IndexHelperOperation};
+pub(crate) use index_helper::{IndexHelper, IndexHelperOperation, INDEX_PREFIX};
 pub(crate) use index_builder::IndexBuilder;
 pub use index_model::{IndexModel, IndexOptions};

@@ -15,7 +15,7 @@ use crate::coll::collection_info::{
 use crate::errors::DuplicateKeyError;
 use crate::session::SessionInner;
 
-const INDEX_PREFIX: &'static str = "$I";
+pub(crate) const INDEX_PREFIX: &'static str = "$I";
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -177,6 +177,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
 #[cfg(test)]
 mod tests {
     use bson::Bson;
+    use crate::utils::str::escape_binary_to_string;
     use super::IndexHelper;
 
     #[test]
@@ -188,13 +189,7 @@ mod tests {
             Some(&Bson::String("Vincent".to_string())),
         ).unwrap() ;
 
-        let escaped_string = String::from_utf8(
-        index_key
-            .iter()
-            .flat_map(|b| std::ascii::escape_default(*b))
-            .collect::<Vec<u8>>(),
-        )
-        .unwrap();
+        let escaped_string = escape_binary_to_string(index_key) .unwrap();
 
         assert_eq!(escaped_string, "\\x02$I\\x00\\x02users\\x00\\x02name\\x00\\x02value\\x00\\x02Vincent\\x00");
     }

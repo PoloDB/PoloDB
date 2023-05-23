@@ -11,6 +11,7 @@ use crate::coll::collection_info::{
     IndexInfo,
 };
 use crate::Result;
+use crate::utils::str::escape_binary_to_string;
 use super::op::DbOp;
 use super::label::LabelSlot;
 use crate::vm::codegen::Codegen;
@@ -231,6 +232,24 @@ impl SubProgram {
 
 }
 
+fn open_bson_to_str(val: &Bson) -> Result<String> {
+    let (str, is_bin) = match val {
+        Bson::String(s) => (s.clone(), false),
+        Bson::Binary(bin) => (escape_binary_to_string(bin.bytes.as_slice())?, true),
+        _ => panic!("unexpected bson value: {:?}", val),
+    };
+
+    let mut result = if is_bin {
+        "b\"".to_string()
+    } else {
+        "\"".to_string()
+    };
+    result.extend(str.chars());
+    result.extend("\"".chars());
+
+    Ok(result)
+}
+
 impl fmt::Display for SubProgram {
 
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -385,14 +404,16 @@ impl fmt::Display for SubProgram {
                     DbOp::OpenRead => {
                         let idx = begin.add(pc + 1).cast::<u32>().read();
                         let value = &self.static_values[idx as usize];
-                        writeln!(f, "{}: OpenRead({})", pc, value)?;
+                        let value_str = open_bson_to_str(value).unwrap();
+                        writeln!(f, "{}: OpenRead({})", pc, value_str)?;
                         pc += 5;
                     }
 
                     DbOp::OpenWrite => {
                         let idx = begin.add(pc + 1).cast::<u32>().read();
                         let value = &self.static_values[idx as usize];
-                        writeln!(f, "{}: OpenWrite({})", pc, value)?;
+                        let value_str = open_bson_to_str(value).unwrap();
+                        writeln!(f, "{}: OpenWrite({})", pc, value_str)?;
                         pc += 5;
                     }
 
@@ -686,30 +707,28 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead("test")
+0: OpenRead(b"\x02$I\x00\x02test\x00\x02age_1\x00")
 5: PushValue(32)
-10: PushValue("age_1")
-15: PushValue("test")
-20: FindByIndex(35)
-25: Goto(45)
+10: PushValue("test")
+15: FindByIndex(30)
+20: Goto(39)
 
-30: Label(0)
-35: Pop
-36: Pop
-37: Pop
-38: Close
-39: Halt
+25: Label(0)
+30: Pop
+31: Pop
+32: Close
+33: Halt
 
-40: Label(1)
-45: GetField("name", 35)
-54: PushValue("Vincent Chan")
-59: Equal
-60: FalseJump(35)
-65: Pop
-66: Pop
-67: ResultRow
-68: Pop
-69: Goto(35)
+34: Label(1)
+39: GetField("name", 30)
+48: PushValue("Vincent Chan")
+53: Equal
+54: FalseJump(30)
+59: Pop
+60: Pop
+61: ResultRow
+62: Pop
+63: Goto(30)
 "#;
         assert_eq!(expect, actual);
     }
