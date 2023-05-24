@@ -117,8 +117,10 @@ pub fn split_stacked_keys(buffer: &[u8]) -> Result<Vec<Bson>> {
         } else if ch == ElementType::String as u8 {
             let mut bytes = Vec::<u8>::new();
             reader.read_until(0, &mut bytes)?;
+            // remove last byte of bytes
+            bytes.pop();
             result.push(Bson::String(String::from_utf8(bytes)?));
-        } else if ch == ElementType::Double as u8 {
+        } else if ch == ElementType::Boolean as u8 {
             let val = reader.read_u8()?;
             result.push(Bson::Boolean(if val == 0 { false } else { true }));
         } else if ch == ElementType::Null as u8 {
@@ -147,6 +149,7 @@ pub fn split_stacked_keys(buffer: &[u8]) -> Result<Vec<Bson>> {
         } else if ch == ElementType::Symbol as u8 {
             let mut bytes = Vec::<u8>::new();
             reader.read_until(0, &mut bytes)?;
+            bytes.pop();
             result.push(Bson::Symbol(String::from_utf8(bytes)?));
         } else if ch == ElementType::Decimal128 as u8 {
             let mut bytes = [0u8; 16];
@@ -155,7 +158,7 @@ pub fn split_stacked_keys(buffer: &[u8]) -> Result<Vec<Bson>> {
         } else if ch == ElementType::Undefined as u8 {
             result.push(Bson::Undefined);
         } else {
-            return Err(Error::NotAValidKeyType(format!("{}", ch)));
+            return Err(Error::UnknownBsonElementType(ch));
         }
     }
 
@@ -254,8 +257,9 @@ pub fn bson_datetime_now() -> bson::datetime::DateTime {
 #[cfg(test)]
 mod tests {
     use std::cmp::Ordering;
-    use bson::{Bson, doc};
-    use crate::utils::bson::value_cmp;
+    use bson::{Bson, doc, Timestamp};
+    use bson::oid::ObjectId;
+    use crate::utils::bson::{split_stacked_keys, stacked_key, value_cmp};
 
     #[test]
     fn test_value_cmp() {
@@ -276,6 +280,30 @@ mod tests {
         assert_eq!(super::try_get_document_value(&doc!{"a": { "b": 1 }}, "a.c"), None);
         assert_eq!(super::try_get_document_value(&doc!{"a": { "b": { "c": 1 }}}, "a.b.c"), Some(Bson::Int32(1)));
         assert_eq!(super::try_get_document_value(&doc!{"a": { "b": { "c": 1 }}}, "a.b.d"), None);
+    }
+
+    #[test]
+    fn test_split_stacked_keys() {
+        let values = vec![
+            Bson::ObjectId(ObjectId::new()),
+            Bson::String("Hello".to_string()),
+            Bson::Int32(42),
+            Bson::Int64(42),
+            Bson::Double(3.14),
+            Bson::Undefined,
+            Bson::Null,
+            Bson::Boolean(true),
+            Bson::Timestamp(Timestamp { time: 42, increment: 42 }),
+            Bson::DateTime(super::bson_datetime_now()),
+        ];
+        let stacked = stacked_key(&values).unwrap();
+        let slices = split_stacked_keys(&stacked).unwrap();
+
+        // deep compare slices and values
+        assert_eq!(slices.len(), values.len());
+        for i in 0..slices.len() {
+            assert_eq!(slices[i], values[i]);
+        }
     }
 
 }
