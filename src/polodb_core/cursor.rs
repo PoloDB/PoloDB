@@ -14,7 +14,7 @@ use crate::session::SessionInner;
 /// Cursor is struct pointing on
 /// a value on the kv engine
 pub(crate) struct Cursor {
-    prefix_bytes: Vec<u8>,
+    pub(crate)  prefix_bytes: Vec<u8>,
     kv_cursor:    MultiCursor,
     current_key:  Option<Arc<[u8]>>,
 }

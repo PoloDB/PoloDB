@@ -158,7 +158,7 @@ impl VM {
 
     fn find_by_index(&mut self, session: &mut SessionInner) -> Result<bool> {
         let stack_len = self.stack.len();
-        let col_name = &self.stack[stack_len - 1];
+        // let col_name = self.stack[stack_len - 1].as_str().expect("col_name must be string").to_string();
         let query_value = &self.stack[stack_len - 2];
 
         let cursor = self.r1.as_mut().unwrap();
@@ -170,8 +170,31 @@ impl VM {
 
         let key= cursor.peek_key().expect("key must exist");
 
-        let slices = crate::utils::bson::split_stacked_keys(key.as_ref())?;
+        let index_value = self.read_index_value_by_index_key(
+            key.as_ref(),
+            session,
+        )?;
+
+        if index_value.is_none() {
+            return Ok(false);
+        }
+
+        self.stack.push(index_value.unwrap());
+
+        self.metrics.add_find_by_index_count();
+
+        Ok(true)
+    }
+
+    fn read_index_value_by_index_key(
+        &mut self,
+        index_key: &[u8],
+        session: &mut SessionInner,
+    ) -> Result<Option<Bson>> {
+        let slices = crate::utils::bson::split_stacked_keys(index_key.as_ref())?;
         let pkey = slices.last().expect("pkey must exist");
+
+        let col_name = &slices[1];
 
         let pkey_in_kv = crate::utils::bson::stacked_key(vec![
             col_name,
@@ -185,22 +208,19 @@ impl VM {
 
         let current_key = value_cursor.key();
         if current_key.is_none() {
-            return Ok(false);
+            return Ok(None);
         }
 
         let current_key = current_key.unwrap();
 
         if current_key.as_ref().cmp(pkey_in_kv.as_slice()) != Ordering::Equal {
-            return Ok(false);
+            return Ok(None);
         }
 
         let buf = value_cursor.value(self.kv_engine.inner.as_ref())?.unwrap();
         let doc = bson::from_slice(buf.as_ref())?;
-        self.stack.push(Bson::Document(doc));
 
-        self.metrics.add_find_by_index_count();
-
-        Ok(true)
+        Ok(Some(Bson::Document(doc)))
     }
 
     fn next(&mut self) -> Result<()> {
@@ -220,6 +240,33 @@ impl VM {
                 self.r0 = 0;
             }
         }
+        Ok(())
+    }
+
+    fn next_index_value(&mut self, session: &mut SessionInner) -> Result<()> {
+        let cursor = self.r1.as_mut().unwrap();
+        cursor.next()?;
+        let current_key = cursor.peek_key();
+        if current_key.is_none() {
+            self.r0 = 0;
+            return Ok(());
+        }
+        let current_key = current_key.unwrap();
+        if !current_key.starts_with(cursor.prefix_bytes.as_slice()) {
+            self.r0 = 0;
+            return Ok(());
+        }
+
+        let value_opt = self.read_index_value_by_index_key(current_key.as_ref(), session)?;
+        if value_opt.is_none() {
+            self.r0 = 0;
+            return Ok(());
+        }
+
+        self.stack.push(value_opt.unwrap());
+
+        self.r0 = 1;
+
         Ok(())
     }
 
@@ -557,6 +604,16 @@ impl VM {
 
                     DbOp::Next => {
                         try_vm!(self, self.next());
+                        if self.r0 != 0 {
+                            let location = self.pc.add(1).cast::<u32>().read();
+                            self.reset_location(location);
+                        } else {
+                            self.pc = self.pc.add(5);
+                        }
+                    }
+
+                    DbOp::NextIndexValue => {
+                        try_vm!(self, self.next_index_value(session));
                         if self.r0 != 0 {
                             let location = self.pc.add(1).cast::<u32>().read();
                             self.reset_location(location);

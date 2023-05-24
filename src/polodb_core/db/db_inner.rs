@@ -720,7 +720,7 @@ impl DatabaseInner {
     }
 
     pub fn delete(&self, col_name: &str, query: Document, is_many: bool, session: &mut SessionInner) -> Result<usize> {
-        let result = self.internal_delete_by_query(session, col_name, query, is_many)?;
+        let result = try_db_op!(self, session, self.internal_delete_by_query(session, col_name, query, is_many));
         Ok(result)
     }
 

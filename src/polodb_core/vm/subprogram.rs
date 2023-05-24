@@ -319,6 +319,12 @@ impl fmt::Display for SubProgram {
                         pc += 5;
                     }
 
+                    DbOp::NextIndexValue => {
+                        let location = begin.add(pc + 1).cast::<u32>().read();
+                        writeln!(f, "{}: NextIndexValue({})", pc, location)?;
+                        pc += 5;
+                    }
+
                     DbOp::PushValue => {
                         let index = begin.add(pc + 1).cast::<u32>().read();
                         let val = &self.static_values[index as usize];
@@ -710,25 +716,28 @@ mod tests {
 0: OpenRead(b"\x02$I\x00\x02test\x00\x02age_1\x00")
 5: PushValue(32)
 10: PushValue("test")
-15: FindByIndex(30)
-20: Goto(39)
+15: FindByIndex(40)
+20: Goto(49)
 
-25: Label(0)
-30: Pop
-31: Pop
-32: Close
-33: Halt
+25: Label(2)
+30: NextIndexValue(49)
 
-34: Label(1)
-39: GetField("name", 30)
-48: PushValue("Vincent Chan")
-53: Equal
-54: FalseJump(30)
-59: Pop
-60: Pop
-61: ResultRow
-62: Pop
-63: Goto(30)
+35: Label(0)
+40: Pop
+41: Pop
+42: Close
+43: Halt
+
+44: Label(1)
+49: GetField("name", 40)
+58: PushValue("Vincent Chan")
+63: Equal
+64: FalseJump(40)
+69: Pop
+70: Pop
+71: ResultRow
+72: Pop
+73: Goto(30)
 "#;
         assert_eq!(expect, actual);
     }

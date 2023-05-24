@@ -328,6 +328,10 @@ impl Codegen {
     where
         F: FnOnce(&mut Codegen) -> Result<()>
     {
+        if self.is_write {
+            return Ok(Some(result_callback));
+        }
+
         let index_meta = &col_spec.indexes;
         for (index_name, index_info) in index_meta {
             let (key, _order) = index_info.keys.iter().next().unwrap();
@@ -386,6 +390,7 @@ impl Codegen {
 
         let close_label = self.new_label();
         let result_label = self.new_label();
+        let next_label = self.new_label();
 
         let value_id = self.push_static(query_value.clone());
         self.emit_push_value(value_id);
@@ -396,6 +401,9 @@ impl Codegen {
         self.emit_goto(DbOp::FindByIndex, close_label);
 
         self.emit_goto(DbOp::Goto, result_label);
+
+        self.emit_label(next_label);
+        self.emit_goto(DbOp::NextIndexValue, result_label);
 
         self.emit_label(close_label);
 
@@ -423,7 +431,7 @@ impl Codegen {
 
         result_callback(self)?;
 
-        self.emit_goto(DbOp::Goto, close_label);
+        self.emit_goto(DbOp::Goto, next_label);
 
         Ok(())
     }
