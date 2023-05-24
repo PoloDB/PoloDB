@@ -247,8 +247,8 @@ pub enum Error {
     DuplicateKey(Box<DuplicateKeyError>),
     #[error("the element type {0} is unknown")]
     UnknownBsonElementType(u8),
-    #[error("failed to compile regex expression: {}, expression: {}, options: {}", .0.error, .0.expression, .0.options)]
-    RegexCompileError(Box<RegexError>),
+    #[error("failed to run regex expression: {}, expression: {}, options: {}", .0.error, .0.expression, .0.options)]
+    RegexError(Box<RegexError>),
 }
 
 impl Error {
@@ -317,7 +317,7 @@ impl From<io::Error> for Error {
 
 impl From<RegexError> for Error {
     fn from(value: RegexError) -> Self {
-        Error::RegexCompileError(Box::new(value))
+        Error::RegexError(Box::new(value))
     }
 }
 
