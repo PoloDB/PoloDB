@@ -518,7 +518,7 @@ impl fmt::Display for SubProgram {
 mod tests {
     use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
     use crate::vm::SubProgram;
-    use bson::doc;
+    use bson::{doc, Regex};
     use indexmap::indexmap;
     use polodb_line_diff::assert_eq;
 
@@ -944,6 +944,60 @@ mod tests {
 123: FalseJump(37)
 128: Pop2(3)
 133: Goto(61)
+"#;
+        assert_eq!(expect, actual);
+    }
+
+    #[test]
+    fn print_regex() {
+        let col_spec = new_spec("test");
+        let test_doc = doc! {
+            "name": doc! {
+                "$regex": Regex {
+                    options: String::new(),
+                    pattern: "/^Vincent/".into(),
+                },
+            },
+        };
+        let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+
+        let expect = r#"Program:
+
+0: OpenRead("test")
+5: Rewind(30)
+10: Goto(73)
+
+15: Label(1)
+20: Next(73)
+
+25: Label(5, "Close")
+30: Close
+31: Halt
+
+32: Label(4, "Not this item")
+37: RecoverStackPos
+38: Pop
+39: Goto(20)
+
+44: Label(3, "Get field failed")
+49: RecoverStackPos
+50: Pop
+51: Goto(20)
+
+56: Label(2, "Result")
+61: ResultRow
+62: Pop
+63: Goto(20)
+
+68: Label(0, "Compare")
+73: SaveStackPos
+74: GetField("name", 49)
+83: PushValue(//^Vincent//)
+88: Regex
+89: FalseJump(37)
+94: Pop2(2)
+99: Goto(61)
 "#;
         assert_eq!(expect, actual);
     }
