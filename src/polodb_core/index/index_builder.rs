@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-use bson::{Bson, Document};
+use bson::Document;
 use crate::Result;
 use crate::coll::collection_info::IndexInfo;
 use crate::cursor::Cursor;
@@ -43,10 +43,10 @@ impl<'a, 'b, 'c, 'd, 'e> IndexBuilder<'a, 'b, 'c, 'd, 'e> {
         let multi_cursor = self.kv_engine.open_multi_cursor(
             Some(self.session.kv_session()),
         );
-        let mut cursor = Cursor::new(
-            Bson::String(self.col_name.to_string()),
+        let mut cursor = Cursor::new_with_str_prefix(
+            self.col_name.to_string(),
             multi_cursor,
-        );
+        )?;
 
         cursor.reset()?;
 

@@ -3,11 +3,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use bson::{Bson, Document, Array};
-use bson::spec::ElementType;
+use bson::{Bson, Document, Array, Binary};
+use bson::spec::{BinarySubtype, ElementType};
 use super::label::{Label, LabelSlot, JumpTableRecord};
 use crate::vm::SubProgram;
 use crate::vm::op::DbOp;
+use crate::index::INDEX_PREFIX;
 use crate::{Result, Error};
 use crate::coll::collection_info::CollectionSpecification;
 use crate::errors::{FieldTypeUnexpectedStruct, mk_invalid_query_field};
@@ -75,10 +76,11 @@ mod update_op {
 }
 
 pub(super) struct Codegen {
-    program:               Box<SubProgram>,
-    jump_table:            Vec<JumpTableRecord>,
-    skip_annotation:       bool,
-    paths:                 Vec<String>,
+    program:         Box<SubProgram>,
+    jump_table:      Vec<JumpTableRecord>,
+    skip_annotation: bool,
+    is_write:        bool,
+    paths:           Vec<String>,
 }
 
 macro_rules! path_hint {
@@ -91,11 +93,12 @@ macro_rules! path_hint {
 
 impl Codegen {
 
-    pub(super) fn new(skip_annotation: bool) -> Codegen {
+    pub(super) fn new(skip_annotation: bool, is_write: bool) -> Codegen {
         Codegen {
             program: Box::new(SubProgram::new()),
             jump_table: Vec::with_capacity(JUMP_TABLE_DEFAULT_SIZE),
             skip_annotation,
+            is_write,
             paths: Vec::with_capacity(PATH_DEFAULT_SIZE),
         }
     }
@@ -208,7 +211,11 @@ impl Codegen {
     where
         F: FnOnce(&mut Codegen) -> Result<()>
     {
-        let try_pkey_result = self.try_query_by_pkey(query, result_callback)?;
+        let try_pkey_result = self.try_query_by_pkey(
+            col_spec,
+            query,
+            result_callback,
+        )?;
         if try_pkey_result.is_none() {
             return Ok(());
         }
@@ -223,6 +230,9 @@ impl Codegen {
         if try_index_result.is_none() {
             return Ok(());
         }
+
+        self.emit_open(col_spec._id.clone().into());
+
         let result_callback: F = try_index_result.unwrap();
 
         let compare_label = self.new_label();
@@ -289,12 +299,18 @@ impl Codegen {
         Ok(())
     }
 
-    fn try_query_by_pkey<F>(&mut self, query: &Document, result_callback: F) -> Result<Option<F>>
+    fn try_query_by_pkey<F>(
+        &mut self,
+        col_spec: &CollectionSpecification,
+        query: &Document,
+        result_callback: F,
+    ) -> Result<Option<F>>
     where
         F: FnOnce(&mut Codegen) -> Result<()>
     {
         if let Some(id_value) = query.get("_id") {
             if id_value.element_type() != ElementType::EmbeddedDocument {
+                self.emit_open(col_spec._id.clone().into());
                 self.emit_query_layout_has_pkey(id_value.clone(), query, result_callback)?;
                 return Ok(None);
             }
@@ -312,6 +328,10 @@ impl Codegen {
     where
         F: FnOnce(&mut Codegen) -> Result<()>
     {
+        if self.is_write {
+            return Ok(Some(result_callback));
+        }
+
         let index_meta = &col_spec.indexes;
         for (index_name, index_info) in index_meta {
             let (key, _order) = index_info.keys.iter().next().unwrap();
@@ -350,14 +370,30 @@ impl Codegen {
     where
         F: FnOnce(&mut Codegen) -> Result<()>
     {
+        let prefix_bytes = {
+            let b_prefix = Bson::String(INDEX_PREFIX.to_string());
+            let b_col_name = Bson::String(col_name.to_string());
+            let b_index_name = &Bson::String(index_name.to_string());
+
+            let buf: Vec<&Bson> = vec![
+                &b_prefix,
+                &b_col_name,
+                &b_index_name,
+            ];
+            crate::utils::bson::stacked_key(buf)?
+        };
+
+        self.emit_open(Bson::Binary(Binary {
+            subtype: BinarySubtype::Generic,
+            bytes: prefix_bytes,
+        }));
+
         let close_label = self.new_label();
         let result_label = self.new_label();
+        let next_label = self.new_label();
 
         let value_id = self.push_static(query_value.clone());
         self.emit_push_value(value_id);
-
-        let index_name_id = self.push_static(Bson::String(index_name.to_string()));
-        self.emit_push_value(index_name_id);
 
         let col_name_id = self.push_static(Bson::String(col_name.to_string()));
         self.emit_push_value(col_name_id);
@@ -366,11 +402,13 @@ impl Codegen {
 
         self.emit_goto(DbOp::Goto, result_label);
 
+        self.emit_label(next_label);
+        self.emit_goto(DbOp::NextIndexValue, result_label);
+
         self.emit_label(close_label);
 
         self.emit(DbOp::Pop);  // pop the collection name
         self.emit(DbOp::Pop);  // pop the query value
-        self.emit(DbOp::Pop);  // pop the index name
 
         self.emit(DbOp::Close);
         self.emit(DbOp::Halt);
@@ -393,7 +431,7 @@ impl Codegen {
 
         result_callback(self)?;
 
-        self.emit_goto(DbOp::Goto, close_label);
+        self.emit_goto(DbOp::Goto, next_label);
 
         Ok(())
     }
@@ -903,14 +941,12 @@ impl Codegen {
         self.program.instructions.extend_from_slice(&bytes);
     }
 
-    pub(super) fn emit_open_read(&mut self, prefix: Bson) {
-        self.emit(DbOp::OpenRead);
-        let id = self.push_static(prefix);
-        self.emit_u32(id);
-    }
-
-    pub(super) fn emit_open_write(&mut self, prefix: Bson) {
-        self.emit(DbOp::OpenWrite);
+    pub(crate) fn emit_open(&mut self, prefix: Bson) {
+        self.emit(if self.is_write {
+            DbOp::OpenWrite
+        } else {
+            DbOp::OpenRead
+        });
         let id = self.push_static(prefix);
         self.emit_u32(id);
     }

@@ -87,11 +87,30 @@ impl VM {
         }
     }
 
+    fn prefix_bytes_from_bson(val: Bson) -> Result<Vec<u8>> {
+        match val {
+            Bson::String(_) => {
+                let mut prefix_bytes = Vec::<u8>::new();
+                crate::utils::bson::stacked_key_bytes(&mut prefix_bytes, &val)?;
+                Ok(prefix_bytes)
+            }
+
+            Bson::Binary(bin) => {
+                Ok(bin.bytes)
+            }
+
+            _ => panic!("unexpected bson value: {:?}", val),
+        }
+    }
+
     fn open_read(&mut self, session: &mut SessionInner, prefix: Bson) -> Result<()> {
         session.auto_start_transaction(TransactionType::Read)?;
         let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
         cursor.go_to_min()?;
-        self.r1 = Some(Cursor::new(prefix, cursor));
+
+        let prefix_bytes = VM::prefix_bytes_from_bson(prefix)?;
+
+        self.r1 = Some(Cursor::new(prefix_bytes, cursor));
         Ok(())
     }
 
@@ -99,7 +118,10 @@ impl VM {
         session.auto_start_transaction(TransactionType::Write)?;
         let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
         cursor.go_to_min()?;
-        self.r1 = Some(Cursor::new(prefix, cursor));
+
+        let prefix_bytes = VM::prefix_bytes_from_bson(prefix)?;
+
+        self.r1 = Some(Cursor::new(prefix_bytes, cursor));
         Ok(())
     }
 
@@ -136,49 +158,69 @@ impl VM {
 
     fn find_by_index(&mut self, session: &mut SessionInner) -> Result<bool> {
         let stack_len = self.stack.len();
-        let col_name = &self.stack[stack_len - 1];
-        let index_name = &self.stack[stack_len - 2];
-        let query_value = &self.stack[stack_len - 3];
-
-        let index_key = IndexHelper::make_index_key(
-            col_name.as_str().unwrap(),
-            index_name.as_str().unwrap(),
-            query_value,
-            None,
-        )?;
-
-        let mut index_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
-        index_cursor.go_to_min()?;
-
-        index_cursor.seek(index_key.as_slice())?;
-
-        let current_key = index_cursor.key();
-        if current_key.is_none() {
-            return Ok(false);
-        }
-
-        let current_key = current_key.unwrap();
-
-        if !current_key.starts_with(index_key.as_slice()) {
-            return Ok(false);
-        }
-
-        let primary_key = &current_key[index_key.len()..];
+        // let col_name = self.stack[stack_len - 1].as_str().expect("col_name must be string").to_string();
+        let query_value = &self.stack[stack_len - 2];
 
         let cursor = self.r1.as_mut().unwrap();
+        let result = cursor.reset_by_index_value(query_value)?;
 
-        let result = cursor.reset_by_pkey_buf(primary_key)?;
         if !result {
             return Ok(false);
         }
 
-        let buf = cursor.peek_data(self.kv_engine.inner.as_ref())?.unwrap();
-        let doc = bson::from_slice(buf.as_ref())?;
-        self.stack.push(Bson::Document(doc));
+        let key= cursor.peek_key().expect("key must exist");
+
+        let index_value = self.read_index_value_by_index_key(
+            key.as_ref(),
+            session,
+        )?;
+
+        if index_value.is_none() {
+            return Ok(false);
+        }
+
+        self.stack.push(index_value.unwrap());
 
         self.metrics.add_find_by_index_count();
 
         Ok(true)
+    }
+
+    fn read_index_value_by_index_key(
+        &mut self,
+        index_key: &[u8],
+        session: &mut SessionInner,
+    ) -> Result<Option<Bson>> {
+        let slices = crate::utils::bson::split_stacked_keys(index_key.as_ref())?;
+        let pkey = slices.last().expect("pkey must exist");
+
+        let col_name = &slices[1];
+
+        let pkey_in_kv = crate::utils::bson::stacked_key(vec![
+            col_name,
+            pkey,
+        ])?;
+
+        let mut value_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session())) ;
+        value_cursor.go_to_min()?;
+
+        value_cursor.seek(pkey_in_kv.as_slice())?;
+
+        let current_key = value_cursor.key();
+        if current_key.is_none() {
+            return Ok(None);
+        }
+
+        let current_key = current_key.unwrap();
+
+        if current_key.as_ref().cmp(pkey_in_kv.as_slice()) != Ordering::Equal {
+            return Ok(None);
+        }
+
+        let buf = value_cursor.value(self.kv_engine.inner.as_ref())?.unwrap();
+        let doc = bson::from_slice(buf.as_ref())?;
+
+        Ok(Some(Bson::Document(doc)))
     }
 
     fn next(&mut self) -> Result<()> {
@@ -198,6 +240,33 @@ impl VM {
                 self.r0 = 0;
             }
         }
+        Ok(())
+    }
+
+    fn next_index_value(&mut self, session: &mut SessionInner) -> Result<()> {
+        let cursor = self.r1.as_mut().unwrap();
+        cursor.next()?;
+        let current_key = cursor.peek_key();
+        if current_key.is_none() {
+            self.r0 = 0;
+            return Ok(());
+        }
+        let current_key = current_key.unwrap();
+        if !current_key.starts_with(cursor.prefix_bytes.as_slice()) {
+            self.r0 = 0;
+            return Ok(());
+        }
+
+        let value_opt = self.read_index_value_by_index_key(current_key.as_ref(), session)?;
+        if value_opt.is_none() {
+            self.r0 = 0;
+            return Ok(());
+        }
+
+        self.stack.push(value_opt.unwrap());
+
+        self.r0 = 1;
+
         Ok(())
     }
 
@@ -535,6 +604,16 @@ impl VM {
 
                     DbOp::Next => {
                         try_vm!(self, self.next());
+                        if self.r0 != 0 {
+                            let location = self.pc.add(1).cast::<u32>().read();
+                            self.reset_location(location);
+                        } else {
+                            self.pc = self.pc.add(5);
+                        }
+                    }
+
+                    DbOp::NextIndexValue => {
+                        try_vm!(self, self.next_index_value(session));
                         if self.r0 != 0 {
                             let location = self.pc.add(1).cast::<u32>().read();
                             self.reset_location(location);

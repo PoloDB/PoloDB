@@ -67,6 +67,19 @@ pub enum DbOp {
     // op1. location: 4bytes
     Next,
 
+    // next index value
+    // advance the cursor to next index
+    // push the value of the index on the top of the stack
+    //
+    // if no next element, pass
+    // otherwise, jump to location
+    //
+    // push current value to the stack
+    //
+    // 5 bytes
+    // op1. location: 4bytes
+    NextIndexValue,
+
     // push value to the stack
     //
     // 5 bytes

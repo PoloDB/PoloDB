@@ -11,6 +11,7 @@ use crate::coll::collection_info::{
     IndexInfo,
 };
 use crate::Result;
+use crate::utils::str::escape_binary_to_string;
 use super::op::DbOp;
 use super::label::LabelSlot;
 use crate::vm::codegen::Codegen;
@@ -39,7 +40,7 @@ impl SubProgram {
     }
 
     pub(crate) fn compile_empty_query() -> SubProgram {
-        let mut codegen = Codegen::new(true);
+        let mut codegen = Codegen::new(true, false);
 
         codegen.emit(DbOp::Halt);
 
@@ -51,9 +52,7 @@ impl SubProgram {
         query: &Document,
         skip_annotation: bool,
     ) -> Result<SubProgram> {
-        let mut codegen = Codegen::new(skip_annotation);
-
-        codegen.emit_open_read(col_spec._id.clone().into());
+        let mut codegen = Codegen::new(skip_annotation, false);
 
         codegen.emit_query_layout(
             col_spec,
@@ -75,7 +74,7 @@ impl SubProgram {
         update: &Document,
         skip_annotation: bool, is_many: bool,
     ) -> Result<SubProgram> {
-        let mut codegen = Codegen::new(skip_annotation);
+        let mut codegen = Codegen::new(skip_annotation, true);
 
         let has_indexes = !col_spec.indexes.is_empty();
         let index_item_id: u32 = if has_indexes {
@@ -86,8 +85,6 @@ impl SubProgram {
         } else {
             u32::MAX
         };
-
-        codegen.emit_open_write(col_spec._id.clone().into());
 
         codegen.emit_query_layout(
             col_spec,
@@ -120,7 +117,7 @@ impl SubProgram {
         query: Option<&Document>,
         skip_annotation: bool, is_many: bool,
     ) -> Result<SubProgram> {
-        let mut codegen = Codegen::new(skip_annotation);
+        let mut codegen = Codegen::new(skip_annotation, true);
 
         let has_indexes = !col_spec.indexes.is_empty();
         let index_item_id: u32 = if has_indexes {
@@ -132,7 +129,7 @@ impl SubProgram {
             u32::MAX
         };
 
-        codegen.emit_open_write(col_name.into());
+        codegen.emit_open(col_name.into());
 
         codegen.emit_query_layout(
             col_spec,
@@ -159,7 +156,7 @@ impl SubProgram {
         col_name: &str,
         skip_annotation: bool
     ) -> Result<SubProgram> {
-        let mut codegen = Codegen::new(skip_annotation);
+        let mut codegen = Codegen::new(skip_annotation, true);
 
         let has_indexes = !col_spec.indexes.is_empty();
         let index_item_id: u32 = if has_indexes {
@@ -175,7 +172,7 @@ impl SubProgram {
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
 
-        codegen.emit_open_read(col_name.into());
+        codegen.emit_open(col_name.into());
 
         codegen.emit_goto(DbOp::Rewind, close_label);
 
@@ -206,12 +203,12 @@ impl SubProgram {
     }
 
     pub(crate) fn compile_query_all_by_name(col_name: &str, skip_annotation: bool) -> Result<SubProgram> {
-        let mut codegen = Codegen::new(skip_annotation);
+        let mut codegen = Codegen::new(skip_annotation, false);
         let result_label = codegen.new_label();
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
 
-        codegen.emit_open_read(col_name.into());
+        codegen.emit_open(col_name.into());
 
         codegen.emit_goto(DbOp::Rewind, close_label);
 
@@ -233,6 +230,24 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
+}
+
+fn open_bson_to_str(val: &Bson) -> Result<String> {
+    let (str, is_bin) = match val {
+        Bson::String(s) => (s.clone(), false),
+        Bson::Binary(bin) => (escape_binary_to_string(bin.bytes.as_slice())?, true),
+        _ => panic!("unexpected bson value: {:?}", val),
+    };
+
+    let mut result = if is_bin {
+        "b\"".to_string()
+    } else {
+        "\"".to_string()
+    };
+    result.extend(str.chars());
+    result.extend("\"".chars());
+
+    Ok(result)
 }
 
 impl fmt::Display for SubProgram {
@@ -301,6 +316,12 @@ impl fmt::Display for SubProgram {
                     DbOp::Next => {
                         let location = begin.add(pc + 1).cast::<u32>().read();
                         writeln!(f, "{}: Next({})", pc, location)?;
+                        pc += 5;
+                    }
+
+                    DbOp::NextIndexValue => {
+                        let location = begin.add(pc + 1).cast::<u32>().read();
+                        writeln!(f, "{}: NextIndexValue({})", pc, location)?;
                         pc += 5;
                     }
 
@@ -389,14 +410,16 @@ impl fmt::Display for SubProgram {
                     DbOp::OpenRead => {
                         let idx = begin.add(pc + 1).cast::<u32>().read();
                         let value = &self.static_values[idx as usize];
-                        writeln!(f, "{}: OpenRead({})", pc, value)?;
+                        let value_str = open_bson_to_str(value).unwrap();
+                        writeln!(f, "{}: OpenRead({})", pc, value_str)?;
                         pc += 5;
                     }
 
                     DbOp::OpenWrite => {
                         let idx = begin.add(pc + 1).cast::<u32>().read();
                         let value = &self.static_values[idx as usize];
-                        writeln!(f, "{}: OpenWrite({})", pc, value)?;
+                        let value_str = open_bson_to_str(value).unwrap();
+                        writeln!(f, "{}: OpenWrite({})", pc, value_str)?;
                         pc += 5;
                     }
 
@@ -690,30 +713,31 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead("test")
+0: OpenRead(b"\x02$I\x00\x02test\x00\x02age_1\x00")
 5: PushValue(32)
-10: PushValue("age_1")
-15: PushValue("test")
-20: FindByIndex(35)
-25: Goto(45)
+10: PushValue("test")
+15: FindByIndex(40)
+20: Goto(49)
 
-30: Label(0)
-35: Pop
-36: Pop
-37: Pop
-38: Close
-39: Halt
+25: Label(2)
+30: NextIndexValue(49)
 
-40: Label(1)
-45: GetField("name", 35)
-54: PushValue("Vincent Chan")
-59: Equal
-60: FalseJump(35)
-65: Pop
-66: Pop
-67: ResultRow
-68: Pop
-69: Goto(35)
+35: Label(0)
+40: Pop
+41: Pop
+42: Close
+43: Halt
+
+44: Label(1)
+49: GetField("name", 40)
+58: PushValue("Vincent Chan")
+63: Equal
+64: FalseJump(40)
+69: Pop
+70: Pop
+71: ResultRow
+72: Pop
+73: Goto(30)
 "#;
         assert_eq!(expect, actual);
     }

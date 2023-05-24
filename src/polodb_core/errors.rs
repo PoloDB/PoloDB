@@ -235,6 +235,8 @@ pub enum Error {
     OnlySupportsAscendingOrder(String),
     #[error("duplicate key error collection: {}, index: {}, key: {}", .0.ns, .0.name, .0.key)]
     DuplicateKey(Box<DuplicateKeyError>),
+    #[error("the element type {0} is unknown")]
+    UnknownBsonElementType(u8),
 }
 
 impl Error {

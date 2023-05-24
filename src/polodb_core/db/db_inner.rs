@@ -145,7 +145,7 @@ impl DatabaseInner {
     fn internal_get_collection_id_by_name(&self, session: &SessionInner, name: &str) -> Result<CollectionSpecification> {
         let mut cursor =  {
             let kv_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
-            Cursor::new(TABLE_META_PREFIX.to_string(), kv_cursor)
+            Cursor::new_with_str_prefix(TABLE_META_PREFIX.to_string(), kv_cursor)?
         };
 
         let key = Bson::from(name);
@@ -708,7 +708,7 @@ impl DatabaseInner {
     fn delete_collection_meta(&self, col_name: &str, session: &mut SessionInner) -> Result<()> {
         let mut cursor = {
             let multi_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
-            Cursor::new(TABLE_META_PREFIX, multi_cursor)
+            Cursor::new_with_str_prefix(TABLE_META_PREFIX, multi_cursor)?
         };
 
         let found = cursor.reset_by_pkey(&col_name.into())?;
@@ -720,7 +720,7 @@ impl DatabaseInner {
     }
 
     pub fn delete(&self, col_name: &str, query: Document, is_many: bool, session: &mut SessionInner) -> Result<usize> {
-        let result = self.internal_delete_by_query(session, col_name, query, is_many)?;
+        let result = try_db_op!(self, session, self.internal_delete_by_query(session, col_name, query, is_many));
         Ok(result)
     }
 
