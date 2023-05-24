@@ -1,3 +1,6 @@
+# 4.3.2
+
+- Fix index iteration issue
 
 # 4.3.1
 
