@@ -233,6 +233,35 @@ impl SubProgram {
 
         Ok(codegen.take())
     }
+
+    pub(crate) fn compile_aggregate(col_spec: &CollectionSpecification, pipeline: impl IntoIterator<Item = Document>, skip_annotation: bool) -> Result<SubProgram> {
+        let mut codegen = Codegen::new(skip_annotation, false);
+        let result_label = codegen.new_label();
+        let next_label = codegen.new_label();
+        let close_label = codegen.new_label();
+
+        codegen.emit_open(col_spec.name().into());
+
+        codegen.emit_goto(DbOp::Rewind, close_label);
+
+        codegen.emit_goto(DbOp::Goto, result_label);
+
+        codegen.emit_label(next_label);
+        codegen.emit_goto(DbOp::Next, result_label);
+
+        codegen.emit_label(close_label);
+        codegen.emit(DbOp::Close);
+        codegen.emit(DbOp::Halt);
+
+        codegen.emit_label(result_label);
+        codegen.emit(DbOp::ResultRow);
+        codegen.emit(DbOp::Pop);
+
+        codegen.emit_goto(DbOp::Goto, next_label);
+
+        Ok(codegen.take())
+    }
+
 }
 
 fn open_bson_to_str(val: &Bson) -> Result<String> {
