@@ -862,7 +862,7 @@ impl VM {
                                             error: format!("unknown regex option: {}", char),
                                             expression: re.pattern.clone(),
                                             options: re.options.clone(),
-                                        }))
+                                        }));
                                     }
                                 }
                             }
