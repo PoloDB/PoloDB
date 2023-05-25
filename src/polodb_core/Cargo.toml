@@ -9,8 +9,8 @@ description = "An embedded document database"
 keywords = ["database", "embedded", "cross-platform"]
 
 [lib]
-name="polodb_core"
-path="lib.rs"
+name = "polodb_core"
+path = "lib.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -22,7 +22,14 @@ getrandom = { version = "0.2.3", features = ["js"] }
 byteorder = "1.4.3"
 num_enum = "0.6.0"
 serde = { version = "1.0.125", features = ["rc"] }
-uuid = { version = "1.3.0", features = ["atomic", "v1", "v4", "wasm-bindgen", "js", "getrandom"] }
+uuid = { version = "1.3.0", features = [
+    "atomic",
+    "v1",
+    "v4",
+    "wasm-bindgen",
+    "js",
+    "getrandom",
+] }
 smallvec = { version = "1.10.0", features = ["union", "write", "const_new"] }
 memmap2 = "0.5.10"
 wasm-bindgen = "0.2.84"
@@ -32,14 +39,11 @@ serde-wasm-bindgen = "0.5.0"
 wasm-bindgen-futures = "0.4.34"
 thiserror = "1.0.40"
 indexmap = { version = "1.9.3", features = ["serde"] }
-regex = "1"
+regex = "1.8"
 
 [dependencies.web-sys]
 version = "0.3.61"
-features = [
-    'Window',
-    'console',
-]
+features = ['Window', 'console']
 
 [dev-dependencies]
 polodb_line_diff = { path = "../polodb_line_diff" }
