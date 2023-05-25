@@ -837,7 +837,7 @@ impl VM {
 
                         if let Bson::RegularExpression(re) = val2 {
                             let mut re_build = RegexBuilder::new(re.pattern.as_str());
-                            for char in re.pattern.chars() {
+                            for char in re.options.chars() {
                                 match char {
                                     'i' => {
                                         re_build.case_insensitive(true);
