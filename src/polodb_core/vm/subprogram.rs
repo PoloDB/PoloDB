@@ -399,6 +399,11 @@ impl fmt::Display for SubProgram {
                         pc += 5;
                     }
 
+                    DbOp::Dup => {
+                        writeln!(f, "{}: Dup", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::Pop => {
                         writeln!(f, "{}: Pop", pc)?;
                         pc += 1;
@@ -522,6 +527,25 @@ impl fmt::Display for SubProgram {
                         pc += 5;
                     }
 
+                    DbOp::Call => {
+                        let label_id = begin.add(pc + 1).cast::<u32>().read();
+                        let param_size = begin.add(pc + 5).cast::<u32>().read();
+                        writeln!(f, "{}: Call({}, {})", pc, label_id, param_size)?;
+                        pc += 9;
+                    }
+
+                    DbOp::Ret => {
+                        let return_size = begin.add(pc + 1).cast::<u32>().read();
+                        writeln!(f, "{}: Ret({})", pc, return_size)?;
+                        pc += 5;
+                    }
+
+                    DbOp::IfFalseRet => {
+                        let return_size = begin.add(pc + 1).cast::<u32>().read();
+                        writeln!(f, "{}: FalseRet({})", pc, return_size)?;
+                        pc += 5;
+                    }
+
                     DbOp::SaveStackPos => {
                         writeln!(f, "{}: SaveStackPos", pc)?;
                         pc += 1;
@@ -566,11 +590,11 @@ mod tests {
         let expect = "Program:
 
 0: OpenRead(\"test\")
-5: Rewind(30)
-10: Goto(37)
+5: Rewind(25)
+10: Goto(32)
 
 15: Label(1)
-20: Next(37)
+20: Next(32)
 
 25: Label(2)
 30: Close
@@ -579,7 +603,7 @@ mod tests {
 32: Label(0)
 37: ResultRow
 38: Pop
-39: Goto(20)
+39: Goto(15)
 ";
 
         assert_eq!(expect, actual);
@@ -598,11 +622,11 @@ mod tests {
         let expect = r#"Program:
 
 0: OpenRead("test")
-5: Rewind(30)
-10: Goto(73)
+5: Rewind(25)
+10: Goto(68)
 
 15: Label(1)
-20: Next(73)
+20: Next(68)
 
 25: Label(5, "Close")
 30: Close
@@ -611,33 +635,33 @@ mod tests {
 32: Label(4, "Not this item")
 37: RecoverStackPos
 38: Pop
-39: Goto(20)
+39: Goto(15)
 
 44: Label(3, "Get field failed")
 49: RecoverStackPos
 50: Pop
-51: Goto(20)
+51: Goto(15)
 
 56: Label(2, "Result")
 61: ResultRow
 62: Pop
-63: Goto(20)
+63: Goto(15)
 
 68: Label(0, "Compare")
 73: SaveStackPos
-74: GetField("name", 49)
+74: GetField("name", 44)
 83: PushValue("Vincent Chan")
 88: Equal
-89: FalseJump(37)
+89: FalseJump(32)
 94: Pop
 95: Pop
-96: GetField("age", 49)
+96: GetField("age", 44)
 105: PushValue(32)
 110: Equal
-111: FalseJump(37)
+111: FalseJump(32)
 116: Pop
 117: Pop
-118: Goto(61)
+118: Goto(56)
 "#;
         assert_eq!(expect, actual)
     }
@@ -654,11 +678,11 @@ mod tests {
         let expect = r#"Program:
 
 0: OpenRead("test")
-5: Rewind(30)
-10: Goto(73)
+5: Rewind(25)
+10: Goto(68)
 
 15: Label(1)
-20: Next(73)
+20: Next(68)
 
 25: Label(5, "Close")
 30: Close
@@ -667,27 +691,27 @@ mod tests {
 32: Label(4, "Not this item")
 37: RecoverStackPos
 38: Pop
-39: Goto(20)
+39: Goto(15)
 
 44: Label(3, "Get field failed")
 49: RecoverStackPos
 50: Pop
-51: Goto(20)
+51: Goto(15)
 
 56: Label(2, "Result")
 61: ResultRow
 62: Pop
-63: Goto(20)
+63: Goto(15)
 
 68: Label(0, "Compare")
 73: SaveStackPos
-74: GetField("info.color", 49)
+74: GetField("info.color", 44)
 83: PushValue("yellow")
 88: Equal
-89: FalseJump(37)
+89: FalseJump(32)
 94: Pop
 95: Pop
-96: Goto(61)
+96: Goto(56)
 "#;
         assert_eq!(expect, actual)
     }
@@ -706,8 +730,8 @@ mod tests {
 
 0: OpenRead("test")
 5: PushValue(6)
-10: FindByPrimaryKey(25)
-15: Goto(33)
+10: FindByPrimaryKey(20)
+15: Goto(28)
 
 20: Label(0)
 25: Pop
@@ -715,15 +739,15 @@ mod tests {
 27: Halt
 
 28: Label(1)
-33: GetField("age", 25)
+33: GetField("age", 20)
 42: PushValue(32)
 47: Equal
-48: FalseJump(25)
+48: FalseJump(20)
 53: Pop
 54: Pop
 55: ResultRow
 56: Pop
-57: Goto(25)
+57: Goto(20)
 "#;
         assert_eq!(expect, actual)
     }
@@ -755,11 +779,11 @@ mod tests {
 0: OpenRead(b"\x02$I\x00\x02test\x00\x02age_1\x00")
 5: PushValue(32)
 10: PushValue("test")
-15: FindByIndex(40)
-20: Goto(49)
+15: FindByIndex(35)
+20: Goto(44)
 
 25: Label(2)
-30: NextIndexValue(49)
+30: NextIndexValue(44)
 
 35: Label(0)
 40: Pop
@@ -768,15 +792,15 @@ mod tests {
 43: Halt
 
 44: Label(1)
-49: GetField("name", 40)
+49: GetField("name", 35)
 58: PushValue("Vincent Chan")
 63: Equal
-64: FalseJump(40)
+64: FalseJump(35)
 69: Pop
 70: Pop
 71: ResultRow
 72: Pop
-73: Goto(30)
+73: Goto(25)
 "#;
         assert_eq!(expect, actual);
     }
@@ -800,11 +824,11 @@ mod tests {
         let expect = r#"Program:
 
 0: OpenRead("test")
-5: Rewind(30)
-10: Goto(73)
+5: Rewind(25)
+10: Goto(68)
 
 15: Label(1)
-20: Next(73)
+20: Next(68)
 
 25: Label(5, "Close")
 30: Close
@@ -813,33 +837,33 @@ mod tests {
 32: Label(4, "Not this item")
 37: RecoverStackPos
 38: Pop
-39: Goto(20)
+39: Goto(15)
 
 44: Label(3, "Get field failed")
 49: RecoverStackPos
 50: Pop
-51: Goto(20)
+51: Goto(15)
 
 56: Label(2, "Result")
 61: ResultRow
 62: Pop
-63: Goto(20)
+63: Goto(15)
 
 68: Label(0, "Compare")
 73: SaveStackPos
-74: GetField("_id", 49)
+74: GetField("_id", 44)
 83: PushValue(6)
 88: Equal
-89: FalseJump(37)
+89: FalseJump(32)
 94: Pop
 95: Pop
-96: GetField("age", 49)
+96: GetField("age", 44)
 105: PushValue(32)
 110: Equal
-111: FalseJump(37)
+111: FalseJump(32)
 116: Pop
 117: Pop
-118: Goto(61)
+118: Goto(56)
 "#;
         assert_eq!(expect, actual)
     }
@@ -863,11 +887,11 @@ mod tests {
         let expect = r#"Program:
 
 0: OpenRead("test")
-5: Rewind(30)
-10: Goto(73)
+5: Rewind(25)
+10: Goto(68)
 
 15: Label(1)
-20: Next(73)
+20: Next(68)
 
 25: Label(5, "Close")
 30: Close
@@ -876,43 +900,43 @@ mod tests {
 32: Label(4, "Not this item")
 37: RecoverStackPos
 38: Pop
-39: Goto(20)
+39: Goto(15)
 
 44: Label(3, "Get field failed")
 49: RecoverStackPos
 50: Pop
-51: Goto(20)
+51: Goto(15)
 
 56: Label(2, "Result")
 61: ResultRow
 62: Pop
-63: Goto(20)
+63: Goto(15)
 
 68: Label(0, "Compare")
 73: SaveStackPos
-74: Goto(95)
+74: Goto(90)
 
 79: Label(7)
 84: RecoverStackPos
-85: Goto(127)
+85: Goto(122)
 
 90: Label(8)
-95: GetField("age", 84)
+95: GetField("age", 79)
 104: PushValue(11)
 109: Equal
-110: FalseJump(84)
+110: FalseJump(79)
 115: Pop
 116: Pop
-117: Goto(61)
+117: Goto(56)
 
 122: Label(6)
-127: GetField("age", 49)
+127: GetField("age", 44)
 136: PushValue(12)
 141: Equal
-142: FalseJump(37)
+142: FalseJump(32)
 147: Pop
 148: Pop
-149: Goto(61)
+149: Goto(56)
 "#;
         assert_eq!(expect, actual);
     }
@@ -934,11 +958,11 @@ mod tests {
         let expect = r#"Program:
 
 0: OpenRead("test")
-5: Rewind(30)
-10: Goto(73)
+5: Rewind(25)
+10: Goto(68)
 
 15: Label(1)
-20: Next(73)
+20: Next(68)
 
 25: Label(5, "Close")
 30: Close
@@ -947,32 +971,32 @@ mod tests {
 32: Label(4, "Not this item")
 37: RecoverStackPos
 38: Pop
-39: Goto(20)
+39: Goto(15)
 
 44: Label(3, "Get field failed")
 49: RecoverStackPos
 50: Pop
-51: Goto(20)
+51: Goto(15)
 
 56: Label(2, "Result")
 61: ResultRow
 62: Pop
-63: Goto(20)
+63: Goto(15)
 
 68: Label(0, "Compare")
 73: SaveStackPos
-74: GetField("age", 49)
+74: GetField("age", 44)
 83: PushValue(3)
 88: Greater
-89: FalseJump(37)
+89: FalseJump(32)
 94: Pop2(2)
-99: GetField("child", 49)
-108: GetField("age", 49)
+99: GetField("child", 44)
+108: GetField("age", 44)
 117: PushValue([1, 2])
 122: In
-123: FalseJump(37)
+123: FalseJump(32)
 128: Pop2(3)
-133: Goto(61)
+133: Goto(56)
 "#;
         assert_eq!(expect, actual);
     }
@@ -1067,11 +1091,11 @@ mod tests {
         let expect = r#"Program:
 
 0: OpenWrite("test")
-5: Rewind(30)
-10: Goto(196)
+5: Rewind(25)
+10: Goto(191)
 
 15: Label(1)
-20: Next(196)
+20: Next(191)
 
 25: Label(5, "Close")
 30: Close
@@ -1080,12 +1104,12 @@ mod tests {
 32: Label(4, "Not this item")
 37: RecoverStackPos
 38: Pop
-39: Goto(20)
+39: Goto(15)
 
 44: Label(3, "Get field failed")
 49: RecoverStackPos
 50: Pop
-51: Goto(20)
+51: Goto(15)
 
 56: Label(2, "Result")
 61: PushValue("Alan Chan")
@@ -1097,11 +1121,11 @@ mod tests {
 83: PushValue(3)
 88: MulField("age")
 93: Pop
-94: GetField("age", 154)
+94: GetField("age", 149)
 103: PushValue(100)
 108: Less
-109: FalseJump(124)
-114: Goto(147)
+109: FalseJump(119)
+114: Goto(142)
 
 119: Label(8)
 124: Pop
@@ -1109,7 +1133,7 @@ mod tests {
 126: PushValue(100)
 131: SetField("age")
 136: Pop
-137: Goto(154)
+137: Goto(149)
 
 142: Label(6)
 147: Pop
@@ -1117,7 +1141,7 @@ mod tests {
 
 149: Label(7)
 154: UnsetField("age")
-159: GetField("hello1", 184)
+159: GetField("hello1", 179)
 168: SetField("hello2")
 173: Pop
 174: UnsetField("hello1")
@@ -1125,16 +1149,16 @@ mod tests {
 179: Label(9)
 184: UpdateCurrent
 185: Pop
-186: Goto(20)
+186: Goto(15)
 
 191: Label(0, "Compare")
 196: SaveStackPos
-197: GetField("_id", 49)
+197: GetField("_id", 44)
 206: PushValue(3)
 211: Greater
-212: FalseJump(37)
+212: FalseJump(32)
 217: Pop2(2)
-222: Goto(61)
+222: Goto(56)
 "#;
         assert_eq!(expect, actual);
     }
@@ -1171,44 +1195,45 @@ mod tests {
         let expect = r#"Program:
 
 0: OpenWrite("test")
-5: Rewind(30)
-10: Goto(94)
+5: Rewind(25)
+10: Goto(76)
 
-15: Label(1)
-20: Next(94)
+15: Label(3)
+20: Next(76)
 
-25: Label(5, "Close")
+25: Label(6, "close")
 30: Close
 31: Halt
 
-32: Label(4, "Not this item")
-37: RecoverStackPos
-38: Pop
-39: Goto(20)
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
 
-44: Label(3, "Get field failed")
-49: RecoverStackPos
-50: Pop
-51: Goto(20)
+43: Label(4, "result")
+48: DeleteIndex("test")
+53: PushValue("Alan Chan")
+58: SetField("name")
+63: Pop
+64: UpdateCurrent
+65: InsertIndex("test")
+70: Pop
+71: Goto(15)
 
-56: Label(2, "Result")
-61: DeleteIndex("test")
-66: PushValue("Alan Chan")
-71: SetField("name")
-76: Pop
-77: UpdateCurrent
-78: InsertIndex("test")
-83: Pop
-84: Goto(20)
+76: Label(2, "compare")
+81: Dup
+82: Call(101, 1)
+91: FalseJump(32)
+96: Goto(43)
 
-89: Label(0, "Compare")
-94: SaveStackPos
-95: GetField("_id", 49)
-104: PushValue(3)
-109: Greater
-110: FalseJump(37)
-115: Pop2(2)
-120: Goto(61)
+101: Label(0, "compare_function")
+106: GetField("_id", 131)
+115: PushValue(3)
+120: Greater
+121: FalseJump(131)
+126: Pop2(2)
+
+131: Label(1, "compare_function_clean")
+136: Ret(0)
 "#;
         assert_eq!(expect, actual);
     }
