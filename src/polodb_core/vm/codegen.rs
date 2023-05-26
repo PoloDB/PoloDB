@@ -479,44 +479,71 @@ impl Codegen {
     fn emit_logic_or(
         &mut self,
         arr: &Array,
-        result_label: Label,
-        not_found_label: Label,
+        ret_label: Label,
     ) -> Result<()> {
+        let cmp_label = self.new_label();
+        self.emit_goto(DbOp::Goto, cmp_label);
+
+        let mut functions = Vec::<Label>::new();
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
             path_hint!(self, path_msg, {
                 let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
-                if index == (arr.len() as usize) - 1 {
-                    // last item
-                    for (key, value) in item_doc.iter() {
-                        self.emit_query_tuple(
-                            key,
-                            value,
-                            result_label,
-                            not_found_label,
-                        )?;
-                    }
-                } else {
-                    let go_next_label = self.new_label();
-                    let local_get_field_failed_label = self.new_label();
-                    let query_label = self.new_label();
-                    self.emit_goto(DbOp::Goto, query_label);
 
-                    self.emit_label(local_get_field_failed_label);
-                    self.emit(DbOp::RecoverStackPos);
-                    self.emit_goto(DbOp::Goto, go_next_label);
+                let query_label = self.new_label();
+                let ret_label = self.new_label();
 
-                    self.emit_label(query_label);
-                    self.emit_standard_query_doc(
-                        item_doc,
-                        result_label,
-                        not_found_label
-                    )?;
-                    // pass, goto result
-                    self.emit_goto(DbOp::Goto, result_label);
-                    self.emit_label(go_next_label);
-                }
+                self.emit_label(query_label);
+                self.emit_standard_query_doc(
+                    item_doc,
+                    ret_label,
+                    ret_label
+                )?;
+
+                self.emit_label(ret_label);
+                self.emit(DbOp::Ret);
+                self.emit_u32(0);
+
+                functions.push(query_label);
+                // if index == (arr.len() as usize) - 1 { // last item
+                //     for (key, value) in item_doc.iter() {
+                //         self.emit_query_tuple(
+                //             key,
+                //             value,
+                //             result_label,
+                //             not_found_label,
+                //         )?;
+                //     }
+                // } else {
+                //     let go_next_label = self.new_label();
+                //     let local_get_field_failed_label = self.new_label();
+                //     let query_label = self.new_label();
+                //     self.emit_goto(DbOp::Goto, query_label);
+                //
+                //     self.emit_label(local_get_field_failed_label);
+                //     self.emit(DbOp::RecoverStackPos);
+                //     self.emit_goto(DbOp::Goto, go_next_label);
+                //
+                //     self.emit_label(query_label);
+                //     self.emit_standard_query_doc(
+                //         item_doc,
+                //         result_label,
+                //         go_next_label
+                //     )?;
+                //     // pass, goto result
+                //     self.emit(DbOp::Ret);
+                //     self.emit_u32(0);
+                //
+                //     self.emit_label(go_next_label);
+                // }
             });
+        }
+
+        self.emit_label(cmp_label);
+        for fun in functions {
+            self.emit_goto(DbOp::Call, fun);
+            self.emit_u32(0);
+            self.emit_goto(DbOp::IfTrue, ret_label);
         }
 
         Ok(())
@@ -547,7 +574,6 @@ impl Codegen {
                     let sub_arr = crate::try_unwrap_array!("$or", value);
                     self.emit_logic_or(
                         sub_arr.as_ref(),
-                        result_label,
                         not_found_label,
                     )?;
                 }

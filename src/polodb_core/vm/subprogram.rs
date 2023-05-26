@@ -916,31 +916,38 @@ mod tests {
 75: Goto(43)
 
 80: Label(0, "compare_function")
-85: Goto(101)
+85: Goto(164)
 
 90: Label(8)
-95: RecoverStackPos
-96: Goto(133)
+95: GetField("age", 117)
+104: PushValue(11)
+109: Equal
+110: FalseJump(117)
+115: Pop
+116: Pop
 
-101: Label(9)
-106: GetField("age", 160)
-115: PushValue(11)
-120: Equal
-121: FalseJump(160)
-126: Pop
-127: Pop
-128: Goto(43)
+117: Label(9)
+122: Ret(0)
 
-133: Label(7)
-138: GetField("age", 160)
-147: PushValue(12)
-152: Equal
-153: FalseJump(160)
-158: Pop
-159: Pop
+127: Label(10)
+132: GetField("age", 154)
+141: PushValue(12)
+146: Equal
+147: FalseJump(154)
+152: Pop
+153: Pop
 
-160: Label(1, "compare_function_clean")
-165: Ret(0)
+154: Label(11)
+159: Ret(0)
+
+164: Label(7)
+169: Call(90, 0)
+178: TrueJump(197)
+183: Call(127, 0)
+192: TrueJump(197)
+
+197: Label(1, "compare_function_clean")
+202: Ret(0)
 "#;
         assert_eq!(expect, actual);
     }
