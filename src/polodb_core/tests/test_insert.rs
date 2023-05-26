@@ -60,7 +60,7 @@ fn test_insert_struct() {
                 }
             ]
         }).unwrap();
-        let result: Vec<Result<Book>> = cursor.collect();
+        let result = cursor.collect::<Result<Vec<Book>>>().unwrap();
         assert_eq!(result.len(), 2);
     });
 }
@@ -182,7 +182,7 @@ fn test_insert_different_types_as_key() {
         "_id": "0",
     }).unwrap();
 
-    let cursor = collection.find(doc! {}).unwrap();
+    let cursor = collection.find(None).unwrap();
     let result: Vec<Result<Document>> = cursor.collect();
     assert_eq!(result.len(), 2);
 

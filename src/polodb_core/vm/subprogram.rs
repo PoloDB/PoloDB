@@ -623,45 +623,46 @@ mod tests {
 
 0: OpenRead("test")
 5: Rewind(25)
-10: Goto(68)
+10: Goto(55)
 
-15: Label(1)
-20: Next(68)
+15: Label(3)
+20: Next(55)
 
-25: Label(5, "Close")
+25: Label(6, "close")
 30: Close
 31: Halt
 
-32: Label(4, "Not this item")
-37: RecoverStackPos
-38: Pop
-39: Goto(15)
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
 
-44: Label(3, "Get field failed")
-49: RecoverStackPos
-50: Pop
-51: Goto(15)
+43: Label(4, "result")
+48: ResultRow
+49: Pop
+50: Goto(15)
 
-56: Label(2, "Result")
-61: ResultRow
-62: Pop
-63: Goto(15)
+55: Label(2, "compare")
+60: Dup
+61: Call(80, 1)
+70: FalseJump(32)
+75: Goto(43)
 
-68: Label(0, "Compare")
-73: SaveStackPos
-74: GetField("name", 44)
-83: PushValue("Vincent Chan")
-88: Equal
-89: FalseJump(32)
-94: Pop
-95: Pop
-96: GetField("age", 44)
-105: PushValue(32)
-110: Equal
-111: FalseJump(32)
-116: Pop
-117: Pop
-118: Goto(56)
+80: Label(0, "compare_function")
+85: GetField("name", 129)
+94: PushValue("Vincent Chan")
+99: Equal
+100: FalseJump(129)
+105: Pop
+106: Pop
+107: GetField("age", 129)
+116: PushValue(32)
+121: Equal
+122: FalseJump(129)
+127: Pop
+128: Pop
+
+129: Label(1, "compare_function_clean")
+134: Ret(0)
 "#;
         assert_eq!(expect, actual)
     }
@@ -679,39 +680,40 @@ mod tests {
 
 0: OpenRead("test")
 5: Rewind(25)
-10: Goto(68)
+10: Goto(55)
 
-15: Label(1)
-20: Next(68)
+15: Label(3)
+20: Next(55)
 
-25: Label(5, "Close")
+25: Label(6, "close")
 30: Close
 31: Halt
 
-32: Label(4, "Not this item")
-37: RecoverStackPos
-38: Pop
-39: Goto(15)
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
 
-44: Label(3, "Get field failed")
-49: RecoverStackPos
-50: Pop
-51: Goto(15)
+43: Label(4, "result")
+48: ResultRow
+49: Pop
+50: Goto(15)
 
-56: Label(2, "Result")
-61: ResultRow
-62: Pop
-63: Goto(15)
+55: Label(2, "compare")
+60: Dup
+61: Call(80, 1)
+70: FalseJump(32)
+75: Goto(43)
 
-68: Label(0, "Compare")
-73: SaveStackPos
-74: GetField("info.color", 44)
-83: PushValue("yellow")
-88: Equal
-89: FalseJump(32)
-94: Pop
-95: Pop
-96: Goto(56)
+80: Label(0, "compare_function")
+85: GetField("info.color", 107)
+94: PushValue("yellow")
+99: Equal
+100: FalseJump(107)
+105: Pop
+106: Pop
+
+107: Label(1, "compare_function_clean")
+112: Ret(0)
 "#;
         assert_eq!(expect, actual)
     }
@@ -825,45 +827,46 @@ mod tests {
 
 0: OpenRead("test")
 5: Rewind(25)
-10: Goto(68)
+10: Goto(55)
 
-15: Label(1)
-20: Next(68)
+15: Label(3)
+20: Next(55)
 
-25: Label(5, "Close")
+25: Label(6, "close")
 30: Close
 31: Halt
 
-32: Label(4, "Not this item")
-37: RecoverStackPos
-38: Pop
-39: Goto(15)
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
 
-44: Label(3, "Get field failed")
-49: RecoverStackPos
-50: Pop
-51: Goto(15)
+43: Label(4, "result")
+48: ResultRow
+49: Pop
+50: Goto(15)
 
-56: Label(2, "Result")
-61: ResultRow
-62: Pop
-63: Goto(15)
+55: Label(2, "compare")
+60: Dup
+61: Call(80, 1)
+70: FalseJump(32)
+75: Goto(43)
 
-68: Label(0, "Compare")
-73: SaveStackPos
-74: GetField("_id", 44)
-83: PushValue(6)
-88: Equal
-89: FalseJump(32)
-94: Pop
-95: Pop
-96: GetField("age", 44)
-105: PushValue(32)
-110: Equal
-111: FalseJump(32)
-116: Pop
-117: Pop
-118: Goto(56)
+80: Label(0, "compare_function")
+85: GetField("_id", 129)
+94: PushValue(6)
+99: Equal
+100: FalseJump(129)
+105: Pop
+106: Pop
+107: GetField("age", 129)
+116: PushValue(32)
+121: Equal
+122: FalseJump(129)
+127: Pop
+128: Pop
+
+129: Label(1, "compare_function_clean")
+134: Ret(0)
 "#;
         assert_eq!(expect, actual)
     }
@@ -888,55 +891,56 @@ mod tests {
 
 0: OpenRead("test")
 5: Rewind(25)
-10: Goto(68)
+10: Goto(55)
 
-15: Label(1)
-20: Next(68)
+15: Label(3)
+20: Next(55)
 
-25: Label(5, "Close")
+25: Label(6, "close")
 30: Close
 31: Halt
 
-32: Label(4, "Not this item")
-37: RecoverStackPos
-38: Pop
-39: Goto(15)
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
 
-44: Label(3, "Get field failed")
-49: RecoverStackPos
-50: Pop
-51: Goto(15)
+43: Label(4, "result")
+48: ResultRow
+49: Pop
+50: Goto(15)
 
-56: Label(2, "Result")
-61: ResultRow
-62: Pop
-63: Goto(15)
+55: Label(2, "compare")
+60: Dup
+61: Call(80, 1)
+70: FalseJump(32)
+75: Goto(43)
 
-68: Label(0, "Compare")
-73: SaveStackPos
-74: Goto(90)
-
-79: Label(7)
-84: RecoverStackPos
-85: Goto(122)
+80: Label(0, "compare_function")
+85: Goto(101)
 
 90: Label(8)
-95: GetField("age", 79)
-104: PushValue(11)
-109: Equal
-110: FalseJump(79)
-115: Pop
-116: Pop
-117: Goto(56)
+95: RecoverStackPos
+96: Goto(133)
 
-122: Label(6)
-127: GetField("age", 44)
-136: PushValue(12)
-141: Equal
-142: FalseJump(32)
-147: Pop
-148: Pop
-149: Goto(56)
+101: Label(9)
+106: GetField("age", 160)
+115: PushValue(11)
+120: Equal
+121: FalseJump(160)
+126: Pop
+127: Pop
+128: Goto(43)
+
+133: Label(7)
+138: GetField("age", 160)
+147: PushValue(12)
+152: Equal
+153: FalseJump(160)
+158: Pop
+159: Pop
+
+160: Label(1, "compare_function_clean")
+165: Ret(0)
 "#;
         assert_eq!(expect, actual);
     }
@@ -959,44 +963,45 @@ mod tests {
 
 0: OpenRead("test")
 5: Rewind(25)
-10: Goto(68)
+10: Goto(55)
 
-15: Label(1)
-20: Next(68)
+15: Label(3)
+20: Next(55)
 
-25: Label(5, "Close")
+25: Label(6, "close")
 30: Close
 31: Halt
 
-32: Label(4, "Not this item")
-37: RecoverStackPos
-38: Pop
-39: Goto(15)
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
 
-44: Label(3, "Get field failed")
-49: RecoverStackPos
-50: Pop
-51: Goto(15)
+43: Label(4, "result")
+48: ResultRow
+49: Pop
+50: Goto(15)
 
-56: Label(2, "Result")
-61: ResultRow
-62: Pop
-63: Goto(15)
+55: Label(2, "compare")
+60: Dup
+61: Call(80, 1)
+70: FalseJump(32)
+75: Goto(43)
 
-68: Label(0, "Compare")
-73: SaveStackPos
-74: GetField("age", 44)
-83: PushValue(3)
-88: Greater
-89: FalseJump(32)
-94: Pop2(2)
-99: GetField("child", 44)
-108: GetField("age", 44)
-117: PushValue([1, 2])
-122: In
-123: FalseJump(32)
-128: Pop2(3)
-133: Goto(56)
+80: Label(0, "compare_function")
+85: GetField("age", 144)
+94: PushValue(3)
+99: Greater
+100: FalseJump(144)
+105: Pop2(2)
+110: GetField("child", 144)
+119: GetField("age", 144)
+128: PushValue([1, 2])
+133: In
+134: FalseJump(144)
+139: Pop2(3)
+
+144: Label(1, "compare_function_clean")
+149: Ret(0)
 "#;
         assert_eq!(expect, actual);
     }
@@ -1018,39 +1023,40 @@ mod tests {
         let expect = r#"Program:
 
 0: OpenRead("test")
-5: Rewind(30)
-10: Goto(73)
+5: Rewind(25)
+10: Goto(55)
 
-15: Label(1)
-20: Next(73)
+15: Label(3)
+20: Next(55)
 
-25: Label(5, "Close")
+25: Label(6, "close")
 30: Close
 31: Halt
 
-32: Label(4, "Not this item")
-37: RecoverStackPos
-38: Pop
-39: Goto(20)
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
 
-44: Label(3, "Get field failed")
-49: RecoverStackPos
-50: Pop
-51: Goto(20)
+43: Label(4, "result")
+48: ResultRow
+49: Pop
+50: Goto(15)
 
-56: Label(2, "Result")
-61: ResultRow
-62: Pop
-63: Goto(20)
+55: Label(2, "compare")
+60: Dup
+61: Call(80, 1)
+70: FalseJump(32)
+75: Goto(43)
 
-68: Label(0, "Compare")
-73: SaveStackPos
-74: GetField("name", 49)
-83: PushValue(//^Vincent//)
-88: Regex
-89: FalseJump(37)
-94: Pop2(2)
-99: Goto(61)
+80: Label(0, "compare_function")
+85: GetField("name", 110)
+94: PushValue(//^Vincent//)
+99: Regex
+100: FalseJump(110)
+105: Pop2(2)
+
+110: Label(1, "compare_function_clean")
+115: Ret(0)
 "#;
         assert_eq!(expect, actual);
     }
@@ -1092,73 +1098,74 @@ mod tests {
 
 0: OpenWrite("test")
 5: Rewind(25)
-10: Goto(191)
+10: Goto(178)
 
-15: Label(1)
-20: Next(191)
+15: Label(3)
+20: Next(178)
 
-25: Label(5, "Close")
+25: Label(6, "close")
 30: Close
 31: Halt
 
-32: Label(4, "Not this item")
-37: RecoverStackPos
-38: Pop
-39: Goto(15)
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
 
-44: Label(3, "Get field failed")
-49: RecoverStackPos
-50: Pop
-51: Goto(15)
+43: Label(4, "result")
+48: PushValue("Alan Chan")
+53: SetField("name")
+58: Pop
+59: PushValue(1)
+64: IncField("age")
+69: Pop
+70: PushValue(3)
+75: MulField("age")
+80: Pop
+81: GetField("age", 136)
+90: PushValue(100)
+95: Less
+96: FalseJump(106)
+101: Goto(129)
 
-56: Label(2, "Result")
-61: PushValue("Alan Chan")
-66: SetField("name")
-71: Pop
-72: PushValue(1)
-77: IncField("age")
-82: Pop
-83: PushValue(3)
-88: MulField("age")
-93: Pop
-94: GetField("age", 149)
-103: PushValue(100)
-108: Less
-109: FalseJump(119)
-114: Goto(142)
+106: Label(9)
+111: Pop
+112: Pop
+113: PushValue(100)
+118: SetField("age")
+123: Pop
+124: Goto(136)
 
-119: Label(8)
-124: Pop
-125: Pop
-126: PushValue(100)
-131: SetField("age")
-136: Pop
-137: Goto(149)
+129: Label(7)
+134: Pop
+135: Pop
 
-142: Label(6)
-147: Pop
-148: Pop
+136: Label(8)
+141: UnsetField("age")
+146: GetField("hello1", 166)
+155: SetField("hello2")
+160: Pop
+161: UnsetField("hello1")
 
-149: Label(7)
-154: UnsetField("age")
-159: GetField("hello1", 179)
-168: SetField("hello2")
-173: Pop
-174: UnsetField("hello1")
+166: Label(10)
+171: UpdateCurrent
+172: Pop
+173: Goto(15)
 
-179: Label(9)
-184: UpdateCurrent
-185: Pop
-186: Goto(15)
+178: Label(2, "compare")
+183: Dup
+184: Call(203, 1)
+193: FalseJump(32)
+198: Goto(43)
 
-191: Label(0, "Compare")
-196: SaveStackPos
-197: GetField("_id", 44)
-206: PushValue(3)
-211: Greater
-212: FalseJump(32)
-217: Pop2(2)
-222: Goto(56)
+203: Label(0, "compare_function")
+208: GetField("_id", 233)
+217: PushValue(3)
+222: Greater
+223: FalseJump(233)
+228: Pop2(2)
+
+233: Label(1, "compare_function_clean")
+238: Ret(0)
 "#;
         assert_eq!(expect, actual);
     }

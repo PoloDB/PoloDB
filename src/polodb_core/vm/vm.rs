@@ -963,7 +963,9 @@ impl VM {
                     DbOp::Call => {
                         let location = self.pc.add(1).cast::<u32>().read();
                         let size_of_param = self.pc.add(5).cast::<u32>().read() as usize;
-                        let return_pos = self.pc.add(9) as usize;
+
+                        let start = self.program.instructions.as_ptr() as usize;
+                        let return_pos = self.pc.add(9).sub(start) as usize;
 
                         self.frames.push(VMFrame {
                             stack_begin_pos: self.stack.len() - size_of_param,
