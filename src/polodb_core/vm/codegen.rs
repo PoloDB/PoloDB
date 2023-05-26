@@ -505,37 +505,6 @@ impl Codegen {
                 self.emit_u32(0);
 
                 functions.push(query_label);
-                // if index == (arr.len() as usize) - 1 { // last item
-                //     for (key, value) in item_doc.iter() {
-                //         self.emit_query_tuple(
-                //             key,
-                //             value,
-                //             result_label,
-                //             not_found_label,
-                //         )?;
-                //     }
-                // } else {
-                //     let go_next_label = self.new_label();
-                //     let local_get_field_failed_label = self.new_label();
-                //     let query_label = self.new_label();
-                //     self.emit_goto(DbOp::Goto, query_label);
-                //
-                //     self.emit_label(local_get_field_failed_label);
-                //     self.emit(DbOp::RecoverStackPos);
-                //     self.emit_goto(DbOp::Goto, go_next_label);
-                //
-                //     self.emit_label(query_label);
-                //     self.emit_standard_query_doc(
-                //         item_doc,
-                //         result_label,
-                //         go_next_label
-                //     )?;
-                //     // pass, goto result
-                //     self.emit(DbOp::Ret);
-                //     self.emit_u32(0);
-                //
-                //     self.emit_label(go_next_label);
-                // }
             });
         }
 
@@ -550,7 +519,6 @@ impl Codegen {
     }
 
     // case1: "$and" | "$or" -> [ Document ]
-    // case2: "$not" -> Document
     // case3: "_id" -> Document
     fn emit_query_tuple(
         &mut self,
@@ -576,16 +544,6 @@ impl Codegen {
                         sub_arr.as_ref(),
                         not_found_label,
                     )?;
-                }
-
-                "$not" => {
-                    let sub_doc = crate::try_unwrap_document!("$not", value);
-                    // swap label
-                    return self.emit_query_tuple_document(
-                        key,
-                        &sub_doc,
-                        not_found_label,
-                    );
                 }
 
                 _ => {
@@ -821,6 +779,35 @@ impl Codegen {
 
                 // if not equal，go to next
                 self.emit_goto(DbOp::IfFalse, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
+
+            "$not" => {
+                match sub_value {
+                    Bson::Document(_) => (),
+                    _ => {
+                        return Err(Error::InvalidField(mk_invalid_query_field(
+                            self.last_key().into(),
+                            self.gen_path(),
+                        )))
+                    }
+                }
+
+                let field_size = self.recursively_get_field(key, not_found_label);
+                let ret_label = self.new_label();
+
+                // let stat_val_id = self.push_static(sub_value.clone());
+                // self.emit_push_value(stat_val_id);
+                // self.emit(DbOp::In);
+                //
+                // self.emit_goto(DbOp::IfFalse, not_found_label);
+
+
+                self.emit_label(ret_label);
+                self.emit(DbOp::Ret);
+                self.emit_u32(0);
 
                 self.emit(DbOp::Pop2);
                 self.emit_u32((field_size + 1) as u32);

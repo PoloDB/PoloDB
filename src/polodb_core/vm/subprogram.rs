@@ -953,6 +953,21 @@ mod tests {
     }
 
     #[test]
+    fn print_not_expression() {
+        let col_spec = new_spec("test");
+        let test_doc = doc! {
+            "price": {
+                "$not": {
+                    "$gt": 100,
+                },
+            }
+        };
+        let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+        println!("{}", actual);
+    }
+
+    #[test]
     fn print_complex_print() {
         let col_spec = new_spec("test");
         let test_doc = doc! {
