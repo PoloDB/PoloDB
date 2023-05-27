@@ -8,10 +8,11 @@ use super::op::DbOp;
 use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
 use crate::utils::str::escape_binary_to_string;
 use crate::vm::codegen::Codegen;
-use crate::Result;
+use crate::{Result};
 use bson::{Bson, Document};
 use indexmap::IndexMap;
 use std::fmt;
+use crate::errors::FieldTypeUnexpectedStruct;
 
 pub(crate) struct SubProgramIndexItem {
     pub col_name: String,
@@ -48,6 +49,10 @@ impl SubProgram {
         query: &Document,
         skip_annotation: bool,
     ) -> Result<SubProgram> {
+        if query.is_empty() {
+            return SubProgram::compile_query_all(col_spec, skip_annotation);
+        }
+
         let mut codegen = Codegen::new(skip_annotation, false);
 
         codegen.emit_query_layout(
@@ -234,7 +239,22 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_aggregate(col_spec: &CollectionSpecification, _pipeline: impl IntoIterator<Item = Document>, skip_annotation: bool) -> Result<SubProgram> {
+    // If the first pipeline is $match, the process can be optimized.
+    pub(crate) fn compile_aggregate(
+        col_spec: &CollectionSpecification,
+        pipeline: impl IntoIterator<Item = Document>,
+        skip_annotation: bool,
+    ) -> Result<SubProgram> {
+        let pipeline_vec: Vec<Document> = pipeline.into_iter().collect();
+        if pipeline_vec.is_empty() {
+            return SubProgram::compile_query_all(col_spec, skip_annotation);
+        }
+
+        let first = pipeline_vec.first().unwrap();
+        if first.len() == 1 && first.contains_key("$match") {
+            return SubProgram::compile_aggregate_with_match(col_spec, pipeline_vec, skip_annotation);
+        }
+
         let mut codegen = Codegen::new(skip_annotation, false);
         let result_label = codegen.new_label();
         let next_label = codegen.new_label();
@@ -258,6 +278,41 @@ impl SubProgram {
         codegen.emit(DbOp::Pop);
 
         codegen.emit_goto(DbOp::Goto, next_label);
+
+        Ok(codegen.take())
+    }
+
+    // If the first pipeline is $match, the process will leverage the index.
+    pub(crate) fn compile_aggregate_with_match(
+        col_spec: &CollectionSpecification,
+        pipeline_vec: Vec<Document>,
+        skip_annotation: bool,
+    ) -> Result<SubProgram> {
+        let mut codegen = Codegen::new(skip_annotation, false);
+        let first_doc = pipeline_vec.first().unwrap();
+        let query_doc_value = first_doc.get("$match").unwrap();
+        let query_doc = match query_doc_value {
+            Bson::Document(doc) => doc,
+            t => {
+                let name = format!("{}", t);
+                return Err(FieldTypeUnexpectedStruct {
+                    field_name: "$match".to_string(),
+                    expected_ty: "Document".to_string(),
+                    actual_ty: name,
+                }.into());
+            },
+        };
+
+        codegen.emit_query_layout(
+            col_spec,
+            query_doc,
+            |codegen| -> Result<()> {
+                codegen.emit(DbOp::ResultRow);
+                codegen.emit(DbOp::Pop);
+                Ok(())
+            },
+            true,
+        )?;
 
         Ok(codegen.take())
     }

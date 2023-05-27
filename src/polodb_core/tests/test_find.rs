@@ -125,6 +125,40 @@ fn test_find_empty_collection() {
 }
 
 #[test]
+fn test_find_with_empty_document() {
+    vec![
+        prepare_db("test-find-with-empty-document").unwrap(),
+        Database::open_memory().unwrap(),
+    ].iter().for_each(|db| {
+        let fruits = db.collection::<Document>("fruits");
+        fruits.insert_many(vec![
+            doc! {
+                "name": "apple",
+                "color": "red",
+                "shape": "round",
+            },
+            doc! {
+                "name": "banana",
+                "color": "yellow",
+                "shape": "long",
+            },
+            doc! {
+                "name": "orange",
+                "color": "orange",
+                "shape": "round",
+            },
+        ]).unwrap();
+
+        let result = fruits
+            .find(doc! {})
+            .unwrap()
+            .collect::<Result<Vec<Document>>>()
+            .unwrap();
+        assert_eq!(result.len(), 3);
+    });
+}
+
+#[test]
 fn test_not_expression() {
     vec![
         prepare_db("test-not-expression").unwrap(),
