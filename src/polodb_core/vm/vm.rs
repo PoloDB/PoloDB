@@ -985,6 +985,10 @@ impl VM {
                         self.reset_location(location);
                     }
 
+                    DbOp::Ret0 => {
+                        self.ret(0);
+                    }
+
                     DbOp::Ret => {
                         let return_size = self.pc.add(1).cast::<u32>().read() as usize;
                         self.ret(return_size);

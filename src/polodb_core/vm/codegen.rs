@@ -279,8 +279,7 @@ impl Codegen {
         self.emit_standard_query_doc(query, result_label, compare_fun_clean)?;
 
         self.emit_label_with_name(compare_fun_clean, "compare_function_clean");
-        self.emit(DbOp::Ret);
-        self.emit_u32(0);
+        self.emit_ret(0);
 
         Ok(())
     }
@@ -501,8 +500,7 @@ impl Codegen {
                 )?;
 
                 self.emit_label(ret_label);
-                self.emit(DbOp::Ret);
-                self.emit_u32(0);
+                self.emit_ret(0);
 
                 functions.push(query_label);
             });
@@ -840,6 +838,37 @@ impl Codegen {
         Ok(())
     }
 
+    pub fn emit_aggregation_pipeline(&mut self, pipeline: &[Document]) -> Result<()> {
+        for stage in pipeline {
+            self.emit_aggregation_stage(stage)?;
+        }
+
+        Ok(())
+    }
+
+    fn emit_aggregation_stage(&mut self, stage: &Document) -> Result<()> {
+        if stage.is_empty() {
+            return Ok(());
+        }
+        if stage.len() > 1 {
+            return Err(Error::InvalidAggregationStage(Box::new(stage.clone())));
+        }
+
+        let first_tuple = stage.iter().next().unwrap();
+        let (key, _value) = first_tuple;
+
+        match key.as_str() {
+            "$count" => {
+                ()
+            }
+            _ => {
+                return Err(Error::UnknownAggregationOperation(key.clone()));
+            }
+        };
+
+        Ok(())
+    }
+
     pub(super) fn emit_delete_operation(&mut self) {
         self.emit(DbOp::DeleteCurrent);
     }
@@ -988,6 +1017,15 @@ impl Codegen {
         });
         let id = self.push_static(prefix);
         self.emit_u32(id);
+    }
+
+    pub(crate) fn emit_ret(&mut self, return_size: u32) {
+        if return_size == 0 {
+            self.emit(DbOp::Ret0);
+        } else {
+            self.emit(DbOp::Ret);
+            self.emit_u32(return_size);
+        }
     }
 
     #[inline]

@@ -245,6 +245,11 @@ pub enum DbOp {
     // op2. size of params: 4 bytes
     Call,
 
+    // return from a method with 0 size
+    //
+    // 1 byte
+    Ret0,
+
     // return from a method
     //
     // 5 bytes

@@ -594,6 +594,11 @@ impl fmt::Display for SubProgram {
                         pc += 9;
                     }
 
+                    DbOp::Ret0 => {
+                        writeln!(f, "{}: Ret0", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::Ret => {
                         let return_size = begin.add(pc + 1).cast::<u32>().read();
                         writeln!(f, "{}: Ret({})", pc, return_size)?;
@@ -722,7 +727,7 @@ mod tests {
 128: Pop
 
 129: Label(1, "compare_function_clean")
-134: Ret(0)
+134: Ret0
 "#;
         assert_eq!(expect, actual)
     }
@@ -773,7 +778,7 @@ mod tests {
 106: Pop
 
 107: Label(1, "compare_function_clean")
-112: Ret(0)
+112: Ret0
 "#;
         assert_eq!(expect, actual)
     }
@@ -926,7 +931,7 @@ mod tests {
 128: Pop
 
 129: Label(1, "compare_function_clean")
-134: Ret(0)
+134: Ret0
 "#;
         assert_eq!(expect, actual)
     }
@@ -976,7 +981,7 @@ mod tests {
 75: Goto(43)
 
 80: Label(0, "compare_function")
-85: Goto(164)
+85: Goto(156)
 
 90: Label(8)
 95: GetField("age", 117)
@@ -987,27 +992,27 @@ mod tests {
 116: Pop
 
 117: Label(9)
-122: Ret(0)
+122: Ret0
 
-127: Label(10)
-132: GetField("age", 154)
-141: PushValue(12)
-146: Equal
-147: FalseJump(154)
-152: Pop
-153: Pop
+123: Label(10)
+128: GetField("age", 150)
+137: PushValue(12)
+142: Equal
+143: FalseJump(150)
+148: Pop
+149: Pop
 
-154: Label(11)
-159: Ret(0)
+150: Label(11)
+155: Ret0
 
-164: Label(7)
-169: Call(90, 0)
-178: TrueJump(197)
-183: Call(127, 0)
-192: TrueJump(197)
+156: Label(7)
+161: Call(90, 0)
+170: TrueJump(189)
+175: Call(123, 0)
+184: TrueJump(189)
 
-197: Label(1, "compare_function_clean")
-202: Ret(0)
+189: Label(1, "compare_function_clean")
+194: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1061,7 +1066,7 @@ mod tests {
 106: Pop2(2)
 
 111: Label(1, "compare_function_clean")
-116: Ret(0)
+116: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1122,7 +1127,7 @@ mod tests {
 139: Pop2(3)
 
 144: Label(1, "compare_function_clean")
-149: Ret(0)
+149: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1177,7 +1182,7 @@ mod tests {
 105: Pop2(2)
 
 110: Label(1, "compare_function_clean")
-115: Ret(0)
+115: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1286,7 +1291,7 @@ mod tests {
 228: Pop2(2)
 
 233: Label(1, "compare_function_clean")
-238: Ret(0)
+238: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1361,7 +1366,7 @@ mod tests {
 126: Pop2(2)
 
 131: Label(1, "compare_function_clean")
-136: Ret(0)
+136: Ret0
 "#;
         assert_eq!(expect, actual);
     }
