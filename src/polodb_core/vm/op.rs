@@ -208,6 +208,8 @@ pub enum DbOp {
     LessEqual,
     Regex,
 
+    Not,
+
     // check if top0 is in top2
     // the result is stored in r0
     In,

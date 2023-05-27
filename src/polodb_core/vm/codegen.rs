@@ -559,6 +559,7 @@ impl Codegen {
                     return self.emit_query_tuple_document(
                         key,
                         doc,
+                        false,
                         not_found_label,
                     );
                 }
@@ -599,9 +600,17 @@ impl Codegen {
         slices.len()
     }
 
+    fn emit_logical(&mut self, op: DbOp, is_in_not: bool) {
+        self.emit(op);
+        if is_in_not {
+            self.emit(DbOp::Not);
+        }
+    }
+
     fn emit_query_tuple_document_kv(
         &mut self,
         key: &str,
+        is_in_not: bool,
         not_found_label: Label,
         sub_key: &str,
         sub_value: &Bson,
@@ -612,7 +621,7 @@ impl Codegen {
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::Equal);
+                self.emit_logical(DbOp::Equal, is_in_not);
 
                 // if not equal，go to next
                 self.emit_goto(DbOp::IfFalse, not_found_label);
@@ -626,7 +635,7 @@ impl Codegen {
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::Greater);
+                self.emit_logical(DbOp::Greater, is_in_not);
 
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
@@ -639,7 +648,7 @@ impl Codegen {
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::GreaterEqual);
+                self.emit_logical(DbOp::GreaterEqual, is_in_not);
 
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
@@ -663,7 +672,7 @@ impl Codegen {
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::In);
+                self.emit_logical(DbOp::In, is_in_not);
 
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
@@ -676,7 +685,7 @@ impl Codegen {
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::Less);
+                self.emit_logical(DbOp::Less, is_in_not);
 
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
@@ -689,7 +698,7 @@ impl Codegen {
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::LessEqual);
+                self.emit_logical(DbOp::LessEqual, is_in_not);
 
                 // less
                 self.emit_goto(DbOp::IfFalse, not_found_label);
@@ -703,7 +712,7 @@ impl Codegen {
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::Equal);
+                self.emit_logical(DbOp::Equal, is_in_not);
 
                 // if equal，go to next
                 self.emit_goto(DbOp::IfFalse, not_found_label);
@@ -727,7 +736,7 @@ impl Codegen {
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::In);
+                self.emit_logical(DbOp::In, is_in_not);
 
                 self.emit_goto(DbOp::IfTrue, not_found_label);
 
@@ -752,7 +761,7 @@ impl Codegen {
                 let expect_size_stat_id = self.push_static(Bson::from(expected_size));
                 self.emit_push_value(expect_size_stat_id);
 
-                self.emit(DbOp::Equal);
+                self.emit_logical(DbOp::Equal, is_in_not);
 
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
@@ -775,7 +784,8 @@ impl Codegen {
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::Regex);
+
+                self.emit_logical(DbOp::Regex, is_in_not);
 
                 // if not equal，go to next
                 self.emit_goto(DbOp::IfFalse, not_found_label);
@@ -785,32 +795,17 @@ impl Codegen {
             }
 
             "$not" => {
-                match sub_value {
-                    Bson::Document(_) => (),
+                let doc = match sub_value {
+                    Bson::Document(doc) => doc,
                     _ => {
                         return Err(Error::InvalidField(mk_invalid_query_field(
                             self.last_key().into(),
                             self.gen_path(),
                         )))
                     }
-                }
+                };
 
-                let field_size = self.recursively_get_field(key, not_found_label);
-                let ret_label = self.new_label();
-
-                // let stat_val_id = self.push_static(sub_value.clone());
-                // self.emit_push_value(stat_val_id);
-                // self.emit(DbOp::In);
-                //
-                // self.emit_goto(DbOp::IfFalse, not_found_label);
-
-
-                self.emit_label(ret_label);
-                self.emit(DbOp::Ret);
-                self.emit_u32(0);
-
-                self.emit(DbOp::Pop2);
-                self.emit_u32((field_size + 1) as u32);
+                self.emit_query_tuple_document(key, doc, !is_in_not, not_found_label)?;
             }
 
             _ => {
@@ -828,12 +823,14 @@ impl Codegen {
         &mut self,
         key: &str,
         value: &Document,
+        is_in_not: bool,
         not_found_label: Label,
     ) -> Result<()> {
         for (sub_key, sub_value) in value.iter() {
             path_hint!(self, sub_key.clone(), {
                 self.emit_query_tuple_document_kv(
                     key,
+                    is_in_not,
                     not_found_label,
                     sub_key.as_ref(),
                     sub_value,

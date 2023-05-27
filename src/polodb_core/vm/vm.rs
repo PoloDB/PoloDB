@@ -919,6 +919,16 @@ impl VM {
                         self.pc = self.pc.add(1);
                     }
 
+                    DbOp::Not =>{
+                        self.r0 = if self.r0 == 0 {
+                            1
+                        } else {
+                            0
+                        };
+
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::OpenRead => {
                         let prefix_idx = self.pc.add(1).cast::<u32>().read();
                         let prefix = self.program.static_values[prefix_idx as usize].clone();

@@ -445,6 +445,11 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::Not => {
+                        writeln!(f, "{}: Not", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::In => {
                         writeln!(f, "{}: In", pc)?;
                         pc += 1;
@@ -964,7 +969,46 @@ mod tests {
         };
         let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
         let actual = format!("Program:\n\n{}", program);
-        println!("{}", actual);
+        let expect = r#"Program:
+
+0: OpenRead("test")
+5: Rewind(25)
+10: Goto(55)
+
+15: Label(3)
+20: Next(55)
+
+25: Label(6, "close")
+30: Close
+31: Halt
+
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
+
+43: Label(4, "result")
+48: ResultRow
+49: Pop
+50: Goto(15)
+
+55: Label(2, "compare")
+60: Dup
+61: Call(80, 1)
+70: FalseJump(32)
+75: Goto(43)
+
+80: Label(0, "compare_function")
+85: GetField("price", 111)
+94: PushValue(100)
+99: Greater
+100: Not
+101: FalseJump(111)
+106: Pop2(2)
+
+111: Label(1, "compare_function_clean")
+116: Ret(0)
+"#;
+        assert_eq!(expect, actual);
     }
 
     #[test]
