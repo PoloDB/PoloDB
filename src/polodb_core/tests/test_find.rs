@@ -27,23 +27,20 @@ fn test_multiple_find_one() {
 
         {
             let collection = db.collection("config");
-            let doc1 = doc! {
+            collection.insert_many(vec![
+                doc! {
                     "_id": "c1",
                     "value": "c1",
-                };
-            collection.insert_one(doc1).unwrap();
-
-            let doc2 = doc! {
+                },
+                doc! {
                     "_id": "c2",
                     "value": "c2",
-                };
-            collection.insert_one(doc2).unwrap();
-
-            let doc2 = doc! {
+                },
+                doc! {
                     "_id": "c3",
                     "value": "c3",
-                };
-            collection.insert_one(doc2).unwrap();
+                },
+            ]).unwrap();
 
             assert_eq!(collection.count_documents().unwrap(), 3);
         }
@@ -51,19 +48,19 @@ fn test_multiple_find_one() {
         {
             let collection = db.collection::<Document>("config");
             collection.update_many(doc! {
-                    "_id": "c2"
-                }, doc! {
-                    "$set": doc! {
-                        "value": "c33",
-                    },
-                }).unwrap();
+                "_id": "c2"
+            }, doc! {
+                "$set": doc! {
+                    "value": "c33",
+                },
+            }).unwrap();
             collection.update_many(doc! {
-                    "_id": "c2",
-                }, doc! {
-                    "$set": doc! {
-                        "value": "c22",
-                    },
-                }).unwrap();
+                "_id": "c2",
+            }, doc! {
+                "$set": doc! {
+                    "value": "c22",
+                },
+            }).unwrap();
         }
 
         let collection = db.collection::<Document>("config");
@@ -125,4 +122,48 @@ fn test_find_empty_collection() {
     let mut cursor = collection.find_with_session(None, &mut session).unwrap();
 
     assert!(!cursor.advance(&mut session).unwrap());
+}
+
+#[test]
+fn test_not_expression() {
+    vec![
+        prepare_db("test-not-expression").unwrap(),
+        Database::open_memory().unwrap(),
+    ].iter().for_each(|db| {
+        let metrics = db.metrics();
+        metrics.enable();
+
+        let col = db.collection::<Document>("teacher");
+
+        col.insert_many(vec![
+            doc! {
+                "name": "David",
+                "age": 33,
+            },
+            doc! {
+                "name": "John",
+                "age": 22,
+            },
+            doc! {
+                "name": "Mary",
+                "age": 18,
+            },
+            doc! {
+                "name": "Peter",
+                "age": 18,
+            },
+        ]).unwrap();
+
+        let result = col.find(doc! {
+            "age": {
+                "$not": {
+                    "$eq": 18,
+                },
+            },
+        }).unwrap().collect::<Result<Vec<Document>>>().unwrap();
+        assert_eq!(result.len(), 2);
+
+        assert_eq!(result[0].get("name").unwrap().as_str().unwrap(), "David");
+        assert_eq!(result[1].get("name").unwrap().as_str().unwrap(), "John");
+    });
 }

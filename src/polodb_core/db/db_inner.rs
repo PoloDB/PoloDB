@@ -986,6 +986,38 @@ impl DatabaseInner {
         }
     }
 
+    pub(crate) fn aggregate_with_owned_session<T: DeserializeOwned>(
+        &self,
+        col_name: &str,
+        pipeline: impl IntoIterator<Item = Document>,
+        mut session: SessionInner,
+    ) -> Result<ClientCursor<T>> {
+        DatabaseInner::validate_col_name(col_name)?;
+        let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, &mut session)?;
+        let subprogram = match meta_opt {
+            Some(col_spec) => {
+                let subprogram = SubProgram::compile_aggregate(
+                    &col_spec,
+                    pipeline,
+                    true
+                )?;
+
+                subprogram
+            }
+            None => SubProgram::compile_empty_query(),
+        };
+
+        let vm = VM::new(
+            self.kv_engine.clone(),
+            subprogram,
+            self.metrics.clone(),
+        );
+
+        let handle = ClientCursor::new(vm, session);
+
+        Ok(handle)
+    }
+
 }
 
 fn collection_metas_to_names(doc_meta: Vec<Document>) -> Vec<String> {

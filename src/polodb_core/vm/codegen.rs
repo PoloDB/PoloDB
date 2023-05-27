@@ -126,9 +126,9 @@ impl Codegen {
         if !self.program.label_slots[label.u_pos()].is_empty() {
             unreachable!("this label has been emit");
         }
+        let current_loc = self.current_location();
         self.emit(DbOp::Label);
         self.emit_u32(label.pos());
-        let current_loc = self.current_location();
         self.program.label_slots[label.u_pos()] = LabelSlot::UnnamedLabel(current_loc);
     }
 
@@ -136,9 +136,9 @@ impl Codegen {
         if !self.program.label_slots[label.u_pos()].is_empty() {
             unreachable!("this label has been emit");
         }
+        let current_loc = self.current_location();
         self.emit(DbOp::Label);
         self.emit_u32(label.pos());
-        let current_loc = self.current_location();
         if self.skip_annotation {
             self.program.label_slots[label.u_pos()] = LabelSlot::UnnamedLabel(current_loc);
         } else {
@@ -224,10 +224,11 @@ impl Codegen {
 
         let result_callback: F = try_index_result.unwrap();
 
+        let compare_fun = self.new_label();
+        let compare_fun_clean = self.new_label();
         let compare_label = self.new_label();
         let next_label = self.new_label();
         let result_label = self.new_label();
-        let get_field_failed_label = self.new_label();
         let not_found_label = self.new_label();
         let close_label = self.new_label();
 
@@ -239,26 +240,19 @@ impl Codegen {
         self.emit_goto(DbOp::Next, compare_label);
 
         // <==== close cursor
-        self.emit_label_with_name(close_label, "Close");
+        self.emit_label_with_name(close_label, "close");
 
         self.emit(DbOp::Close);
         self.emit(DbOp::Halt);
 
         // <==== not this item, go to next item
-        self.emit_label_with_name(not_found_label, "Not this item");
-        self.emit(DbOp::RecoverStackPos);
+        self.emit_label_with_name(not_found_label, "not_this_item");
         self.emit(DbOp::Pop); // pop the current value;
-        self.emit_goto(DbOp::Goto, next_label);
-
-        // <==== get field failed, got to next item
-        self.emit_label_with_name(get_field_failed_label, "Get field failed");
-        self.emit(DbOp::RecoverStackPos);
-        self.emit(DbOp::Pop);
         self.emit_goto(DbOp::Goto, next_label);
 
         // <==== result position
         // give out the result, or update the item
-        self.emit_label_with_name(result_label, "Result");
+        self.emit_label_with_name(result_label, "result");
         result_callback(self)?;
 
         if is_many {
@@ -273,12 +267,20 @@ impl Codegen {
         //
         // begin to execute compare logic
         // save the stack first
-        self.emit_label_with_name(compare_label, "Compare");
-        self.emit(DbOp::SaveStackPos);
-
-        self.emit_standard_query_doc(query, result_label, get_field_failed_label, not_found_label)?;
-
+        self.emit_label_with_name(compare_label, "compare");
+        self.emit(DbOp::Dup);
+        self.emit_goto(DbOp::Call, compare_fun);
+        self.emit_u32(1);
+        self.emit_goto(DbOp::IfFalse, not_found_label);
         self.emit_goto(DbOp::Goto, result_label);
+
+        self.emit_label_with_name(compare_fun, "compare_function");
+
+        self.emit_standard_query_doc(query, result_label, compare_fun_clean)?;
+
+        self.emit_label_with_name(compare_fun_clean, "compare_function_clean");
+        self.emit(DbOp::Ret);
+        self.emit_u32(0);
 
         Ok(())
     }
@@ -420,7 +422,6 @@ impl Codegen {
         &mut self,
         query_doc: &Document,
         result_label: Label,
-        get_field_failed_label: Label,
         not_found_label: Label,
     ) -> Result<()> {
         for (key, value) in query_doc.iter() {
@@ -429,7 +430,6 @@ impl Codegen {
                     key,
                     value,
                     result_label,
-                    get_field_failed_label,
                     not_found_label,
                 )?;
             });
@@ -458,7 +458,6 @@ impl Codegen {
         &mut self,
         arr: &Array,
         result_label: Label,
-        get_field_failed_label: Label,
         not_found_label: Label,
     ) -> Result<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
@@ -468,7 +467,7 @@ impl Codegen {
                 self.emit_standard_query_doc(
                     item_doc,
                     result_label,
-                    get_field_failed_label,
+
                     not_found_label,
                 )?;
             });
@@ -480,61 +479,52 @@ impl Codegen {
     fn emit_logic_or(
         &mut self,
         arr: &Array,
-        result_label: Label,
-        global_get_field_failed_label: Label,
-        not_found_label: Label,
+        ret_label: Label,
     ) -> Result<()> {
+        let cmp_label = self.new_label();
+        self.emit_goto(DbOp::Goto, cmp_label);
+
+        let mut functions = Vec::<Label>::new();
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
             path_hint!(self, path_msg, {
                 let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
-                if index == (arr.len() as usize) - 1 {
-                    // last item
-                    for (key, value) in item_doc.iter() {
-                        self.emit_query_tuple(
-                            key,
-                            value,
-                            result_label,
-                            global_get_field_failed_label,
-                            not_found_label,
-                        )?;
-                    }
-                } else {
-                    let go_next_label = self.new_label();
-                    let local_get_field_failed_label = self.new_label();
-                    let query_label = self.new_label();
-                    self.emit_goto(DbOp::Goto, query_label);
 
-                    self.emit_label(local_get_field_failed_label);
-                    self.emit(DbOp::RecoverStackPos);
-                    self.emit_goto(DbOp::Goto, go_next_label);
+                let query_label = self.new_label();
+                let ret_label = self.new_label();
 
-                    self.emit_label(query_label);
-                    self.emit_standard_query_doc(
-                        item_doc,
-                        result_label,
-                        local_get_field_failed_label,
-                        local_get_field_failed_label,
-                    )?;
-                    // pass, goto result
-                    self.emit_goto(DbOp::Goto, result_label);
-                    self.emit_label(go_next_label);
-                }
+                self.emit_label(query_label);
+                self.emit_standard_query_doc(
+                    item_doc,
+                    ret_label,
+                    ret_label
+                )?;
+
+                self.emit_label(ret_label);
+                self.emit(DbOp::Ret);
+                self.emit_u32(0);
+
+                functions.push(query_label);
             });
+        }
+
+        self.emit_label(cmp_label);
+        for fun in functions {
+            self.emit_goto(DbOp::Call, fun);
+            self.emit_u32(0);
+            self.emit_goto(DbOp::IfTrue, ret_label);
         }
 
         Ok(())
     }
 
     // case1: "$and" | "$or" -> [ Document ]
-    // case2: "$not" -> Document
     // case3: "_id" -> Document
     fn emit_query_tuple(
         &mut self,
         key: &str,
         value: &Bson,
         result_label: Label,
-        get_field_failed_label: Label,
         not_found_label: Label,
     ) -> Result<()> {
         if key.chars().next().unwrap() == '$' {
@@ -544,7 +534,6 @@ impl Codegen {
                     self.emit_logic_and(
                         sub_arr.as_ref(),
                         result_label,
-                        get_field_failed_label,
                         not_found_label,
                     )?;
                 }
@@ -553,23 +542,8 @@ impl Codegen {
                     let sub_arr = crate::try_unwrap_array!("$or", value);
                     self.emit_logic_or(
                         sub_arr.as_ref(),
-                        result_label,
-                        get_field_failed_label,
                         not_found_label,
                     )?;
-                }
-
-                "$not" => {
-                    let sub_doc = crate::try_unwrap_document!("$not", value);
-                    // swap label
-                    let (get_field_failed_label, not_found_label) =
-                        (not_found_label, get_field_failed_label);
-                    return self.emit_query_tuple_document(
-                        key,
-                        &sub_doc,
-                        get_field_failed_label,
-                        not_found_label,
-                    );
                 }
 
                 _ => {
@@ -585,7 +559,7 @@ impl Codegen {
                     return self.emit_query_tuple_document(
                         key,
                         doc,
-                        get_field_failed_label,
+                        false,
                         not_found_label,
                     );
                 }
@@ -599,7 +573,7 @@ impl Codegen {
 
                 _ => {
                     let key_static_id = self.push_static(key.into());
-                    self.emit_goto2(DbOp::GetField, key_static_id, get_field_failed_label);
+                    self.emit_goto2(DbOp::GetField, key_static_id, not_found_label);
 
                     let value_static_id = self.push_static(value.clone());
                     self.emit_push_value(value_static_id); // push a value2
@@ -626,21 +600,28 @@ impl Codegen {
         slices.len()
     }
 
+    fn emit_logical(&mut self, op: DbOp, is_in_not: bool) {
+        self.emit(op);
+        if is_in_not {
+            self.emit(DbOp::Not);
+        }
+    }
+
     fn emit_query_tuple_document_kv(
         &mut self,
         key: &str,
-        get_field_failed_label: Label,
+        is_in_not: bool,
         not_found_label: Label,
         sub_key: &str,
         sub_value: &Bson,
     ) -> Result<()> {
         match sub_key {
             "$eq" => {
-                let field_size = self.recursively_get_field(key, get_field_failed_label);
+                let field_size = self.recursively_get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::Equal);
+                self.emit_logical(DbOp::Equal, is_in_not);
 
                 // if not equal，go to next
                 self.emit_goto(DbOp::IfFalse, not_found_label);
@@ -650,11 +631,11 @@ impl Codegen {
             }
 
             "$gt" => {
-                let field_size = self.recursively_get_field(key, get_field_failed_label);
+                let field_size = self.recursively_get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::Greater);
+                self.emit_logical(DbOp::Greater, is_in_not);
 
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
@@ -663,11 +644,11 @@ impl Codegen {
             }
 
             "$gte" => {
-                let field_size = self.recursively_get_field(key, get_field_failed_label);
+                let field_size = self.recursively_get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::GreaterEqual);
+                self.emit_logical(DbOp::GreaterEqual, is_in_not);
 
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
@@ -687,11 +668,11 @@ impl Codegen {
                     }
                 }
 
-                let field_size = self.recursively_get_field(key, get_field_failed_label);
+                let field_size = self.recursively_get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::In);
+                self.emit_logical(DbOp::In, is_in_not);
 
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
@@ -700,11 +681,11 @@ impl Codegen {
             }
 
             "$lt" => {
-                let field_size = self.recursively_get_field(key, get_field_failed_label);
+                let field_size = self.recursively_get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::Less);
+                self.emit_logical(DbOp::Less, is_in_not);
 
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
@@ -713,11 +694,11 @@ impl Codegen {
             }
 
             "$lte" => {
-                let field_size = self.recursively_get_field(key, get_field_failed_label);
+                let field_size = self.recursively_get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::LessEqual);
+                self.emit_logical(DbOp::LessEqual, is_in_not);
 
                 // less
                 self.emit_goto(DbOp::IfFalse, not_found_label);
@@ -727,11 +708,11 @@ impl Codegen {
             }
 
             "$ne" => {
-                let field_size = self.recursively_get_field(key, get_field_failed_label);
+                let field_size = self.recursively_get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::Equal);
+                self.emit_logical(DbOp::Equal, is_in_not);
 
                 // if equal，go to next
                 self.emit_goto(DbOp::IfFalse, not_found_label);
@@ -751,11 +732,11 @@ impl Codegen {
                     }
                 }
 
-                let field_size = self.recursively_get_field(key, get_field_failed_label);
+                let field_size = self.recursively_get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::In);
+                self.emit_logical(DbOp::In, is_in_not);
 
                 self.emit_goto(DbOp::IfTrue, not_found_label);
 
@@ -774,13 +755,13 @@ impl Codegen {
                     }
                 };
 
-                let field_size = self.recursively_get_field(key, get_field_failed_label);
+                let field_size = self.recursively_get_field(key, not_found_label);
                 self.emit(DbOp::ArraySize);
 
                 let expect_size_stat_id = self.push_static(Bson::from(expected_size));
                 self.emit_push_value(expect_size_stat_id);
 
-                self.emit(DbOp::Equal);
+                self.emit_logical(DbOp::Equal, is_in_not);
 
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
@@ -799,17 +780,32 @@ impl Codegen {
                     }
                 }
 
-                let field_size = self.recursively_get_field(key, get_field_failed_label);
+                let field_size = self.recursively_get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit(DbOp::Regex);
+
+                self.emit_logical(DbOp::Regex, is_in_not);
 
                 // if not equal，go to next
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
                 self.emit(DbOp::Pop2);
                 self.emit_u32((field_size + 1) as u32);
+            }
+
+            "$not" => {
+                let doc = match sub_value {
+                    Bson::Document(doc) => doc,
+                    _ => {
+                        return Err(Error::InvalidField(mk_invalid_query_field(
+                            self.last_key().into(),
+                            self.gen_path(),
+                        )))
+                    }
+                };
+
+                self.emit_query_tuple_document(key, doc, !is_in_not, not_found_label)?;
             }
 
             _ => {
@@ -827,14 +823,14 @@ impl Codegen {
         &mut self,
         key: &str,
         value: &Document,
-        get_field_failed_label: Label,
+        is_in_not: bool,
         not_found_label: Label,
     ) -> Result<()> {
         for (sub_key, sub_value) in value.iter() {
             path_hint!(self, sub_key.clone(), {
                 self.emit_query_tuple_document_kv(
                     key,
-                    get_field_failed_label,
+                    is_in_not,
                     not_found_label,
                     sub_key.as_ref(),
                     sub_value,

@@ -185,6 +185,9 @@ pub enum DbOp {
     // op1. index info id: 4 bytes
     DeleteIndex,
 
+    // duplicate the top of the stack
+    Dup,
+
     Pop,
 
     // 5 bytes
@@ -205,19 +208,21 @@ pub enum DbOp {
     LessEqual,
     Regex,
 
+    Not,
+
     // check if top0 is in top2
     // the result is stored in r0
     In,
 
     // open a cursor with op0 as root_pid
     //
-    // 5 byes
+    // 5 bytes
     // op1. prefix_id: 4 bytes
     OpenRead,
 
     // open a cursor with op0 as root_pid
     //
-    // 5 byes
+    // 5 bytes
     // op1. prefix_id: 4 bytes
     OpenWrite,
 
@@ -232,6 +237,25 @@ pub enum DbOp {
     SaveStackPos,
 
     RecoverStackPos,
+
+    // call a method
+    //
+    // 9 bytes
+    // op1. location: 4 bytes
+    // op2. size of params: 4 bytes
+    Call,
+
+    // return from a method
+    //
+    // 5 bytes
+    // op1. return value size: 4 bytes
+    Ret,
+
+    // if r0 is false, return
+    //
+    // 5 bytes
+    // op1. return value size: 4 bytes
+    IfFalseRet,
 
     // Exit
     // Close cursor automatically

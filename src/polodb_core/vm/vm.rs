@@ -40,6 +40,20 @@ pub enum VmState {
     HasRow = 2,
 }
 
+struct VMFrame {
+    stack_begin_pos: usize,
+    return_pos: usize,
+}
+
+impl Default for VMFrame {
+    fn default() -> Self {
+        VMFrame {
+            stack_begin_pos: 0,
+            return_pos: usize::MAX,
+        }
+    }
+}
+
 pub(crate) struct VM {
     kv_engine: LsmKv,
     pub(crate) state: VmState,
@@ -49,6 +63,7 @@ pub(crate) struct VM {
     pub(crate) r2: i64, // usually the counter
     r3: usize,
     stack: Vec<Bson>,
+    frames:              Vec<VMFrame>,
     pub(crate) program: SubProgram,
     metrics: Metrics,
 }
@@ -81,6 +96,7 @@ impl VM {
             r2: 0,
             r3: 0,
             stack,
+            frames: vec![VMFrame::default()],
             program,
             metrics,
         }
@@ -524,6 +540,19 @@ impl VM {
         Ok(())
     }
 
+    fn ret(&mut self, return_size: usize) {
+        let frame = self.frames.pop().unwrap();
+
+        let clone_start_pos = self.stack.len() - return_size;
+        for i in 0..return_size {
+            self.stack[frame.stack_begin_pos + i] = self.stack[clone_start_pos + i].clone();
+        }
+
+        self.stack.resize(frame.stack_begin_pos + return_size, Bson::Null);
+
+        self.reset_location(frame.return_pos as u32);
+    }
+
     pub(crate) fn execute(&mut self, session: &mut SessionInner) -> Result<()> {
         if self.state == VmState::Halt {
             return Err(Error::VmIsHalt);
@@ -665,11 +694,13 @@ impl VM {
 
                         match crate::utils::bson::try_get_document_value(doc, key_name) {
                             Some(val) => {
+                                self.r0 = 1;
                                 self.stack.push(val);
                                 self.pc = self.pc.add(9);
                             }
 
                             None => {
+                                self.r0 = 0;
                                 self.reset_location(location);
                             }
                         }
@@ -778,6 +809,11 @@ impl VM {
                         self.pc = self.pc.add(5);
                     }
 
+                    DbOp::Dup => {
+                        self.stack.push(self.stack.last().unwrap().clone());
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::Pop => {
                         self.stack.pop();
                         self.pc = self.pc.add(1);
@@ -883,6 +919,16 @@ impl VM {
                         self.pc = self.pc.add(1);
                     }
 
+                    DbOp::Not =>{
+                        self.r0 = if self.r0 == 0 {
+                            1
+                        } else {
+                            0
+                        };
+
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::OpenRead => {
                         let prefix_idx = self.pc.add(1).cast::<u32>().read();
                         let prefix = self.program.static_values[prefix_idx as usize].clone();
@@ -922,6 +968,35 @@ impl VM {
                     DbOp::RecoverStackPos => {
                         self.stack.resize(self.r3, Bson::Null);
                         self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::Call => {
+                        let location = self.pc.add(1).cast::<u32>().read();
+                        let size_of_param = self.pc.add(5).cast::<u32>().read() as usize;
+
+                        let start = self.program.instructions.as_ptr() as usize;
+                        let return_pos = self.pc.add(9).sub(start) as usize;
+
+                        self.frames.push(VMFrame {
+                            stack_begin_pos: self.stack.len() - size_of_param,
+                            return_pos,
+                        });
+
+                        self.reset_location(location);
+                    }
+
+                    DbOp::Ret => {
+                        let return_size = self.pc.add(1).cast::<u32>().read() as usize;
+                        self.ret(return_size);
+                    }
+
+                    DbOp::IfFalseRet => {
+                        let return_size = self.pc.add(1).cast::<u32>().read() as usize;
+                        if self.r0 == 0 {  // false
+                            self.ret(return_size);
+                        } else {
+                            self.pc = self.pc.add(5);
+                        }
                     }
 
                     DbOp::_EOF | DbOp::Halt => {

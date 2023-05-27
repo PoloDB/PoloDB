@@ -247,4 +247,11 @@ impl<T>  Collection<T>
         return Ok(Some(cursor.deserialize_current()?));
     }
 
+    /// Runs an aggregation operation.
+    pub fn aggregate(&self, pipeline: impl IntoIterator<Item = Document>) -> Result<ClientCursor<T>> {
+        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
+        let session = db.start_session()?;
+        db.aggregate_with_owned_session(&self.name, pipeline, session)
+    }
+
 }
