@@ -9,17 +9,17 @@ pub(super) struct Label(u32);
 
 impl Label {
 
-    pub(super) fn new(pos: u32) -> Label {
+    pub(crate) fn new(pos: u32) -> Label {
         Label(pos)
     }
 
     #[inline]
-    pub(super) fn pos(&self) -> u32 {
+    pub(crate) fn pos(&self) -> u32 {
         self.0
     }
 
     #[inline]
-    pub(super) fn u_pos(&self) -> usize {
+    pub(crate) fn u_pos(&self) -> usize {
         self.0 as usize
     }
 
