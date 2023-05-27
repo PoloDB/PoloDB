@@ -234,7 +234,7 @@ impl SubProgram {
         Ok(codegen.take())
     }
 
-    pub(crate) fn compile_aggregate(col_spec: &CollectionSpecification, pipeline: impl IntoIterator<Item = Document>, skip_annotation: bool) -> Result<SubProgram> {
+    pub(crate) fn compile_aggregate(col_spec: &CollectionSpecification, _pipeline: impl IntoIterator<Item = Document>, skip_annotation: bool) -> Result<SubProgram> {
         let mut codegen = Codegen::new(skip_annotation, false);
         let result_label = codegen.new_label();
         let next_label = codegen.new_label();
