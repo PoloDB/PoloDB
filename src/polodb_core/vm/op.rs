@@ -89,6 +89,15 @@ pub enum DbOp {
     // op1. value_index: 4bytes
     PushValue,
 
+    // 1 byte
+    PushTrue,
+
+    // 1 byte
+    PushFalse,
+
+    // 1byte
+    PushDocument,
+
     // push r0 to the top of the stack
     //
     // 1 byte

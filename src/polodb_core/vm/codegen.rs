@@ -13,6 +13,7 @@ use crate::vm::SubProgram;
 use crate::{Error, Result};
 use bson::spec::{BinarySubtype, ElementType};
 use bson::{Array, Binary, Bson, Document};
+use crate::vm::aggregation_codegen_context::AggregationCodeGenContext;
 use crate::vm::global_variable::{GlobalVariable, GlobalVariableSlot};
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
@@ -118,11 +119,13 @@ impl Codegen {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub(super) fn new_global_variable(&mut self, init_value: Bson) -> Result<GlobalVariable> {
         self.new_global_variable_impl(init_value, None)
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub(super) fn new_global_variable_with_name(&mut self, name: String, init_value: Bson) -> Result<GlobalVariable> {
         self.new_global_variable_impl(init_value, Some(name.into_boxed_str()))
     }
@@ -151,6 +154,16 @@ impl Codegen {
         self.emit(DbOp::Label);
         self.emit_u32(label.pos());
         self.program.label_slots[label.u_pos()] = LabelSlot::UnnamedLabel(current_loc);
+    }
+
+    fn emit_load_global(&mut self, global: GlobalVariable) {
+        self.emit(DbOp::LoadGlobal);
+        self.emit_u32(global.pos());
+    }
+
+    fn emit_store_global(&mut self, global: GlobalVariable) {
+        self.emit(DbOp::StoreGlobal);
+        self.emit_u32(global.pos());
     }
 
     pub(super) fn emit_label_with_name<T: Into<Box<str>>>(&mut self, label: Label, name: T) {
@@ -861,10 +874,30 @@ impl Codegen {
         Ok(())
     }
 
+    // There are two stage of compiling pipeline
+    // 1. Generate the layout code of the pipeline
+    // 2. Generate the implementation code of the pipeline
     pub fn emit_aggregation_pipeline(&mut self, pipeline: &[Document]) -> Result<()> {
+        let mut ctx = AggregationCodeGenContext::default();
+
+        for _ in 0..pipeline.len() {
+            let label = self.new_label();
+            ctx.pipeline_labels.push(label);
+
+            self.emit(DbOp::PushFalse);
+
+            self.emit(DbOp::Call);
+            self.emit_u32(label.pos());
+            self.emit_u32(1);
+        }
+
+        self.emit(DbOp::ResultRow);
+
         for (index, stage) in pipeline.iter().enumerate() {
             let stage_num = format!("{}", index);
+            let stage_label = ctx.pipeline_labels[index];
             path_hint!(self, stage_num, {
+                self.emit_label(stage_label);
                 self.emit_aggregation_stage(stage)?;
             });
         }
@@ -872,6 +905,10 @@ impl Codegen {
         Ok(())
     }
 
+    // Generate the implementation code of the pipeline
+    // The implementation code is a function with parameters:
+    // Param 1(bool): is_the_last
+    // Return value: boolean value indicating going next stage or not
     fn emit_aggregation_stage(&mut self, stage: &Document) -> Result<()> {
         if stage.is_empty() {
             return Ok(());
@@ -881,12 +918,41 @@ impl Codegen {
         }
 
         let first_tuple = stage.iter().next().unwrap();
-        let (key, _value) = first_tuple;
+        let (key, value) = first_tuple;
 
         match key.as_str() {
             "$count" => {
-                let _global_var = self.new_global_variable(Bson::Int64(0))?;
-                ()
+                let count_name = match value {
+                    Bson::String(s) => s,
+                    _ => {
+                        return Err(Error::InvalidAggregationStage(Box::new(stage.clone())));
+                    }
+                };
+                let global_var = self.new_global_variable(Bson::Int64(0))?;
+
+                let finished_label = self.new_label();
+
+                self.emit(DbOp::StoreR0);
+                self.emit_goto(DbOp::IfTrue, finished_label);
+
+                self.emit_load_global(global_var);
+                self.emit(DbOp::Inc);
+                self.emit_store_global(global_var);
+                self.emit(DbOp::Pop);
+
+                self.emit(DbOp::PushFalse);
+                self.emit_ret(1);
+
+                self.emit_label(finished_label);
+                self.emit(DbOp::PushDocument);
+                self.emit_load_global(global_var);
+
+                let count_name_id = self.push_static(Bson::String(count_name.clone()));
+                self.emit(DbOp::SetField);
+                self.emit_u32(count_name_id);
+
+                self.emit(DbOp::PushTrue);
+                self.emit_ret(1);
             }
             _ => {
                 return Err(Error::UnknownAggregationOperation(key.clone()));

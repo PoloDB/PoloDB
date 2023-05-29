@@ -5,7 +5,7 @@
  */
 
 #[derive(Copy, Clone)]
-pub(super) struct Label(u32);
+pub(crate) struct Label(u32);
 
 impl Label {
 
@@ -25,15 +25,15 @@ impl Label {
 
 }
 
-pub(super) struct JumpTableRecord {
-    pub(super) begin_loc: u32,
-    pub(super) offset: u32,
-    pub(super) label_id: u32,
+pub(crate) struct JumpTableRecord {
+    pub(crate) begin_loc: u32,
+    pub(crate) offset: u32,
+    pub(crate) label_id: u32,
 }
 
 impl JumpTableRecord {
 
-    pub(super) fn new(begin_loc: u32, offset: u32, label_id: u32) -> JumpTableRecord {
+    pub(crate) fn new(begin_loc: u32, offset: u32, label_id: u32) -> JumpTableRecord {
         JumpTableRecord {
             begin_loc,
             offset,
@@ -43,7 +43,7 @@ impl JumpTableRecord {
 
 }
 
-pub(super) enum LabelSlot {
+pub(crate) enum LabelSlot {
     Empty,
     UnnamedLabel(u32),
     LabelWithString(u32, Box<str>),
@@ -51,7 +51,7 @@ pub(super) enum LabelSlot {
 
 impl LabelSlot {
 
-    pub(super) fn position(&self) -> u32 {
+    pub(crate) fn position(&self) -> u32 {
         match self {
             LabelSlot::Empty => unreachable!(),
             LabelSlot::UnnamedLabel(pos) => *pos,
@@ -60,7 +60,7 @@ impl LabelSlot {
     }
 
     #[inline]
-    pub(super) fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         matches!(self, LabelSlot::Empty)
     }
 

@@ -310,8 +310,7 @@ impl SubProgram {
             col_spec,
             query_doc,
             |codegen| -> Result<()> {
-                codegen.emit(DbOp::ResultRow);
-                codegen.emit(DbOp::Pop);
+                codegen.emit_aggregation_pipeline(&pipeline_vec[1..])?;
                 Ok(())
             },
             true,
@@ -342,6 +341,15 @@ fn open_bson_to_str(val: &Bson) -> Result<String> {
 
 impl fmt::Display for SubProgram {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+
+        for (index, global_var) in self.global_variables.iter().enumerate() {
+            writeln!(f, "${} = {:?}", index, global_var.init_value)?;
+        }
+
+        if !self.global_variables.is_empty() {
+            writeln!(f)?;
+        }
+
         unsafe {
             let begin = self.instructions.as_ptr();
             let mut pc: usize = 0;
@@ -367,6 +375,11 @@ impl fmt::Display for SubProgram {
                             }
                         }
                         pc += 5;
+                    }
+
+                    DbOp::Inc => {
+                        writeln!(f, "{}: Inc", pc)?;
+                        pc += 1;
                     }
 
                     DbOp::IncR2 => {
@@ -421,6 +434,21 @@ impl fmt::Display for SubProgram {
                         let val = &self.static_values[index as usize];
                         writeln!(f, "{}: PushValue({})", pc, val)?;
                         pc += 5;
+                    }
+
+                    DbOp::PushTrue => {
+                        writeln!(f, "{}: PushTrue", pc)?;
+                        pc += 1;
+                    }
+
+                    DbOp::PushFalse => {
+                        writeln!(f, "{}: PushFalse", pc)?;
+                        pc += 1;
+                    }
+
+                    DbOp::PushDocument => {
+                        writeln!(f, "{}: PushDocument", pc)?;
+                        pc += 1;
                     }
 
                     DbOp::PushR0 => {
@@ -622,6 +650,18 @@ impl fmt::Display for SubProgram {
                     DbOp::RecoverStackPos => {
                         writeln!(f, "{}: RecoverStackPos", pc)?;
                         pc += 1;
+                    }
+
+                    DbOp::LoadGlobal => {
+                        let global_id = begin.add(pc + 1).cast::<u32>().read();
+                        writeln!(f, "{}: LoadGlobal(${})", pc, global_id)?;
+                        pc += 5;
+                    }
+
+                    DbOp::StoreGlobal => {
+                        let global_id = begin.add(pc + 1).cast::<u32>().read();
+                        writeln!(f, "{}: StoreGlobal(${})", pc, global_id)?;
+                        pc += 5;
                     }
 
                     _ => {
@@ -1372,5 +1412,25 @@ mod tests {
 136: Ret0
 "#;
         assert_eq!(expect, actual);
+    }
+
+    #[test]
+    fn test_aggregate() {
+        let col_spec = new_spec("test");
+        let program = SubProgram::compile_aggregate(&col_spec, vec![
+            doc! {
+                "$match": {
+                    "age": {
+                        "$gt": 18
+                    },
+                },
+            },
+            doc! {
+                "$count": "total",
+            },
+        ], false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+
+        println!("{}", actual);
     }
 }

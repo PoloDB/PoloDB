@@ -12,7 +12,7 @@ use crate::session::SessionInner;
 use crate::vm::op::DbOp;
 use crate::vm::SubProgram;
 use crate::{Error, LsmKv, Metrics, Result, TransactionType};
-use bson::Bson;
+use bson::{Bson, Document};
 use regex::RegexBuilder;
 use std::cell::Cell;
 use std::cmp::Ordering;
@@ -688,14 +688,40 @@ impl VM {
                         self.pc = self.pc.add(5);
                     }
 
+                    DbOp::PushTrue => {
+                        self.stack.push(Bson::Boolean(true));
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::PushFalse => {
+                        self.stack.push(Bson::Boolean(false));
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::PushDocument => {
+                        self.stack.push(Bson::Document(Document::new()));
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::PushR0 => {
                         self.stack.push(Bson::from(self.r0));
                         self.pc = self.pc.add(1);
                     }
 
                     DbOp::StoreR0 => {
-                        let top = self.stack_top().as_i64().unwrap();
-                        self.r0 = top as i32;
+                        let top = self.stack_top();
+                        self.r0 = match top {
+                            Bson::Int32(i) => *i,
+                            Bson::Int64(i) => *i as i32,
+                            Bson::Boolean(bl) => {
+                                if *bl {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                            _ => panic!("store r0 failed")
+                        };
                         self.pc = self.pc.add(1);
                     }
 
