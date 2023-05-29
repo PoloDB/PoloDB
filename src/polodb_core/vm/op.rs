@@ -16,6 +16,9 @@ pub enum DbOp {
     // op1. label id
     Label = 1,
 
+    // increase the value on the top of the stack by 1
+    Inc,
+
     IncR2,
 
     // reset the pc to the position of op0
@@ -261,6 +264,17 @@ pub enum DbOp {
     // 5 bytes
     // op1. return value size: 4 bytes
     IfFalseRet,
+
+    // load global variable on the stack
+    //
+    // 5 bytes
+    // op1. global variable id: 4 bytes
+    LoadGlobal,
+
+    // store global variable from the stack
+    // 5 bytes
+    // op1. global variable id: 4 bytes
+    StoreGlobal,
 
     // Exit
     // Close cursor automatically

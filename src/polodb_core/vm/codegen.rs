@@ -13,6 +13,7 @@ use crate::vm::SubProgram;
 use crate::{Error, Result};
 use bson::spec::{BinarySubtype, ElementType};
 use bson::{Array, Binary, Bson, Document};
+use crate::vm::global_variable::{GlobalVariable, GlobalVariableSlot};
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
@@ -114,6 +115,26 @@ impl Codegen {
     pub(super) fn take(mut self) -> SubProgram {
         self.unify_labels();
         *self.program
+    }
+
+    #[inline]
+    pub(super) fn new_global_variable(&mut self, init_value: Bson) -> Result<GlobalVariable> {
+        self.new_global_variable_impl(init_value, None)
+    }
+
+    #[inline]
+    pub(super) fn new_global_variable_with_name(&mut self, name: String, init_value: Bson) -> Result<GlobalVariable> {
+        self.new_global_variable_impl(init_value, Some(name.into_boxed_str()))
+    }
+
+    fn new_global_variable_impl(&mut self, init_value: Bson, name: Option<Box<str>>) -> Result<GlobalVariable> {
+        let id = self.program.global_variables.len() as u32;
+        self.program.global_variables.push(GlobalVariableSlot {
+            pos: 0,
+            init_value,
+            name,
+        });
+        Ok(GlobalVariable::new(id))
     }
 
     pub(super) fn new_label(&mut self) -> Label {
@@ -803,7 +824,9 @@ impl Codegen {
                     }
                 };
 
-                self.emit_query_tuple_document(key, doc, !is_in_not, not_found_label)?;
+                path_hint!(self, "$not".to_string(), {
+                    self.emit_query_tuple_document(key, doc, !is_in_not, not_found_label)?;
+                });
             }
 
             _ => {
@@ -839,8 +862,11 @@ impl Codegen {
     }
 
     pub fn emit_aggregation_pipeline(&mut self, pipeline: &[Document]) -> Result<()> {
-        for stage in pipeline {
-            self.emit_aggregation_stage(stage)?;
+        for (index, stage) in pipeline.iter().enumerate() {
+            let stage_num = format!("{}", index);
+            path_hint!(self, stage_num, {
+                self.emit_aggregation_stage(stage)?;
+            });
         }
 
         Ok(())
@@ -859,6 +885,7 @@ impl Codegen {
 
         match key.as_str() {
             "$count" => {
+                let _global_var = self.new_global_variable(Bson::Int64(0))?;
                 ()
             }
             _ => {

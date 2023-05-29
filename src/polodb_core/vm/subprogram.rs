@@ -13,6 +13,7 @@ use bson::{Bson, Document};
 use indexmap::IndexMap;
 use std::fmt;
 use crate::errors::FieldTypeUnexpectedStruct;
+use crate::vm::global_variable::GlobalVariableSlot;
 
 pub(crate) struct SubProgramIndexItem {
     pub col_name: String,
@@ -22,6 +23,7 @@ pub(crate) struct SubProgramIndexItem {
 pub(crate) struct SubProgram {
     pub(super) static_values: Vec<Bson>,
     pub(super) instructions: Vec<u8>,
+    pub(super) global_variables: Vec<GlobalVariableSlot>,
     pub(super) label_slots: Vec<LabelSlot>,
     pub(super) index_infos: Vec<SubProgramIndexItem>,
 }
@@ -31,6 +33,7 @@ impl SubProgram {
         SubProgram {
             static_values: Vec::with_capacity(32),
             instructions: Vec::with_capacity(256),
+            global_variables: Vec::with_capacity(16),
             label_slots: Vec::with_capacity(32),
             index_infos: Vec::new(),
         }

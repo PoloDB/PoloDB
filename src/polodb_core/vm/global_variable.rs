@@ -4,6 +4,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
+use bson::Bson;
+
 #[derive(Copy, Clone)]
 pub(crate) struct GlobalVariable(u32);
 
@@ -22,5 +24,6 @@ impl GlobalVariable {
 
 pub(crate) struct GlobalVariableSlot {
     pub pos: u32,
+    pub init_value: Bson,
     pub name: Option<Box<str>>,
 }
