@@ -2,6 +2,7 @@
 <img src="./images/brand.png" alt="" width="480" />
 
 [![Crates.io](https://img.shields.io/crates/v/polodb_core.svg)](https://crates.io/crates/polodb_core)
+[![Discord](https://img.shields.io/discord/1061903499190865930)](https://discord.gg/NmGQyVx6hH)
 [![docs.rs](https://docs.rs/polodb_core/badge.svg)](https://docs.rs/polodb_core)
 [![License](https://img.shields.io/badge/license-MPL--2.0-blue)](LICENSE)
 
