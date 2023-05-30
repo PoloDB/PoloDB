@@ -1,6 +1,6 @@
 [package]
 name = "polodb_wasm"
-version = "4.3.2"
+version = "4.4.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 license = "MPL-2.0"
 edition = "2018"

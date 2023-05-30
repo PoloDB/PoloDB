@@ -1,3 +1,10 @@
+
+# 4.4.0
+
+- Feat(#114): $regex operator
+- Feat(#118): $match aggregation
+- Fix(#121): persist issue after second insert
+
 # 4.3.2
 
 - Fix index iteration issue
