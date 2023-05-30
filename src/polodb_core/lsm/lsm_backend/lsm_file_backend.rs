@@ -556,7 +556,7 @@ impl LsmFileBackendInner {
         let next_meta_pid = snapshot.next_meta_pid();
         let mut meta_page = self.read_page(meta_pid)?;
 
-        snapshot.write_to_page(&mut meta_page);
+        snapshot.write_to_page(&mut meta_page, snapshot.meta_id + 1);
 
         // update pid and write page
         meta_page.page_id = next_meta_pid as u32;

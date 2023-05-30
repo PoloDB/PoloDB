@@ -82,9 +82,9 @@ impl LsmSnapshot {
         }
     }
 
-    pub fn write_to_page(&self, page: &mut RawPage) {
+    pub fn write_to_page(&self, page: &mut RawPage, meta_id: u64) {
         let mut delegate = LsmMetaDelegate(page);
-        delegate.set_meta_id(self.meta_id);
+        delegate.set_meta_id(meta_id);
         delegate.set_log_offset(self.log_offset);
         delegate.set_db_file_size(self.file_size);
 

@@ -15,6 +15,7 @@ use polodb_core::bson::{doc, Bson};
 mod common;
 
 use common::prepare_db;
+use polodb_core::test_utils::{mk_db_path, mk_journal_path};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Book {
@@ -188,4 +189,29 @@ fn test_insert_different_types_as_key() {
 
     assert_eq!(result[0].as_ref().unwrap().get("_id").unwrap().element_type(), ElementType::String);
     assert_eq!(result[1].as_ref().unwrap().get("_id").unwrap().element_type(), ElementType::Int32);
+}
+
+#[test]
+fn test_insert_persist() {
+    const NAME: &str = "test-insert-persist";
+    let db_path = mk_db_path(NAME);
+    let journal_path = mk_journal_path(NAME);
+
+    let _ = std::fs::remove_file(db_path.as_path());
+    let _ = std::fs::remove_file(journal_path);
+
+    // Open the database for 10 times
+    for i in 0..10 {
+        let db = Database::open_file(&db_path).unwrap();
+
+        let collection = db.collection::<Document>("test");
+        let len = collection.count_documents().unwrap();
+        assert_eq!(len, i as u64);
+        let document = doc! {
+            "test": "test",
+        };
+        collection.insert_one(document).unwrap();
+        let result = collection.find(None).unwrap().collect::<Result<Vec<_>>>().unwrap();
+        assert_eq!(result.len() as u64, i as u64 + 1);
+    }
 }
