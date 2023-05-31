@@ -269,6 +269,9 @@ impl SubProgram {
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
 
+        let mut ctx = AggregationCodeGenContext::default();
+        codegen.emit_aggregation_before_query(&mut ctx, &pipeline_vec)?;
+
         codegen.emit_open(col_spec.name().into());
 
         codegen.emit_goto(DbOp::Rewind, close_label);
@@ -279,12 +282,12 @@ impl SubProgram {
         codegen.emit_goto(DbOp::Next, result_label);
 
         codegen.emit_label(close_label);
+        codegen.emit_aggregation_before_close(&ctx)?;
         codegen.emit(DbOp::Close);
         codegen.emit(DbOp::Halt);
 
         codegen.emit_label(result_label);
-        codegen.emit(DbOp::ResultRow);
-        codegen.emit(DbOp::Pop);
+        codegen.emit_aggregation_pipeline(&mut ctx, &pipeline_vec)?;
 
         codegen.emit_goto(DbOp::Goto, next_label);
 
@@ -1484,6 +1487,7 @@ mod tests {
 110: Label(1, "compare_function_clean")
 115: Ret0
 "#;
+        assert_eq!(expect, actual);
     }
 
     #[test]
@@ -1564,6 +1568,60 @@ $0 = Int64(0)
 
 188: Label(3, "compare_function_clean")
 193: Ret0
+"#;
+        assert_eq!(expect, actual);
+    }
+
+    #[test]
+    fn test_aggregate_count_without_match() {
+        let col_spec = new_spec("test");
+        let program = SubProgram::compile_aggregate(&col_spec, vec![
+            doc! {
+                "$count": "total",
+            },
+        ], false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+        let expect = r#"Program:
+
+$0 = Int64(0)
+
+0: OpenRead("test")
+5: Rewind(25)
+10: Goto(41)
+
+15: Label(1)
+20: Next(41)
+
+25: Label(2)
+30: Call(78, 0)
+39: Close
+40: Halt
+
+41: Label(0)
+46: Call(60, 1)
+55: Goto(112)
+
+60: Label(3)
+65: LoadGlobal($0)
+70: Inc
+71: StoreGlobal($0)
+76: Pop
+77: Ret0
+
+78: Label(4)
+83: PushDocument
+84: LoadGlobal($0)
+89: SetField("total")
+94: Pop
+95: Call(105, 1)
+104: Ret0
+
+105: Label(6, "final_result_row_fun")
+110: ResultRow
+111: Ret0
+
+112: Label(5, "next_item_label")
+117: Goto(15)
 "#;
         assert_eq!(expect, actual);
     }

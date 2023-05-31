@@ -133,4 +133,16 @@ fn test_aggregate_count() {
         .unwrap();
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].get("count").unwrap().as_i64().unwrap(), 2);
+
+    let result = fruits
+        .aggregate(vec![
+            doc! {
+                "$count": "count",
+            }
+        ])
+        .unwrap()
+        .collect::<Result<Vec<Document>>>()
+        .unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].get("count").unwrap().as_i64().unwrap(), 5);
 }
