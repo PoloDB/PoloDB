@@ -13,6 +13,8 @@ use crate::vm::SubProgram;
 use crate::{Error, Result};
 use bson::spec::{BinarySubtype, ElementType};
 use bson::{Array, Binary, Bson, Document};
+use crate::vm::aggregation_codegen_context::{AggregationCodeGenContext, PipelineItem};
+use crate::vm::global_variable::{GlobalVariable, GlobalVariableSlot};
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
@@ -116,6 +118,28 @@ impl Codegen {
         *self.program
     }
 
+    #[inline]
+    #[allow(dead_code)]
+    pub(super) fn new_global_variable(&mut self, init_value: Bson) -> Result<GlobalVariable> {
+        self.new_global_variable_impl(init_value, None)
+    }
+
+    #[inline]
+    #[allow(dead_code)]
+    pub(super) fn new_global_variable_with_name(&mut self, name: String, init_value: Bson) -> Result<GlobalVariable> {
+        self.new_global_variable_impl(init_value, Some(name.into_boxed_str()))
+    }
+
+    fn new_global_variable_impl(&mut self, init_value: Bson, name: Option<Box<str>>) -> Result<GlobalVariable> {
+        let id = self.program.global_variables.len() as u32;
+        self.program.global_variables.push(GlobalVariableSlot {
+            pos: 0,
+            init_value,
+            name,
+        });
+        Ok(GlobalVariable::new(id))
+    }
+
     pub(super) fn new_label(&mut self) -> Label {
         let id = self.program.label_slots.len() as u32;
         self.program.label_slots.push(LabelSlot::Empty);
@@ -130,6 +154,16 @@ impl Codegen {
         self.emit(DbOp::Label);
         self.emit_u32(label.pos());
         self.program.label_slots[label.u_pos()] = LabelSlot::UnnamedLabel(current_loc);
+    }
+
+    fn emit_load_global(&mut self, global: GlobalVariable) {
+        self.emit(DbOp::LoadGlobal);
+        self.emit_u32(global.pos());
+    }
+
+    fn emit_store_global(&mut self, global: GlobalVariable) {
+        self.emit(DbOp::StoreGlobal);
+        self.emit_u32(global.pos());
     }
 
     pub(super) fn emit_label_with_name<T: Into<Box<str>>>(&mut self, label: Label, name: T) {
@@ -203,6 +237,7 @@ impl Codegen {
         col_spec: &CollectionSpecification,
         query: &Document,
         result_callback: F,
+        before_close: Option<Box<dyn FnOnce(&mut Codegen) -> Result<()>>>,
         is_many: bool,
     ) -> Result<()>
     where
@@ -242,6 +277,10 @@ impl Codegen {
         // <==== close cursor
         self.emit_label_with_name(close_label, "close");
 
+        if let Some(before_close) = before_close {
+            before_close(self)?;
+        }
+
         self.emit(DbOp::Close);
         self.emit(DbOp::Halt);
 
@@ -279,8 +318,7 @@ impl Codegen {
         self.emit_standard_query_doc(query, result_label, compare_fun_clean)?;
 
         self.emit_label_with_name(compare_fun_clean, "compare_function_clean");
-        self.emit(DbOp::Ret);
-        self.emit_u32(0);
+        self.emit_ret(0);
 
         Ok(())
     }
@@ -501,8 +539,7 @@ impl Codegen {
                 )?;
 
                 self.emit_label(ret_label);
-                self.emit(DbOp::Ret);
-                self.emit_u32(0);
+                self.emit_ret(0);
 
                 functions.push(query_label);
             });
@@ -805,7 +842,9 @@ impl Codegen {
                     }
                 };
 
-                self.emit_query_tuple_document(key, doc, !is_in_not, not_found_label)?;
+                path_hint!(self, "$not".to_string(), {
+                    self.emit_query_tuple_document(key, doc, !is_in_not, not_found_label)?;
+                });
             }
 
             _ => {
@@ -837,6 +876,152 @@ impl Codegen {
                 )?;
             });
         }
+        Ok(())
+    }
+
+    // There are two stage of compiling pipeline
+    // 1. Generate the layout code of the pipeline
+    // 2. Generate the implementation code of the pipeline
+    pub fn emit_aggregation_pipeline(&mut self, ctx: &mut AggregationCodeGenContext, pipeline: &[Document]) -> Result<()> {
+        if pipeline.is_empty() {
+            self.emit(DbOp::ResultRow);
+            self.emit(DbOp::Pop);
+            return Ok(());
+        }
+        let next_label = self.new_label();
+
+        for stage_item in &ctx.items {
+            self.emit_goto(DbOp::Call, stage_item.next_label);
+            self.emit_u32(1);
+        }
+
+        // the final pipeline item to emit the final result
+        let final_result_label = self.new_label();
+        let final_pipeline_item = PipelineItem {
+            next_label: final_result_label,
+            complete_label: None,
+        };
+
+        ctx.items.push(final_pipeline_item);
+
+        self.emit_goto(DbOp::Goto, next_label);
+
+        for i in 0..pipeline.len() {
+            self.emit_aggregation_stage(pipeline, &ctx, i)?;
+        }
+
+        self.emit_label_with_name(final_result_label, "final_result_row_fun");
+        self.emit(DbOp::ResultRow);
+        self.emit_ret(0);
+
+        self.emit_label_with_name(next_label, "next_item_label");
+        Ok(())
+    }
+
+    // Generate the implementation code of the pipeline
+    // The implementation code is a function with parameters:
+    // Param 1(bool): is_the_last
+    // Return value: boolean value indicating going next stage or not
+    fn emit_aggregation_stage(
+        &mut self,
+        pipeline: &[Document],
+        ctx: &AggregationCodeGenContext,
+        index: usize,
+    ) -> Result<()> {
+        let stage = &pipeline[index];
+        let stage_ctx_item = &ctx.items[index];
+        let stage_num = format!("{}", index);
+        if stage.is_empty() {
+            return Ok(());
+        }
+        if stage.len() > 1 {
+            return Err(Error::InvalidAggregationStage(Box::new(stage.clone())));
+        }
+
+        path_hint!(self, stage_num, {
+            let first_tuple = stage.iter().next().unwrap();
+            let (key, value) = first_tuple;
+
+            match key.as_str() {
+                "$count" => {
+                    let count_name = match value {
+                        Bson::String(s) => s,
+                        _ => {
+                            return Err(Error::InvalidAggregationStage(Box::new(stage.clone())));
+                        }
+                    };
+                    let global_var = self.new_global_variable(Bson::Int64(0))?;
+
+                    // $count_next =>
+                    self.emit_label(stage_ctx_item.next_label);
+
+                    self.emit_load_global(global_var);
+                    self.emit(DbOp::Inc);
+                    self.emit_store_global(global_var);
+                    self.emit(DbOp::Pop);
+
+                    self.emit_ret(0);
+
+                    // $count_complete =>
+                    self.emit_label(stage_ctx_item.complete_label.unwrap());
+                    self.emit(DbOp::PushDocument);
+                    self.emit_load_global(global_var);
+
+                    let count_name_id = self.push_static(Bson::String(count_name.clone()));
+                    self.emit(DbOp::SetField);
+                    self.emit_u32(count_name_id);
+
+                    self.emit(DbOp::Pop);
+
+                    let next_fun = ctx.items[index + 1].next_label;
+                    self.emit_goto(DbOp::Call, next_fun);
+                    self.emit_u32(1);
+
+                    self.emit_ret(0);
+                }
+                _ => {
+                    return Err(Error::UnknownAggregationOperation(key.clone()));
+                }
+            };
+        });
+
+        Ok(())
+    }
+
+    pub fn emit_aggregation_before_query(&mut self, ctx: &mut AggregationCodeGenContext, pipeline: &[Document]) -> Result<()> {
+        for stage_doc in pipeline {
+            if stage_doc.is_empty() {
+                return Ok(());
+            }
+            let first_tuple = stage_doc.iter().next().unwrap();
+            let (key, _) = first_tuple;
+
+            let label = self.new_label();
+            let complete_label = match key.as_str() {
+                "$count" => {
+                    let complete_label = self.new_label();
+                    Some(complete_label)
+                }
+                _ => None,
+            };
+
+            ctx.items.push(PipelineItem {
+                next_label: label,
+                complete_label,
+            });
+        }
+        Ok(())
+    }
+
+    pub fn emit_aggregation_before_close(&mut self, ctx: &AggregationCodeGenContext) -> Result<()> {
+        for item in &ctx.items {
+            if let Some(complete_label) = item.complete_label {
+                self.emit_goto(DbOp::Call, complete_label);
+                self.emit_u32(0);
+                return Ok(());
+            }
+        }
+
         Ok(())
     }
 
@@ -988,6 +1173,15 @@ impl Codegen {
         });
         let id = self.push_static(prefix);
         self.emit_u32(id);
+    }
+
+    pub(crate) fn emit_ret(&mut self, return_size: u32) {
+        if return_size == 0 {
+            self.emit(DbOp::Ret0);
+        } else {
+            self.emit(DbOp::Ret);
+            self.emit_u32(return_size);
+        }
     }
 
     #[inline]

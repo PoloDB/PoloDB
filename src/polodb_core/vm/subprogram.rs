@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use std::cell::RefCell;
 use super::label::LabelSlot;
 use super::op::DbOp;
 use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
@@ -12,7 +13,10 @@ use crate::{Result};
 use bson::{Bson, Document};
 use indexmap::IndexMap;
 use std::fmt;
+use std::rc::Rc;
 use crate::errors::FieldTypeUnexpectedStruct;
+use crate::vm::aggregation_codegen_context::AggregationCodeGenContext;
+use crate::vm::global_variable::GlobalVariableSlot;
 
 pub(crate) struct SubProgramIndexItem {
     pub col_name: String,
@@ -22,6 +26,7 @@ pub(crate) struct SubProgramIndexItem {
 pub(crate) struct SubProgram {
     pub(super) static_values: Vec<Bson>,
     pub(super) instructions: Vec<u8>,
+    pub(super) global_variables: Vec<GlobalVariableSlot>,
     pub(super) label_slots: Vec<LabelSlot>,
     pub(super) index_infos: Vec<SubProgramIndexItem>,
 }
@@ -31,6 +36,7 @@ impl SubProgram {
         SubProgram {
             static_values: Vec::with_capacity(32),
             instructions: Vec::with_capacity(256),
+            global_variables: Vec::with_capacity(16),
             label_slots: Vec::with_capacity(32),
             index_infos: Vec::new(),
         }
@@ -63,6 +69,7 @@ impl SubProgram {
                 codegen.emit(DbOp::Pop);
                 Ok(())
             },
+            None,
             true,
         )?;
 
@@ -107,6 +114,7 @@ impl SubProgram {
                 codegen.emit(DbOp::Pop);
                 Ok(())
             },
+            None,
             is_many,
         )?;
 
@@ -147,6 +155,7 @@ impl SubProgram {
                 codegen.emit(DbOp::Pop);
                 Ok(())
             },
+            None,
             is_many,
         )?;
 
@@ -260,6 +269,9 @@ impl SubProgram {
         let next_label = codegen.new_label();
         let close_label = codegen.new_label();
 
+        let mut ctx = AggregationCodeGenContext::default();
+        codegen.emit_aggregation_before_query(&mut ctx, &pipeline_vec)?;
+
         codegen.emit_open(col_spec.name().into());
 
         codegen.emit_goto(DbOp::Rewind, close_label);
@@ -270,12 +282,12 @@ impl SubProgram {
         codegen.emit_goto(DbOp::Next, result_label);
 
         codegen.emit_label(close_label);
+        codegen.emit_aggregation_before_close(&ctx)?;
         codegen.emit(DbOp::Close);
         codegen.emit(DbOp::Halt);
 
         codegen.emit_label(result_label);
-        codegen.emit(DbOp::ResultRow);
-        codegen.emit(DbOp::Pop);
+        codegen.emit_aggregation_pipeline(&mut ctx, &pipeline_vec)?;
 
         codegen.emit_goto(DbOp::Goto, next_label);
 
@@ -303,14 +315,26 @@ impl SubProgram {
             },
         };
 
+        let ctx_ref = Rc::new(RefCell::new(AggregationCodeGenContext::default()));
+        let ctx_ref2 = ctx_ref.clone();
+        {
+            let mut ctx = ctx_ref.borrow_mut();
+            codegen.emit_aggregation_before_query(&mut ctx, &pipeline_vec[1..])?;
+        }
         codegen.emit_query_layout(
             col_spec,
             query_doc,
-            |codegen| -> Result<()> {
-                codegen.emit(DbOp::ResultRow);
-                codegen.emit(DbOp::Pop);
+            |codegen: &mut Codegen| -> Result<()> {
+                let ctx_ref = ctx_ref.clone();
+                let mut ctx = ctx_ref.borrow_mut();
+                codegen.emit_aggregation_pipeline(&mut ctx, &pipeline_vec[1..])?;
                 Ok(())
             },
+            Some(Box::new(move |codegen: &mut Codegen| -> Result<()> {
+                let ctx = ctx_ref2.borrow_mut();
+                codegen.emit_aggregation_before_close(&ctx)?;
+                Ok(())
+            })),
             true,
         )?;
 
@@ -339,6 +363,15 @@ fn open_bson_to_str(val: &Bson) -> Result<String> {
 
 impl fmt::Display for SubProgram {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+
+        for (index, global_var) in self.global_variables.iter().enumerate() {
+            writeln!(f, "${} = {:?}", index, global_var.init_value)?;
+        }
+
+        if !self.global_variables.is_empty() {
+            writeln!(f)?;
+        }
+
         unsafe {
             let begin = self.instructions.as_ptr();
             let mut pc: usize = 0;
@@ -364,6 +397,11 @@ impl fmt::Display for SubProgram {
                             }
                         }
                         pc += 5;
+                    }
+
+                    DbOp::Inc => {
+                        writeln!(f, "{}: Inc", pc)?;
+                        pc += 1;
                     }
 
                     DbOp::IncR2 => {
@@ -418,6 +456,21 @@ impl fmt::Display for SubProgram {
                         let val = &self.static_values[index as usize];
                         writeln!(f, "{}: PushValue({})", pc, val)?;
                         pc += 5;
+                    }
+
+                    DbOp::PushTrue => {
+                        writeln!(f, "{}: PushTrue", pc)?;
+                        pc += 1;
+                    }
+
+                    DbOp::PushFalse => {
+                        writeln!(f, "{}: PushFalse", pc)?;
+                        pc += 1;
+                    }
+
+                    DbOp::PushDocument => {
+                        writeln!(f, "{}: PushDocument", pc)?;
+                        pc += 1;
                     }
 
                     DbOp::PushR0 => {
@@ -594,6 +647,11 @@ impl fmt::Display for SubProgram {
                         pc += 9;
                     }
 
+                    DbOp::Ret0 => {
+                        writeln!(f, "{}: Ret0", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::Ret => {
                         let return_size = begin.add(pc + 1).cast::<u32>().read();
                         writeln!(f, "{}: Ret({})", pc, return_size)?;
@@ -614,6 +672,18 @@ impl fmt::Display for SubProgram {
                     DbOp::RecoverStackPos => {
                         writeln!(f, "{}: RecoverStackPos", pc)?;
                         pc += 1;
+                    }
+
+                    DbOp::LoadGlobal => {
+                        let global_id = begin.add(pc + 1).cast::<u32>().read();
+                        writeln!(f, "{}: LoadGlobal(${})", pc, global_id)?;
+                        pc += 5;
+                    }
+
+                    DbOp::StoreGlobal => {
+                        let global_id = begin.add(pc + 1).cast::<u32>().read();
+                        writeln!(f, "{}: StoreGlobal(${})", pc, global_id)?;
+                        pc += 5;
                     }
 
                     _ => {
@@ -722,7 +792,7 @@ mod tests {
 128: Pop
 
 129: Label(1, "compare_function_clean")
-134: Ret(0)
+134: Ret0
 "#;
         assert_eq!(expect, actual)
     }
@@ -773,7 +843,7 @@ mod tests {
 106: Pop
 
 107: Label(1, "compare_function_clean")
-112: Ret(0)
+112: Ret0
 "#;
         assert_eq!(expect, actual)
     }
@@ -926,7 +996,7 @@ mod tests {
 128: Pop
 
 129: Label(1, "compare_function_clean")
-134: Ret(0)
+134: Ret0
 "#;
         assert_eq!(expect, actual)
     }
@@ -976,7 +1046,7 @@ mod tests {
 75: Goto(43)
 
 80: Label(0, "compare_function")
-85: Goto(164)
+85: Goto(156)
 
 90: Label(8)
 95: GetField("age", 117)
@@ -987,27 +1057,27 @@ mod tests {
 116: Pop
 
 117: Label(9)
-122: Ret(0)
+122: Ret0
 
-127: Label(10)
-132: GetField("age", 154)
-141: PushValue(12)
-146: Equal
-147: FalseJump(154)
-152: Pop
-153: Pop
+123: Label(10)
+128: GetField("age", 150)
+137: PushValue(12)
+142: Equal
+143: FalseJump(150)
+148: Pop
+149: Pop
 
-154: Label(11)
-159: Ret(0)
+150: Label(11)
+155: Ret0
 
-164: Label(7)
-169: Call(90, 0)
-178: TrueJump(197)
-183: Call(127, 0)
-192: TrueJump(197)
+156: Label(7)
+161: Call(90, 0)
+170: TrueJump(189)
+175: Call(123, 0)
+184: TrueJump(189)
 
-197: Label(1, "compare_function_clean")
-202: Ret(0)
+189: Label(1, "compare_function_clean")
+194: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1061,7 +1131,7 @@ mod tests {
 106: Pop2(2)
 
 111: Label(1, "compare_function_clean")
-116: Ret(0)
+116: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1122,7 +1192,7 @@ mod tests {
 139: Pop2(3)
 
 144: Label(1, "compare_function_clean")
-149: Ret(0)
+149: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1177,7 +1247,7 @@ mod tests {
 105: Pop2(2)
 
 110: Label(1, "compare_function_clean")
-115: Ret(0)
+115: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1286,7 +1356,7 @@ mod tests {
 228: Pop2(2)
 
 233: Label(1, "compare_function_clean")
-238: Ret(0)
+238: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1361,7 +1431,197 @@ mod tests {
 126: Pop2(2)
 
 131: Label(1, "compare_function_clean")
-136: Ret(0)
+136: Ret0
+"#;
+        assert_eq!(expect, actual);
+    }
+
+    #[test]
+    fn test_aggregate_match() {
+        let col_spec = new_spec("test");
+        let program = SubProgram::compile_aggregate(&col_spec, vec![
+            doc! {
+                "$match": {
+                    "age": {
+                        "$gt": 18
+                    },
+                },
+            },
+        ], false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+        let expect = r#"Program:
+
+0: OpenRead("test")
+5: Rewind(25)
+10: Goto(55)
+
+15: Label(3)
+20: Next(55)
+
+25: Label(6, "close")
+30: Close
+31: Halt
+
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
+
+43: Label(4, "result")
+48: ResultRow
+49: Pop
+50: Goto(15)
+
+55: Label(2, "compare")
+60: Dup
+61: Call(80, 1)
+70: FalseJump(32)
+75: Goto(43)
+
+80: Label(0, "compare_function")
+85: GetField("age", 110)
+94: PushValue(18)
+99: Greater
+100: FalseJump(110)
+105: Pop2(2)
+
+110: Label(1, "compare_function_clean")
+115: Ret0
+"#;
+        assert_eq!(expect, actual);
+    }
+
+    #[test]
+    fn test_aggregate_count() {
+        let col_spec = new_spec("test");
+        let program = SubProgram::compile_aggregate(&col_spec, vec![
+            doc! {
+                "$match": {
+                    "age": {
+                        "$gt": 18
+                    },
+                },
+            },
+            doc! {
+                "$count": "total",
+            },
+        ], false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+
+        let expect = r#"Program:
+
+$0 = Int64(0)
+
+0: OpenRead("test")
+5: Rewind(25)
+10: Goto(133)
+
+15: Label(5)
+20: Next(133)
+
+25: Label(8, "close")
+30: Call(89, 0)
+39: Close
+40: Halt
+
+41: Label(7, "not_this_item")
+46: Pop
+47: Goto(15)
+
+52: Label(6, "result")
+57: Call(71, 1)
+66: Goto(123)
+
+71: Label(0)
+76: LoadGlobal($0)
+81: Inc
+82: StoreGlobal($0)
+87: Pop
+88: Ret0
+
+89: Label(1)
+94: PushDocument
+95: LoadGlobal($0)
+100: SetField("total")
+105: Pop
+106: Call(116, 1)
+115: Ret0
+
+116: Label(10, "final_result_row_fun")
+121: ResultRow
+122: Ret0
+
+123: Label(9, "next_item_label")
+128: Goto(15)
+
+133: Label(4, "compare")
+138: Dup
+139: Call(158, 1)
+148: FalseJump(41)
+153: Goto(52)
+
+158: Label(2, "compare_function")
+163: GetField("age", 188)
+172: PushValue(18)
+177: Greater
+178: FalseJump(188)
+183: Pop2(2)
+
+188: Label(3, "compare_function_clean")
+193: Ret0
+"#;
+        assert_eq!(expect, actual);
+    }
+
+    #[test]
+    fn test_aggregate_count_without_match() {
+        let col_spec = new_spec("test");
+        let program = SubProgram::compile_aggregate(&col_spec, vec![
+            doc! {
+                "$count": "total",
+            },
+        ], false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+        let expect = r#"Program:
+
+$0 = Int64(0)
+
+0: OpenRead("test")
+5: Rewind(25)
+10: Goto(41)
+
+15: Label(1)
+20: Next(41)
+
+25: Label(2)
+30: Call(78, 0)
+39: Close
+40: Halt
+
+41: Label(0)
+46: Call(60, 1)
+55: Goto(112)
+
+60: Label(3)
+65: LoadGlobal($0)
+70: Inc
+71: StoreGlobal($0)
+76: Pop
+77: Ret0
+
+78: Label(4)
+83: PushDocument
+84: LoadGlobal($0)
+89: SetField("total")
+94: Pop
+95: Call(105, 1)
+104: Ret0
+
+105: Label(6, "final_result_row_fun")
+110: ResultRow
+111: Ret0
+
+112: Label(5, "next_item_label")
+117: Goto(15)
 "#;
         assert_eq!(expect, actual);
     }

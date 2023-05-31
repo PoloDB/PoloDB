@@ -249,6 +249,10 @@ pub enum Error {
     UnknownBsonElementType(u8),
     #[error("failed to run regex expression: {}, expression: {}, options: {}", .0.error, .0.expression, .0.options)]
     RegexError(Box<RegexError>),
+    #[error("unknown aggression operation: {0}")]
+    UnknownAggregationOperation(String),
+    #[error("invalid aggregation stage: {0:?}")]
+    InvalidAggregationStage(Box<Document>),
 }
 
 impl Error {

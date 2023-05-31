@@ -12,7 +12,7 @@ use crate::session::SessionInner;
 use crate::vm::op::DbOp;
 use crate::vm::SubProgram;
 use crate::{Error, LsmKv, Metrics, Result, TransactionType};
-use bson::Bson;
+use bson::{Bson, Document};
 use regex::RegexBuilder;
 use std::cell::Cell;
 use std::cmp::Ordering;
@@ -63,8 +63,9 @@ pub(crate) struct VM {
     pub(crate) r2: i64, // usually the counter
     r3: usize,
     stack: Vec<Bson>,
-    frames:              Vec<VMFrame>,
+    frames: Vec<VMFrame>,
     pub(crate) program: SubProgram,
+    global_vars: Vec<Bson>,
     metrics: Metrics,
 }
 
@@ -87,6 +88,12 @@ impl VM {
     pub(crate) fn new(kv_engine: LsmKv, program: SubProgram, metrics: Metrics) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
+        let mut global_vars = Vec::<Bson>::new();
+
+        for item in &program.global_variables {
+            global_vars.push(item.init_value.clone());
+        }
+
         VM {
             kv_engine,
             state: VmState::Init,
@@ -98,6 +105,7 @@ impl VM {
             stack,
             frames: vec![VMFrame::default()],
             program,
+            global_vars,
             metrics,
         }
     }
@@ -553,6 +561,21 @@ impl VM {
         self.reset_location(frame.return_pos as u32);
     }
 
+    fn inc(&mut self) {
+        match self.stack.last_mut() {
+            Some(Bson::Int32(n)) => {
+                *n += 1;
+            }
+            Some(Bson::Int64(n)) => {
+                *n += 1;
+            }
+            Some(Bson::Double(d)) => {
+                *d += 1.0;
+            }
+            _ => ()
+        }
+    }
+
     pub(crate) fn execute(&mut self, session: &mut SessionInner) -> Result<()> {
         if self.state == VmState::Halt {
             return Err(Error::VmIsHalt);
@@ -569,6 +592,11 @@ impl VM {
 
                     DbOp::Label => {
                         self.pc = self.pc.add(5);
+                    }
+
+                    DbOp::Inc => {
+                        self.inc();
+                        self.pc = self.pc.add(1);
                     }
 
                     DbOp::IncR2 => {
@@ -660,14 +688,40 @@ impl VM {
                         self.pc = self.pc.add(5);
                     }
 
+                    DbOp::PushTrue => {
+                        self.stack.push(Bson::Boolean(true));
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::PushFalse => {
+                        self.stack.push(Bson::Boolean(false));
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::PushDocument => {
+                        self.stack.push(Bson::Document(Document::new()));
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::PushR0 => {
                         self.stack.push(Bson::from(self.r0));
                         self.pc = self.pc.add(1);
                     }
 
                     DbOp::StoreR0 => {
-                        let top = self.stack_top().as_i64().unwrap();
-                        self.r0 = top as i32;
+                        let top = self.stack_top();
+                        self.r0 = match top {
+                            Bson::Int32(i) => *i,
+                            Bson::Int64(i) => *i as i32,
+                            Bson::Boolean(bl) => {
+                                if *bl {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                            _ => panic!("store r0 failed")
+                        };
                         self.pc = self.pc.add(1);
                     }
 
@@ -985,6 +1039,10 @@ impl VM {
                         self.reset_location(location);
                     }
 
+                    DbOp::Ret0 => {
+                        self.ret(0);
+                    }
+
                     DbOp::Ret => {
                         let return_size = self.pc.add(1).cast::<u32>().read() as usize;
                         self.ret(return_size);
@@ -997,6 +1055,18 @@ impl VM {
                         } else {
                             self.pc = self.pc.add(5);
                         }
+                    }
+
+                    DbOp::LoadGlobal => {
+                        let idx = self.pc.add(1).cast::<u32>().read();
+                        self.stack.push(self.global_vars[idx as usize].clone());
+                        self.pc = self.pc.add(5);
+                    }
+
+                    DbOp::StoreGlobal => {
+                        let idx = self.pc.add(1).cast::<u32>().read();
+                        self.global_vars[idx as usize] = self.stack.last().unwrap().clone();
+                        self.pc = self.pc.add(5);
                     }
 
                     DbOp::_EOF | DbOp::Halt => {

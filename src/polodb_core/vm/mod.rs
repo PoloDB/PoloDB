@@ -8,6 +8,8 @@ mod subprogram;
 mod codegen;
 mod label;
 mod vm;
+mod global_variable;
+mod aggregation_codegen_context;
 
 pub(crate) use subprogram::SubProgram;
 pub(crate) use vm::{VM, VmState};
