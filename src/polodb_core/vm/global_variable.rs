@@ -22,6 +22,7 @@ impl GlobalVariable {
 
 }
 
+#[allow(dead_code)]
 pub(crate) struct GlobalVariableSlot {
     pub pos: u32,
     pub init_value: Bson,

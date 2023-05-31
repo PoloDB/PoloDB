@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
+use std::cell::RefCell;
 use super::label::LabelSlot;
 use super::op::DbOp;
 use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
@@ -12,7 +13,9 @@ use crate::{Result};
 use bson::{Bson, Document};
 use indexmap::IndexMap;
 use std::fmt;
+use std::rc::Rc;
 use crate::errors::FieldTypeUnexpectedStruct;
+use crate::vm::aggregation_codegen_context::AggregationCodeGenContext;
 use crate::vm::global_variable::GlobalVariableSlot;
 
 pub(crate) struct SubProgramIndexItem {
@@ -66,6 +69,7 @@ impl SubProgram {
                 codegen.emit(DbOp::Pop);
                 Ok(())
             },
+            None,
             true,
         )?;
 
@@ -110,6 +114,7 @@ impl SubProgram {
                 codegen.emit(DbOp::Pop);
                 Ok(())
             },
+            None,
             is_many,
         )?;
 
@@ -150,6 +155,7 @@ impl SubProgram {
                 codegen.emit(DbOp::Pop);
                 Ok(())
             },
+            None,
             is_many,
         )?;
 
@@ -306,13 +312,26 @@ impl SubProgram {
             },
         };
 
+        let ctx_ref = Rc::new(RefCell::new(AggregationCodeGenContext::default()));
+        let ctx_ref2 = ctx_ref.clone();
+        {
+            let mut ctx = ctx_ref.borrow_mut();
+            codegen.emit_aggregation_before_query(&mut ctx, &pipeline_vec[1..])?;
+        }
         codegen.emit_query_layout(
             col_spec,
             query_doc,
-            |codegen| -> Result<()> {
-                codegen.emit_aggregation_pipeline(&pipeline_vec[1..])?;
+            |codegen: &mut Codegen| -> Result<()> {
+                let ctx_ref = ctx_ref.clone();
+                let mut ctx = ctx_ref.borrow_mut();
+                codegen.emit_aggregation_pipeline(&mut ctx, &pipeline_vec[1..])?;
                 Ok(())
             },
+            Some(Box::new(move |codegen: &mut Codegen| -> Result<()> {
+                let ctx = ctx_ref2.borrow_mut();
+                codegen.emit_aggregation_before_close(&ctx)?;
+                Ok(())
+            })),
             true,
         )?;
 
@@ -1431,6 +1450,68 @@ mod tests {
         ], false).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
-        println!("{}", actual);
+        let expect = r#"Program:
+
+$0 = Int64(0)
+
+0: OpenRead("test")
+5: Rewind(25)
+10: Goto(133)
+
+15: Label(5)
+20: Next(133)
+
+25: Label(8, "close")
+30: Call(89, 0)
+39: Close
+40: Halt
+
+41: Label(7, "not_this_item")
+46: Pop
+47: Goto(15)
+
+52: Label(6, "result")
+57: Call(71, 1)
+66: Goto(123)
+
+71: Label(0)
+76: LoadGlobal($0)
+81: Inc
+82: StoreGlobal($0)
+87: Pop
+88: Ret0
+
+89: Label(1)
+94: PushDocument
+95: LoadGlobal($0)
+100: SetField("total")
+105: Pop
+106: Call(116, 1)
+115: Ret0
+
+116: Label(10, "final_result_row_fun")
+121: ResultRow
+122: Ret0
+
+123: Label(9, "next_item_label")
+128: Goto(15)
+
+133: Label(4, "compare")
+138: Dup
+139: Call(158, 1)
+148: FalseJump(41)
+153: Goto(52)
+
+158: Label(2, "compare_function")
+163: GetField("age", 188)
+172: PushValue(18)
+177: Greater
+178: FalseJump(188)
+183: Pop2(2)
+
+188: Label(3, "compare_function_clean")
+193: Ret0
+"#;
+        assert_eq!(expect, actual);
     }
 }

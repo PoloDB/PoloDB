@@ -6,14 +6,19 @@
 
 use crate::vm::label::Label;
 
+pub(crate) struct PipelineItem {
+    pub next_label: Label,
+    pub complete_label: Option<Label>,
+}
+
 pub(crate) struct AggregationCodeGenContext {
-    pub pipeline_labels: Vec<Label>
+    pub items: Vec<PipelineItem>
 }
 
 impl Default for AggregationCodeGenContext {
     fn default() -> Self {
         AggregationCodeGenContext {
-            pipeline_labels: Vec::default(),
+            items: Vec::default(),
         }
     }
 }
