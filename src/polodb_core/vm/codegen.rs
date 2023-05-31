@@ -883,6 +883,11 @@ impl Codegen {
     // 1. Generate the layout code of the pipeline
     // 2. Generate the implementation code of the pipeline
     pub fn emit_aggregation_pipeline(&mut self, ctx: &mut AggregationCodeGenContext, pipeline: &[Document]) -> Result<()> {
+        if pipeline.is_empty() {
+            self.emit(DbOp::ResultRow);
+            self.emit(DbOp::Pop);
+            return Ok(());
+        }
         let next_label = self.new_label();
 
         for stage_item in &ctx.items {

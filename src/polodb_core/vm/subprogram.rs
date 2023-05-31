@@ -1434,7 +1434,60 @@ mod tests {
     }
 
     #[test]
-    fn test_aggregate() {
+    fn test_aggregate_match() {
+        let col_spec = new_spec("test");
+        let program = SubProgram::compile_aggregate(&col_spec, vec![
+            doc! {
+                "$match": {
+                    "age": {
+                        "$gt": 18
+                    },
+                },
+            },
+        ], false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+        let expect = r#"Program:
+
+0: OpenRead("test")
+5: Rewind(25)
+10: Goto(55)
+
+15: Label(3)
+20: Next(55)
+
+25: Label(6, "close")
+30: Close
+31: Halt
+
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
+
+43: Label(4, "result")
+48: ResultRow
+49: Pop
+50: Goto(15)
+
+55: Label(2, "compare")
+60: Dup
+61: Call(80, 1)
+70: FalseJump(32)
+75: Goto(43)
+
+80: Label(0, "compare_function")
+85: GetField("age", 110)
+94: PushValue(18)
+99: Greater
+100: FalseJump(110)
+105: Pop2(2)
+
+110: Label(1, "compare_function_clean")
+115: Ret0
+"#;
+    }
+
+    #[test]
+    fn test_aggregate_count() {
         let col_spec = new_spec("test");
         let program = SubProgram::compile_aggregate(&col_spec, vec![
             doc! {
