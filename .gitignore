@@ -5,3 +5,6 @@ Cargo.lock
 src/*/target/
 /venv
 /pypolodb/venv
+.gitignore
+test_cli
+.history
