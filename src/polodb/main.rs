@@ -7,7 +7,7 @@ mod ipc;
 mod server;
 
 use polodb_core::Database;
-use clap::{App, Arg};
+use clap::{Arg, Command as App};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -27,66 +27,66 @@ pub type Result<T> = std::result::Result<T, Error>;
 fn main() {
     let version = Database::get_version();
     let app = App::new("PoloDB")
-        .version(version.as_str())
+        .version(version)
         .about("Command line tool for PoloDB")
         .author("Vincent Chan <okcdz@diverse.space>")
         .subcommand(App::new("serve")
             .about("attach the database, start the tcp server")
             .arg(
-                Arg::with_name("socket")
-                    .short("s")
+                Arg::new("socket")
+                    .short('s')
                     .long("socket")
                     .help("the domain socket to listen on").required(true)
-                    .takes_value(true)
+                    .num_args(1)
             )
             .arg(
-                Arg::with_name("path")
-                    .short("p")
+                Arg::new("path")
+                    .short('p')
                     .long("path")
                     .value_name("PATH")
-                    .takes_value(true)
+                    .num_args(0..=1)
             )
-            .arg(Arg::with_name("memory"))
+            .arg(Arg::new("memory"))
             .arg(
-                Arg::with_name("log")
+                Arg::new("log")
                     .help("print log")
                     .long("log")
-                    .short("l")
+                    .short('l')
             )
         )
         .subcommand(App::new("migrate")
             .about("migrate the older database to the newer format")
             .arg(
-                Arg::with_name("path")
+                Arg::new("path")
                     .index(1)
                     .required(true)
             )
             .arg(
-                Arg::with_name("target")
+                Arg::new("target")
                     .long("target")
                     .value_name("TARGET")
-                    .takes_value(true)
+                    .num_args(0..=1)
                     .required(true)
             )
         )
         .arg(
-            Arg::with_name("log")
+            Arg::new("log")
                 .help("print log")
                 .long("log")
-                .short("l")
+                .short('l')
         );
 
     let matches = app.get_matches();
 
     if let Some(sub) = matches.subcommand_matches("serve") {
-        let should_log = sub.is_present("log");
+        let should_log = sub.contains_id("log");
         Database::set_log(should_log);
 
-        let socket = sub.value_of("socket").unwrap();
-        let path = sub.value_of("path");
+        let socket = sub.get_one::<String>("socket").unwrap();
+        let path = sub.get_one::<String>("path");
         if let Some(path) = path {
             server::start_socket_server(Some(path), socket);
-        } else if sub.is_present("memory") {
+        } else if sub.contains_id("memory") {
             server::start_socket_server(None, socket);
         } else {
             eprintln!("you should pass either --path or --memory");
@@ -94,5 +94,5 @@ fn main() {
         return;
     }
 
-    println!("{}", matches.usage());
+    // println!("{}", matches.usage());
 }

@@ -5,3 +5,4 @@ Cargo.lock
 src/*/target/
 /venv
 /pypolodb/venv
+.history

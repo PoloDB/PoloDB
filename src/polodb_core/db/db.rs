@@ -46,9 +46,9 @@ impl Database {
 
     /// Return the version of package version in string.
     /// Defined in `Cargo.toml`.
-    pub fn get_version() -> String {
+    pub fn get_version() -> &'static str {
         const VERSION: &str = env!("CARGO_PKG_VERSION");
-        VERSION.into()
+        VERSION
     }
 
     pub fn open_memory() -> Result<Database> {
