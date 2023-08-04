@@ -125,7 +125,7 @@ fn test_create_collection_and_find_by_pkey() {
 
         let result = collection
             .find(doc! {
-                "_id": first_key.clone(),
+                "_id": first_key,
             })
             .unwrap()
             .collect::<Result<Vec<Document>>>()

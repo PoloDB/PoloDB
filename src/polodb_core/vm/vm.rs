@@ -5,10 +5,12 @@
  */
 use crate::cursor::Cursor;
 use crate::errors::{
-    CannotApplyOperationForTypes, FieldTypeUnexpectedStruct, RegexError, UnexpectedTypeForOpStruct,
+    AllError, CannotApplyOperationForTypes, FieldTypeUnexpectedStruct, RegexError,
+    UnexpectedTypeForOpStruct,
 };
 use crate::index::{IndexHelper, IndexHelperOperation};
 use crate::session::SessionInner;
+use crate::utils::bson::ElementType;
 use crate::vm::op::DbOp;
 use crate::vm::SubProgram;
 use crate::{Error, LsmKv, Metrics, Result, TransactionType};
@@ -1075,7 +1077,18 @@ impl VM {
 
                     DbOp::All => {
                         let cmp_arr = &self.stack[self.stack.len() - 1];
-                        let db_arr = &self.stack[self.stack.len() - 2].as_array().unwrap();
+                        println!("{:?}", self.stack);
+                        let db_arr =
+                            &self.stack[self.stack.len() - 2]
+                                .as_array()
+                                .ok_or(Error::from(AllError {
+                                    field_key: String::new(), // todo: use key field
+                                    field_type: ElementType::from(
+                                        self.stack[self.stack.len() - 2].element_type(),
+                                    )
+                                    .to_string(),
+                                    field_value: self.stack[self.stack.len() - 2].to_string(),
+                                }))?;
 
                         self.r0 = 0;
 
