@@ -11,7 +11,6 @@ keywords = ["database", "embedded", "cross-platform"]
 [lib]
 name = "polodb_core"
 path = "lib.rs"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 libc = "0.2"
