@@ -1731,7 +1731,7 @@ mod tests {
 105: Pop2(2)
 
 110: Label(1, "compare_function_clean")
-115: Ret(0)
+115: Ret0
 "#;
 
         assert_eq!(expect, actual);
