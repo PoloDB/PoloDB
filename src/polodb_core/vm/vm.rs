@@ -473,7 +473,7 @@ impl VM {
             Some(Bson::Double(d)) => {
                 *d += 1.0;
             }
-            _ => ()
+            _ => (),
         }
     }
 
@@ -626,7 +626,7 @@ impl VM {
                                     0
                                 }
                             }
-                            _ => panic!("store r0 failed")
+                            _ => panic!("store r0 failed"),
                         };
                         self.pc = self.pc.add(1);
                     }
@@ -1030,7 +1030,6 @@ impl VM {
 
                     DbOp::All => {
                         let cmp_arr = &self.stack[self.stack.len() - 1];
-                        println!("{:?}", self.stack);
                         let db_arr =
                             &self.stack[self.stack.len() - 2]
                                 .as_array()
