@@ -454,7 +454,8 @@ impl VM {
             self.stack[frame.stack_begin_pos + i] = self.stack[clone_start_pos + i].clone();
         }
 
-        self.stack.resize(frame.stack_begin_pos + return_size, Bson::Null);
+        self.stack
+            .resize(frame.stack_begin_pos + return_size, Bson::Null);
 
         self.reset_location(frame.return_pos as u32);
     }
@@ -878,12 +879,8 @@ impl VM {
                         self.pc = self.pc.add(1);
                     }
 
-                    DbOp::Not =>{
-                        self.r0 = if self.r0 == 0 {
-                            1
-                        } else {
-                            0
-                        };
+                    DbOp::Not => {
+                        self.r0 = if self.r0 == 0 { 1 } else { 0 };
 
                         self.pc = self.pc.add(1);
                     }
@@ -1003,7 +1000,8 @@ impl VM {
 
                     DbOp::IfFalseRet => {
                         let return_size = self.pc.add(1).cast::<u32>().read() as usize;
-                        if self.r0 == 0 {  // false
+                        if self.r0 == 0 {
+                            // false
                             self.ret(return_size);
                         } else {
                             self.pc = self.pc.add(5);
@@ -1026,6 +1024,28 @@ impl VM {
                         self.r1 = None;
                         self.state = VmState::Halt;
                         return Ok(());
+                    }
+
+                    DbOp::All => {
+                        let cmp_arr = &self.stack[self.stack.len() - 1];
+                        let db_arr = &self.stack[self.stack.len() - 2].as_array().unwrap();
+
+                        self.r0 = 0;
+
+                        let mut found_all = true;
+                        for item in cmp_arr.as_array().unwrap().iter() {
+                            // * all element must be in db_arr unlike $in
+                            if !db_arr.contains(item) {
+                                found_all = false;
+                                break;
+                            }
+                        }
+
+                        if found_all {
+                            self.r0 = 1;
+                        }
+
+                        self.pc = self.pc.add(1);
                     }
                 }
             }
