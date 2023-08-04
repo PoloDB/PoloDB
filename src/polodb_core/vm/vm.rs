@@ -14,6 +14,7 @@ use crate::utils::bson::ElementType;
 use crate::vm::op::DbOp;
 use crate::vm::SubProgram;
 use crate::{Error, LsmKv, Metrics, Result, TransactionType};
+use bson::spec::ElementType as BsonElementType;
 use bson::{Bson, Document};
 use regex::RegexBuilder;
 use std::cell::Cell;
@@ -912,10 +913,23 @@ impl VM {
                         self.r0 = 0;
 
                         for item in top1.as_array().unwrap().iter() {
-                            let cmp_result = crate::utils::bson::value_cmp(top2, item);
-                            if let Ok(Ordering::Equal) = cmp_result {
-                                self.r0 = 1;
-                                break;
+                            match top2.element_type() {
+                                BsonElementType::Array => {
+                                    // ? Is the conversion costly to run each time ?
+                                    // ? Or should be convert the array before the loop ?
+                                    // * DB value should contain at least one element from input array
+                                    if top2.as_array().unwrap().contains(item) {
+                                        self.r0 = 1;
+                                        break;
+                                    }
+                                }
+                                _ => {
+                                    let cmp_result = crate::utils::bson::value_cmp(top2, item);
+                                    if let Ok(Ordering::Equal) = cmp_result {
+                                        self.r0 = 1;
+                                        break;
+                                    }
+                                }
                             }
                         }
 
