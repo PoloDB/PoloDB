@@ -3,21 +3,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use std::cell::RefCell;
 use super::label::LabelSlot;
 use super::op::DbOp;
 use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
 use crate::errors::FieldTypeUnexpectedStruct;
 use crate::utils::str::escape_binary_to_string;
+use crate::vm::aggregation_codegen_context::AggregationCodeGenContext;
 use crate::vm::codegen::Codegen;
+use crate::vm::global_variable::GlobalVariableSlot;
 use crate::Result;
 use bson::{Bson, Document};
 use indexmap::IndexMap;
+use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
-use crate::errors::FieldTypeUnexpectedStruct;
-use crate::vm::aggregation_codegen_context::AggregationCodeGenContext;
-use crate::vm::global_variable::GlobalVariableSlot;
 
 pub(crate) struct SubProgramIndexItem {
     pub col_name: String,
@@ -368,7 +367,6 @@ fn open_bson_to_str(val: &Bson) -> Result<String> {
 
 impl fmt::Display for SubProgram {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-
         for (index, global_var) in self.global_variables.iter().enumerate() {
             writeln!(f, "${} = {:?}", index, global_var.init_value)?;
         }
@@ -1449,15 +1447,18 @@ mod tests {
     #[test]
     fn test_aggregate_match() {
         let col_spec = new_spec("test");
-        let program = SubProgram::compile_aggregate(&col_spec, vec![
-            doc! {
+        let program = SubProgram::compile_aggregate(
+            &col_spec,
+            vec![doc! {
                 "$match": {
                     "age": {
                         "$gt": 18
                     },
                 },
-            },
-        ], false).unwrap();
+            }],
+            false,
+        )
+        .unwrap();
         let actual = format!("Program:\n\n{}", program);
         let expect = r#"Program:
 
@@ -1503,18 +1504,23 @@ mod tests {
     #[test]
     fn test_aggregate_count() {
         let col_spec = new_spec("test");
-        let program = SubProgram::compile_aggregate(&col_spec, vec![
-            doc! {
-                "$match": {
-                    "age": {
-                        "$gt": 18
+        let program = SubProgram::compile_aggregate(
+            &col_spec,
+            vec![
+                doc! {
+                    "$match": {
+                        "age": {
+                            "$gt": 18
+                        },
                     },
                 },
-            },
-            doc! {
-                "$count": "total",
-            },
-        ], false).unwrap();
+                doc! {
+                    "$count": "total",
+                },
+            ],
+            false,
+        )
+        .unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -1585,11 +1591,14 @@ $0 = Int64(0)
     #[test]
     fn test_aggregate_count_without_match() {
         let col_spec = new_spec("test");
-        let program = SubProgram::compile_aggregate(&col_spec, vec![
-            doc! {
+        let program = SubProgram::compile_aggregate(
+            &col_spec,
+            vec![doc! {
                 "$count": "total",
-            },
-        ], false).unwrap();
+            }],
+            false,
+        )
+        .unwrap();
         let actual = format!("Program:\n\n{}", program);
         let expect = r#"Program:
 
