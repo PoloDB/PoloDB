@@ -279,7 +279,7 @@ fn test_delete_with_index() {
         let count = col.count_documents().unwrap();
         assert_eq!(count, 0);
 
-        let result = col.find_one(doc! {
+        col.find_one(doc! {
             "age": 33
         }).unwrap();
         assert_eq!(result, None);

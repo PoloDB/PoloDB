@@ -149,6 +149,13 @@ pub struct RegexError {
     pub options: String,
 }
 
+#[derive(Debug)]
+pub struct AllError {
+    pub field_key: String,
+    pub field_value: String,
+    pub field_type: String,
+}
+
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("unexpected id type, expected: {0}, actual: {1}")]
@@ -278,6 +285,8 @@ pub enum Error {
     SetIsNotADocument,
     #[error("the field '{0}' is not a valid field name")]
     UpsertError(String),
+    #[error("the field {} is not an array; value: {}, type: {}", .0.field_key, .0.field_value, .0.field_type)]
+    AllError(Box<AllError>),
 }
 
 impl Error {
@@ -340,6 +349,12 @@ impl From<io::Error> for Error {
 impl From<RegexError> for Error {
     fn from(value: RegexError) -> Self {
         Error::RegexError(Box::new(value))
+    }
+}
+
+impl From<AllError> for Error {
+    fn from(value: AllError) -> Self {
+        Error::AllError(Box::new(value))
     }
 }
 

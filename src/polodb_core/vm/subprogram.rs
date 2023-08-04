@@ -1727,7 +1727,7 @@ mod tests {
 
 80: Label(0, "compare_function")
 85: GetField("name", 110)
-94: PushValue(//^Vincent//)
+94: PushValue(["Vincent", "Antoine"])
 99: All
 100: FalseJump(110)
 105: Pop2(2)
