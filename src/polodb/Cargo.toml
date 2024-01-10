@@ -21,4 +21,4 @@ thiserror = "1.0.40"
 signal-hook = "0.3.10"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.9", features = ["fileapi", "namedpipeapi"] }
+winapi = { version = "0.3.9", features = ["winbase", "fileapi", "namedpipeapi"] }

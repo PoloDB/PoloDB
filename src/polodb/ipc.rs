@@ -171,7 +171,7 @@ impl Read for Connection {
             let bytes_read_ptr: *mut DWORD = &mut bytes_read;
             let success = ReadFile(
                 self.handle,
-                buf.as_mut_ptr().cast::<core::ffi::c_void>(),
+                buf.as_mut_ptr().cast::<winapi::ctypes::c_void>(),
                 bytes_to_read,
                 bytes_read_ptr,
                 null_mut()
@@ -215,7 +215,7 @@ impl Write for Connection {
             let bytes_written_ptr: *mut DWORD = &mut bytes_written;
             let ec = WriteFile(
                 self.handle,
-                buf.as_ptr().cast::<core::ffi::c_void>(),
+                buf.as_ptr().cast::<winapi::ctypes::c_void>(),
                 bytes_to_write,
                 bytes_written_ptr,
                 null_mut()
