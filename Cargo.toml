@@ -1,12 +1,13 @@
 [workspace]
 members = [
-    "src/polodb_core",
     "src/polodb",
+    "src/polodb_core",
     "src/polodb_line_diff",
     "src/polodb_wasm",
 ]
 
-exclude = [
-    "build",
-    "obj",
-]
+exclude = ["build", "obj"]
+
+[profile.release.package.polodb_wasm]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"

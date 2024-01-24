@@ -1,13 +1,13 @@
 [package]
+authors = ["Vincent Chan <okcdz@diverse.space>"]
+edition = "2018"
+license = "MPL-2.0"
 name = "polodb_wasm"
 version = "4.4.0"
-authors = ["Vincent Chan <okcdz@diverse.space>"]
-license = "MPL-2.0"
-edition = "2018"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
-path="lib.rs"
+path = "lib.rs"
 
 [features]
 default = ["console_error_panic_hook"]
@@ -31,19 +31,15 @@ js-sys = "0.3.61"
 wasm-bindgen-futures = "0.4.34"
 
 [dependencies.web-sys]
-version = "0.3.61"
 features = [
-    'Window',
     "IdbDatabase",
     "IdbFactory",
     "IdbObjectStore",
     "IdbOpenDbRequest",
     "IdbTransaction",
+    'Window',
 ]
+version = "*"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.13"
-
-[profile.release]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"
