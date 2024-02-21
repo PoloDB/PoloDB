@@ -456,8 +456,11 @@ impl DatabaseInner {
 
     #[inline]
     fn fix_doc(mut doc: Document) -> Document {
-        if doc.get(meta_doc_key::ID).is_some() {
-            return doc;
+        if let Some(id) = doc.get(meta_doc_key::ID) {
+            // If the id type is not null, the document is ok
+            if id.as_null().is_none() {
+                return doc;
+            }
         }
 
         let new_oid = ObjectId::new();

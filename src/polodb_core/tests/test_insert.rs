@@ -23,6 +23,13 @@ struct Book {
     author: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct IdBook {
+    _id: Option<bson::oid::ObjectId>,
+    title: String,
+    author: String,
+}
+
 #[test]
 fn test_insert_struct() {
     vec![
@@ -63,6 +70,62 @@ fn test_insert_struct() {
         }).unwrap();
         let result = cursor.collect::<Result<Vec<Book>>>().unwrap();
         assert_eq!(result.len(), 2);
+    });
+}
+
+
+#[test]
+fn test_insert_id_struct() {
+    vec![
+        prepare_db("test-insert-id-struct").unwrap(),
+        Database::open_memory().unwrap(),
+    ].iter().for_each(|db| {
+        // Get a handle to a collection of `Book`.
+        let typed_collection = db.collection::<IdBook>("books");
+
+        let books = vec![
+            IdBook {
+                _id: None,
+                title: "A treatise on electricity and magnetism Vol I".to_string(),
+                author: "James Clerk Maxwell".to_string(),
+            },
+            IdBook {
+                _id: None,
+                title: "Sidelights on Relativity".to_string(),
+                author: "Albert Einstein".to_string(),
+            },
+        ];
+
+        // Insert the books into "mydb.books" collection, no manual conversion to BSON necessary.
+        match typed_collection.insert_many(books) {
+            Ok(result) => {
+                assert_eq!(result.inserted_ids.len(), 2);
+                result.inserted_ids.get(&0usize).unwrap().as_object_id().expect("should be an object id");
+                result.inserted_ids.get(&1usize).unwrap().as_object_id().expect("should be an object id");
+            },
+            Err(e) => {
+                panic!("{}", e.to_string())
+            }
+        };
+
+        
+        let id_3 = match typed_collection.insert_one(    IdBook {
+            _id: None,
+            title: "Basic Structures of Matter: Supergravitation Unified Theory".to_string(),
+            author: "Stoyan Sarg".to_string(),
+        }) {
+            Ok(result) => {
+                result.inserted_id.as_object_id().expect("should be an object id")
+            },
+            Err(e) => {
+                panic!("{}", e.to_string())
+            }
+        };
+
+        let book = typed_collection.find_one(doc! {
+            "_id": id_3,
+        }).unwrap().unwrap();
+        assert_eq!(book.author, "Stoyan Sarg");
     });
 }
 
