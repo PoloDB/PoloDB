@@ -7,7 +7,4 @@
 mod indexeddb_backend;
 mod models;
 
-pub use indexeddb_backend::{
-    IndexeddbBackend,
-    IndexeddbLog,
-};
+pub use indexeddb_backend::IndexeddbBackend;
