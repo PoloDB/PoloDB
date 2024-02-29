@@ -147,7 +147,6 @@ fn test_delete_all_items() {
 
 // https://github.com/PoloDB/PoloDB/issues/127
 #[test]
-
 fn test_delete_issues_127() {
     let db_path_str = "test-delete-issues-127";
     let db_path = mk_db_path(db_path_str);
@@ -166,7 +165,6 @@ fn test_delete_issues_127() {
         let db = Database::open_file(db_path.as_path()).unwrap();
         let col = db.collection::<Document>("tasks");
         col.delete_one(doc! { "name": "t1" }).unwrap();
-        col.find(None).unwrap(); // No documents returned
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap(); // The document { "name": "t1" } is returned, but none should be returned instead
         assert_eq!(result.len(), 0);
     }
@@ -176,7 +174,6 @@ fn test_delete_issues_127() {
         let db = Database::open_file(db_path.as_path()).unwrap();
         // Run #2
         let col = db.collection::<Document>("tasks");
-        col.find(None).unwrap(); // No documents returned
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap(); // The document { "name": "t1" } is returned, but none should be returned instead
         assert_eq!(result.len(), 0);
     }

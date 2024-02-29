@@ -307,11 +307,11 @@ impl Write for LsmFileLogInner {
         Ok(())
     }
 }
-
-impl Drop for LsmFileLogInner {
-
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.file_path);
-    }
-
-}
+//
+// impl Drop for LsmFileLogInner {
+//
+//     fn drop(&mut self) {
+//         let _ = std::fs::remove_file(&self.file_path);
+//     }
+//
+// }

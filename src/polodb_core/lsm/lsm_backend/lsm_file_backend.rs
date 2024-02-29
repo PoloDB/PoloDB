@@ -531,7 +531,11 @@ impl LsmFileBackendInner {
                 },
                 LsmTreeValueMarker::Value(legacy_tuple) => {
                     let offset = ((legacy_tuple.pid as usize) * (page_size as usize)) + (legacy_tuple.offset as usize);
-                    let tuple_ptr = writer.write_buffer(&mmap[offset..(offset + (legacy_tuple.byte_size as usize))])?;
+
+                    let mut buffer = vec![0u8; legacy_tuple.byte_size as usize];
+                    buffer.copy_from_slice(&mmap[offset..(offset + (legacy_tuple.byte_size as usize))]);
+
+                    let tuple_ptr = writer.write_buffer(&buffer)?;
                     LsmTreeValueMarker::Value(tuple_ptr)
                 }
             };

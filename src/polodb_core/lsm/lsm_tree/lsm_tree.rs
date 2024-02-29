@@ -232,19 +232,8 @@ impl<K: Ord + Clone, V: Clone> LsmTree<K, V> {
         }
     }
 
-    pub fn delete_in_place<Q: ?Sized>(&mut self, key: &Q) -> Option<V>
-    where
-        K: Borrow<Q> + Ord,
-        Q: Ord,
-    {
-        let mut cursor = self.open_cursor();
-        let order = cursor.seek(key);
-        if let Some(Ordering::Equal) = order {
-            let old_val = cursor.update_inplace(LsmTreeValueMarker::Deleted);
-            old_val.into()
-        } else {
-            None
-        }
+    pub fn delete_in_place(&mut self, key: K) -> Option<V> {
+        self.update_in_place(key, LsmTreeValueMarker::Deleted)
     }
 
     #[allow(dead_code)]
@@ -617,7 +606,7 @@ mod tests {
             tree.insert_in_place(i, i);
         }
 
-        tree.delete_in_place(&50);
+        tree.delete_in_place(50);
 
         let mut cursor = tree.open_cursor();
         cursor.seek(&50);

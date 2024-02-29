@@ -383,7 +383,7 @@ mod tests {
             map.insert_in_place([40].as_ref().into(), vec![40].into());
             map.insert_in_place([60].as_ref().into(), vec![60].into());
 
-            map.delete_in_place::<[u8]>([40].as_ref());
+            map.delete_in_place([40].as_ref().into());
 
             map
         };
@@ -394,7 +394,7 @@ mod tests {
             map.insert_in_place([30].as_ref().into(), vec![30].into());
             map.insert_in_place([50].as_ref().into(), vec![50].into());
 
-            map.delete_in_place::<[u8]>([20].as_ref());
+            map.delete_in_place([20].as_ref().into());
 
             map
         };

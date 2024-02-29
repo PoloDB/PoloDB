@@ -69,7 +69,9 @@ impl MemTable {
         K: AsRef<[u8]>
     {
         let prev = if in_place {
-            self.segments.delete_in_place(key.as_ref())
+            let key_arc = key.as_ref().into();
+            self.segments.delete_in_place(key_arc);
+            None
         } else {
             let prev = self.get(key.as_ref());
             self.segments = self.segments.delete(key.as_ref().into());
@@ -78,6 +80,10 @@ impl MemTable {
 
         if let Some(prev) = prev {
             self.store_bytes -= prev.len();
+        } else {
+            let key_len = key.as_ref().len();
+            self.store_bytes += 1;  // for the flag
+            self.store_bytes += key_len;
         }
     }
 

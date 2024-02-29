@@ -184,6 +184,8 @@ impl LsmSession {
                 // The "key" and "mark" still needs space
                 // only substract the space of value here
                 *self.mem_table.store_bytes_mut() -= legacy_value.len();
+            } else {
+                *self.mem_table.store_bytes_mut() += key.len() + 1;
             }
 
             result = true;
