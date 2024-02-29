@@ -20,7 +20,7 @@ pub(crate) use lsm_file_log::LsmFileLog;
 
 pub(crate) use lsm_log::LsmLog;
 pub(crate) use lsm_backend::LsmBackend;
-pub use indexeddb_backend::IndexeddbBackend;
+pub use indexeddb_backend::{IndexeddbBackend, IndexeddbLog};
 
 #[allow(unused)]
 pub(crate) mod format {
