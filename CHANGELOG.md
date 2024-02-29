@@ -1,4 +1,8 @@
 
+# 4.4.1
+
+- Fix #143
+
 # 4.4.0
 
 - Feat(#114): $regex operator
