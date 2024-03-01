@@ -1,5 +1,4 @@
 /target
-Cargo.lock
 .idea
 .DS_Store
 src/*/target/
