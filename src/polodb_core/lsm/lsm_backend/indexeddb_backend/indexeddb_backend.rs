@@ -417,7 +417,7 @@ impl IndexeddbBackendInner {
         let mut result = HashMap::new();
         let segments_map = segments.dyn_into::<js_sys::Map>().unwrap();
 
-        segments_map.for_each(&mut |key, value| {
+        segments_map.for_each(&mut |value, key| {
             let rkey_str = key.as_string().unwrap();
             let rkey = ObjectId::from_str(&rkey_str).unwrap();
 

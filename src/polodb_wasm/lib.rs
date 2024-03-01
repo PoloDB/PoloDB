@@ -14,6 +14,11 @@ pub struct DatabaseWrapper {
     onerror:   Option<js_sys::Function>,
 }
 
+#[wasm_bindgen]
+pub fn init_panic_hook() {
+    console_error_panic_hook::set_once();
+}
+
 #[wasm_bindgen(js_class = Database)]
 impl DatabaseWrapper {
 
