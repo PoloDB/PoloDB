@@ -38,6 +38,7 @@ features = [
     "IdbOpenDbRequest",
     "IdbTransaction",
     'Window',
+    "console",
 ]
 version = "*"
 
