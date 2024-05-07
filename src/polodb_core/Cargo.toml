@@ -28,7 +28,7 @@ uuid = { version = "1.3.0", features = [
     "v4",
     "wasm-bindgen",
     "js",
-    "getrandom",
+    "rng",
 ] }
 smallvec = { version = "1.10.0", features = ["union", "write", "const_new"] }
 memmap2 = "0.5.10"
