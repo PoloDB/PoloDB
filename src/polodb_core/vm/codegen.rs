@@ -464,12 +464,7 @@ impl Codegen {
     ) -> Result<()> {
         for (key, value) in query_doc.iter() {
             path_hint!(self, key.clone(), {
-                self.emit_query_tuple(
-                    key,
-                    value,
-                    result_label,
-                    not_found_label,
-                )?;
+                self.emit_query_tuple(key, value, result_label, not_found_label)?;
             });
         }
 
@@ -502,23 +497,14 @@ impl Codegen {
             let path_msg = format!("[{}]", index);
             path_hint!(self, path_msg, {
                 let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
-                self.emit_standard_query_doc(
-                    item_doc,
-                    result_label,
-
-                    not_found_label,
-                )?;
+                self.emit_standard_query_doc(item_doc, result_label, not_found_label)?;
             });
         }
 
         Ok(())
     }
 
-    fn emit_logic_or(
-        &mut self,
-        arr: &Array,
-        ret_label: Label,
-    ) -> Result<()> {
+    fn emit_logic_or(&mut self, arr: &Array, ret_label: Label) -> Result<()> {
         let cmp_label = self.new_label();
         self.emit_goto(DbOp::Goto, cmp_label);
 
@@ -532,11 +518,7 @@ impl Codegen {
                 let ret_label = self.new_label();
 
                 self.emit_label(query_label);
-                self.emit_standard_query_doc(
-                    item_doc,
-                    ret_label,
-                    ret_label
-                )?;
+                self.emit_standard_query_doc(item_doc, ret_label, ret_label)?;
 
                 self.emit_label(ret_label);
                 self.emit_ret(0);
@@ -568,19 +550,12 @@ impl Codegen {
             match key {
                 "$and" => {
                     let sub_arr = crate::try_unwrap_array!("$and", value);
-                    self.emit_logic_and(
-                        sub_arr.as_ref(),
-                        result_label,
-                        not_found_label,
-                    )?;
+                    self.emit_logic_and(sub_arr.as_ref(), result_label, not_found_label)?;
                 }
 
                 "$or" => {
                     let sub_arr = crate::try_unwrap_array!("$or", value);
-                    self.emit_logic_or(
-                        sub_arr.as_ref(),
-                        not_found_label,
-                    )?;
+                    self.emit_logic_or(sub_arr.as_ref(), not_found_label)?;
                 }
 
                 _ => {
@@ -593,12 +568,7 @@ impl Codegen {
         } else {
             match value {
                 Bson::Document(doc) => {
-                    return self.emit_query_tuple_document(
-                        key,
-                        doc,
-                        false,
-                        not_found_label,
-                    );
+                    return self.emit_query_tuple_document(key, doc, false, not_found_label);
                 }
 
                 Bson::Array(_) => {
@@ -847,6 +817,30 @@ impl Codegen {
                 });
             }
 
+            "$all" => {
+                match sub_value {
+                    Bson::Array(_) => (),
+                    _ => {
+                        return Err(Error::InvalidField(mk_invalid_query_field(
+                            self.last_key().into(),
+                            self.gen_path(),
+                        )))
+                    }
+                }
+
+                let field_size = self.recursively_get_field(key, not_found_label);
+
+                let stat_val_id = self.push_static(sub_value.clone());
+                self.emit_push_value(stat_val_id);
+
+                self.emit_logical(DbOp::All, is_in_not);
+
+                // if not equal，go to next
+                self.emit_goto(DbOp::IfFalse, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
             _ => {
                 return Err(Error::InvalidField(mk_invalid_query_field(
                     self.last_key().into(),
