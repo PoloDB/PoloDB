@@ -26,7 +26,6 @@ uuid = { version = "1.3.0", features = [
     "atomic",
     "v1",
     "v4",
-    "wasm-bindgen",
     "js",
     "rng",
 ] }
