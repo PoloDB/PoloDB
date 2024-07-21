@@ -9,6 +9,7 @@ use polodb_core::bson::{doc, Document};
 mod common;
 
 use common::{mk_db_path, prepare_db};
+use crate::common::clean_db_path;
 
 #[test]
 fn test_delete_one() {
@@ -184,7 +185,7 @@ fn test_delete_issues_127() {
 fn test_delete_issues_148() {
     let db_path_str = "test-delete-issues-148";
     let db_path = mk_db_path(db_path_str);
-    let _ = std::fs::remove_file(db_path.as_path());
+    clean_db_path(db_path.to_str().unwrap());
 
     // insert data
     {
@@ -232,5 +233,6 @@ fn test_delete_issues_148() {
         let col = db.collection::<Document>("tasks");
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap();
         assert_eq!(result.len(), 3);
+        assert_eq!(result[2].get("name").unwrap().as_str().unwrap(), "4");
     }
 }

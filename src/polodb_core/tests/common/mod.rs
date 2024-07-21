@@ -38,6 +38,14 @@ pub fn prepare_db_with_config(db_name: &str, config: Config) -> Result<Database>
 }
 
 #[allow(dead_code)]
+pub fn clean_db_path(db_path: &str) {
+    let journal_path = String::from(db_path) + ".wal";
+
+    let _ = std::fs::remove_file(db_path);
+    let _ = std::fs::remove_file(journal_path);
+}
+
+#[allow(dead_code)]
 pub fn prepare_db(db_name: &str) -> Result<Database> {
     prepare_db_with_config(db_name, Config::default())
 }
