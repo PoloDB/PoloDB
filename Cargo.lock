@@ -526,7 +526,7 @@ checksum = "6f61fba1741ea2b3d6a1e3178721804bb716a68a6aeba1149b5d52e3d464ea66"
 
 [[package]]
 name = "polodb"
-version = "4.4.1"
+version = "4.4.2"
 dependencies = [
  "byteorder",
  "chrono",
@@ -539,7 +539,7 @@ dependencies = [
 
 [[package]]
 name = "polodb_core"
-version = "4.4.1"
+version = "4.4.2"
 dependencies = [
  "bson",
  "byteorder",
@@ -575,7 +575,7 @@ dependencies = [
 
 [[package]]
 name = "polodb_wasm"
-version = "4.4.1"
+version = "4.4.2"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",
