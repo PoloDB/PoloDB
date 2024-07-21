@@ -655,7 +655,7 @@ mod tests {
         cursor.next();
         assert_eq!(cursor.value().unwrap().unwrap(), 6);
 
-        assert_eq!(tree.len(),  6);
+        assert_eq!(tree.len(), 10);  // the delete operation is just a mark, so we still got 10 in length
     }
 
 }
