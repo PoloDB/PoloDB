@@ -9,6 +9,7 @@ use polodb_core::bson::{doc, Document};
 mod common;
 
 use common::{mk_db_path, prepare_db};
+use crate::common::clean_db_path;
 
 #[test]
 fn test_delete_one() {
@@ -176,5 +177,62 @@ fn test_delete_issues_127() {
         let col = db.collection::<Document>("tasks");
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap(); // The document { "name": "t1" } is returned, but none should be returned instead
         assert_eq!(result.len(), 0);
+    }
+}
+
+// https://github.com/PoloDB/PoloDB/issues/148
+#[test]
+fn test_delete_issues_148() {
+    let db_path_str = "test-delete-issues-148";
+    let db_path = mk_db_path(db_path_str);
+    clean_db_path(db_path.to_str().unwrap());
+
+    // insert data
+    {
+        let db = Database::open_file(db_path.as_path()).unwrap();
+        let col = db.collection::<Document>("tasks");
+
+        col.insert_one(doc! {
+            "name": "1"
+        }).unwrap();
+
+        col.insert_one(doc! {
+            "name": "2"
+        }).unwrap();
+
+        col.insert_one(doc! {
+            "name": "3"
+        }).unwrap();
+    }
+
+    {
+        let db = Database::open_file(db_path.as_path()).unwrap();
+        let col = db.collection::<Document>("tasks");
+        let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap();
+        assert_eq!(result.len(), 3);
+
+        col.delete_one(doc! {"name": "3"}).unwrap();
+        let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    {
+        let db = Database::open_file(db_path.as_path()).unwrap();
+        let col = db.collection::<Document>("tasks");
+        col.insert_one(doc! {
+            "name": "4"
+        }).unwrap();
+        let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[2].get("name").unwrap().as_str().unwrap(), "4");
+    }
+
+    {
+        let db = Database::open_file(db_path.as_path()).unwrap();
+        let col = db.collection::<Document>("tasks");
+        let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[2].get("name").unwrap().as_str().unwrap(), "4");
     }
 }

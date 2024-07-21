@@ -300,10 +300,8 @@ impl<K: Ord + Clone, V: Clone> TreeNode<K, V> {
     fn len(&self) -> usize {
         let mut base = 0;
 
-        for item in &self.data {
-            if item.value.is_value() {
-                base += 1;
-            }
+        for _ in &self.data {
+            base += 1;
         }
 
         if self.is_leaf() {
@@ -657,7 +655,7 @@ mod tests {
         cursor.next();
         assert_eq!(cursor.value().unwrap().unwrap(), 6);
 
-        assert_eq!(tree.len(),  6);
+        assert_eq!(tree.len(), 10);  // the delete operation is just a mark, so we still got 10 in length
     }
 
 }
