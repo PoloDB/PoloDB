@@ -57,17 +57,17 @@ async function read_latest_meta(metas_store) {
 /**
  *
  * @param {IDBTransaction} transaction
- * @param {Map<string, any>} map
  * @returns {Promise<any>}
  */
-function read_segment(transaction, map, segment) {
+function read_segment(transaction, segment) {
     return new Promise((resolve, reject) => {
         const segments_store = transaction.objectStore(STORE_NAME_SEGMENTS);
 
         const cursor = segments_store.openCursor(segment);
 
         cursor.onsuccess = (e) => {
-            resolve(cursor.result);
+            const cursor_result = cursor.result;
+            resolve(cursor_result?.value);
         }
         cursor.onerror = reject;
     });
@@ -130,8 +130,9 @@ export async function load_snapshot(name) {
 
     for (const level of latest_meta.levels) {
         for (const segment of level.segments) {
-            const item = await read_segment(transaction, map, segment);
+            const item = await read_segment(transaction, segment);
             if (item) {
+                console.log("data.set:", segment, item);
                 data.set(segment, item);
             }
         }
