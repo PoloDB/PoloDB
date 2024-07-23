@@ -225,6 +225,7 @@ pub enum DbOp {
     // check if top0 is in top2
     // the result is stored in r0
     In,
+    All,
 
     // open a cursor with op0 as root_pid
     //
