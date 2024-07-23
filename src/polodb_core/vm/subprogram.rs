@@ -3,20 +3,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use std::cell::RefCell;
 use super::label::LabelSlot;
 use super::op::DbOp;
 use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
+use crate::errors::FieldTypeUnexpectedStruct;
 use crate::utils::str::escape_binary_to_string;
+use crate::vm::aggregation_codegen_context::AggregationCodeGenContext;
 use crate::vm::codegen::Codegen;
-use crate::{Result};
+use crate::vm::global_variable::GlobalVariableSlot;
+use crate::Result;
 use bson::{Bson, Document};
 use indexmap::IndexMap;
+use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
-use crate::errors::FieldTypeUnexpectedStruct;
-use crate::vm::aggregation_codegen_context::AggregationCodeGenContext;
-use crate::vm::global_variable::GlobalVariableSlot;
 
 pub(crate) struct SubProgramIndexItem {
     pub col_name: String,
@@ -261,7 +261,11 @@ impl SubProgram {
 
         let first = pipeline_vec.first().unwrap();
         if first.len() == 1 && first.contains_key("$match") {
-            return SubProgram::compile_aggregate_with_match(col_spec, pipeline_vec, skip_annotation);
+            return SubProgram::compile_aggregate_with_match(
+                col_spec,
+                pipeline_vec,
+                skip_annotation,
+            );
         }
 
         let mut codegen = Codegen::new(skip_annotation, false);
@@ -311,8 +315,9 @@ impl SubProgram {
                     field_name: "$match".to_string(),
                     expected_ty: "Document".to_string(),
                     actual_ty: name,
-                }.into());
-            },
+                }
+                .into());
+            }
         };
 
         let ctx_ref = Rc::new(RefCell::new(AggregationCodeGenContext::default()));
@@ -340,7 +345,6 @@ impl SubProgram {
 
         Ok(codegen.take())
     }
-
 }
 
 fn open_bson_to_str(val: &Bson) -> Result<String> {
@@ -363,7 +367,6 @@ fn open_bson_to_str(val: &Bson) -> Result<String> {
 
 impl fmt::Display for SubProgram {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-
         for (index, global_var) in self.global_variables.iter().enumerate() {
             writeln!(f, "${} = {:?}", index, global_var.init_value)?;
         }
@@ -560,6 +563,11 @@ impl fmt::Display for SubProgram {
 
                     DbOp::In => {
                         writeln!(f, "{}: In", pc)?;
+                        pc += 1;
+                    }
+
+                    DbOp::All => {
+                        writeln!(f, "{}: All", pc)?;
                         pc += 1;
                     }
 
@@ -1439,15 +1447,18 @@ mod tests {
     #[test]
     fn test_aggregate_match() {
         let col_spec = new_spec("test");
-        let program = SubProgram::compile_aggregate(&col_spec, vec![
-            doc! {
+        let program = SubProgram::compile_aggregate(
+            &col_spec,
+            vec![doc! {
                 "$match": {
                     "age": {
                         "$gt": 18
                     },
                 },
-            },
-        ], false).unwrap();
+            }],
+            false,
+        )
+        .unwrap();
         let actual = format!("Program:\n\n{}", program);
         let expect = r#"Program:
 
@@ -1493,18 +1504,23 @@ mod tests {
     #[test]
     fn test_aggregate_count() {
         let col_spec = new_spec("test");
-        let program = SubProgram::compile_aggregate(&col_spec, vec![
-            doc! {
-                "$match": {
-                    "age": {
-                        "$gt": 18
+        let program = SubProgram::compile_aggregate(
+            &col_spec,
+            vec![
+                doc! {
+                    "$match": {
+                        "age": {
+                            "$gt": 18
+                        },
                     },
                 },
-            },
-            doc! {
-                "$count": "total",
-            },
-        ], false).unwrap();
+                doc! {
+                    "$count": "total",
+                },
+            ],
+            false,
+        )
+        .unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -1575,11 +1591,14 @@ $0 = Int64(0)
     #[test]
     fn test_aggregate_count_without_match() {
         let col_spec = new_spec("test");
-        let program = SubProgram::compile_aggregate(&col_spec, vec![
-            doc! {
+        let program = SubProgram::compile_aggregate(
+            &col_spec,
+            vec![doc! {
                 "$count": "total",
-            },
-        ], false).unwrap();
+            }],
+            false,
+        )
+        .unwrap();
         let actual = format!("Program:\n\n{}", program);
         let expect = r#"Program:
 
@@ -1623,6 +1642,59 @@ $0 = Int64(0)
 112: Label(5, "next_item_label")
 117: Goto(15)
 "#;
+        assert_eq!(expect, actual);
+    }
+
+    #[test]
+    fn print_all() {
+        let col_spec = new_spec("test");
+        let test_doc = doc! {
+            "name": doc! {
+                "$all": ["Vincent", "Antoine"],
+            },
+        };
+        let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+
+        let expect = r#"Program:
+
+0: OpenRead("test")
+5: Rewind(25)
+10: Goto(55)
+
+15: Label(3)
+20: Next(55)
+
+25: Label(6, "close")
+30: Close
+31: Halt
+
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
+
+43: Label(4, "result")
+48: ResultRow
+49: Pop
+50: Goto(15)
+
+55: Label(2, "compare")
+60: Dup
+61: Call(80, 1)
+70: FalseJump(32)
+75: Goto(43)
+
+80: Label(0, "compare_function")
+85: GetField("name", 110)
+94: PushValue(["Vincent", "Antoine"])
+99: All
+100: FalseJump(110)
+105: Pop2(2)
+
+110: Label(1, "compare_function_clean")
+115: Ret0
+"#;
+
         assert_eq!(expect, actual);
     }
 }
