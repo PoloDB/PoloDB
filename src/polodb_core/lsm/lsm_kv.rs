@@ -6,8 +6,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::sync::atomic::{AtomicU64, Ordering};
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsValue;
 use crate::{Config, Error, Result, TransactionType};
 use crate::lsm::kv_cursor::KvCursor;
 use crate::lsm::lsm_backend::LsmBackend;
@@ -19,10 +17,7 @@ use crate::lsm::mem_table::MemTable;
 use crate::lsm::multi_cursor::{CursorRepr, MultiCursor};
 use crate::transaction::TransactionState;
 use super::lsm_backend::LsmLog;
-#[cfg(not(target_arch = "wasm32"))]
 use super::lsm_backend::{LsmFileBackend, LsmFileLog};
-#[cfg(target_arch = "wasm32")]
-use super::lsm_backend::{IndexeddbLog, IndexeddbBackend};
 
 #[derive(Clone)]
 pub struct LsmKv {
@@ -31,23 +26,13 @@ pub struct LsmKv {
 
 impl LsmKv {
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file(path: &Path) -> Result<LsmKv> {
         let config = Config::default();
         LsmKv::open_file_with_config(path, config)
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file_with_config(path: &Path, config: Config) -> Result<LsmKv> {
         let inner = LsmKvInner::open_file(path, config)?;
-        LsmKv::open_with_inner(inner)
-    }
-
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(init_data: JsValue) -> Result<LsmKv> {
-        let config = Arc::new(Config::default());
-        let inner = LsmKvInner::open_indexeddb(init_data, config)?;
         LsmKv::open_with_inner(inner)
     }
 
@@ -219,31 +204,12 @@ impl LsmKvInner {
         buf
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     fn open_file(path: &Path, config: Config) -> Result<LsmKvInner> {
         let metrics = LsmMetrics::new();
         let config = Arc::new(config);
         let backend = LsmFileBackend::open(path, metrics.clone(), config.clone())?;
         let log_file = LsmKvInner::mk_log_path(path);
         let log = LsmFileLog::open(log_file.as_path(), config.clone())?;
-        LsmKvInner::open_with_backend(
-            Some(Box::new(backend)),
-            Some(Box::new(log)),
-            metrics,
-            config,
-        )
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn open_indexeddb(init_data: JsValue, config: Arc<Config>) -> Result<LsmKvInner> {
-        let metrics = LsmMetrics::new();
-        let backend = IndexeddbBackend::open(
-            init_data.clone(),
-        )?;
-
-        let session_id = backend.session_id();
-
-        let log = IndexeddbLog::new(session_id, init_data);
         LsmKvInner::open_with_backend(
             Some(Box::new(backend)),
             Some(Box::new(log)),

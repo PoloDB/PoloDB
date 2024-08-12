@@ -3,10 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsValue;
 use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -63,24 +60,12 @@ impl Database {
         })
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file<P: AsRef<Path>>(path: P) -> Result<Database>  {
         Database::open_file_with_config(path, Config::default())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file_with_config<P: AsRef<Path>>(path: P, config: Config) -> Result<Database>  {
         let inner = DatabaseInner::open_file(path.as_ref(), config)?;
-
-        Ok(Database {
-            inner: Arc::new(inner),
-        })
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(init_data: JsValue) -> Result<Database> {
-        let config = Config::default();
-        let inner = DatabaseInner::open_indexeddb(init_data, config)?;
 
         Ok(Database {
             inner: Arc::new(inner),

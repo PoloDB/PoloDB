@@ -87,12 +87,7 @@ pub struct Config {
     pub sync_log_count:    u64,
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 const SYNC_LOG_COUNT: u64 = 1000;
-
-#[cfg(target_arch = "wasm32")]
-const SYNC_LOG_COUNT: u64 = 200;
-
 
 impl Default for Config {
 

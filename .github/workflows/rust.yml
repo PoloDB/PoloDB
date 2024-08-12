@@ -34,35 +34,6 @@ jobs:
       - name: Build binaries
         run: cargo build --release
 
-  Wasm32:
-    name: Test Wasm32
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - uses: actions/setup-node@v2
-        with:
-          node-version: '18'
-
-      - name: Install wasm32
-        run: |
-          rustup target add wasm32-unknown-unknown
-          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-      - name: Build wasm
-        run: wasm-pack build src/polodb_wasm
-      - run: npm install -g pnpm@7
-      - run: cd src/polodb_wasm && pnpm install
-      - run: cd src/polodb_wasm && pnpm run build
-
   Windows:
     name: Test on Windows
     runs-on: windows-latest

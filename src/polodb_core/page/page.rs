@@ -3,9 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-#[cfg(not(target_arch = "wasm32"))]
 use std::io::{Read, Seek, SeekFrom};
-#[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
 
 use std::io::Write;
@@ -126,14 +124,12 @@ impl RawPage {
         u64::from_be_bytes(buffer)
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn sync_to_file(&self, file: &mut File, offset: u64) -> std::io::Result<()> {
         file.seek(SeekFrom::Start(offset))?;
         file.write_all(self.data.as_slice())?;
         Ok(())
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn read_from_file(&mut self, file: &mut File, offset: u64) -> std::io::Result<()> {
         file.seek(SeekFrom::Start(offset))?;
         file.read_exact(self.data.as_mut_slice())?;

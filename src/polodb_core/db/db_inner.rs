@@ -16,10 +16,7 @@ use crate::meta_doc_helper::meta_doc_key;
 use crate::index::{IndexBuilder, IndexModel, IndexOptions};
 use crate::db::client_cursor::ClientCursor;
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
-#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsValue;
 use bson::oid::ObjectId;
 use serde::de::DeserializeOwned;
 use crate::coll::collection_info::{
@@ -79,22 +76,9 @@ pub struct MetaSource {
 
 impl DatabaseInner {
 
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_file(path: &Path, config: Config) -> Result<DatabaseInner> {
         let metrics = Metrics::new();
         let kv_engine = LsmKv::open_file(path)?;
-
-        DatabaseInner::open_with_backend(
-            kv_engine,
-            config,
-            metrics,
-        )
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(init_data: JsValue, config: Config) -> Result<DatabaseInner> {
-        let metrics = Metrics::new();
-        let kv_engine = LsmKv::open_indexeddb(init_data)?;
 
         DatabaseInner::open_with_backend(
             kv_engine,
@@ -151,6 +135,7 @@ impl DatabaseInner {
         let key = Bson::from(name);
 
         let reset_result = cursor.reset_by_pkey(&key)?;
+
         if !reset_result {
             return Err(Error::CollectionNotFound(name.to_string()));
         }

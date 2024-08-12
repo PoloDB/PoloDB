@@ -31,14 +31,12 @@ uuid = { version = "1.3.0", features = [
 ] }
 smallvec = { version = "1.10.0", features = ["union", "write", "const_new"] }
 memmap2 = "0.5.10"
-wasm-bindgen = "0.2.84"
-js-sys = "0.3.61"
 lz4_flex = "0.10.0"
 serde-wasm-bindgen = "0.5.0"
-wasm-bindgen-futures = "0.4.34"
 thiserror = "1.0.40"
 indexmap = { version = "1.9.3", features = ["serde"] }
 regex = "1.8"
+rocksdb = "0.22.0"
 
 [dependencies.web-sys]
 version = "0.3.61"

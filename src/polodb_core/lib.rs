@@ -152,7 +152,6 @@ pub mod lsm;
 pub mod results;
 pub mod commands;
 
-#[cfg(not(target_arch = "wasm32"))]
 pub mod test_utils;
 mod metrics;
 mod utils;
