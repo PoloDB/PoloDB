@@ -14,7 +14,6 @@ use common::prepare_db;
 fn test_update_one() {
     vec![
         prepare_db("test-update-one").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
 

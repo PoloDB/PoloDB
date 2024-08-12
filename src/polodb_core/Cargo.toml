@@ -1,6 +1,6 @@
 [package]
 name = "polodb_core"
-version = "4.4.2"
+version = "5.0.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 license = "MPL-2.0"
 edition = "2018"
@@ -36,11 +36,7 @@ serde-wasm-bindgen = "0.5.0"
 thiserror = "1.0.40"
 indexmap = { version = "1.9.3", features = ["serde"] }
 regex = "1.8"
-rocksdb = "0.22.0"
-
-[dependencies.web-sys]
-version = "0.3.61"
-features = ['Window', 'console']
+librocksdb-sys = { path = "../librocksdb-sys", version = "0.17.0" }
 
 [dev-dependencies]
 polodb_line_diff = { path = "../polodb_line_diff" }

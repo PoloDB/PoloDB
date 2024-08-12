@@ -15,7 +15,6 @@ use crate::common::clean_db_path;
 fn test_delete_one() {
     vec![
         prepare_db("test-update-one").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
 
@@ -47,7 +46,6 @@ fn test_delete_one() {
 fn test_one_delete_item() {
     vec![
         prepare_db("test-delete-item").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
 
@@ -77,7 +75,6 @@ fn test_one_delete_item() {
 fn test_delete_many() {
     vec![
         prepare_db("test-delete-many").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -106,7 +103,6 @@ fn test_delete_many() {
 fn test_delete_all_items() {
     vec![
         prepare_db("test-delete-all-items").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();

@@ -4,13 +4,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 use polodb_core::bson::{Document, doc};
-use polodb_core::{Database, Collection, Result};
+use polodb_core::{Collection, Result};
 mod common;
 
 use common::{
     prepare_db,
     create_file_and_return_db_with_items,
-    create_memory_and_return_db_with_items,
 };
 
 static TEST_SIZE: usize = 1000;
@@ -19,7 +18,6 @@ static TEST_SIZE: usize = 1000;
 fn test_create_collection_and_find_all() {
     vec![
         create_file_and_return_db_with_items("test-collection", TEST_SIZE),
-        create_memory_and_return_db_with_items(TEST_SIZE),
     ].iter().for_each(|db| {
         let test_collection = db.collection::<Document>("test");
         let cursor = test_collection.find(None).unwrap();
@@ -41,7 +39,6 @@ fn test_create_collection_and_find_all() {
 fn test_create_collection_and_drop() {
     vec![
         prepare_db("test-create-and-drops").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let names = db.list_collection_names().unwrap();
         assert_eq!(names.len(), 0);
@@ -74,7 +71,6 @@ fn test_create_collection_and_drop() {
 fn test_create_collection_with_number_pkey() {
     vec![
         prepare_db("test-number-pkey").unwrap(),
-        Database::open_memory().unwrap()
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
         let mut data: Vec<Document> = vec![];
@@ -109,7 +105,6 @@ fn test_create_collection_with_number_pkey() {
 fn test_create_collection_and_find_by_pkey() {
     vec![
         create_file_and_return_db_with_items("test-find-pkey", 10),
-        create_memory_and_return_db_with_items(10),
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
 
@@ -139,7 +134,6 @@ fn test_create_collection_and_find_by_pkey() {
 fn test_query_embedded_document() {
     vec![
         create_file_and_return_db_with_items("test-embedded-document", 10),
-        create_memory_and_return_db_with_items(10),
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
 

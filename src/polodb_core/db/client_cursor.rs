@@ -7,8 +7,8 @@ use std::fmt;
 use std::marker::PhantomData;
 use bson::Bson;
 use serde::de::DeserializeOwned;
-use crate::{ClientSession, Result};
-use crate::session::SessionInner;
+use crate::{Result};
+use crate::transaction::TransactionInner;
 use crate::vm::{VM, VmState};
 
 /// A `ClientCursor` is used get the result of a query.
@@ -18,13 +18,13 @@ use crate::vm::{VM, VmState};
 /// deserialize the documents returned by advance()
 pub struct ClientCursor<T: DeserializeOwned> {
     vm: VM,
-    session: SessionInner,
+    session: TransactionInner,
     _phantom: PhantomData<T>,
 }
 
 impl<T: DeserializeOwned> ClientCursor<T> {
 
-    pub(crate) fn new(vm: VM, session: SessionInner) -> ClientCursor<T> {
+    pub(crate) fn new(vm: VM, session: TransactionInner) -> ClientCursor<T> {
         ClientCursor{
             vm,
             session,
@@ -85,14 +85,16 @@ impl<T> Iterator for ClientCursor<T>
 /// A `ClientSessionCursor` is used get the result of a query.
 pub struct ClientSessionCursor<T: DeserializeOwned> {
     vm: VM,
+    txn: TransactionInner,
     _phantom: PhantomData<T>,
 }
 
 impl<T: DeserializeOwned> ClientSessionCursor<T> {
 
-    pub(crate) fn new(vm: VM) -> ClientSessionCursor<T> {
+    pub(crate) fn new(vm: VM, txn: TransactionInner) -> ClientSessionCursor<T> {
         ClientSessionCursor{
             vm,
+            txn,
             _phantom: Default::default(),
         }
     }
@@ -107,13 +109,8 @@ impl<T: DeserializeOwned> ClientSessionCursor<T> {
         self.vm.stack_top()
     }
 
-    pub fn advance(&mut self, session: &mut ClientSession) -> Result<bool> {
-        self.advance_inner(&mut session.inner)
-    }
-
-    #[inline]
-    pub(crate) fn advance_inner(&mut self, session: &mut SessionInner) -> Result<bool> {
-        self.vm.execute(session)?;
+    pub fn advance(&mut self) -> Result<bool> {
+        self.vm.execute(&self.txn)?;
         Ok(self.has_row())
     }
 
@@ -122,10 +119,10 @@ impl<T: DeserializeOwned> ClientSessionCursor<T> {
         Ok(result)
     }
 
-    pub fn iter<'c, 's>(&'c mut self, session: &'s mut ClientSession) -> ClientSessionCursorIter<'s, 'c, T> {
+    pub(crate) fn iter<'c, 's>(&'c mut self, txn: &'s TransactionInner) -> ClientSessionCursorIter<'s, 'c, T> {
         ClientSessionCursorIter {
             cursor: self,
-            session,
+            txn,
         }
     }
 
@@ -141,7 +138,7 @@ impl<T: DeserializeOwned> fmt::Display for ClientSessionCursor<T> {
 
 pub struct ClientSessionCursorIter<'s, 'c, T: DeserializeOwned> {
     cursor: &'c mut ClientSessionCursor<T>,
-    session: &'s mut ClientSession,
+    txn: &'s TransactionInner,
 }
 
 impl<T> Iterator for ClientSessionCursorIter<'_, '_, T>
@@ -151,7 +148,7 @@ impl<T> Iterator for ClientSessionCursorIter<'_, '_, T>
     type Item = Result<T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let test = self.cursor.advance(self.session);
+        let test = self.cursor.advance();
         match test {
             Ok(false) => None,
             Ok(true) => {

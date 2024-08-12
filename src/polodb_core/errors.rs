@@ -235,8 +235,6 @@ pub enum Error {
     DbIsClosed,
     #[error("{0}")]
     FromUtf8Error(Box<FromUtf8Error>),
-    #[error("data malformed, backtrace: {}", .0.backtrace)]
-    DataMalformed(Box<DataMalformedReason>),
     #[error("the database is not ready")]
     DbNotReady,
     #[error("only support single field indexes currently: {0:?}")]
@@ -253,6 +251,8 @@ pub enum Error {
     UnknownAggregationOperation(String),
     #[error("invalid aggregation stage: {0:?}")]
     InvalidAggregationStage(Box<Document>),
+    #[error("rocks db error: {0}")]
+    RocksDbErr(String),
 }
 
 impl Error {
@@ -267,13 +267,6 @@ impl Error {
                 Error::Multiple(result)
             }
         }
-    }
-
-    #[inline]
-    pub(crate) fn data_malformed() -> Error {
-        Error::DataMalformed(Box::new(DataMalformedReason {
-            backtrace: std::backtrace::Backtrace::capture(),
-        }))
     }
 }
 

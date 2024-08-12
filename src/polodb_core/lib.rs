@@ -27,14 +27,6 @@
 //! let db = Database::open_file(db_path).unwrap();
 //! ```
 //!
-//! ## Open a memory database
-//!
-//! ```rust
-//! use polodb_core::Database;
-//!
-//! let db = Database::open_memory().unwrap();
-//! ```
-//!
 //! # Example
 //!
 //!  ```rust
@@ -62,7 +54,8 @@
 //! use polodb_core::Database;
 //! use polodb_core::bson::{Document, doc};
 //!
-//! let db = Database::open_memory().unwrap();
+//! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db-collection");
+//! let db = Database::open_file(db_path).unwrap();
 //! let collection = db.collection::<Document>("books");
 //!
 //! let docs = vec![
@@ -86,7 +79,8 @@
 //!    author: String,
 //! }
 //!
-//! let db = Database::open_memory().unwrap();
+//! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db-find");
+//! let db = Database::open_file(db_path).unwrap();
 //! let collection = db.collection::<Book>("books");
 //!
 //! let docs = vec![
@@ -102,12 +96,11 @@
 //! }
 //! ```
 //!
-//! # Session
+//! # Transactions
 //!
-//! A [`ClientSession`] represents a logical session used for ordering sequential
-//! operations.
+//! A [`Transaction`] is a set of operations that are executed as a single unit.
 //!
-//! You an manually start a transaction by [`ClientSession::start_transaction`] method.
+//! You an manually start a transaction by [`Database::start_transaction`] method.
 //! If you don't start it manually, a transaction will be automatically started
 //! in your every operation.
 //!
@@ -120,37 +113,32 @@
 //! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db");
 //! let db = Database::open_file(db_path).unwrap();
 //!
-//! let mut session = db.start_session().unwrap();
-//! session.start_transaction(None).unwrap();
+//! let txn = db.start_transaction().unwrap();
 //!
-//! let collection = db.collection::<Document>("books");
+//! let collection = txn.collection::<Document>("books");
 //!
 //! let docs = vec![
 //!     doc! { "title": "1984", "author": "George Orwell" },
 //!     doc! { "title": "Animal Farm", "author": "George Orwell" },
 //!     doc! { "title": "The Great Gatsby", "author": "F. Scott Fitzgerald" },
 //! ];
-//! collection.insert_many_with_session(docs, &mut session).unwrap();
+//! collection.insert_many(docs).unwrap();
 //!
-//! session.commit_transaction().unwrap();
+//! txn.commit().unwrap();
 //! ```
 
 extern crate core;
 
-mod page;
 mod vm;
 mod errors;
 mod cursor;
-mod session;
 
 mod db;
 mod meta_doc_helper;
 mod config;
 mod macros;
 mod transaction;
-pub mod lsm;
 pub mod results;
-pub mod commands;
 
 pub mod test_utils;
 mod metrics;
@@ -158,15 +146,13 @@ mod utils;
 mod index;
 mod coll;
 
-pub use db::{Database, DatabaseServer, Result};
-pub use coll::Collection;
+pub use db::{Database, Result};
+pub use coll::{Collection, TransactionalCollection};
 pub use config::{Config, ConfigBuilder};
-pub use transaction::TransactionType;
+pub use transaction::Transaction;
 pub use db::client_cursor::{ClientCursor, ClientSessionCursor};
 pub use errors::Error;
-pub use session::ClientSession;
 pub use metrics::Metrics;
-pub use lsm::LsmKv;
 pub use index::{IndexModel, IndexOptions};
 
 pub extern crate bson;

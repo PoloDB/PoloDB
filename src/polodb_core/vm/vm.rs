@@ -8,14 +8,15 @@ use crate::errors::{
     CannotApplyOperationForTypes, FieldTypeUnexpectedStruct, RegexError, UnexpectedTypeForOpStruct,
 };
 use crate::index::{IndexHelper, IndexHelperOperation};
-use crate::session::SessionInner;
+use crate::transaction::TransactionInner;
 use crate::vm::op::DbOp;
 use crate::vm::SubProgram;
-use crate::{Error, LsmKv, Metrics, Result, TransactionType};
+use crate::{Error, Metrics, Result};
 use bson::{Bson, Document};
 use regex::RegexBuilder;
 use std::cell::Cell;
 use std::cmp::Ordering;
+use crate::db::RocksDBWrapper;
 
 macro_rules! try_vm {
     ($self:ident, $action:expr) => {
@@ -55,7 +56,8 @@ impl Default for VMFrame {
 }
 
 pub(crate) struct VM {
-    kv_engine: LsmKv,
+    #[allow(dead_code)]
+    rocksdb: RocksDBWrapper,
     pub(crate) state: VmState,
     pc: *const u8,
     r0: i32, // usually the logic register
@@ -85,7 +87,7 @@ fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> Result<bool> {
 }
 
 impl VM {
-    pub(crate) fn new(kv_engine: LsmKv, program: SubProgram, metrics: Metrics) -> VM {
+    pub(crate) fn new(rocksdb: RocksDBWrapper, program: SubProgram, metrics: Metrics) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         let mut global_vars = Vec::<Bson>::new();
@@ -95,7 +97,7 @@ impl VM {
         }
 
         VM {
-            kv_engine,
+            rocksdb,
             state: VmState::Init,
             pc,
             r0: 0,
@@ -124,25 +126,23 @@ impl VM {
         }
     }
 
-    fn open_read(&mut self, session: &mut SessionInner, prefix: Bson) -> Result<()> {
-        session.auto_start_transaction(TransactionType::Read)?;
-        let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
-        cursor.go_to_min()?;
+    fn open_read(&mut self, txn: &TransactionInner, prefix: Bson) -> Result<()> {
+        let db_iter = txn.rocksdb_txn.new_iterator();
+        db_iter.seek_to_first();
 
         let prefix_bytes = VM::prefix_bytes_from_bson(prefix)?;
 
-        self.r1 = Some(Cursor::new(prefix_bytes, cursor));
+        self.r1 = Some(Cursor::new(prefix_bytes, db_iter));
         Ok(())
     }
 
-    fn open_write(&mut self, session: &mut SessionInner, prefix: Bson) -> Result<()> {
-        session.auto_start_transaction(TransactionType::Write)?;
-        let mut cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
-        cursor.go_to_min()?;
+    fn open_write(&mut self, session: &TransactionInner, prefix: Bson) -> Result<()> {
+        let db_iter = session.rocksdb_txn.new_iterator();
+        db_iter.seek_to_first();
 
         let prefix_bytes = VM::prefix_bytes_from_bson(prefix)?;
 
-        self.r1 = Some(Cursor::new(prefix_bytes, cursor));
+        self.r1 = Some(Cursor::new(prefix_bytes, db_iter));
         Ok(())
     }
 
@@ -150,7 +150,7 @@ impl VM {
         let cursor = self.r1.as_mut().unwrap();
         cursor.reset()?;
         if cursor.has_next() {
-            let item = cursor.peek_data(self.kv_engine.inner.as_ref())?.unwrap();
+            let item = cursor.copy_data()?;
             let doc = bson::from_slice(item.as_ref())?;
             self.stack.push(Bson::Document(doc));
             is_empty.set(false);
@@ -171,13 +171,13 @@ impl VM {
             return Ok(false);
         }
 
-        let buf = cursor.peek_data(self.kv_engine.inner.as_ref())?.unwrap();
+        let buf = cursor.copy_data()?;
         let doc = bson::from_slice(buf.as_ref())?;
         self.stack.push(Bson::Document(doc));
         Ok(true)
     }
 
-    fn find_by_index(&mut self, session: &mut SessionInner) -> Result<bool> {
+    fn find_by_index(&mut self, txn: &TransactionInner) -> Result<bool> {
         let stack_len = self.stack.len();
         // let col_name = self.stack[stack_len - 1].as_str().expect("col_name must be string").to_string();
         let query_value = &self.stack[stack_len - 2];
@@ -191,7 +191,7 @@ impl VM {
 
         let key = cursor.peek_key().expect("key must exist");
 
-        let index_value = self.read_index_value_by_index_key(key.as_ref(), session)?;
+        let index_value = self.read_index_value_by_index_key(key.as_ref(), txn)?;
 
         if index_value.is_none() {
             return Ok(false);
@@ -207,7 +207,7 @@ impl VM {
     fn read_index_value_by_index_key(
         &mut self,
         index_key: &[u8],
-        session: &mut SessionInner,
+        txn: &TransactionInner,
     ) -> Result<Option<Bson>> {
         let slices = crate::utils::bson::split_stacked_keys(index_key.as_ref())?;
         let pkey = slices.last().expect("pkey must exist");
@@ -216,23 +216,21 @@ impl VM {
 
         let pkey_in_kv = crate::utils::bson::stacked_key(vec![col_name, pkey])?;
 
-        let mut value_cursor = self.kv_engine.open_multi_cursor(Some(session.kv_session()));
-        value_cursor.go_to_min()?;
+        let db_iter = txn.rocksdb_txn.new_iterator();
+        db_iter.seek_to_first();
 
-        value_cursor.seek(pkey_in_kv.as_slice())?;
+        db_iter.seek(pkey_in_kv.as_slice());
 
-        let current_key = value_cursor.key();
-        if current_key.is_none() {
+        if !db_iter.valid() {
+            return Ok(None);
+        }
+        let current_key = db_iter.copy_key()?;
+
+        if current_key.as_slice().cmp(pkey_in_kv.as_slice()) != Ordering::Equal {
             return Ok(None);
         }
 
-        let current_key = current_key.unwrap();
-
-        if current_key.as_ref().cmp(pkey_in_kv.as_slice()) != Ordering::Equal {
-            return Ok(None);
-        }
-
-        let buf = value_cursor.value(self.kv_engine.inner.as_ref())?.unwrap();
+        let buf = db_iter.copy_data()?;
         let doc = bson::from_slice(buf.as_ref())?;
 
         Ok(Some(Bson::Document(doc)))
@@ -241,28 +239,27 @@ impl VM {
     fn next(&mut self) -> Result<()> {
         let cursor = self.r1.as_mut().unwrap();
         cursor.next()?;
-        match cursor.peek_data(self.kv_engine.inner.as_ref())? {
-            Some(bytes) => {
-                let doc = bson::from_slice(bytes.as_ref())?;
-                self.stack.push(Bson::Document(doc));
 
-                debug_assert!(
-                    self.stack.len() <= 64,
-                    "stack too large: {}",
-                    self.stack.len()
-                );
+        if cursor.has_next() {
+            let bytes = cursor.copy_data()?;
+            let doc = bson::from_slice(bytes.as_ref())?;
+            self.stack.push(Bson::Document(doc));
 
-                self.r0 = 1;
-            }
+            debug_assert!(
+                self.stack.len() <= 64,
+                "stack too large: {}",
+                self.stack.len()
+            );
 
-            None => {
-                self.r0 = 0;
-            }
+            self.r0 = 1;
+            return Ok(())
         }
+
+        self.r0 = 0;
         Ok(())
     }
 
-    fn next_index_value(&mut self, session: &mut SessionInner) -> Result<()> {
+    fn next_index_value(&mut self, txn: &TransactionInner) -> Result<()> {
         let cursor = self.r1.as_mut().unwrap();
         cursor.next()?;
         let current_key = cursor.peek_key();
@@ -276,7 +273,7 @@ impl VM {
             return Ok(());
         }
 
-        let value_opt = self.read_index_value_by_index_key(current_key.as_ref(), session)?;
+        let value_opt = self.read_index_value_by_index_key(current_key.as_ref(), txn)?;
         if value_opt.is_none() {
             self.r0 = 0;
             return Ok(());
@@ -481,7 +478,7 @@ impl VM {
         Ok(())
     }
 
-    fn update_current(&mut self, session: &mut SessionInner) -> Result<()> {
+    fn update_current(&mut self, txn: &TransactionInner) -> Result<()> {
         let top_index = self.stack.len() - 1;
         let top_value = &self.stack[top_index];
 
@@ -490,7 +487,7 @@ impl VM {
 
         let updated = {
             let cursor = self.r1.as_mut().unwrap();
-            cursor.update_current(session, &doc_buf)?
+            cursor.update_current(txn, &doc_buf)?
         };
 
         if updated {
@@ -500,7 +497,7 @@ impl VM {
         Ok(())
     }
 
-    fn insert_index(&mut self, index_info_id: u32, session: &mut SessionInner) -> Result<()> {
+    fn insert_index(&mut self, index_info_id: u32, txn: &TransactionInner) -> Result<()> {
         let info = &self.program.index_infos[index_info_id as usize];
 
         let index_meta = &info.indexes;
@@ -516,15 +513,14 @@ impl VM {
                 pkey,
                 index_name.as_str(),
                 index_info,
-                &self.kv_engine,
-                session,
+                txn,
             )?;
         }
 
         Ok(())
     }
 
-    fn delete_index(&mut self, index_info_id: u32, session: &mut SessionInner) -> Result<()> {
+    fn delete_index(&mut self, index_info_id: u32, txn: &TransactionInner) -> Result<()> {
         let info = &self.program.index_infos[index_info_id as usize];
 
         let index_meta = &info.indexes;
@@ -540,8 +536,7 @@ impl VM {
                 pkey,
                 index_name.as_str(),
                 index_info,
-                &self.kv_engine,
-                session,
+                txn,
             )?;
         }
 
@@ -576,7 +571,7 @@ impl VM {
         }
     }
 
-    pub(crate) fn execute(&mut self, session: &mut SessionInner) -> Result<()> {
+    pub(crate) fn execute(&mut self, txn: &TransactionInner) -> Result<()> {
         if self.state == VmState::Halt {
             return Err(Error::VmIsHalt);
         }
@@ -652,7 +647,7 @@ impl VM {
                     DbOp::FindByIndex => {
                         let location = self.pc.add(1).cast::<u32>().read();
 
-                        let found = try_vm!(self, self.find_by_index(session));
+                        let found = try_vm!(self, self.find_by_index(txn));
 
                         if !found {
                             self.reset_location(location);
@@ -672,7 +667,7 @@ impl VM {
                     }
 
                     DbOp::NextIndexValue => {
-                        try_vm!(self, self.next_index_value(session));
+                        try_vm!(self, self.next_index_value(txn));
                         if self.r0 != 0 {
                             let location = self.pc.add(1).cast::<u32>().read();
                             self.reset_location(location);
@@ -830,7 +825,7 @@ impl VM {
                     }
 
                     DbOp::UpdateCurrent => {
-                        try_vm!(self, self.update_current(session));
+                        try_vm!(self, self.update_current(txn));
 
                         self.pc = self.pc.add(1);
                     }
@@ -838,7 +833,13 @@ impl VM {
                     DbOp::DeleteCurrent => {
                         let deleted = {
                             let cursor = self.r1.as_mut().unwrap();
-                            session.delete_cursor_current(cursor.multi_cursor_mut())?
+                            let key_opt = cursor.peek_key();
+                            if let Some(key) = key_opt {
+                                txn.delete(key.as_ref())?;
+                                true
+                            } else {
+                                false
+                            }
                         };
                         if deleted {
                             self.r2 += 1;
@@ -850,7 +851,7 @@ impl VM {
                     DbOp::InsertIndex => {
                         let index_info_id = self.pc.add(1).cast::<u32>().read();
 
-                        self.insert_index(index_info_id, session)?;
+                        self.insert_index(index_info_id, txn)?;
 
                         self.pc = self.pc.add(5);
                     }
@@ -858,7 +859,7 @@ impl VM {
                     DbOp::DeleteIndex => {
                         let index_info_id = self.pc.add(1).cast::<u32>().read();
 
-                        self.delete_index(index_info_id, session)?;
+                        self.delete_index(index_info_id, txn)?;
 
                         self.pc = self.pc.add(5);
                     }
@@ -987,7 +988,7 @@ impl VM {
                         let prefix_idx = self.pc.add(1).cast::<u32>().read();
                         let prefix = self.program.static_values[prefix_idx as usize].clone();
 
-                        try_vm!(self, self.open_read(session, prefix));
+                        try_vm!(self, self.open_read(txn, prefix));
 
                         self.pc = self.pc.add(5);
                     }
@@ -996,7 +997,7 @@ impl VM {
                         let prefix_idx = self.pc.add(1).cast::<u32>().read();
                         let prefix = self.program.static_values[prefix_idx as usize].clone();
 
-                        try_vm!(self, self.open_write(session, prefix));
+                        try_vm!(self, self.open_write(txn, prefix));
 
                         self.pc = self.pc.add(5);
                     }
@@ -1009,7 +1010,7 @@ impl VM {
 
                     DbOp::Close => {
                         self.r1 = None;
-                        session.auto_commit()?;
+                        txn.auto_commit()?;
 
                         self.pc = self.pc.add(1);
                     }

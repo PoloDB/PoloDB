@@ -1,6 +1,6 @@
 [package]
 name = "polodb"
-version = "4.4.2"
+version = "5.0.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 license = "MPL-2.0"
 edition = "2018"
@@ -12,6 +12,7 @@ path = "main.rs"
 
 [dependencies]
 polodb_core = { path = "../polodb_core" }
+tokio = { version = "1.39.2", features = ["full"] }
 byteorder = "1.4.3"
 clap = "4.3.2"
 chrono = "0.4"

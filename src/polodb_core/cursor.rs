@@ -6,29 +6,28 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
 use bson::Bson;
+use crate::db::RocksDBIterator;
 use crate::Result;
-use crate::lsm::LsmKvInner;
-use crate::lsm::multi_cursor::MultiCursor;
-use crate::session::SessionInner;
+use crate::transaction::TransactionInner;
 
 /// Cursor is struct pointing on
 /// a value on the kv engine
 pub(crate) struct Cursor {
     pub(crate)  prefix_bytes: Vec<u8>,
-    kv_cursor:    MultiCursor,
+    kv_cursor:    RocksDBIterator,
     current_key:  Option<Arc<[u8]>>,
 }
 
 impl Cursor {
 
-    pub fn new_with_str_prefix<T: Into<String>>(s: T, kv_cursor: MultiCursor) -> Result<Cursor> {
+    pub fn new_with_str_prefix<T: Into<String>>(s: T, kv_cursor: RocksDBIterator) -> Result<Cursor> {
         let mut prefix_bytes = Vec::<u8>::new();
         crate::utils::bson::stacked_key_bytes(&mut prefix_bytes, &Bson::String(s.into()))?;
         let cursor = Cursor::new(prefix_bytes, kv_cursor);
         Ok(cursor)
     }
 
-    pub fn new(prefix_bytes: Vec<u8>, kv_cursor: MultiCursor) -> Cursor {
+    pub fn new(prefix_bytes: Vec<u8>, kv_cursor: RocksDBIterator) -> Cursor {
         Cursor {
             prefix_bytes,
             kv_cursor,
@@ -36,19 +35,26 @@ impl Cursor {
         }
     }
 
-    pub fn update_current(&mut self, session: &mut SessionInner, value: &[u8]) -> Result<bool> {
-        session.kv_session_mut().update_cursor_current(&mut self.kv_cursor, value)
+    #[inline]
+    pub fn copy_data(&self) -> Result<Vec<u8>> {
+        self.kv_cursor.copy_data()
     }
 
-    #[inline]
-    pub fn multi_cursor_mut(&mut self) -> &mut MultiCursor {
-        &mut self.kv_cursor
+    pub fn update_current(&mut self, txn: &TransactionInner, value: &[u8]) -> Result<bool> {
+        if let Some(key) = &self.current_key {
+            txn.rocksdb_txn.set(key.as_ref(), value)?;
+            return Ok(true);
+        }
+        Ok(false)
     }
+
 
     pub fn reset(&mut self) -> Result<()> {
-        self.kv_cursor.seek(self.prefix_bytes.as_slice())?;
+        self.kv_cursor.seek(self.prefix_bytes.as_slice());
 
-        self.current_key = self.kv_cursor.key();
+        if self.kv_cursor.valid() {
+            self.current_key = Some(self.kv_cursor.copy_key_arc()?);
+        }
 
         Ok(())
     }
@@ -77,13 +83,16 @@ impl Cursor {
     }
 
     fn reset_by_custom_key(&mut self, key_buffer: &[u8]) -> Result<bool> {
-        self.kv_cursor.seek(key_buffer)?;
+        self.kv_cursor.seek(key_buffer);
 
-        self.current_key = self.kv_cursor.key();
-        if let Some(found) = &self.current_key {
-            return Ok(found.as_ref().cmp(key_buffer) == Ordering::Equal);
+        if self.kv_cursor.valid() {
+            self.current_key = Some(self.kv_cursor.copy_key_arc()?);
+            if let Some(found) = &self.current_key {
+                return Ok(found.as_ref().cmp(key_buffer) == Ordering::Equal);
+            }
         }
-        return Ok(false)
+
+        Ok(false)
     }
 
     pub fn reset_by_index_value(&mut self, index_value: &Bson) -> Result<bool> {
@@ -98,35 +107,25 @@ impl Cursor {
             key_buffer
         };
 
-        self.kv_cursor.seek(key_buffer.as_slice())?;
+        self.kv_cursor.seek(key_buffer.as_slice());
 
-        self.current_key = self.kv_cursor.key();
-        if let Some(found) = &self.current_key {
-            let start_with = found.starts_with(key_buffer.as_slice());
-            return Ok(start_with);
+        if self.kv_cursor.valid() {
+            self.current_key = Some(self.kv_cursor.copy_key_arc()?);
+            if let Some(found) = &self.current_key {
+                let starts_with = found.as_ref().starts_with(key_buffer.as_slice());
+                return Ok(starts_with);
+            }
         }
 
-        return Ok(false);
+        Ok(false)
     }
 
     pub fn peek_key(&self) -> Option<Arc<[u8]>> {
         self.current_key.clone()
     }
 
-    pub fn peek_data(&self, db: &LsmKvInner) -> Result<Option<Arc<[u8]>>> {
-        if let Some(current_key) = &self.current_key {
-            if !current_key.starts_with(self.prefix_bytes.as_slice()) {
-                return Ok(None);
-            }
-
-            self.kv_cursor.value(db)
-        } else {
-            Ok(None)
-        }
-    }
-
     pub fn has_next(&self) -> bool {
-        if self.kv_cursor.done() {
+        if !self.kv_cursor.valid() {
             return false;
         }
 
@@ -141,8 +140,12 @@ impl Cursor {
     }
 
     pub fn next(&mut self) -> Result<()> {
-        self.kv_cursor.next()?;
-        self.current_key = self.kv_cursor.key();
+        self.kv_cursor.next();
+        if !self.kv_cursor.valid() {
+            self.current_key = None;
+            return Ok(());
+        }
+        self.current_key = Some(self.kv_cursor.copy_key_arc()?);
         Ok(())
     }
 

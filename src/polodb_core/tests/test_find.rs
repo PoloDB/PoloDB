@@ -10,7 +10,6 @@ mod common;
 
 use common::{
     prepare_db,
-    create_memory_and_return_db_with_items,
     create_file_and_return_db_with_items,
 };
 
@@ -20,7 +19,6 @@ static TEST_SIZE: usize = 1000;
 fn test_multiple_find_one() {
     vec![
         (prepare_db("test-multiple-find-one").unwrap(), true),
-        (Database::open_memory().unwrap(), false),
     ].iter().for_each(|(db, _is_file)| {
         let metrics = db.metrics();
         metrics.enable();
@@ -84,7 +82,6 @@ fn test_multiple_find_one() {
 fn test_find() {
     vec![
         create_file_and_return_db_with_items("test-find", TEST_SIZE),
-        create_memory_and_return_db_with_items(TEST_SIZE),
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
 
@@ -105,7 +102,7 @@ fn test_find() {
 
 #[test]
 fn test_find_empty_collection() {
-    let db = Database::open_memory().unwrap();
+    let db = prepare_db("test-find-empty-collection").unwrap();
 
     {
         let collection = db.collection::<Document>("test");
@@ -115,20 +112,19 @@ fn test_find_empty_collection() {
         assert!(!cursor.advance().unwrap());
     }
 
-    let mut session = db.start_session().unwrap();
+    let txn = db.start_transaction().unwrap();
 
-    let collection = db.collection::<Document>("test");
+    let collection = txn.collection::<Document>("test");
 
-    let mut cursor = collection.find_with_session(None, &mut session).unwrap();
+    let mut cursor = collection.find(None).unwrap();
 
-    assert!(!cursor.advance(&mut session).unwrap());
+    assert!(!cursor.advance().unwrap());
 }
 
 #[test]
 fn test_find_with_empty_document() {
     vec![
         prepare_db("test-find-with-empty-document").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let fruits = db.collection::<Document>("fruits");
         fruits.insert_many(vec![
@@ -162,7 +158,6 @@ fn test_find_with_empty_document() {
 fn test_not_expression() {
     vec![
         prepare_db("test-not-expression").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();

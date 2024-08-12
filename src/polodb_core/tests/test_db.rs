@@ -3,9 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use std::fs;
-use std::io::{Seek, SeekFrom, Write};
-use polodb_core::{Database, Config, Error};
+use polodb_core::Database;
 use polodb_core::bson::{doc, Document};
 
 mod common;
@@ -14,17 +12,14 @@ use common::{
     create_file_and_return_db_with_items,
     mk_db_path,
 };
-use polodb_core::test_utils::mk_journal_path;
 
 static TEST_SIZE: usize = 1000;
 
 #[test]
 fn test_reopen_db() {
     let db_path = mk_db_path("test-reopen");
-    let journal_path = mk_journal_path("test-reopen");
 
-    let _ = std::fs::remove_file(db_path.as_path());
-    let _ = std::fs::remove_file(journal_path);
+    let _ = std::fs::remove_dir_all(db_path.as_path());
 
     {
         let db = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
@@ -42,75 +37,6 @@ fn test_reopen_db() {
         let book = collection.find_one(None).unwrap().unwrap();
         assert_eq!(book.get("author").unwrap().as_str().unwrap(), "Liu Cixin");
     }
-}
-
-#[test]
-fn test_reopen_db_file_size() {
-    let db_name = "test-reopen-size";
-    let db_path = mk_db_path(db_name);
-    let journal_path = mk_journal_path(db_name);
-
-    let _ = fs::remove_file(db_path.as_path());
-    let _ = fs::remove_file(journal_path);
-
-    {
-        let db = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
-
-        let collection = db.collection("books");
-        collection.insert_one(doc! {
-           "title": "The Three-Body Problem",
-           "author": "Liu Cixin",
-        }).unwrap();
-    }
-
-    let metadata = fs::metadata(&db_path).unwrap();
-
-    // append something to the end
-    {
-        let mut file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&db_path)
-            .unwrap();
-        file.seek(SeekFrom::End(0)).unwrap();
-        file.write("Liu Cixin".as_bytes()).unwrap();
-    }
-
-    {
-        let db = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
-        let collection = db.collection::<Document>("books");
-        let book = collection.find_one(None).unwrap().unwrap();
-        assert_eq!(book.get("author").unwrap().as_str().unwrap(), "Liu Cixin");
-    }
-
-    let metadata2 = fs::metadata(&db_path).unwrap();
-
-    assert_eq!(metadata.len(), metadata2.len());
-}
-
-#[test]
-fn test_db_occupied() {
-    const DB_NAME: &'static str = "test-db-lock";
-    let db_path = mk_db_path(DB_NAME);
-    let _ = fs::remove_file(&db_path);
-
-    let config = Config::default();
-    let db1 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
-    let config = Config::default();
-    let db2 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config);
-    match db2 {
-        Err(Error::DatabaseOccupied) => assert!(true),
-        Err(other_error) => {
-            println!("{:?}", other_error);
-            assert!(false);
-        }
-        _ => assert!(false),
-    }
-
-    drop(db1);
-
-    let config = Config::default();
-    let _db3 = Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config).unwrap();
 }
 
 #[test]

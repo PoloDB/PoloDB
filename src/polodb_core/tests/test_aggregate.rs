@@ -5,10 +5,11 @@
  */
 use bson::{doc, Document};
 use polodb_core::{Database, Result};
+use polodb_core::test_utils::prepare_db;
 
 #[test]
 fn test_aggregate_empty() {
-    let db = Database::open_memory().unwrap();
+    let db = prepare_db("test-aggregate-empty").unwrap();
     let fruits = db.collection::<Document>("fruits");
     fruits.insert_many(vec![
         doc! {
@@ -38,7 +39,7 @@ fn test_aggregate_empty() {
 
 #[test]
 fn test_aggregate_match() {
-    let db = Database::open_memory().unwrap();
+    let db = prepare_db("test-aggregate-match").unwrap();
     let fruits = db.collection::<Document>("fruits");
     fruits.insert_many(vec![
         doc! {
@@ -87,7 +88,7 @@ fn test_aggregate_match() {
 
 #[test]
 fn test_aggregate_count() {
-    let db = Database::open_memory().unwrap();
+    let db = prepare_db("test-aggregate-count").unwrap();
     let fruits = db.collection::<Document>("fruits");
     fruits.insert_many(vec![
         doc! {

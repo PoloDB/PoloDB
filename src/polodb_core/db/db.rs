@@ -8,7 +8,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::errors::Error;
-use crate::{ClientSession, Config};
+use crate::{Config, Transaction};
 use super::db_inner::DatabaseInner;
 use crate::coll::Collection;
 use crate::metrics::Metrics;
@@ -48,18 +48,6 @@ impl Database {
         VERSION
     }
 
-    pub fn open_memory() -> Result<Database> {
-        Database::open_memory_with_config(Config::default())
-    }
-
-    pub fn open_memory_with_config(config: Config) -> Result<Database> {
-        let inner = DatabaseInner::open_memory(config)?;
-
-        Ok(Database {
-            inner: Arc::new(inner),
-        })
-    }
-
     pub fn open_file<P: AsRef<Path>>(path: P) -> Result<Database>  {
         Database::open_file_with_config(path, Config::default())
     }
@@ -83,12 +71,6 @@ impl Database {
         Ok(())
     }
 
-    /// Creates a new collection in the database with the given `name`.
-    pub fn create_collection_with_session(&self, name: &str, session: &mut ClientSession) -> Result<()> {
-        let _ = self.inner.create_collection_internal(name, &mut session.inner)?;
-        Ok(())
-    }
-
     ///
     /// [error]: ../enum.DbErr.html
     ///
@@ -99,20 +81,16 @@ impl Database {
         Collection::new(Arc::downgrade(&self.inner), col_name)
     }
 
-    pub fn start_session(&self) -> Result<ClientSession> {
-        let inner = self.inner.start_session()?;
-        Ok(ClientSession::new(inner))
+    pub fn start_transaction(&self) -> Result<Transaction> {
+        let mut inner = self.inner.start_transaction()?;
+        inner.set_auto_commit(false);
+        Ok(Transaction::new(Arc::downgrade(&self.inner), inner))
     }
 
     /// Gets the names of the collections in the database.
     pub fn list_collection_names(&self) -> Result<Vec<String>> {
-        let mut session = self.inner.start_session()?;
-        self.inner.list_collection_names_with_session(&mut session)
-    }
-
-    /// Gets the names of the collections in the database.
-    pub fn list_collection_names_with_session(&self, session: &mut ClientSession) -> Result<Vec<String>> {
-        self.inner.list_collection_names_with_session(&mut session.inner)
+        let txn = self.inner.start_transaction()?;
+        self.inner.list_collection_names_with_session(&txn)
     }
 
 }

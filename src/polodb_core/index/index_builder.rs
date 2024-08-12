@@ -9,30 +9,26 @@ use crate::Result;
 use crate::coll::collection_info::IndexInfo;
 use crate::cursor::Cursor;
 use crate::index::{IndexHelper, IndexHelperOperation};
-use crate::LsmKv;
-use crate::session::SessionInner;
+use crate::transaction::TransactionInner;
 
-pub(crate) struct IndexBuilder<'a, 'b, 'c, 'd, 'e> {
-    kv_engine: &'a LsmKv,
-    session: &'b mut SessionInner,
+pub(crate) struct IndexBuilder<'b, 'c, 'd, 'e> {
+    txn: &'b TransactionInner,
     col_name: &'c str,
     index_name: &'d str,
     index_info: &'e IndexInfo,
 }
 
-impl<'a, 'b, 'c, 'd, 'e> IndexBuilder<'a, 'b, 'c, 'd, 'e> {
+impl<'b, 'c, 'd, 'e> IndexBuilder<'b, 'c, 'd, 'e> {
 
     #[inline]
     pub fn new(
-        kv_engine: &'a LsmKv,
-        session: &'b mut SessionInner,
+        txn: &'b TransactionInner,
         col_name: &'c str,
         index_name: &'d str,
         index_info: &'e IndexInfo,
-    ) -> IndexBuilder<'a, 'b, 'c, 'd, 'e> {
+    ) -> IndexBuilder<'b, 'c, 'd, 'e> {
         IndexBuilder {
-            kv_engine,
-            session,
+            txn,
             col_name,
             index_name,
             index_info,
@@ -40,9 +36,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexBuilder<'a, 'b, 'c, 'd, 'e> {
     }
 
     pub fn execute(&mut self, op: IndexHelperOperation) -> Result<()> {
-        let multi_cursor = self.kv_engine.open_multi_cursor(
-            Some(self.session.kv_session()),
-        );
+        let multi_cursor = self.txn.rocksdb_txn.new_iterator();
         let mut cursor = Cursor::new_with_str_prefix(
             self.col_name.to_string(),
             multi_cursor,
@@ -52,7 +46,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexBuilder<'a, 'b, 'c, 'd, 'e> {
 
         while cursor.has_next() {
             // get the value and insert index
-            let current_data = cursor.peek_data(self.kv_engine.inner.as_ref()).unwrap().unwrap();
+            let current_data = cursor.copy_data()?;
 
             self.execute_index_item(op, current_data.as_ref())?;
 
@@ -73,8 +67,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexBuilder<'a, 'b, 'c, 'd, 'e> {
             &pkey,
             self.index_name,
             self.index_info,
-            &self.kv_engine,
-            self.session,
+            self.txn,
         )
     }
 

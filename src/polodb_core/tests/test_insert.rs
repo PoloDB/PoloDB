@@ -15,7 +15,7 @@ use polodb_core::bson::{doc, Bson};
 mod common;
 
 use common::prepare_db;
-use polodb_core::test_utils::{mk_db_path, mk_journal_path};
+use polodb_core::test_utils::mk_db_path;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Book {
@@ -34,7 +34,6 @@ struct IdBook {
 fn test_insert_struct() {
     vec![
         prepare_db("test-insert-struct").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         // Get a handle to a collection of `Book`.
         let typed_collection = db.collection::<Book>("books");
@@ -78,7 +77,6 @@ fn test_insert_struct() {
 fn test_insert_id_struct() {
     vec![
         prepare_db("test-insert-id-struct").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         // Get a handle to a collection of `Book`.
         let typed_collection = db.collection::<IdBook>("books");
@@ -133,7 +131,6 @@ fn test_insert_id_struct() {
 fn test_insert_bigger_key() {
     vec![
         prepare_db("test-insert-bigger-key").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let collection = db.collection("test");
         let mut doc = doc! {};
@@ -164,7 +161,6 @@ fn test_very_large_binary() {
     println!("data size: {}", data.len());
     vec![
         prepare_db("test-very-large-data").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let collection = db.collection("test");
 
@@ -198,7 +194,6 @@ fn test_very_large_binary() {
 fn test_insert_after_delete() {
     vec![
         prepare_db("test-insert-after-delete").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
 
         let collection = db.collection::<Document>("test");
@@ -235,7 +230,7 @@ fn test_insert_after_delete() {
 
 #[test]
 fn test_insert_different_types_as_key() {
-    let db = Database::open_memory().unwrap();
+    let db = prepare_db("test-insert-different-types-as-key").unwrap();
     let collection = db.collection::<Document>("test");
 
     collection.insert_one(doc! {
@@ -258,10 +253,8 @@ fn test_insert_different_types_as_key() {
 fn test_insert_persist() {
     const NAME: &str = "test-insert-persist";
     let db_path = mk_db_path(NAME);
-    let journal_path = mk_journal_path(NAME);
 
-    let _ = std::fs::remove_file(db_path.as_path());
-    let _ = std::fs::remove_file(journal_path);
+    let _ = std::fs::remove_dir_all(db_path.as_path());
 
     // Open the database for 10 times
     for i in 0..10 {

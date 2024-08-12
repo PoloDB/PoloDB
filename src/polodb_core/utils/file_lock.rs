@@ -84,6 +84,7 @@ pub(crate) fn unlock_file(file: &File) -> Result<()> {
 }
 
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 pub(crate) fn exclusive_lock_file(file: &File) -> Result<()> {
     use std::os::unix::prelude::*;
     use libc::{flock, LOCK_EX, LOCK_NB};

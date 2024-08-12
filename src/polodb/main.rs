@@ -3,12 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-mod ipc;
-mod server;
-
 use polodb_core::Database;
 use clap::{Arg, Command as App};
 use thiserror::Error;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -24,7 +22,8 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let version = Database::get_version();
     let app = App::new("PoloDB")
         .version(version)
@@ -54,21 +53,6 @@ fn main() {
                     .short('l')
             )
         )
-        .subcommand(App::new("migrate")
-            .about("migrate the older database to the newer format")
-            .arg(
-                Arg::new("path")
-                    .index(1)
-                    .required(true)
-            )
-            .arg(
-                Arg::new("target")
-                    .long("target")
-                    .value_name("TARGET")
-                    .num_args(0..=1)
-                    .required(true)
-            )
-        )
         .arg(
             Arg::new("log")
                 .help("print log")
@@ -85,14 +69,48 @@ fn main() {
         let socket = sub.get_one::<String>("socket").unwrap();
         let path = sub.get_one::<String>("path");
         if let Some(path) = path {
-            server::start_socket_server(Some(path), socket);
-        } else if sub.contains_id("memory") {
-            server::start_socket_server(None, socket);
+            start_socket_server(path.clone(), socket.to_string()).await.unwrap();
         } else {
-            eprintln!("you should pass either --path or --memory");
+            eprintln!("you should pass --path ");
         }
         return;
     }
 
-    // println!("{}", matches.usage());
+}
+
+async fn start_socket_server(path: String, socket: String) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let listener = tokio::net::UnixListener::bind(&socket)?;
+    println!("listening on {}", socket);
+
+    while let Ok((mut stream, _)) = listener.accept().await {
+        let path = path.clone();
+        tokio::spawn(async move {
+            let db = Database::open_file(&path).unwrap();
+            let db = std::sync::Arc::new(db);
+            let db = db.clone();
+
+            let mut buf = [0; 1024];
+
+            // In a loop, read data from the socket and write the data back.
+            loop {
+                let n = match stream.read(&mut buf).await {
+                    // socket closed
+                    Ok(n) if n == 0 => return,
+                    Ok(n) => n,
+                    Err(e) => {
+                        eprintln!("failed to read from socket; err = {:?}", e);
+                        return;
+                    }
+                };
+
+                // Write the data back
+                if let Err(e) = stream.write_all(&buf[0..n]).await {
+                    eprintln!("failed to write to socket; err = {:?}", e);
+                    return;
+                }
+            }
+        });
+    }
+
+    Ok(())
 }

@@ -9,7 +9,6 @@ use common::prepare_db;
 fn test_regex() {
     vec![
         (prepare_db("test-regex").unwrap(), true),
-        (Database::open_memory().unwrap(), false),
     ]
     .iter()
     .for_each(|(db, _)| {
@@ -52,7 +51,6 @@ fn test_regex() {
 fn test_regex_error() {
     vec![
         (prepare_db("test-regex-error").unwrap(), true),
-        (Database::open_memory().unwrap(), false),
     ]
     .iter()
     .for_each(|(db, _)| {

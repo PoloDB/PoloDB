@@ -12,37 +12,23 @@ use polodb_core::bson::{Document, doc};
 pub fn mk_db_path(db_name: &str) -> PathBuf {
 
     let mut db_path = env::temp_dir();
-    let db_filename = String::from(db_name) + ".db";
+    let db_filename = String::from(db_name) + "-db";
     db_path.push(db_filename);
     db_path
-}
-
-fn mk_journal_path(db_name: &str) -> PathBuf {
-    let mut journal_path = env::temp_dir();
-
-    let journal_filename = String::from(db_name) + ".db.wal";
-    journal_path.push(journal_filename);
-
-    journal_path
 }
 
 #[allow(dead_code)]
 pub fn prepare_db_with_config(db_name: &str, config: Config) -> Result<Database> {
     let db_path = mk_db_path(db_name);
-    let journal_path = mk_journal_path(db_name);
 
-    let _ = std::fs::remove_file(db_path.as_path());
-    let _ = std::fs::remove_file(journal_path);
+    let _ = std::fs::remove_dir_all(db_path.as_path());
 
     Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config)
 }
 
 #[allow(dead_code)]
 pub fn clean_db_path(db_path: &str) {
-    let journal_path = String::from(db_path) + ".wal";
-
-    let _ = std::fs::remove_file(db_path);
-    let _ = std::fs::remove_file(journal_path);
+    let _ = std::fs::remove_dir_all(db_path);
 }
 
 #[allow(dead_code)]
@@ -71,11 +57,5 @@ fn insert_items_to_db(db: Database, size: usize) -> Database {
 #[allow(dead_code)]
 pub fn create_file_and_return_db_with_items(db_name: &str, size: usize) -> Database {
     let db = prepare_db(db_name).unwrap();
-    insert_items_to_db(db, size)
-}
-
-#[allow(dead_code)]
-pub fn create_memory_and_return_db_with_items(size: usize) -> Database {
-    let db = Database::open_memory().unwrap();
     insert_items_to_db(db, size)
 }

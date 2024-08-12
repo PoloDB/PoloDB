@@ -6,7 +6,11 @@
 mod db;
 pub(crate) mod db_inner;
 pub mod client_cursor;
-mod server;
+mod rocksdb_wrapper;
+mod rocksdb_transaction;
+mod rocksdb_iterator;
 
 pub use db::{Database, Result};
-pub use server::DatabaseServer;
+pub(crate) use rocksdb_transaction::RocksDBTransaction;
+pub(crate) use rocksdb_iterator::RocksDBIterator;
+pub(crate) use rocksdb_wrapper::RocksDBWrapper;

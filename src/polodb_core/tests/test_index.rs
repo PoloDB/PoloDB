@@ -12,7 +12,7 @@ mod common;
 
 #[test]
 fn test_create_multi_keys_index() {
-    let db = Database::open_memory().unwrap();
+    let db = prepare_db("test-create-multi-keys-index").unwrap();
     let col = db.collection::<Document>("teacher");
     let result = col.create_index(IndexModel {
         keys: doc! {
@@ -27,7 +27,7 @@ fn test_create_multi_keys_index() {
 
 #[test]
 fn test_create_reverse_order_index() {
-    let db = Database::open_memory().unwrap();
+    let db = prepare_db("test-create-reverse-order-index").unwrap();
     let col = db.collection::<Document>("teacher");
     let result = col.create_index(IndexModel {
         keys: doc! {
@@ -43,7 +43,6 @@ fn test_create_reverse_order_index() {
 fn test_create_index() {
     vec![
         prepare_db("test-create-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let col = db.collection("teacher");
 
@@ -65,7 +64,6 @@ fn test_create_index() {
 fn test_create_index_with_data() {
     vec![
         prepare_db("test-create-index-with-data").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -98,7 +96,6 @@ fn test_create_index_with_data() {
 fn test_find_by_index() {
     vec![
         prepare_db("test-find-by-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -131,7 +128,6 @@ fn test_find_by_index() {
 fn test_index_order() {
     vec![
         prepare_db("test-index-order").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -175,7 +171,6 @@ fn test_index_order() {
 fn test_create_unique_index() {
     vec![
         prepare_db("test-create-unique-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let col = db.collection("teacher");
 
@@ -208,7 +203,6 @@ fn test_create_unique_index() {
 fn test_update_with_index() {
     vec![
         prepare_db("test-update-with-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -249,7 +243,6 @@ fn test_update_with_index() {
 fn test_delete_with_index() {
     vec![
         prepare_db("test-delete-with-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -291,7 +284,6 @@ fn test_delete_with_index() {
 fn test_drop_index() {
     vec![
         prepare_db("test-drop-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();

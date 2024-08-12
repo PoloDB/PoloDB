@@ -6,5 +6,7 @@
 
 mod collection;
 pub(crate) mod collection_info;
+mod txn_collection;
 
 pub use collection::Collection;
+pub use txn_collection::TransactionalCollection;
