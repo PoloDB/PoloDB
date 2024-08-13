@@ -1,8 +1,17 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
+// Copyright 2024 Vincent Chan
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use crate::cursor::Cursor;
 use crate::errors::{
     CannotApplyOperationForTypes, FieldTypeUnexpectedStruct, RegexError, UnexpectedTypeForOpStruct,
@@ -70,6 +79,9 @@ pub(crate) struct VM {
     global_vars: Vec<Bson>,
     metrics: Metrics,
 }
+
+unsafe impl Send for VM {}
+unsafe impl Sync for VM {}
 
 fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> Result<bool> {
     let ord = crate::utils::bson::value_cmp(val1, val2)?;

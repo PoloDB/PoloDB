@@ -25,14 +25,11 @@ and retains the embedded and lightweight features of SQLite.
 # Features
 
 - Simple and Lightweight
+  - can be embedded library or a standalone server
 - Easy to learn and use
   - NoSQL
   - MongoDB-like API
 - Cross-Platform
-- Multiple backends
-  - Filesystem(WAL)
-  - Memory
-  - IndexedDB(WIP)
 
 # Quick start
 
@@ -48,7 +45,7 @@ struct Book {
     author: String,
 }
 
-let db = Database::open_file(db_path)?;
+let db = Database::open_path(db_path)?;
 let collection = db.collection::<Book>("books");
 collection.insert_one(Book {
     title: "The Three-Body Problem".to_string(),
@@ -56,23 +53,10 @@ collection.insert_one(Book {
 })?;
 ```
 
-# Backends
-
-![](./images/backend.png)
-
-## Filesystem Backend
-
-With the filesystem backend, PoloDB stores data in a single file.
-All the data are saved persistently on the disk.
-
-It's designed to be flexible, universal, and easy to be searched.
-All the data are encoded in [bson](http://bsonspec.org/) format and stored in the PoloDB's lsm-tree format.
-
-PoloDB uses WAL(write-ahead logging) to implement transactional writing and protect your data from program crashes.
-
-## Memory Backend
-
-With the memory backend, all the data all stored in memory, making PoloDB a pure memory database.
+# Packages
+  
+- polodb: The standalone server of PoloDB, which is compatible with MongoDB's wire protocol.
+- [polodb_core](https://crates.io/crates/polodb_core): The core library of PoloDB, which can be embedded in your application.
 
 # Platform
 
@@ -94,10 +78,6 @@ Limited by my time, I have only compiled and tested on the following platforms:
 
 The features will be implemented one by one in order.
 
-- [ ] Backend
-  - [x] Memory
-  - [x] File
-  - [ ] IndexedDB(WIP)
 - [x] Basic database API
   - [x] CRUD
   - [x] Transactions

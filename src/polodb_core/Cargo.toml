@@ -2,7 +2,7 @@
 name = "polodb_core"
 version = "5.0.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
-license = "MPL-2.0"
+license = "Apache-2.0"
 edition = "2018"
 repository = "https://github.com/PoloDB/PoloDB"
 description = "An embedded document database"
@@ -28,7 +28,7 @@ uuid = { version = "1.10.0", features = [
 thiserror = "1.0.63"
 indexmap = { version = "2.3.0", features = ["serde"] }
 regex = "1.10"
-librocksdb-sys = { path = "../librocksdb-sys", version = "0.17.0" }
+librocksdb-sys = { path = "../librocksdb-sys", version = "9.0.0-alpha.1" }
 
 [dev-dependencies]
 polodb_line_diff = { path = "../polodb_line_diff" }
