@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-use polodb_core::{Error, Result};
+use polodb_core::Result;
 use polodb_core::bson::{Document, doc};
 
 mod common;

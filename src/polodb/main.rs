@@ -5,22 +5,8 @@
  */
 use polodb_core::Database;
 use clap::{Arg, Command as App};
-use thiserror::Error;
+use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("db error: {0}")]
-    Db(#[from] polodb_core::Error),
-    #[error("bson error: {0}")]
-    BsonDe(#[from] polodb_core::bson::de::Error),
-    #[error("io error: {0}")]
-    Io(#[from]::std::io::Error),
-    #[error("unwrap request body failed")]
-    RequestBodyNotFound,
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
 
 #[tokio::main]
 async fn main() {
@@ -78,7 +64,7 @@ async fn main() {
 
 }
 
-async fn start_socket_server(path: String, socket: String) -> std::result::Result<(), Box<dyn std::error::Error>> {
+async fn start_socket_server(path: String, socket: String) -> Result<()> {
     let listener = tokio::net::UnixListener::bind(&socket)?;
     println!("listening on {}", socket);
 
