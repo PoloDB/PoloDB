@@ -213,7 +213,7 @@ async fn test_server() {
     };
 
     env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
-    env_logger::init();
+    let _ = env_logger::try_init();
 
     let db_path = mk_db_path("test-server");
     let token = CancellationToken::new();
@@ -248,7 +248,7 @@ async fn test_find() {
 
     use futures::TryStreamExt;
     env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
-    env_logger::init();
+    let _ = env_logger::try_init();
 
     let db_path = mk_db_path("test-find");
     let token = CancellationToken::new();
@@ -301,7 +301,7 @@ async fn test_cursor_drop() {
 
     use futures::TryStreamExt;
     env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
-    env_logger::init();
+    let _ = env_logger::try_init();
 
     let db_path = mk_db_path("test-find");
     let token = CancellationToken::new();
@@ -351,7 +351,7 @@ async fn test_update() {
     };
 
     env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
-    env_logger::init();
+    let _ = env_logger::try_init();
 
     let db_path = mk_db_path("test-update");
     let token = CancellationToken::new();
@@ -406,7 +406,7 @@ async fn test_delete() {
     };
 
     env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
-    env_logger::init();
+    let _ = env_logger::try_init();
 
     let db_path = mk_db_path("test-delete");
     let token = CancellationToken::new();
