@@ -46,6 +46,7 @@ pub fn prepare_db(db_name: &str) -> Result<Database> {
 }
 
 fn insert_items_to_db(db: Database, size: usize) -> Database {
+    use polodb_core::CollectionT;
     let collection = db.collection::<Document>("test");
 
     let mut data: Vec<Document> = vec![];

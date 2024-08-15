@@ -19,6 +19,7 @@ use async_trait::async_trait;
 use bson::{rawdoc, Document, RawDocumentBuf};
 use log::debug;
 use polodb_core::results::UpdateResult;
+use polodb_core::CollectionT;
 use crate::app_context::AppContext;
 use crate::reply::Reply;
 

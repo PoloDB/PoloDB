@@ -18,6 +18,7 @@ use async_trait::async_trait;
 use bson::{rawdoc, Document, RawDocumentBuf};
 use anyhow::{anyhow, Result};
 use polodb_core::results::DeleteResult;
+use polodb_core::CollectionT;
 use crate::app_context::AppContext;
 use crate::reply::Reply;
 

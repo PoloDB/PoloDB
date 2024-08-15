@@ -156,10 +156,10 @@ mod index;
 mod coll;
 
 pub use db::{Database, Result};
-pub use coll::{Collection, TransactionalCollection};
+pub use coll::{Collection, CollectionT, TransactionalCollection};
 pub use config::{Config, ConfigBuilder};
 pub use transaction::Transaction;
-pub use db::client_cursor::{ClientCursor, ClientSessionCursor};
+pub use db::client_cursor::ClientCursor;
 pub use errors::Error;
 pub use metrics::Metrics;
 pub use index::{IndexModel, IndexOptions};

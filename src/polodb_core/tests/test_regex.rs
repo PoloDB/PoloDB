@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use bson::{doc, Document, Regex};
+use polodb_core::CollectionT;
 
 mod common;
 

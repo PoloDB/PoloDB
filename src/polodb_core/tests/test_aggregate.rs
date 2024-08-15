@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use bson::{doc, Document};
-use polodb_core::{Result};
+use polodb_core::{Result, CollectionT};
 use polodb_core::test_utils::prepare_db;
 
 #[test]

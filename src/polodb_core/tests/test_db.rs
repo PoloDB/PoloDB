@@ -14,6 +14,7 @@
 
 use polodb_core::Database;
 use polodb_core::bson::{doc, Document};
+use polodb_core::CollectionT;
 
 mod common;
 
@@ -31,7 +32,7 @@ fn test_reopen_db() {
     let _ = std::fs::remove_dir_all(db_path.as_path());
 
     {
-        let db = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
+        let db = Database::open_path(db_path.as_path().to_str().unwrap()).unwrap();
 
         let collection = db.collection("books");
         collection.insert_one(doc! {
@@ -41,7 +42,7 @@ fn test_reopen_db() {
     }
 
     {
-        let db = Database::open_file(db_path.as_path().to_str().unwrap()).unwrap();
+        let db = Database::open_path(db_path.as_path().to_str().unwrap()).unwrap();
         let collection = db.collection::<Document>("books");
         let book = collection.find_one(None).unwrap().unwrap();
         assert_eq!(book.get("author").unwrap().as_str().unwrap(), "Liu Cixin");

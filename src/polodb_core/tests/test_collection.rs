@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use polodb_core::bson::{Document, doc};
-use polodb_core::{Collection, Result};
+use polodb_core::{CollectionT, Result};
 mod common;
 
 use common::{
@@ -95,7 +95,7 @@ fn test_create_collection_with_number_pkey() {
 
         collection.insert_many(&data).unwrap();
 
-        let collection: Collection<Document> = db.collection::<Document>("test");
+        let collection = db.collection::<Document>("test");
 
         let count = collection.count_documents().unwrap();
         assert_eq!(TEST_SIZE, count as usize);

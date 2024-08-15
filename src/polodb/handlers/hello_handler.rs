@@ -48,6 +48,7 @@ impl Handler for HelloHandler {
             "maxWireVersion": 21,
             "maxBsonObjectSize": 16 * 1024 * 1024,
             "maxMessageSizeBytes": 48000000,
+            "logicalSessionTimeoutMinutes": 30,
         };
         let reply = Reply::new(req_id, body);
         Ok(reply)

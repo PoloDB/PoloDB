@@ -5,6 +5,8 @@ mod kill_cursors_handler;
 mod get_more_handler;
 mod update_handler;
 mod delete_handler;
+mod commit_transaction;
+mod abort_transaction;
 
 use bson::RawDocumentBuf;
 use anyhow::Result;
@@ -19,6 +21,8 @@ pub(crate) use kill_cursors_handler::KillCursorsHandler;
 pub(crate) use get_more_handler::GetMoreHandler;
 pub(crate) use update_handler::UpdateHandler;
 pub(crate) use delete_handler::DeleteHandler;
+pub(crate) use commit_transaction::CommitTransactionHandler;
+pub(crate) use abort_transaction::AbortTransactionHandler;
 use crate::app_context::AppContext;
 
 pub(crate) const DEFAULT_BATCH_SIZE: i32 = 101;

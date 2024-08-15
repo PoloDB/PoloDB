@@ -36,6 +36,8 @@ pub(crate) mod checked;
 mod reply;
 mod handlers;
 mod app_context;
+mod conn_context;
+mod utils;
 
 use std::net::SocketAddr;
 use polodb_core::Database;
@@ -49,7 +51,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use reply::Reply;
 use crate::app_context::AppContext;
-use crate::handlers::{DeleteHandler, FindHandler, GetMoreHandler, HandleContext, HelloHandler, InsertHandler, KillCursorsHandler, UpdateHandler};
+use crate::handlers::{AbortTransactionHandler, CommitTransactionHandler, DeleteHandler, FindHandler, GetMoreHandler, HandleContext, HelloHandler, InsertHandler, KillCursorsHandler, UpdateHandler};
 
 #[tokio::main]
 async fn main() {
@@ -139,6 +141,8 @@ pub(crate) async fn start_socket_server(path: String, socket: String, token: Can
     ctx.push_handler(UpdateHandler::new());
     ctx.push_handler(DeleteHandler::new());
     ctx.push_handler(HelloHandler::new());
+    ctx.push_handler(CommitTransactionHandler::new());
+    ctx.push_handler(AbortTransactionHandler::new());
 
     let listener = tokio::net::TcpListener::bind(&socket).await?;
     let addr = listener.local_addr()?;
@@ -158,7 +162,8 @@ pub(crate) async fn start_socket_server(path: String, socket: String, token: Can
                             tokio::spawn(async move {
                                 let conn_id = ctx.next_conn_id();
                                 info!("new connection: {} from {}", conn_id, addr);
-                                let result = handle_stream(ctx, conn_id, stream).await;
+                                let result = handle_stream(ctx.clone(), conn_id, stream).await;
+                                ctx.remove_conn_ctx(conn_id as i64);
                                 if let Err(e) = result {
                                     // if is unexpected end of file, ignore if
                                     if e.to_string().contains("unexpected end of file") {
@@ -202,9 +207,24 @@ async fn handle_message<W: AsyncWrite + Unpin>(ctx: AppContext, conn_id: u64, st
             conn_id,
             message: &message,
         };
-        let reply = handler.handle(&ctx).await?;
-        reply.write_to(stream).await?;
+        let reply_result = handler.handle(&ctx).await;
+        match reply_result {
+            Ok(reply) => {
+                reply.write_to(stream).await?;
+            }
+            Err(e) => {
+                log::error!("handler error: {:?}", e);
+                let doc = rawdoc! {
+                    "ok": 0,
+                    "errmsg": e.to_string(),
+                    "code": 1,
+                };
+                let reply = Reply::new(message.request_id.unwrap(), doc);
+                reply.write_to(stream).await?;
+            }
+        }
     } else {
+        log::error!("no handler found for message: {:?}", message);
         let doc = rawdoc! {
             "ok": 0,
             "errmsg": "no handler found",
@@ -450,5 +470,41 @@ async fn test_delete() {
     }
 
     let db_path = mk_db_path("test-delete");
+    open_server_with_test(db_path.as_path(), Box::new(TestRunner)).await.unwrap();
+}
+
+#[tokio::test]
+async fn test_session() {
+    use mongodb::{
+        bson::{Document, doc},
+        options::{ReadConcern, WriteConcern},
+    };
+
+    struct TestRunner;
+
+    #[async_trait::async_trait]
+    impl Runner for TestRunner {
+
+        async fn run(&self, client: mongodb::Client) -> Result<()> {
+            let mut session = client.start_session().await.unwrap();
+
+            session
+                .start_transaction()
+                .read_concern(ReadConcern::majority())
+                .write_concern(WriteConcern::majority())
+                .await?;
+
+            let coll = client.database("sample_mflix").collection::<Document>("movies");
+
+            coll.insert_one(doc! { "x": 1 }).session(&mut session).await?;
+            coll.delete_one(doc! { "y": 2 }).session(&mut session).await?;
+
+            session.commit_transaction().await?;
+
+            Ok(())
+        }
+    }
+
+    let db_path = mk_db_path("test-session");
     open_server_with_test(db_path.as_path(), Box::new(TestRunner)).await.unwrap();
 }

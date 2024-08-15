@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use bson::Document;
 use bson::spec::ElementType;
 use serde::{Deserialize, Serialize};
-use polodb_core::{Database, Result};
+use polodb_core::{Database, Result, CollectionT};
 use polodb_core::bson::{doc, Bson};
 
 mod common;

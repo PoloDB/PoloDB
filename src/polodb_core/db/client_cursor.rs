@@ -94,74 +94,74 @@ impl<T> Iterator for ClientCursor<T>
     }
 }
 
-/// A `ClientSessionCursor` is used get the result of a query.
-pub struct ClientSessionCursor<T: DeserializeOwned> {
-    vm: VM,
-    txn: TransactionInner,
-    _phantom: PhantomData<T>,
-}
+// /// A `ClientSessionCursor` is used get the result of a query.
+// pub struct ClientSessionCursor<T: DeserializeOwned> {
+//     vm: VM,
+//     txn: TransactionInner,
+//     _phantom: PhantomData<T>,
+// }
+//
+// impl<T: DeserializeOwned> ClientSessionCursor<T> {
+//
+//     pub(crate) fn new(vm: VM, txn: TransactionInner) -> ClientSessionCursor<T> {
+//         ClientSessionCursor{
+//             vm,
+//             txn,
+//             _phantom: Default::default(),
+//         }
+//     }
+//
+//     #[inline]
+//     fn has_row(&self) -> bool {
+//         self.vm.state == VmState::HasRow
+//     }
+//
+//     #[inline]
+//     pub(crate) fn get(&self) -> &Bson {
+//         self.vm.stack_top()
+//     }
+//
+//     pub fn advance(&mut self) -> Result<bool> {
+//         self.vm.execute(&self.txn)?;
+//         Ok(self.has_row())
+//     }
+//
+//     pub fn deserialize_current(&self) -> Result<T> {
+//         let result: T = bson::from_bson(self.get().clone())?;
+//         Ok(result)
+//     }
+//
+// }
+//
+// impl<T: DeserializeOwned> fmt::Display for ClientSessionCursor<T> {
+//
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         write!(f, "Program: \n\n{}", self.vm.program)
+//     }
+//
+// }
 
-impl<T: DeserializeOwned> ClientSessionCursor<T> {
-
-    pub(crate) fn new(vm: VM, txn: TransactionInner) -> ClientSessionCursor<T> {
-        ClientSessionCursor{
-            vm,
-            txn,
-            _phantom: Default::default(),
-        }
-    }
-
-    #[inline]
-    fn has_row(&self) -> bool {
-        self.vm.state == VmState::HasRow
-    }
-
-    #[inline]
-    pub(crate) fn get(&self) -> &Bson {
-        self.vm.stack_top()
-    }
-
-    pub fn advance(&mut self) -> Result<bool> {
-        self.vm.execute(&self.txn)?;
-        Ok(self.has_row())
-    }
-
-    pub fn deserialize_current(&self) -> Result<T> {
-        let result: T = bson::from_bson(self.get().clone())?;
-        Ok(result)
-    }
-
-}
-
-impl<T: DeserializeOwned> fmt::Display for ClientSessionCursor<T> {
-
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Program: \n\n{}", self.vm.program)
-    }
-
-}
-
-pub struct ClientSessionCursorIter<'s, 'c, T: DeserializeOwned> {
-    cursor: &'c mut ClientSessionCursor<T>,
-    _txn: &'s TransactionInner,
-}
-
-impl<T> Iterator for ClientSessionCursorIter<'_, '_, T>
-    where
-        T: DeserializeOwned + Unpin + Send + Sync,
-{
-    type Item = Result<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let test = self.cursor.advance();
-        match test {
-            Ok(false) => None,
-            Ok(true) => {
-                Some(Ok(bson::from_bson(self.cursor.get().clone()).unwrap()))
-            }
-            Err(err) =>{
-                Some(Err(err))
-            }
-        }
-    }
-}
+// pub struct ClientSessionCursorIter<'s, 'c, T: DeserializeOwned> {
+//     cursor: &'c mut ClientSessionCursor<T>,
+//     _txn: &'s TransactionInner,
+// }
+//
+// impl<T> Iterator for ClientSessionCursorIter<'_, '_, T>
+//     where
+//         T: DeserializeOwned + Unpin + Send + Sync,
+// {
+//     type Item = Result<T>;
+//
+//     fn next(&mut self) -> Option<Self::Item> {
+//         let test = self.cursor.advance();
+//         match test {
+//             Ok(false) => None,
+//             Ok(true) => {
+//                 Some(Ok(bson::from_bson(self.cursor.get().clone()).unwrap()))
+//             }
+//             Err(err) =>{
+//                 Some(Err(err))
+//             }
+//         }
+//     }
+// }

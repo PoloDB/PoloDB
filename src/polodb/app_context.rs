@@ -19,6 +19,7 @@ use bson::{Document, RawDocumentBuf};
 use polodb_core::{ClientCursor, Database};
 use crate::handlers::Handler;
 use anyhow::Result;
+use crate::conn_context::ConnectionContext;
 
 #[derive(Clone)]
 pub(crate) struct AppContext {
@@ -55,7 +56,27 @@ impl AppContext {
     }
 
     pub(crate) fn next_conn_id(&self) -> u64 {
-        self.inner.conn_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        let result = self.inner.conn_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        {
+            let mut conn_ctx_map = self.inner.conn_ctx.lock().unwrap();
+            if conn_ctx_map.contains_key(&(result as i64)) {
+                panic!("Connection id {} already exists", result);
+            }
+            conn_ctx_map.insert(result as i64, ConnectionContext::default());
+        }
+
+        result
+    }
+
+    pub(crate) fn get_conn_ctx(&self, conn_id: i64) -> Option<ConnectionContext> {
+        let conn_ctx_map = self.inner.conn_ctx.lock().unwrap();
+        conn_ctx_map.get(&conn_id).map(|c| c.clone())
+    }
+
+    pub(crate) fn remove_conn_ctx(&self, conn_id: i64) {
+        let mut conn_ctx_map = self.inner.conn_ctx.lock().unwrap();
+        conn_ctx_map.remove(&conn_id);
     }
 
     pub (crate) fn save_cursor(&self, cursor: Arc<Mutex<ClientCursor<Document>>>) -> i64 {
@@ -84,6 +105,7 @@ struct AppContextInner {
     handlers: Mutex<Vec<Arc<dyn Handler>>>,
     cursors: Mutex<HashMap<i64, Arc<Mutex<ClientCursor<Document>>>>>,
     conn_id: AtomicU64,
+    conn_ctx: Mutex<HashMap<i64, ConnectionContext>>,
 }
 
 impl AppContextInner {
@@ -94,6 +116,7 @@ impl AppContextInner {
             handlers: Mutex::new(Vec::with_capacity(32)),
             cursors: Mutex::new(HashMap::new()),
             conn_id: AtomicU64::new(0),
+            conn_ctx: Mutex::new(HashMap::new()),
         }
     }
 
@@ -108,8 +131,14 @@ impl AppContextInner {
 impl Drop for AppContextInner {
 
     fn drop(&mut self) {
-        let mut cursors = self.cursors.lock().unwrap();
-        cursors.clear();
+        {
+            let mut cursors = self.cursors.lock().unwrap();
+            cursors.clear();
+        }
+        {
+            let mut conn_ctx = self.conn_ctx.lock().unwrap();
+            conn_ctx.clear();
+        }
     }
 
 }

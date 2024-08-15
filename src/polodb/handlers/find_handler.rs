@@ -19,7 +19,7 @@ use crate::handlers::{HandleContext, Handler, DEFAULT_BATCH_SIZE};
 use crate::reply::Reply;
 use async_trait::async_trait;
 use log::debug;
-use polodb_core::ClientCursor;
+use polodb_core::{ClientCursor, CollectionT};
 
 pub(crate) struct FindHandler {}
 

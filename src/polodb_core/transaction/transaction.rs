@@ -18,6 +18,7 @@ use crate::{TransactionalCollection};
 use crate::db::db_inner::DatabaseInner;
 use super::transaction_inner::TransactionInner;
 
+#[derive(Clone)]
 pub struct Transaction {
     db: Weak<DatabaseInner>,
     inner: Arc<TransactionInner>,

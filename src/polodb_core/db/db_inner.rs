@@ -18,7 +18,6 @@ use bson::{Bson, Document};
 use serde::Serialize;
 use super::db::Result;
 use crate::errors::Error;
-use crate::ClientSessionCursor;
 use crate::Config;
 use crate::vm::SubProgram;
 use crate::meta_doc_helper::meta_doc_key;
@@ -188,13 +187,13 @@ impl DatabaseInner {
         Ok(spec)
     }
 
-    pub(crate) fn make_handle<T: DeserializeOwned>(&self, program: SubProgram, txn: TransactionInner) -> Result<ClientSessionCursor<T>> {
+    pub(crate) fn make_handle<T: DeserializeOwned + Send + Sync>(&self, program: SubProgram, txn: TransactionInner) -> Result<ClientCursor<T>> {
         let vm = VM::new(
             self.rocksdb.clone(),
             program,
             self.metrics.clone(),
         );
-        Ok(ClientSessionCursor::new(vm, txn))
+        Ok(ClientCursor::new(vm, txn))
     }
 
     pub fn create_index(&self, col_name: &str, index: IndexModel, txn: &TransactionInner) -> Result<()> {
@@ -499,12 +498,12 @@ impl DatabaseInner {
         })
     }
 
-    fn find_internal<T: DeserializeOwned>(
+    fn find_internal<T: DeserializeOwned + Send + Sync>(
         &self,
         col_spec: &CollectionSpecification,
         query: Option<Document>,
         txn: TransactionInner,
-    ) -> Result<ClientSessionCursor<T>> {
+    ) -> Result<ClientCursor<T>> {
         let subprogram = match query {
             Some(query) => SubProgram::compile_query(
                 col_spec,
@@ -774,7 +773,7 @@ impl DatabaseInner {
     }
 
     pub(crate) fn query_all_meta(&self, txn: &TransactionInner) -> Result<Vec<Document>> {
-        let mut handle: ClientSessionCursor<Document> = {
+        let mut handle: ClientCursor<Document> = {
             let subprogram = SubProgram::compile_query_all_by_name(
                 TABLE_META_PREFIX,
                 true
@@ -834,12 +833,12 @@ impl DatabaseInner {
         Ok(handle)
     }
 
-    pub fn find_with_borrowed_session<T: DeserializeOwned>(
+    pub fn find_with_borrowed_session<T: DeserializeOwned + Send + Sync>(
         &self,
         col_name: &str,
         filter: impl Into<Option<Document>>,
         txn: &TransactionInner,
-    ) -> Result<ClientSessionCursor<T>> {
+    ) -> Result<ClientCursor<T>> {
         DatabaseInner::validate_col_name(col_name)?;
         let filter_query = filter.into();
         let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, txn)?;
@@ -860,7 +859,7 @@ impl DatabaseInner {
                     subprogram,
                     self.metrics.clone(),
                 );
-                let cursor = ClientSessionCursor::new(vm, txn.clone());
+                let cursor = ClientCursor::new(vm, txn.clone());
                 Ok(cursor)
             }
         }

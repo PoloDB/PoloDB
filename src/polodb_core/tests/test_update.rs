@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use polodb_core::{Collection, Database, Result};
+use polodb_core::{CollectionT, Database, Result};
 use polodb_core::bson::{Document, doc};
 
 mod common;
@@ -64,7 +64,7 @@ fn prepare_db_with_data(db_name: &str) -> Database {
         });
     }
 
-    let col: Collection<Document> = db.collection("test");
+    let col = db.collection::<Document>("test");
     col.insert_many(arr).unwrap();
 
     db

@@ -18,8 +18,10 @@ use bson::{rawdoc, RawDocumentBuf};
 use crate::handlers::{HandleContext, Handler};
 use crate::reply::Reply;
 use async_trait::async_trait;
+use polodb_core::CollectionT;
 use tokio::task;
 use log::debug;
+use crate::utils;
 
 pub(crate) struct InsertHandler {}
 
@@ -43,9 +45,12 @@ impl Handler for InsertHandler {
     }
     async fn handle(&self, ctx: &HandleContext) -> anyhow::Result<Reply> {
         let doc = &ctx.message.document_payload;
-        let collection_name = doc.get("insert")?.unwrap().as_str().ok_or(anyhow!("insert field is not a string"))?;
+        let collection_name = doc.get("insert")?.unwrap().as_str().ok_or(anyhow!("insert field is not a string"))?.to_string();
+
+        let start_transaction = utils::truly_value_for_bson_ref(doc.get("startTransaction")?, false);
+        let auto_commit = utils::truly_value_for_bson_ref(doc.get("autocommit")?, true);
+
         let db = ctx.app_context.db();
-        let collection = db.collection::<bson::Document>(collection_name);
 
         let mut batch_insert = Vec::<bson::Document>::new();
         for doc_seq in ctx.message.document_sequences.as_slice() {
@@ -55,11 +60,27 @@ impl Handler for InsertHandler {
             }
         }
 
+        let conn_id = ctx.conn_id;
+        let app_ctx = ctx.app_context.clone();
         // insert could be blocking, so we spawn a blocking task
-        let insert_result = task::spawn_blocking(move || {
-            collection.insert_many(batch_insert.as_slice())
+        debug!("inserted {} documents, auto_commit {}, start_transaction: {}", batch_insert.len(), auto_commit, start_transaction);
+        let insert_result = task::spawn_blocking(move || -> anyhow::Result<polodb_core::results::InsertManyResult> {
+            if start_transaction {
+                let conn_ctx = app_ctx.get_conn_ctx(conn_id as i64).ok_or(anyhow!("connection not found"))?;
+                let txn = db.start_transaction()?;
+                conn_ctx.start_transaction(txn)?;
+            }
+            if !auto_commit {
+                let conn_ctx = app_ctx.get_conn_ctx(conn_id as i64).ok_or(anyhow!("connection not found"))?;
+                let txn = conn_ctx.get_transaction().ok_or(anyhow!("transaction not found"))?;
+                let collection = txn.collection::<bson::Document>(&collection_name);
+                let insert_result = collection.insert_many(batch_insert.as_slice())?;
+                return Ok(insert_result)
+            }
+            let collection = db.collection::<bson::Document>(&collection_name);
+            let insert_result = collection.insert_many(batch_insert.as_slice())?;
+            Ok(insert_result)
         }).await??;
-        debug!("inserted {} documents", insert_result.inserted_ids.len());
 
         let body = rawdoc! {
             "ok": 1,

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use polodb_core::{Database, IndexModel, IndexOptions, Result};
+use polodb_core::{CollectionT, IndexModel, IndexOptions, Result};
 use bson::{doc, Document};
 use crate::common::prepare_db;
 
@@ -281,6 +281,7 @@ fn test_delete_with_index() {
         let result = col.find_one(doc! {
             "age": 33
         }).unwrap();
+        assert_eq!(result, None);
 
         assert!(col.find_one(doc! {
             "age": 33
