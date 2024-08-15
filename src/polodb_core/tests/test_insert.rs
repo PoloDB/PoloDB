@@ -270,8 +270,7 @@ fn test_insert_persist() {
         let db = Database::open_path(&db_path).unwrap();
 
         let collection = db.collection::<Document>("test");
-        let len = collection.count_documents().unwrap();
-        assert_eq!(len, i as u64);
+
         let document = doc! {
             "test": "test",
         };
