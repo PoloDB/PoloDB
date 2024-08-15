@@ -33,7 +33,7 @@
 //! ```rust
 //! use polodb_core::Database;
 //! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-file");
-//! let db = Database::open_file(db_path).unwrap();
+//! let db = Database::open_path(db_path).unwrap();
 //! ```
 //!
 //! # Example
@@ -49,7 +49,7 @@
 //! }
 //!
 //! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-lib");
-//! let db = Database::open_file(db_path).unwrap();
+//! let db = Database::open_path(db_path).unwrap();
 //! let collection = db.collection("books");
 //! collection.insert_one(Book {
 //!     title: "The Three-Body Problem".to_string(),
@@ -64,7 +64,7 @@
 //! use polodb_core::bson::{Document, doc};
 //!
 //! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db-collection");
-//! let db = Database::open_file(db_path).unwrap();
+//! let db = Database::open_path(db_path).unwrap();
 //! let collection = db.collection::<Document>("books");
 //!
 //! let docs = vec![
@@ -89,7 +89,7 @@
 //! }
 //!
 //! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db-find");
-//! let db = Database::open_file(db_path).unwrap();
+//! let db = Database::open_path(db_path).unwrap();
 //! let collection = db.collection::<Book>("books");
 //!
 //! let docs = vec![
@@ -120,7 +120,7 @@
 //! use polodb_core::bson::{Document, doc};
 //!
 //! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db");
-//! let db = Database::open_file(db_path).unwrap();
+//! let db = Database::open_path(db_path).unwrap();
 //!
 //! let txn = db.start_transaction().unwrap();
 //!

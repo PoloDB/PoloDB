@@ -12,6 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! This is the main entry point for the PoloDB server.
+//! This file includes a command-line interface for starting the server.
+//!
+//! You can start the server by running `cargo run -- serve --path /path/to/db`.
+//!
+//! The server will listen on `localhost:27017` by default.
+//! You can also specify the host and port by passing `--host` and `--port` arguments.
+//! For example: `cargo run -- serve --host 0.0.0.0 --port 8080 --path /path/to/db`.
+//!
+//! # Connect
+//!
+//! You can connect to the server using the `mongo` shell.
+//! And the official rust driver is also supported.
+//! You can check the [official driver](https://crates.io/crates/mongodb) for more information.
+//!
+
 mod wire;
 mod bson_util;
 mod compression;

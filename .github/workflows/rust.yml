@@ -39,7 +39,7 @@ jobs:
 
   MacOS:
     name: Test on MacOS
-    runs-on: macos-11
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
         with:
