@@ -24,7 +24,7 @@
 )]
 
 use libc::*;
-use librocksdb_sys::*;
+use polodb_librocksdb_sys::*;
 use std::borrow::Cow;
 use std::env;
 use std::ffi::{CStr, CString};

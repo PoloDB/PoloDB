@@ -21,9 +21,7 @@ mod reply;
 mod handlers;
 mod app_context;
 
-use std::env;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use polodb_core::Database;
 use bson::{rawdoc};
 use clap::{Arg, Command as App};
@@ -201,98 +199,108 @@ async fn handle_message<W: AsyncWrite + Unpin>(ctx: AppContext, conn_id: u64, st
     Ok(())
 }
 
-pub fn mk_db_path(db_name: &str) -> PathBuf {
-    let mut db_path = env::temp_dir();
+#[cfg(test)]
+pub fn mk_db_path(db_name: &str) -> std::path::PathBuf {
+    let mut db_path = std::env::temp_dir();
     let db_filename = String::from(db_name) + "-db-server";
     db_path.push(db_filename);
     db_path
+}
+
+#[cfg(test)]
+#[async_trait::async_trait]
+trait Runner {
+    async fn run(&self, client: mongodb::Client) -> Result<()>;
+}
+
+#[cfg(test)]
+async fn open_server_with_test(path: &std::path::Path, callback: Box<dyn Runner>) -> Result<()> {
+    use mongodb::Client;
+
+    std::env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
+    let _ = env_logger::try_init();
+
+    let token = CancellationToken::new();
+
+    let (addr, handle) = start_socket_server(
+        path.to_str().unwrap().to_string(),
+        "localhost:0".to_string(),
+        token.clone(),
+    ).await.unwrap();
+    assert!(addr.port() > 0);
+
+    let uri = format!("mongodb://localhost:{}", addr.port());
+    let client = Client::with_uri_str(uri).await.unwrap();
+    callback.run(client).await?;
+
+    token.cancel();
+    handle.await?;
+    Ok(())
 }
 
 #[tokio::test]
 async fn test_server() {
     use mongodb::{
         bson::{Document, doc},
-        Client,
         Collection
     };
 
-    env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
-    let _ = env_logger::try_init();
-
-    let db_path = mk_db_path("test-server");
-    let token = CancellationToken::new();
-
-    let (addr, handle) = start_socket_server(
-        db_path.to_str().unwrap().to_string(),
-        "localhost:0".to_string(),
-        token.clone(),
-    ).await.unwrap();
-    assert!(addr.port() > 0);
-
-    let uri = format!("mongodb://localhost:{}", addr.port());
-    let client = Client::with_uri_str(uri).await.unwrap();
-
-    {
-        let database = client.database("sample_mflix");
-        let my_coll: Collection<Document> = database.collection("movies");
-        my_coll.insert_one(doc! { "x": 1 }).await.unwrap();
+    struct TestRunner;
+    #[async_trait::async_trait]
+    impl Runner for TestRunner {
+        async fn run(&self, client: mongodb::Client) -> Result<()> {
+            let database = client.database("sample_mflix");
+            let my_coll: Collection<Document> = database.collection("movies");
+            my_coll.insert_one(doc! { "x": 1 }).await.unwrap();
+            Ok(())
+        }
     }
 
-    token.cancel();
-    handle.await.unwrap()
+    let db_path = mk_db_path("test-server");
+    open_server_with_test(db_path.as_path(), Box::new(TestRunner)).await.unwrap();
 }
 
 #[tokio::test]
 async fn test_find() {
     use mongodb::{
         bson::{Document, doc},
-        Client,
         Collection
     };
-
     use futures::TryStreamExt;
-    env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
-    let _ = env_logger::try_init();
 
     let db_path = mk_db_path("test-find");
-    let token = CancellationToken::new();
 
-    let (addr, handle) = start_socket_server(
-        db_path.to_str().unwrap().to_string(),
-        "localhost:0".to_string(),
-        token.clone(),
-    ).await.unwrap();
-    assert!(addr.port() > 0);
+    struct TestRunner;
 
-    let uri = format!("mongodb://localhost:{}", addr.port());
-    let client = Client::with_uri_str(uri).await.unwrap();
+    #[async_trait::async_trait]
+    impl Runner for TestRunner {
+        async fn run(&self, client: mongodb::Client) -> Result<()> {
+            let mut docs: Vec<Document> = Vec::with_capacity(1000);
+            for i in 0..1000 {
+                docs.push(doc! {
+                    "_id": i,
+                    "x": i.to_string(),
+                });
+            }
 
-    {
-        let mut docs: Vec<Document> = Vec::with_capacity(1000);
-        for i in 0..1000 {
-            docs.push(doc! {
-                "_id": i,
-                "x": i.to_string(),
-            });
+            let database = client.database("sample_mflix");
+            let my_coll: Collection<Document> = database.collection("movies");
+            my_coll.insert_many(docs).await.unwrap();
+
+            let mut cursor = my_coll.find(doc! {}).await.unwrap();
+
+            let mut all = Vec::<Document>::new();
+
+            while let Some(doc) = cursor.try_next().await.unwrap() {
+                all.push(doc);
+            }
+
+            assert_eq!(1000, all.len());
+            Ok(())
         }
-
-        let database = client.database("sample_mflix");
-        let my_coll: Collection<Document> = database.collection("movies");
-        my_coll.insert_many(docs).await.unwrap();
-
-        let mut cursor = my_coll.find(doc! {}).await.unwrap();
-
-        let mut all = Vec::<Document>::new();
-
-        while let Some(doc) = cursor.try_next().await.unwrap() {
-            all.push(doc);
-        }
-
-        assert_eq!(1000, all.len());
     }
 
-    token.cancel();
-    handle.await.unwrap()
+    open_server_with_test(db_path.as_path(), Box::new(TestRunner)).await.unwrap();
 }
 
 #[tokio::test]
@@ -304,7 +312,7 @@ async fn test_cursor_drop() {
     };
 
     use futures::TryStreamExt;
-    env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
+    std::env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
     let _ = env_logger::try_init();
 
     let db_path = mk_db_path("test-cursor-drop");
@@ -350,108 +358,81 @@ async fn test_cursor_drop() {
 async fn test_update() {
     use mongodb::{
         bson::{Document, doc},
-        Client,
         Collection
     };
 
-    env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
-    let _ = env_logger::try_init();
 
     let db_path = mk_db_path("test-update");
-    let token = CancellationToken::new();
 
-    let (addr, handle) = start_socket_server(
-        db_path.to_str().unwrap().to_string(),
-        "localhost:0".to_string(),
-        token.clone(),
-    ).await.unwrap();
-    assert!(addr.port() > 0);
+    struct TestRunner;
+    #[async_trait::async_trait]
+    impl Runner for TestRunner {
 
-    let uri = format!("mongodb://localhost:{}", addr.port());
-    let client = Client::with_uri_str(uri).await.unwrap();
-
-    {
-        let mut docs: Vec<Document> = Vec::with_capacity(100);
-        for i in 0..100 {
-            docs.push(doc! {
-                "_id": i,
-                "x": i,
-            });
-        }
-
-        let database = client.database("sample_mflix");
-        let my_coll: Collection<Document> = database.collection("movies");
-        let insert_result = my_coll.insert_many(docs).await.unwrap();
-        assert_eq!(insert_result.inserted_ids.len(), 100);
-
-        let result = my_coll.update_many(doc! {
-            "x": {
-                "$lt": 50
+        async fn run(&self, client: mongodb::Client) -> Result<()> {
+            let mut docs: Vec<Document> = Vec::with_capacity(100);
+            for i in 0..100 {
+                docs.push(doc! {
+                    "_id": i,
+                    "x": i,
+                });
             }
-        }, doc! { "$set": { "x": "updated" } }).await.unwrap();
 
-        assert_eq!(50, result.modified_count);
+            let database = client.database("sample_mflix");
+            let my_coll: Collection<Document> = database.collection("movies");
+            let insert_result = my_coll.insert_many(docs).await.unwrap();
+            assert_eq!(insert_result.inserted_ids.len(), 100);
+
+            let result = my_coll.update_many(doc! {
+                "x": {
+                    "$lt": 50
+                }
+            }, doc! { "$set": { "x": "updated" } }).await.unwrap();
+
+            assert_eq!(50, result.modified_count);
+            Ok(())
+        }
     }
-    // sleep
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-    // wait for killCursors command to be sent
-    // no crash is success
 
-    token.cancel();
-    handle.await.unwrap()
+    open_server_with_test(db_path.as_path(), Box::new(TestRunner)).await.unwrap();
 }
 
 #[tokio::test]
 async fn test_delete() {
     use mongodb::{
         bson::{Document, doc},
-        Client,
         Collection
     };
 
-    env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
-    let _ = env_logger::try_init();
+    struct TestRunner;
+
+    #[async_trait::async_trait]
+    impl Runner for TestRunner {
+
+        async fn run(&self, client: mongodb::Client) -> Result<()> {
+            let mut docs: Vec<Document> = Vec::with_capacity(100);
+            for i in 0..100 {
+                docs.push(doc! {
+                    "_id": i,
+                    "x": i,
+                });
+            }
+
+            let database = client.database("sample_mflix");
+            let my_coll: Collection<Document> = database.collection("movies");
+            let insert_result = my_coll.insert_many(docs).await.unwrap();
+            assert_eq!(insert_result.inserted_ids.len(), 100);
+
+            let result = my_coll.delete_many(doc! {
+                "x": {
+                    "$lt": 50
+                }
+            }).await.unwrap();
+
+            assert_eq!(50, result.deleted_count);
+            Ok(())
+        }
+    }
 
     let db_path = mk_db_path("test-delete");
-    let token = CancellationToken::new();
-
-    let (addr, handle) = start_socket_server(
-        db_path.to_str().unwrap().to_string(),
-        "localhost:0".to_string(),
-        token.clone(),
-    ).await.unwrap();
-    assert!(addr.port() > 0);
-
-    let uri = format!("mongodb://localhost:{}", addr.port());
-    let client = Client::with_uri_str(uri).await.unwrap();
-
-    {
-        let mut docs: Vec<Document> = Vec::with_capacity(100);
-        for i in 0..100 {
-            docs.push(doc! {
-                "_id": i,
-                "x": i,
-            });
-        }
-
-        let database = client.database("sample_mflix");
-        let my_coll: Collection<Document> = database.collection("movies");
-        let insert_result = my_coll.insert_many(docs).await.unwrap();
-        assert_eq!(insert_result.inserted_ids.len(), 100);
-
-        let result = my_coll.delete_many(doc! {
-            "x": {
-                "$lt": 50
-            }
-        }).await.unwrap();
-
-        assert_eq!(50, result.deleted_count);
-    }
-    // sleep
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-    // wait for killCursors command to be sent
-    // no crash is success
-
-    token.cancel();
-    handle.await.unwrap()
+    open_server_with_test(db_path.as_path(), Box::new(TestRunner)).await.unwrap();
 }
