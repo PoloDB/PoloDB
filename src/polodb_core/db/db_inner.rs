@@ -324,7 +324,7 @@ impl DatabaseInner {
 
         builder.execute(IndexHelperOperation::Delete)?;
 
-        collection_spec.indexes.remove(index_name);
+        collection_spec.indexes.shift_remove(index_name);
 
         DatabaseInner::update_collection_spec(
             col_name,

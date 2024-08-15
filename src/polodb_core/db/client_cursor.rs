@@ -143,7 +143,7 @@ impl<T: DeserializeOwned> fmt::Display for ClientSessionCursor<T> {
 
 pub struct ClientSessionCursorIter<'s, 'c, T: DeserializeOwned> {
     cursor: &'c mut ClientSessionCursor<T>,
-    txn: &'s TransactionInner,
+    _txn: &'s TransactionInner,
 }
 
 impl<T> Iterator for ClientSessionCursorIter<'_, '_, T>

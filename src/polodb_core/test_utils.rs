@@ -29,7 +29,7 @@ pub fn prepare_db_with_config(db_name: &str, config: Config) -> Result<Database>
 
     let _ = std::fs::remove_dir_all(db_path.as_path());
 
-    Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config)
+    Database::open_path_with_config(db_path.as_path().to_str().unwrap(), config)
 }
 
 pub fn prepare_db(db_name: &str) -> Result<Database> {

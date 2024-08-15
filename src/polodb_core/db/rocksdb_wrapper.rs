@@ -161,3 +161,19 @@ fn test_close_with_open_txn() {
     };
     txn.commit().unwrap();
 }
+
+#[test]
+fn test_open_on_exist_file() {
+    let test_path = mk_db_path("test_open_on_exist_file");
+
+    let _ = std::fs::remove_dir_all(test_path.as_path());
+
+    {
+        let mut file = std::fs::File::create(test_path.as_path()).unwrap();
+        // write something random
+        file.write_all(b"hello world").unwrap();
+    }
+
+    let open_err = RocksDBWrapper::open(test_path.as_path());
+    assert!(open_err.is_err());
+}

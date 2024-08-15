@@ -303,7 +303,7 @@ async fn test_cursor_drop() {
     env::set_var("RUST_LOG", "polodb=debug,tokio=info, mongodb=debug");
     let _ = env_logger::try_init();
 
-    let db_path = mk_db_path("test-find");
+    let db_path = mk_db_path("test-cursor-drop");
     let token = CancellationToken::new();
 
     let (addr, handle) = start_socket_server(

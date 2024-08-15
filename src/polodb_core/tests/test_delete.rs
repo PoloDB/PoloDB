@@ -168,7 +168,7 @@ fn test_delete_issues_127() {
 
     // Run #2
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         let col = db.collection::<Document>("tasks");
         col.delete_one(doc! { "name": "t1" }).unwrap();
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap(); // The document { "name": "t1" } is returned, but none should be returned instead
@@ -177,7 +177,7 @@ fn test_delete_issues_127() {
 
     // Run #3
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         // Run #2
         let col = db.collection::<Document>("tasks");
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap(); // The document { "name": "t1" } is returned, but none should be returned instead
@@ -194,7 +194,7 @@ fn test_delete_issues_148() {
 
     // insert data
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         let col = db.collection::<Document>("tasks");
 
         col.insert_one(doc! {
@@ -210,8 +210,11 @@ fn test_delete_issues_148() {
         }).unwrap();
     }
 
+    // sleep
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         let col = db.collection::<Document>("tasks");
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap();
         assert_eq!(result.len(), 3);
@@ -221,8 +224,11 @@ fn test_delete_issues_148() {
         assert_eq!(result.len(), 2);
     }
 
+    // sleep
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         let col = db.collection::<Document>("tasks");
         col.insert_one(doc! {
             "name": "4"
@@ -234,7 +240,7 @@ fn test_delete_issues_148() {
     }
 
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         let col = db.collection::<Document>("tasks");
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap();
         assert_eq!(result.len(), 3);

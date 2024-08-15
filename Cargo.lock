@@ -1288,6 +1288,7 @@ dependencies = [
  "serde",
  "thiserror",
  "uuid",
+ "winapi",
 ]
 
 [[package]]

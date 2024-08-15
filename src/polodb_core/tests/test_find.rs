@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use polodb_core::{Database, Result};
+use polodb_core::Result;
 use polodb_core::bson::{doc, Document};
 
 mod common;

@@ -119,11 +119,6 @@ pub struct BtWrapper<T> {
 }
 
 #[derive(Debug)]
-pub struct DataMalformedReason {
-    pub backtrace: std::backtrace::Backtrace,
-}
-
-#[derive(Debug)]
 pub struct DuplicateKeyError {
     pub name: String, // index name
     pub key: String,  // key name
