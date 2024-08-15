@@ -165,7 +165,7 @@ fn test_close_with_open_txn() {
 #[test]
 fn test_open_on_exist_file() {
     use std::io::Write;
-    
+
     let test_path = mk_db_path("test_open_on_exist_file");
 
     let _ = std::fs::remove_dir_all(test_path.as_path());

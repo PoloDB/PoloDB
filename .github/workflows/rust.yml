@@ -33,7 +33,7 @@ jobs:
           node-version: '18'
       
       - name: Run Rust tests
-        run: cargo test --release --verbose --workspace
+        run: RUST_BACKTRACE=1 cargo test --release --verbose --workspace
       - name: Build binaries
         run: cargo build --release
 
@@ -60,6 +60,6 @@ jobs:
           node-version: '18'
 
       - name: Run Rust tests
-        run: cargo test --release --verbose --workspace
+        run: RUST_BACKTRACE=1 cargo test --release --verbose --workspace
       - name: Build binaries
         run: cargo build --release
