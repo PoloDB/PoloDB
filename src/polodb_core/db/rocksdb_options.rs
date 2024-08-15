@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use librocksdb_sys as ffi;
+use polodb_librocksdb_sys as ffi;
 
 pub(crate) struct RocksDBWaitForCompactOptions {
     inner: *mut ffi::rocksdb_wait_for_compact_options_t,

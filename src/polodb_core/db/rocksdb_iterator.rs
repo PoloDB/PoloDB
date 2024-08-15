@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use libc::c_char;
 use crate::db::rocksdb_transaction::RocksDBTransactionInner;
-use librocksdb_sys as ffi;
+use polodb_librocksdb_sys as ffi;
 use super::db::Result;
 
 #[derive(Clone)]

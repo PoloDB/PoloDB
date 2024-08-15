@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::{env, ptr};
 use std::ffi::CString;
 use libc::c_char;
-use librocksdb_sys as ffi;
+use polodb_librocksdb_sys as ffi;
 use super::db::Result;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};

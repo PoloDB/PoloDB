@@ -1,9 +1,9 @@
 [package]
-name = "librocksdb-sys"
+name = "polodb-librocksdb-sys"
 version = "9.0.0-alpha.1"
 edition = "2018"
 rust-version = "1.70.0"
-authors = ["Karl Hobley <karlhobley10@gmail.com>", "Arkadiy Paronyan <arkadiy@ethcore.io>"]
+authors = ["Karl Hobley <karlhobley10@gmail.com>", "Arkadiy Paronyan <arkadiy@ethcore.io>", "Vincent Chan <okcdz@diverse.space>"]
 license = "MIT/Apache-2.0/BSD-3-Clause"
 description = "Native bindings to librocksdb"
 readme = "README.md"

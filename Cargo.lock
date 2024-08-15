@@ -949,23 +949,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "librocksdb-sys"
-version = "9.0.0-alpha.1"
-dependencies = [
- "bindgen",
- "bzip2-sys",
- "cc",
- "glob",
- "libc",
- "libz-sys",
- "lz4-sys",
- "pkg-config",
- "tikv-jemalloc-sys",
- "uuid",
- "zstd-sys",
-]
-
-[[package]]
 name = "libz-sys"
 version = "1.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1273,6 +1256,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "polodb-librocksdb-sys"
+version = "9.0.0-alpha.1"
+dependencies = [
+ "bindgen",
+ "bzip2-sys",
+ "cc",
+ "glob",
+ "libc",
+ "libz-sys",
+ "lz4-sys",
+ "pkg-config",
+ "tikv-jemalloc-sys",
+ "uuid",
+ "zstd-sys",
+]
+
+[[package]]
 name = "polodb_core"
 version = "5.0.0"
 dependencies = [
@@ -1282,7 +1282,7 @@ dependencies = [
  "getrandom",
  "indexmap",
  "libc",
- "librocksdb-sys",
+ "polodb-librocksdb-sys",
  "polodb_line_diff",
  "regex",
  "serde",

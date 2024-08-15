@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "src/librocksdb-sys",
     "src/polodb",
     "src/polodb_core",
     "src/polodb_line_diff",

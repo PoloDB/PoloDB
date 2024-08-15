@@ -18,7 +18,7 @@ use std::ptr::null_mut;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 use libc::c_char;
-use librocksdb_sys as ffi;
+use polodb_librocksdb_sys as ffi;
 use crate::db::rocksdb_options::{RocksDBReadOptions, RocksDBTransactionOptions, RocksDBWriteOptions};
 use crate::db::rocksdb_wrapper::RocksDBWrapperInner;
 use crate::db::RocksDBIterator;
