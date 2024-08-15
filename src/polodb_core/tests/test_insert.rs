@@ -267,21 +267,16 @@ fn test_insert_persist() {
 
     // Open the database for 10 times
     for i in 0..10 {
-        {
-            let db = Database::open_path(&db_path).unwrap();
+        let db = Database::open_path(&db_path).unwrap();
 
-            let collection = db.collection::<Document>("test");
-            let len = collection.count_documents().unwrap();
-            assert_eq!(len, i as u64);
-            let document = doc! {
-                "test": "test",
-            };
-            collection.insert_one(document).unwrap();
-            let result = collection.find(None).unwrap().collect::<Result<Vec<_>>>().unwrap();
-            assert_eq!(result.len() as u64, i as u64 + 1);
-        }
-
-        // sleep
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        let collection = db.collection::<Document>("test");
+        let len = collection.count_documents().unwrap();
+        assert_eq!(len, i as u64);
+        let document = doc! {
+            "test": "test",
+        };
+        collection.insert_one(document).unwrap();
+        let result = collection.find(None).unwrap().collect::<Result<Vec<_>>>().unwrap();
+        assert_eq!(result.len() as u64, i as u64 + 1);
     }
 }

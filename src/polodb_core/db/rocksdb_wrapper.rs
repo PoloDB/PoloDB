@@ -99,16 +99,35 @@ impl Drop for RocksDBWrapperInner {
                 panic!("there are still transactions opened")
             }
             let mut err: *mut c_char = ptr::null_mut();
-            let flush_opt = ffi::rocksdb_flushoptions_create();
-            ffi::rocksdb_transactiondb_flush(self.inner, flush_opt, &mut err);
+            // let flush_opt = ffi::rocksdb_flushoptions_create();
+            // ffi::rocksdb_transactiondb_flush(self.inner, flush_opt, &mut err);
+            // if !err.is_null() {
+            //     let c_str = std::ffi::CStr::from_ptr(err);
+            //     let str_slice = c_str.to_str().expect("C string is not valid UTF-8");
+            //     eprintln!("flush error: {}", str_slice);
+            // }
+            // ffi::rocksdb_flushoptions_destroy(flush_opt);
+            //
+            // ffi::rocksdb_transactiondb_close(self.inner);
+            let wait_for_compact_options = ffi::rocksdb_wait_for_compact_options_create();
+            ffi::rocksdb_wait_for_compact_options_set_flush(wait_for_compact_options, 1);
+            ffi::rocksdb_wait_for_compact(self.inner.cast(), wait_for_compact_options, &mut err);
+            ffi::rocksdb_wait_for_compact_options_destroy(wait_for_compact_options);
             if !err.is_null() {
                 let c_str = std::ffi::CStr::from_ptr(err);
                 let str_slice = c_str.to_str().expect("C string is not valid UTF-8");
-                eprintln!("flush error: {}", str_slice);
+                eprintln!("wait for compact error: {}", str_slice);
             }
-            ffi::rocksdb_flushoptions_destroy(flush_opt);
+
+            ffi::rocksdb_transactiondb_flush_wal(self.inner, 1, &mut err);
+            if !err.is_null() {
+                let c_str = std::ffi::CStr::from_ptr(err);
+                let str_slice = c_str.to_str().expect("C string is not valid UTF-8");
+                eprintln!("flush wal error: {}", str_slice);
+            }
 
             ffi::rocksdb_transactiondb_close(self.inner);
+
             ffi::rocksdb_options_destroy(self.options);
             ffi::rocksdb_transactiondb_options_destroy(self.txn_db_options);
         }

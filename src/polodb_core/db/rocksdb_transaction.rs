@@ -102,6 +102,7 @@ impl RocksDBTransactionInner {
         unsafe {
             let read_options = ffi::rocksdb_readoptions_create();
             let write_options = ffi::rocksdb_writeoptions_create();
+            ffi::rocksdb_writeoptions_set_sync(write_options, 1);
             let txn_options = ffi::rocksdb_transaction_options_create();
             if txn_options.is_null() {
                 panic!("create transactions options failed")
