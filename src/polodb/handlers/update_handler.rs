@@ -14,14 +14,13 @@
 
 use std::sync::Arc;
 use anyhow::{anyhow, Result};
-use crate::handlers::Handler;
+use crate::handlers::{HandleContext, Handler};
 use async_trait::async_trait;
 use bson::{rawdoc, Document, RawDocumentBuf};
 use log::debug;
 use polodb_core::results::UpdateResult;
 use crate::app_context::AppContext;
 use crate::reply::Reply;
-use crate::wire::Message;
 
 pub(crate) struct UpdateHandler {}
 
@@ -59,8 +58,8 @@ impl Handler for UpdateHandler {
         }
     }
 
-    async fn handle(&self, ctx: AppContext, conn_id: u64, message: &Message) -> Result<Reply> {
-        let doc = &message.document_payload;
+    async fn handle(&self, ctx: &HandleContext) -> Result<Reply> {
+        let doc = &ctx.message.document_payload;
         let collection_name = doc.get("update")?.unwrap().as_str().ok_or(anyhow!("insert field is not a string"))?;
 
         let mut update_result = UpdateResult::default();
@@ -69,17 +68,17 @@ impl Handler for UpdateHandler {
         for update in updates.into_iter() {
             let update = update?.as_document().ok_or(anyhow!("update is not a document"))?;
             let d = bson::from_slice::<Document>(update.as_bytes())?;
-            UpdateHandler::handle_update(ctx.clone(), collection_name, d, &mut update_result)?;
+            UpdateHandler::handle_update(ctx.app_context.clone(), collection_name, d, &mut update_result)?;
         }
         debug!("update result: {:?}", update_result);
 
         let body = rawdoc! {
             "ok": 1,
-            "connectionId": conn_id as i64,
+            "connectionId": ctx.conn_id as i64,
             "nModified": update_result.modified_count as i64,
             "n": update_result.modified_count as i64,
         };
-        let reply = Reply::new(message.request_id.unwrap(), body);
+        let reply = Reply::new(ctx.message.request_id.unwrap(), body);
         Ok(reply)
     }
 }

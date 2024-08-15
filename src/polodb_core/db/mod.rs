@@ -18,6 +18,7 @@ pub mod client_cursor;
 mod rocksdb_wrapper;
 mod rocksdb_transaction;
 mod rocksdb_iterator;
+mod rocksdb_options;
 
 pub use db::{Database, Result};
 pub(crate) use rocksdb_transaction::RocksDBTransaction;

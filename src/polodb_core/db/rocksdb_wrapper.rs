@@ -21,6 +21,7 @@ use librocksdb_sys as ffi;
 use super::db::Result;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use crate::db::rocksdb_options::RocksDBWaitForCompactOptions;
 use crate::db::rocksdb_transaction::RocksDBTransaction;
 
 macro_rules! check_err {
@@ -101,14 +102,16 @@ impl Drop for RocksDBWrapperInner {
                 panic!("there are still transactions opened")
             }
             let mut err: *mut c_char = ptr::null_mut();
-            let wait_for_compact_options = ffi::rocksdb_wait_for_compact_options_create();
-            ffi::rocksdb_wait_for_compact_options_set_flush(wait_for_compact_options, 1);
-            ffi::rocksdb_wait_for_compact(self.inner.cast(), wait_for_compact_options, &mut err);
-            ffi::rocksdb_wait_for_compact_options_destroy(wait_for_compact_options);
-            if !err.is_null() {
-                let c_str = std::ffi::CStr::from_ptr(err);
-                let str_slice = c_str.to_str().expect("C string is not valid UTF-8");
-                eprintln!("wait for compact error: {}", str_slice);
+
+            {
+                let wait_for_compact_options = RocksDBWaitForCompactOptions::new();
+                wait_for_compact_options.set_flush(true);
+                ffi::rocksdb_wait_for_compact(self.inner.cast(), wait_for_compact_options.get(), &mut err);
+                if !err.is_null() {
+                    let c_str = std::ffi::CStr::from_ptr(err);
+                    let str_slice = c_str.to_str().expect("C string is not valid UTF-8");
+                    eprintln!("wait for compact error: {}", str_slice);
+                }
             }
 
             ffi::rocksdb_transactiondb_flush_wal(self.inner, 1, &mut err);

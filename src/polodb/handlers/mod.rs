@@ -23,12 +23,18 @@ use crate::app_context::AppContext;
 
 pub(crate) const DEFAULT_BATCH_SIZE: i32 = 101;
 
+pub(crate) struct HandleContext<'a> {
+    pub(crate) app_context: AppContext,
+    pub(crate) conn_id: u64,
+    pub(crate) message: &'a wire::Message,
+}
+
 #[async_trait]
 pub(crate) trait Handler: Send + Sync {
 
     fn test(&self, doc: &RawDocumentBuf) -> Result<bool>;
 
-    async fn handle(&self, ctx: AppContext, conn_id: u64, message: &wire::Message) -> Result<Reply>;
+    async fn handle(&self, ctx: &HandleContext) -> Result<Reply>;
 
 }
 

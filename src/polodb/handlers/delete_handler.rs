@@ -13,14 +13,13 @@
 // limitations under the License.
 
 use std::sync::Arc;
-use crate::handlers::Handler;
+use crate::handlers::{HandleContext, Handler};
 use async_trait::async_trait;
 use bson::{rawdoc, Document, RawDocumentBuf};
 use anyhow::{anyhow, Result};
 use polodb_core::results::DeleteResult;
 use crate::app_context::AppContext;
 use crate::reply::Reply;
-use crate::wire::Message;
 
 pub(crate) struct DeleteHandler {}
 
@@ -54,8 +53,8 @@ impl Handler for DeleteHandler {
         }
     }
 
-    async fn handle(&self, ctx: AppContext, conn_id: u64, message: &Message) -> Result<Reply> {
-        let doc = &message.document_payload;
+    async fn handle(&self, ctx: &HandleContext) -> Result<Reply> {
+        let doc = &ctx.message.document_payload;
         let collection_name = doc.get("delete")?.unwrap().as_str().ok_or(anyhow!("delete field is not a string"))?;
 
         let deletes_arr = doc.get("deletes")?.unwrap().as_array().ok_or(anyhow!("deletes field is not an array"))?;
@@ -64,14 +63,14 @@ impl Handler for DeleteHandler {
         for delete_doc in deletes_arr.into_iter() {
             let doc_ref = delete_doc?.as_document().ok_or(anyhow!("delete document is not a document"))?;
             let doc = bson::from_slice(doc_ref.as_bytes())?;
-            DeleteHandler::handle_delete(ctx.clone(), collection_name, doc, &mut delete_result)?;
+            DeleteHandler::handle_delete(ctx.app_context.clone(), collection_name, doc, &mut delete_result)?;
         }
 
         let body = rawdoc! {
             "ok": 1,
             "n": delete_result.deleted_count as i64,
         };
-        let reply = Reply::new(message.request_id.unwrap(), body);
+        let reply = Reply::new(ctx.message.request_id.unwrap(), body);
         Ok(reply)
     }
 }

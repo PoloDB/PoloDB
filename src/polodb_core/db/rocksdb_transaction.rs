@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, Ordering};
 use libc::c_char;
 use librocksdb_sys as ffi;
+use crate::db::rocksdb_options::{RocksDBReadOptions, RocksDBTransactionOptions, RocksDBWriteOptions};
 use crate::db::rocksdb_wrapper::RocksDBWrapperInner;
 use crate::db::RocksDBIterator;
 use super::db::Result;
@@ -85,9 +86,9 @@ impl RocksDBTransaction {
 }
 
 pub(crate) struct RocksDBTransactionInner {
-    pub(crate) read_options: *mut ffi::rocksdb_readoptions_t,
-    write_options: *mut ffi::rocksdb_writeoptions_t,
-    txn_options: *mut ffi::rocksdb_transaction_options_t,
+    pub(crate) read_options: RocksDBReadOptions,
+    _write_options: RocksDBWriteOptions,
+    _txn_options: RocksDBTransactionOptions,
     pub(crate) inner: *mut ffi::rocksdb_transaction_t,
     db_inner: *mut RocksDBWrapperInner,
     pub(crate) iter_count: AtomicU64,
@@ -100,25 +101,22 @@ impl RocksDBTransactionInner {
 
     pub(crate) fn new(db_inner: *mut RocksDBWrapperInner) -> Result<RocksDBTransactionInner>  {
         unsafe {
-            let read_options = ffi::rocksdb_readoptions_create();
-            let write_options = ffi::rocksdb_writeoptions_create();
-            ffi::rocksdb_writeoptions_set_sync(write_options, 1);
-            let txn_options = ffi::rocksdb_transaction_options_create();
-            if txn_options.is_null() {
-                panic!("create transactions options failed")
-            }
+            let read_options = RocksDBReadOptions::new();
+            let write_options = RocksDBWriteOptions::new();
+            write_options.set_sync(true);
+            let txn_options = RocksDBTransactionOptions::new();
             _ = (*db_inner).txn_count.fetch_add(1, Ordering::SeqCst);
             let inner = ffi::rocksdb_transaction_begin(
                 (*db_inner).inner,
-                write_options,
-                txn_options,
+                write_options.get(),
+                txn_options.get(),
                 null_mut(),
             );
 
             Ok(RocksDBTransactionInner {
                 read_options,
-                write_options,
-                txn_options,
+                _write_options: write_options,
+                _txn_options: txn_options,
                 inner,
                 db_inner,
                 iter_count: AtomicU64::new(0),
@@ -150,7 +148,7 @@ impl RocksDBTransactionInner {
             let mut value_len: usize = 0;
             let value = ffi::rocksdb_transaction_get(
                 self.inner,
-                self.read_options,
+                self.read_options.get(),
                 key.as_ptr() as *const i8,
                 key.len(),
                 &mut value_len,
@@ -215,9 +213,6 @@ impl Drop for RocksDBTransactionInner {
                 panic!("there are still iterators opened")
             }
             ffi::rocksdb_transaction_destroy(self.inner);
-            ffi::rocksdb_readoptions_destroy(self.read_options);
-            ffi::rocksdb_writeoptions_destroy(self.write_options);
-            ffi::rocksdb_transaction_options_destroy(self.txn_options);
             _ = self.db_inner.as_mut().unwrap().txn_count.fetch_sub(1, Ordering::SeqCst)
         }
     }

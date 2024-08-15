@@ -35,7 +35,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use reply::Reply;
 use crate::app_context::AppContext;
-use crate::handlers::{DeleteHandler, FindHandler, GetMoreHandler, HelloHandler, InsertHandler, KillCursorsHandler, UpdateHandler};
+use crate::handlers::{DeleteHandler, FindHandler, GetMoreHandler, HandleContext, HelloHandler, InsertHandler, KillCursorsHandler, UpdateHandler};
 
 #[tokio::main]
 async fn main() {
@@ -178,13 +178,17 @@ async fn handle_stream<W: AsyncWrite + AsyncRead + Unpin + Send>(ctx: AppContext
 
         handle_message(ctx, conn_id, &mut stream, message).await?;
     }
-    Ok(())
 }
 
 async fn handle_message<W: AsyncWrite + Unpin>(ctx: AppContext, conn_id: u64, stream: &mut W, message: wire::Message) -> Result<()> {
     let handler = ctx.get_handlers(&message.document_payload)?;
     if let Some(handler) = handler {
-        let reply = handler.handle(ctx.clone(), conn_id, &message).await?;
+        let ctx = HandleContext {
+            app_context: ctx.clone(),
+            conn_id,
+            message: &message,
+        };
+        let reply = handler.handle(&ctx).await?;
         reply.write_to(stream).await?;
     } else {
         let doc = rawdoc! {

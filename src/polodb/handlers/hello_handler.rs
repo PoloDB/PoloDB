@@ -15,10 +15,8 @@
 use std::sync::Arc;
 use bson::{rawdoc, RawDocumentBuf};
 use anyhow::Result;
-use crate::app_context::AppContext;
-use crate::handlers::Handler;
+use crate::handlers::{HandleContext, Handler};
 use crate::reply::Reply;
-use crate::wire;
 use async_trait::async_trait;
 use log::debug;
 
@@ -40,17 +38,18 @@ impl Handler for HelloHandler {
         Ok(val.is_some())
     }
 
-    async fn handle(&self, ctx: AppContext, conn_id: u64, message: &wire::Message) -> Result<Reply> {
-        debug!("HelloHandler::handle {}", message.request_id.unwrap());
+    async fn handle(&self, ctx: &HandleContext) -> Result<Reply> {
+        let req_id = ctx.message.request_id.unwrap();
+        debug!("HelloHandler::handle {}", req_id);
         let body = rawdoc! {
             "ok": 1,
-            "connectionId": conn_id as i64,
+            "connectionId": ctx.conn_id as i64,
             "minWireVersion": 6,
             "maxWireVersion": 21,
             "maxBsonObjectSize": 16 * 1024 * 1024,
             "maxMessageSizeBytes": 48000000,
         };
-        let reply = Reply::new(message.request_id.unwrap(), body);
+        let reply = Reply::new(req_id, body);
         Ok(reply)
     }
 

@@ -15,10 +15,8 @@
 use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, Result};
 use bson::{rawdoc, Document, RawArrayBuf, RawBson, RawDocumentBuf};
-use crate::app_context::AppContext;
-use crate::handlers::{Handler, DEFAULT_BATCH_SIZE};
+use crate::handlers::{HandleContext, Handler, DEFAULT_BATCH_SIZE};
 use crate::reply::Reply;
-use crate::wire::Message;
 use async_trait::async_trait;
 use log::debug;
 use polodb_core::ClientCursor;
@@ -31,13 +29,14 @@ impl FindHandler {
         Arc::new(FindHandler {})
     }
 
-    fn handle_single_batch(ctx: AppContext, conn_id: u64, db_name: &str, col_name: &str, message: &Message, cursor: &mut ClientCursor<Document>) -> Result<Reply> {
+    fn handle_single_batch(ctx: &HandleContext, db_name: &str, col_name: &str, cursor: &mut ClientCursor<Document>) -> Result<Reply> {
         let cursor_doc = FindHandler::mk_cursor_doc(0, db_name, col_name, cursor, -1)?;
         let body = rawdoc! {
             "ok": 1,
             "cursor": cursor_doc,
         };
-        let reply = Reply::new(message.request_id.unwrap(), body);
+        let req_id = ctx.message.request_id.unwrap();
+        let reply = Reply::new(req_id, body);
         Ok(reply)
     }
 
@@ -84,10 +83,10 @@ impl Handler for FindHandler {
         Ok(val.is_some())
     }
 
-    async fn handle(&self, ctx: AppContext, conn_id: u64, message: &Message) -> anyhow::Result<Reply> {
-        let doc = &message.document_payload;
+    async fn handle(&self, ctx: &HandleContext) -> Result<Reply> {
+        let doc = &ctx.message.document_payload;
         let collection_name = doc.get("find")?.unwrap().as_str().ok_or(anyhow!("find field is not a string"))?;
-        let db = ctx.db();
+        let db = ctx.app_context.db();
         let collection = db.collection::<Document>(collection_name);
 
         let db_name = match doc.get("$db")? {
@@ -125,11 +124,11 @@ impl Handler for FindHandler {
 
         let mut cursor = collection.find(Some(filter))?;
         if single_batch {
-            return FindHandler::handle_single_batch(ctx, conn_id, db_name, &collection_name, message, &mut cursor);
+            return FindHandler::handle_single_batch(ctx, &db_name, &collection_name, &mut cursor);
         }
         let cursor = Arc::new(Mutex::new(cursor));
 
-        let cursor_id = ctx.save_cursor(cursor.clone());
+        let cursor_id = ctx.app_context.save_cursor(cursor.clone());
         let cursor_doc = {
             let mut cursor_guard = cursor.lock().unwrap();
             FindHandler::mk_cursor_doc(cursor_id, db_name, &collection_name, &mut cursor_guard, batch_size as isize)?
@@ -139,7 +138,7 @@ impl Handler for FindHandler {
             "ok": 1,
             "cursor": cursor_doc,
         };
-        let reply = Reply::new(message.response_to, body);
+        let reply = Reply::new(ctx.message.response_to, body);
         debug!("find reply: {:?}", reply);
         Ok(reply)
     }

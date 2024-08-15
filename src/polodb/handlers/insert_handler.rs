@@ -15,10 +15,8 @@
 use std::sync::Arc;
 use anyhow::anyhow;
 use bson::{rawdoc, RawDocumentBuf};
-use crate::app_context::AppContext;
-use crate::handlers::Handler;
+use crate::handlers::{HandleContext, Handler};
 use crate::reply::Reply;
-use crate::wire;
 use async_trait::async_trait;
 use tokio::task;
 use log::debug;
@@ -43,14 +41,14 @@ impl Handler for InsertHandler {
             None => Ok(false),
         }
     }
-    async fn handle(&self, ctx: AppContext, conn_id: u64, message: &wire::Message) -> anyhow::Result<Reply> {
-        let doc = &message.document_payload;
+    async fn handle(&self, ctx: &HandleContext) -> anyhow::Result<Reply> {
+        let doc = &ctx.message.document_payload;
         let collection_name = doc.get("insert")?.unwrap().as_str().ok_or(anyhow!("insert field is not a string"))?;
-        let db = ctx.db();
+        let db = ctx.app_context.db();
         let collection = db.collection::<bson::Document>(collection_name);
 
         let mut batch_insert = Vec::<bson::Document>::new();
-        for doc_seq in message.document_sequences.as_slice() {
+        for doc_seq in ctx.message.document_sequences.as_slice() {
             for doc in doc_seq.documents.as_slice() {
                 let d = bson::from_slice::<bson::Document>(doc.as_bytes())?;
                 batch_insert.push(d);
@@ -65,10 +63,10 @@ impl Handler for InsertHandler {
 
         let body = rawdoc! {
             "ok": 1,
-            "connectionId": conn_id as i64,
+            "connectionId": ctx.conn_id as i64,
             "n": insert_result.inserted_ids.len() as i64,
         };
-        let reply = Reply::new(message.request_id.unwrap(), body);
+        let reply = Reply::new(ctx.message.request_id.unwrap(), body);
         Ok(reply)
     }
 

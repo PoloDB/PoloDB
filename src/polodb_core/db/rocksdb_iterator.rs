@@ -85,8 +85,8 @@ impl RocksDBIteratorInner {
     pub(crate) fn new(txn_inner: *mut RocksDBTransactionInner) -> RocksDBIteratorInner {
         unsafe {
             let txn_ptr = (*txn_inner).inner;
-            let read_options = (*txn_inner).read_options;
-            let iter = ffi::rocksdb_transaction_create_iterator(txn_ptr, read_options);
+            let read_options = &(*txn_inner).read_options;
+            let iter = ffi::rocksdb_transaction_create_iterator(txn_ptr, read_options.get());
             _ = (*txn_inner).iter_count.fetch_add(1, Ordering::SeqCst);
             RocksDBIteratorInner {
                 inner: iter,

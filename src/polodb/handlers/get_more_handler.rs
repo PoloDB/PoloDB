@@ -1,13 +1,11 @@
 use std::sync::Arc;
 use anyhow::{anyhow, Result};
-use crate::handlers::{Handler, DEFAULT_BATCH_SIZE};
+use crate::handlers::{HandleContext, Handler, DEFAULT_BATCH_SIZE};
 use async_trait::async_trait;
 use bson::{rawdoc, Document, RawDocumentBuf};
 use log::debug;
 use polodb_core::ClientCursor;
-use crate::app_context::AppContext;
 use crate::reply::Reply;
-use crate::wire;
 
 pub(crate) struct GetMoreHandler {}
 
@@ -51,8 +49,8 @@ impl Handler for GetMoreHandler {
         Ok(val.is_some())
     }
 
-    async fn handle(&self, ctx: AppContext, conn_id: u64, message: &wire::Message) -> anyhow::Result<Reply> {
-        let doc = &message.document_payload;
+    async fn handle(&self, ctx: &HandleContext) -> Result<Reply> {
+        let doc = &ctx.message.document_payload;
 
         let db_name = match doc.get("$db")? {
             Some(val) => {
@@ -87,13 +85,13 @@ impl Handler for GetMoreHandler {
         };
 
         let (cursor_doc, has_more) = {
-            let cursor = ctx.get_cursor(cursor_id).ok_or(anyhow::anyhow!("cursor not found"))?;
+            let cursor = ctx.app_context.get_cursor(cursor_id).ok_or(anyhow::anyhow!("cursor not found"))?;
             let mut cursor_guard = cursor.lock().unwrap();
             GetMoreHandler::mk_cursor_doc(db_name, collection, batch_size as isize, cursor_id, &mut cursor_guard)?
         };
 
         if !has_more {
-            ctx.remove_cursor(&[cursor_id]);
+            ctx.app_context.remove_cursor(&[cursor_id]);
             debug!("cursor removed: {}", cursor_id);
         }
 
@@ -101,7 +99,7 @@ impl Handler for GetMoreHandler {
             "ok": 1,
             "cursor": cursor_doc,
         };
-        let reply = Reply::new(message.request_id.unwrap(), body);
+        let reply = Reply::new(ctx.message.request_id.unwrap(), body);
         Ok(reply)
     }
 
