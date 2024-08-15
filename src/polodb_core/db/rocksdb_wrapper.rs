@@ -15,6 +15,7 @@
 use std::ops::DerefMut;
 use std::path::{Path, PathBuf};
 use std::{env, ptr};
+use std::ffi::CString;
 use libc::c_char;
 use librocksdb_sys as ffi;
 use super::db::Result;
@@ -78,7 +79,8 @@ impl RocksDBWrapperInner {
             let options = ffi::rocksdb_options_create();
             ffi::rocksdb_options_set_create_if_missing(options, 1);
             let mut err: *mut c_char = ptr::null_mut();
-            let db = ffi::rocksdb_transactiondb_open(options, txn_db_opts, path.as_str().as_ptr().cast::<i8>(), &mut err);
+            let path_c = CString::new(path.clone()).unwrap();
+            let db = ffi::rocksdb_transactiondb_open(options, txn_db_opts, path_c.as_ptr(), &mut err);
             check_err!(err);
             Ok(RocksDBWrapperInner {
                 path,
@@ -99,16 +101,6 @@ impl Drop for RocksDBWrapperInner {
                 panic!("there are still transactions opened")
             }
             let mut err: *mut c_char = ptr::null_mut();
-            // let flush_opt = ffi::rocksdb_flushoptions_create();
-            // ffi::rocksdb_transactiondb_flush(self.inner, flush_opt, &mut err);
-            // if !err.is_null() {
-            //     let c_str = std::ffi::CStr::from_ptr(err);
-            //     let str_slice = c_str.to_str().expect("C string is not valid UTF-8");
-            //     eprintln!("flush error: {}", str_slice);
-            // }
-            // ffi::rocksdb_flushoptions_destroy(flush_opt);
-            //
-            // ffi::rocksdb_transactiondb_close(self.inner);
             let wait_for_compact_options = ffi::rocksdb_wait_for_compact_options_create();
             ffi::rocksdb_wait_for_compact_options_set_flush(wait_for_compact_options, 1);
             ffi::rocksdb_wait_for_compact(self.inner.cast(), wait_for_compact_options, &mut err);
