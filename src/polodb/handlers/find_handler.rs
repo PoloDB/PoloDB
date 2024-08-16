@@ -45,7 +45,7 @@ impl FindHandler {
 
         let (first_batch, _has_more) = FindHandler::consume_first_batch(cursor, batch_size)?;
         doc.append("firstBatch", RawBson::Array(first_batch));
-        if cursor_id > 0 {
+        if cursor_id >= 0 {
             doc.append("id", RawBson::from(cursor_id));
         }
 
@@ -87,7 +87,6 @@ impl Handler for FindHandler {
         let doc = &ctx.message.document_payload;
         let collection_name = doc.get("find")?.unwrap().as_str().ok_or(anyhow!("find field is not a string"))?;
         let db = ctx.app_context.db();
-        let collection = db.collection::<Document>(collection_name);
 
         let db_name = match doc.get("$db")? {
             Some(val) => {
@@ -122,7 +121,16 @@ impl Handler for FindHandler {
             None => DEFAULT_BATCH_SIZE,
         };
 
-        let mut cursor = collection.find(Some(filter))?;
+        let session_opt = ctx.session.clone();
+        debug!("find collection: {}, auto commit: {}", collection_name, ctx.auto_commit);
+        let mut cursor = if let Some(session) = session_opt {
+            let txn = session.get_transaction().ok_or(anyhow!("transaction not started"))?;
+            let collection = txn.collection::<Document>(collection_name);
+            collection.find(Some(filter))?
+        } else {
+            let collection = db.collection::<Document>(collection_name);
+            collection.find(Some(filter))?
+        };
         if single_batch {
             return FindHandler::handle_single_batch(ctx, &db_name, &collection_name, &mut cursor);
         }

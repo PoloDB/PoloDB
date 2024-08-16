@@ -16,10 +16,11 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicU64;
 use bson::{Document, RawDocumentBuf};
-use polodb_core::{ClientCursor, Database};
+use bson::uuid::Uuid;
+use polodb_core::{ClientCursor, Database, Transaction};
 use crate::handlers::Handler;
 use anyhow::Result;
-use crate::conn_context::ConnectionContext;
+use crate::session_context::SessionContext;
 
 #[derive(Clone)]
 pub(crate) struct AppContext {
@@ -56,27 +57,7 @@ impl AppContext {
     }
 
     pub(crate) fn next_conn_id(&self) -> u64 {
-        let result = self.inner.conn_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        {
-            let mut conn_ctx_map = self.inner.conn_ctx.lock().unwrap();
-            if conn_ctx_map.contains_key(&(result as i64)) {
-                panic!("Connection id {} already exists", result);
-            }
-            conn_ctx_map.insert(result as i64, ConnectionContext::default());
-        }
-
-        result
-    }
-
-    pub(crate) fn get_conn_ctx(&self, conn_id: i64) -> Option<ConnectionContext> {
-        let conn_ctx_map = self.inner.conn_ctx.lock().unwrap();
-        conn_ctx_map.get(&conn_id).map(|c| c.clone())
-    }
-
-    pub(crate) fn remove_conn_ctx(&self, conn_id: i64) {
-        let mut conn_ctx_map = self.inner.conn_ctx.lock().unwrap();
-        conn_ctx_map.remove(&conn_id);
+        self.inner.conn_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
     pub (crate) fn save_cursor(&self, cursor: Arc<Mutex<ClientCursor<Document>>>) -> i64 {
@@ -98,6 +79,18 @@ impl AppContext {
             cursors.remove(cursor_id);
         }
     }
+
+    pub(crate) fn create_session(&self, uuid: Uuid, txn: Transaction) -> SessionContext {
+        let result = SessionContext::new(txn);
+        let mut session_ctx = self.inner.session_ctx.lock().unwrap();
+        session_ctx.insert(uuid, result.clone());
+        result
+    }
+
+    pub(crate) fn get_session(&self, uuid: &Uuid) -> Option<SessionContext> {
+        let session_ctx = self.inner.session_ctx.lock().unwrap();
+        session_ctx.get(&uuid).map(|s| s.clone())
+    }
 }
 
 struct AppContextInner {
@@ -105,7 +98,7 @@ struct AppContextInner {
     handlers: Mutex<Vec<Arc<dyn Handler>>>,
     cursors: Mutex<HashMap<i64, Arc<Mutex<ClientCursor<Document>>>>>,
     conn_id: AtomicU64,
-    conn_ctx: Mutex<HashMap<i64, ConnectionContext>>,
+    session_ctx: Mutex<HashMap<Uuid, SessionContext>>,
 }
 
 impl AppContextInner {
@@ -116,7 +109,7 @@ impl AppContextInner {
             handlers: Mutex::new(Vec::with_capacity(32)),
             cursors: Mutex::new(HashMap::new()),
             conn_id: AtomicU64::new(0),
-            conn_ctx: Mutex::new(HashMap::new()),
+            session_ctx: Mutex::new(HashMap::new()),
         }
     }
 
@@ -136,8 +129,8 @@ impl Drop for AppContextInner {
             cursors.clear();
         }
         {
-            let mut conn_ctx = self.conn_ctx.lock().unwrap();
-            conn_ctx.clear();
+            let mut session_map = self.session_ctx.lock().unwrap();
+            session_map.clear();
         }
     }
 

@@ -36,14 +36,14 @@ pub(crate) mod checked;
 mod reply;
 mod handlers;
 mod app_context;
-mod conn_context;
 mod utils;
+mod session_context;
 
 use std::net::SocketAddr;
 use polodb_core::Database;
-use bson::{rawdoc};
+use bson::{rawdoc, Document, RawBsonRef};
 use clap::{Arg, Command as App};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use tokio::io::{AsyncRead, AsyncWrite};
 use log::{info, warn, error, debug};
 use tokio::select;
@@ -52,6 +52,7 @@ use tokio_util::sync::CancellationToken;
 use reply::Reply;
 use crate::app_context::AppContext;
 use crate::handlers::{AbortTransactionHandler, CommitTransactionHandler, DeleteHandler, FindHandler, GetMoreHandler, HandleContext, HelloHandler, InsertHandler, KillCursorsHandler, UpdateHandler};
+use crate::utils::uuid_from_bson;
 
 #[tokio::main]
 async fn main() {
@@ -163,7 +164,6 @@ pub(crate) async fn start_socket_server(path: String, socket: String, token: Can
                                 let conn_id = ctx.next_conn_id();
                                 info!("new connection: {} from {}", conn_id, addr);
                                 let result = handle_stream(ctx.clone(), conn_id, stream).await;
-                                ctx.remove_conn_ctx(conn_id as i64);
                                 if let Err(e) = result {
                                     // if is unexpected end of file, ignore if
                                     if e.to_string().contains("unexpected end of file") {
@@ -202,10 +202,37 @@ async fn handle_stream<W: AsyncWrite + AsyncRead + Unpin + Send>(ctx: AppContext
 async fn handle_message<W: AsyncWrite + Unpin>(ctx: AppContext, conn_id: u64, stream: &mut W, message: wire::Message) -> Result<()> {
     let handler = ctx.get_handlers(&message.document_payload)?;
     if let Some(handler) = handler {
+        let start_transaction = utils::truly_value_for_bson_ref(message.document_payload.get("startTransaction")?, false);
+        let session = if start_transaction {
+            let lsid = message.document_payload.get_document("lsid")?;
+            let lsid_doc = bson::from_slice::<Document>(lsid.as_bytes())?;
+            let id = uuid_from_bson(
+                lsid_doc.get("id").ok_or(anyhow!("lsid missing id field"))?,
+            ).ok_or(anyhow!("lsid missing id field"))?;
+            info!("=== start transaction: {:?}, id: {:?}", lsid_doc, id);
+            let txn = ctx.db().start_transaction()?;
+            Some(ctx.create_session(id, txn))
+        } else {
+            let lsid_opt = message.document_payload.get("lsid")?;
+            match lsid_opt {
+                Some(RawBsonRef::Document(lsid_doc)) => {
+                    let lsid_doc = bson::from_slice::<Document>(lsid_doc.as_bytes())?;
+                    let id = uuid_from_bson(
+                        lsid_doc.get("id").ok_or(anyhow!("lsid missing id field"))?,
+                    ).ok_or(anyhow!("lsid missing id field"))?;
+                    ctx.get_session(&id)
+                }
+                _ => None
+            }
+        };
+        let auto_commit = utils::truly_value_for_bson_ref(message.document_payload.get("autocommit")?, true);
+
         let ctx = HandleContext {
             app_context: ctx.clone(),
             conn_id,
             message: &message,
+            session,
+            auto_commit,
         };
         let reply_result = handler.handle(&ctx).await;
         match reply_result {
@@ -497,7 +524,11 @@ async fn test_session() {
             let coll = client.database("sample_mflix").collection::<Document>("movies");
 
             coll.insert_one(doc! { "x": 1 }).session(&mut session).await?;
-            coll.delete_one(doc! { "y": 2 }).session(&mut session).await?;
+            let one = coll.find_one(doc! { "x": 1 }).session(&mut session).await?;
+            assert_eq!(1, one.unwrap().get_i32("x").unwrap());
+            coll.delete_one(doc! { "x": 1 }).session(&mut session).await?;
+            let one = coll.find_one(doc! { "x": 1 }).session(&mut session).await?;
+            assert_eq!(None, one);
 
             session.commit_transaction().await?;
 

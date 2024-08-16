@@ -21,6 +21,7 @@ use polodb_core::results::DeleteResult;
 use polodb_core::CollectionT;
 use crate::app_context::AppContext;
 use crate::reply::Reply;
+use crate::session_context::SessionContext;
 
 pub(crate) struct DeleteHandler {}
 
@@ -30,12 +31,18 @@ impl DeleteHandler {
         Arc::new(DeleteHandler {})
     }
 
-    fn handle_delete(ctx: AppContext, col_name: &str, delete_doc: Document, result: &mut DeleteResult) -> Result<()> {
+    fn handle_delete(ctx: AppContext, session_opt: &Option<SessionContext>, col_name: &str, delete_doc: Document, result: &mut DeleteResult) -> Result<()> {
         let db = ctx.db();
-        let collection = db.collection::<Document>(col_name);
-
         let filter = delete_doc.get_document("q")?;
-        let tmp_result = collection.delete_many(filter.clone())?;
+
+        let tmp_result = if let Some(session) = session_opt {
+            let txn = session.get_transaction().ok_or(anyhow!("transaction not found"))?;
+            let collection = txn.collection::<Document>(col_name);
+            collection.delete_many(filter.clone())?
+        } else {
+            let collection = db.collection::<Document>(col_name);
+            collection.delete_many(filter.clone())?
+        };
 
         result.deleted_count += tmp_result.deleted_count;
 
@@ -61,10 +68,11 @@ impl Handler for DeleteHandler {
         let deletes_arr = doc.get("deletes")?.unwrap().as_array().ok_or(anyhow!("deletes field is not an array"))?;
         let mut delete_result = DeleteResult::default();
 
+        let session_opt = ctx.session.clone();
         for delete_doc in deletes_arr.into_iter() {
             let doc_ref = delete_doc?.as_document().ok_or(anyhow!("delete document is not a document"))?;
             let doc = bson::from_slice(doc_ref.as_bytes())?;
-            DeleteHandler::handle_delete(ctx.app_context.clone(), collection_name, doc, &mut delete_result)?;
+            DeleteHandler::handle_delete(ctx.app_context.clone(), &session_opt, collection_name, doc, &mut delete_result)?;
         }
 
         let body = rawdoc! {

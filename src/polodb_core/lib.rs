@@ -39,7 +39,7 @@
 //! # Example
 //!
 //!  ```rust
-//! use polodb_core::Database;
+//! use polodb_core::{Database, CollectionT};
 //! use serde::{Serialize, Deserialize};
 //!
 //! #[derive(Debug, Serialize, Deserialize)]
@@ -60,7 +60,7 @@
 //! ## Inserting documents into a collection
 //!
 //! ```rust
-//! use polodb_core::Database;
+//! use polodb_core::{Database, CollectionT};
 //! use polodb_core::bson::{Document, doc};
 //!
 //! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db-collection");
@@ -78,7 +78,7 @@
 //! ## Finding documents in a collection
 //!
 //! ```rust
-//! use polodb_core::Database;
+//! use polodb_core::{Database, CollectionT};
 //! use polodb_core::bson::{Document, doc};
 //! use serde::{Deserialize, Serialize};
 //!
@@ -116,7 +116,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use polodb_core::Database;
+//! use polodb_core::{Database, CollectionT};
 //! use polodb_core::bson::{Document, doc};
 //!
 //! # let db_path = polodb_core::test_utils::mk_db_path("doc-test-polo-db");

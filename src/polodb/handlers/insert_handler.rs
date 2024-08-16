@@ -47,7 +47,6 @@ impl Handler for InsertHandler {
         let doc = &ctx.message.document_payload;
         let collection_name = doc.get("insert")?.unwrap().as_str().ok_or(anyhow!("insert field is not a string"))?.to_string();
 
-        let start_transaction = utils::truly_value_for_bson_ref(doc.get("startTransaction")?, false);
         let auto_commit = utils::truly_value_for_bson_ref(doc.get("autocommit")?, true);
 
         let db = ctx.app_context.db();
@@ -60,19 +59,12 @@ impl Handler for InsertHandler {
             }
         }
 
-        let conn_id = ctx.conn_id;
-        let app_ctx = ctx.app_context.clone();
         // insert could be blocking, so we spawn a blocking task
-        debug!("inserted {} documents, auto_commit {}, start_transaction: {}", batch_insert.len(), auto_commit, start_transaction);
+        debug!("inserted {} documents, start_transaction: {}", batch_insert.len(), auto_commit);
+        let session_opt = ctx.session.clone();
         let insert_result = task::spawn_blocking(move || -> anyhow::Result<polodb_core::results::InsertManyResult> {
-            if start_transaction {
-                let conn_ctx = app_ctx.get_conn_ctx(conn_id as i64).ok_or(anyhow!("connection not found"))?;
-                let txn = db.start_transaction()?;
-                conn_ctx.start_transaction(txn)?;
-            }
-            if !auto_commit {
-                let conn_ctx = app_ctx.get_conn_ctx(conn_id as i64).ok_or(anyhow!("connection not found"))?;
-                let txn = conn_ctx.get_transaction().ok_or(anyhow!("transaction not found"))?;
+            if let Some(session) = session_opt {
+                let txn = session.get_transaction().ok_or(anyhow!("transaction not started"))?;
                 let collection = txn.collection::<bson::Document>(&collection_name);
                 let insert_result = collection.insert_many(batch_insert.as_slice())?;
                 return Ok(insert_result)

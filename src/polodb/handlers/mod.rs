@@ -24,6 +24,7 @@ pub(crate) use delete_handler::DeleteHandler;
 pub(crate) use commit_transaction::CommitTransactionHandler;
 pub(crate) use abort_transaction::AbortTransactionHandler;
 use crate::app_context::AppContext;
+use crate::session_context::SessionContext;
 
 pub(crate) const DEFAULT_BATCH_SIZE: i32 = 101;
 
@@ -31,6 +32,8 @@ pub(crate) struct HandleContext<'a> {
     pub(crate) app_context: AppContext,
     pub(crate) conn_id: u64,
     pub(crate) message: &'a wire::Message,
+    pub(crate) session: Option<SessionContext>,
+    pub(crate) auto_commit: bool,
 }
 
 #[async_trait]

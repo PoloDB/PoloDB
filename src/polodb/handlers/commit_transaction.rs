@@ -33,10 +33,10 @@ impl Handler for CommitTransactionHandler {
     }
 
     async fn handle(&self, ctx: &HandleContext) -> Result<Reply> {
-        let conn_id = ctx.conn_id;
         let req_id = ctx.message.request_id.unwrap();
-        let conn_ctx = ctx.app_context.get_conn_ctx(conn_id as i64).ok_or(anyhow!("connection not found"))?;
-        conn_ctx.commit_transaction()?;
+        let session = ctx.session.as_ref().ok_or(anyhow!("session not found"))?;
+        let conn_ctx = session.get_transaction().ok_or(anyhow!("transaction not found"))?;
+        conn_ctx.commit()?;
 
         let body = rawdoc! {
             "ok": 1,

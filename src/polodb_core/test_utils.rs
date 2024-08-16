@@ -20,6 +20,7 @@ pub fn mk_db_path(db_name: &str) -> PathBuf {
     let mut db_path = env::temp_dir();
     let db_filename = String::from(db_name) + "-db";
     db_path.push(db_filename);
+    let _ = std::fs::remove_dir_all(db_path.as_path());
     db_path
 }
 
