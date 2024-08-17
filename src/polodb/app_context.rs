@@ -40,9 +40,11 @@ impl AppContext {
         self.inner.db.clone()
     }
 
-    pub(crate) fn push_handler(&self, handler: Arc<dyn Handler>) {
-         let mut handlers = self.inner.handlers.lock().unwrap();
-         handlers.push(handler);
+    pub(crate) fn register_handlers(&self, handlers: Vec<Arc<dyn Handler>>) {
+        let mut handlers_guard = self.inner.handlers.lock().unwrap();
+        for handler in handlers {
+            handlers_guard.push(handler);
+        }
      }
 
     pub(crate) fn get_handlers(&self, doc: &RawDocumentBuf) -> Result<Option<Arc<dyn Handler>>> {
