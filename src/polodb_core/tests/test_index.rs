@@ -1,10 +1,18 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
+// Copyright 2024 Vincent Chan
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-use polodb_core::{Database, IndexModel, IndexOptions, Result};
+use polodb_core::{CollectionT, IndexModel, IndexOptions, Result};
 use bson::{doc, Document};
 use crate::common::prepare_db;
 
@@ -12,7 +20,7 @@ mod common;
 
 #[test]
 fn test_create_multi_keys_index() {
-    let db = Database::open_memory().unwrap();
+    let db = prepare_db("test-create-multi-keys-index").unwrap();
     let col = db.collection::<Document>("teacher");
     let result = col.create_index(IndexModel {
         keys: doc! {
@@ -27,7 +35,7 @@ fn test_create_multi_keys_index() {
 
 #[test]
 fn test_create_reverse_order_index() {
-    let db = Database::open_memory().unwrap();
+    let db = prepare_db("test-create-reverse-order-index").unwrap();
     let col = db.collection::<Document>("teacher");
     let result = col.create_index(IndexModel {
         keys: doc! {
@@ -43,7 +51,6 @@ fn test_create_reverse_order_index() {
 fn test_create_index() {
     vec![
         prepare_db("test-create-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let col = db.collection("teacher");
 
@@ -65,7 +72,6 @@ fn test_create_index() {
 fn test_create_index_with_data() {
     vec![
         prepare_db("test-create-index-with-data").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -98,7 +104,6 @@ fn test_create_index_with_data() {
 fn test_find_by_index() {
     vec![
         prepare_db("test-find-by-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -131,7 +136,6 @@ fn test_find_by_index() {
 fn test_index_order() {
     vec![
         prepare_db("test-index-order").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -175,7 +179,6 @@ fn test_index_order() {
 fn test_create_unique_index() {
     vec![
         prepare_db("test-create-unique-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let col = db.collection("teacher");
 
@@ -208,7 +211,6 @@ fn test_create_unique_index() {
 fn test_update_with_index() {
     vec![
         prepare_db("test-update-with-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -249,7 +251,6 @@ fn test_update_with_index() {
 fn test_delete_with_index() {
     vec![
         prepare_db("test-delete-with-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -280,6 +281,7 @@ fn test_delete_with_index() {
         let result = col.find_one(doc! {
             "age": 33
         }).unwrap();
+        assert_eq!(result, None);
 
         assert!(col.find_one(doc! {
             "age": 33
@@ -291,7 +293,6 @@ fn test_delete_with_index() {
 fn test_drop_index() {
     vec![
         prepare_db("test-drop-index").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();

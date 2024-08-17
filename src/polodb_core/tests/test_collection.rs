@@ -1,16 +1,24 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
+// Copyright 2024 Vincent Chan
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use polodb_core::bson::{Document, doc};
-use polodb_core::{Database, Collection, Result};
+use polodb_core::{CollectionT, Result};
 mod common;
 
 use common::{
     prepare_db,
     create_file_and_return_db_with_items,
-    create_memory_and_return_db_with_items,
 };
 
 static TEST_SIZE: usize = 1000;
@@ -19,7 +27,6 @@ static TEST_SIZE: usize = 1000;
 fn test_create_collection_and_find_all() {
     vec![
         create_file_and_return_db_with_items("test-collection", TEST_SIZE),
-        create_memory_and_return_db_with_items(TEST_SIZE),
     ].iter().for_each(|db| {
         let test_collection = db.collection::<Document>("test");
         let cursor = test_collection.find(None).unwrap();
@@ -41,7 +48,6 @@ fn test_create_collection_and_find_all() {
 fn test_create_collection_and_drop() {
     vec![
         prepare_db("test-create-and-drops").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let names = db.list_collection_names().unwrap();
         assert_eq!(names.len(), 0);
@@ -74,7 +80,6 @@ fn test_create_collection_and_drop() {
 fn test_create_collection_with_number_pkey() {
     vec![
         prepare_db("test-number-pkey").unwrap(),
-        Database::open_memory().unwrap()
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
         let mut data: Vec<Document> = vec![];
@@ -90,7 +95,7 @@ fn test_create_collection_with_number_pkey() {
 
         collection.insert_many(&data).unwrap();
 
-        let collection: Collection<Document> = db.collection::<Document>("test");
+        let collection = db.collection::<Document>("test");
 
         let count = collection.count_documents().unwrap();
         assert_eq!(TEST_SIZE, count as usize);
@@ -109,7 +114,6 @@ fn test_create_collection_with_number_pkey() {
 fn test_create_collection_and_find_by_pkey() {
     vec![
         create_file_and_return_db_with_items("test-find-pkey", 10),
-        create_memory_and_return_db_with_items(10),
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
 
@@ -139,7 +143,6 @@ fn test_create_collection_and_find_by_pkey() {
 fn test_query_embedded_document() {
     vec![
         create_file_and_return_db_with_items("test-embedded-document", 10),
-        create_memory_and_return_db_with_items(10),
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
 

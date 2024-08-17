@@ -1,21 +1,30 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
+// Copyright 2024 Vincent Chan
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use bson::Document;
 use bson::spec::ElementType;
 use serde::{Deserialize, Serialize};
-use polodb_core::{Database, Result};
+use polodb_core::{Database, Result, CollectionT};
 use polodb_core::bson::{doc, Bson};
 
 mod common;
 
 use common::prepare_db;
-use polodb_core::test_utils::{mk_db_path, mk_journal_path};
+use polodb_core::test_utils::mk_db_path;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Book {
@@ -34,7 +43,6 @@ struct IdBook {
 fn test_insert_struct() {
     vec![
         prepare_db("test-insert-struct").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         // Get a handle to a collection of `Book`.
         let typed_collection = db.collection::<Book>("books");
@@ -78,7 +86,6 @@ fn test_insert_struct() {
 fn test_insert_id_struct() {
     vec![
         prepare_db("test-insert-id-struct").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         // Get a handle to a collection of `Book`.
         let typed_collection = db.collection::<IdBook>("books");
@@ -133,7 +140,6 @@ fn test_insert_id_struct() {
 fn test_insert_bigger_key() {
     vec![
         prepare_db("test-insert-bigger-key").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let collection = db.collection("test");
         let mut doc = doc! {};
@@ -164,7 +170,6 @@ fn test_very_large_binary() {
     println!("data size: {}", data.len());
     vec![
         prepare_db("test-very-large-data").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let collection = db.collection("test");
 
@@ -198,7 +203,6 @@ fn test_very_large_binary() {
 fn test_insert_after_delete() {
     vec![
         prepare_db("test-insert-after-delete").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
 
         let collection = db.collection::<Document>("test");
@@ -235,7 +239,7 @@ fn test_insert_after_delete() {
 
 #[test]
 fn test_insert_different_types_as_key() {
-    let db = Database::open_memory().unwrap();
+    let db = prepare_db("test-insert-different-types-as-key").unwrap();
     let collection = db.collection::<Document>("test");
 
     collection.insert_one(doc! {
@@ -258,14 +262,12 @@ fn test_insert_different_types_as_key() {
 fn test_insert_persist() {
     const NAME: &str = "test-insert-persist";
     let db_path = mk_db_path(NAME);
-    let journal_path = mk_journal_path(NAME);
 
-    let _ = std::fs::remove_file(db_path.as_path());
-    let _ = std::fs::remove_file(journal_path);
+    let _ = std::fs::remove_dir_all(db_path.as_path());
 
     // Open the database for 10 times
     for i in 0..10 {
-        let db = Database::open_file(&db_path).unwrap();
+        let db = Database::open_path(&db_path).unwrap();
 
         let collection = db.collection::<Document>("test");
         let len = collection.count_documents().unwrap();

@@ -1,9 +1,18 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
-use polodb_core::{Database, Result};
+// Copyright 2024 Vincent Chan
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use polodb_core::{Database, CollectionT, Result};
 use polodb_core::bson::{doc, Document};
 
 mod common;
@@ -15,7 +24,6 @@ use crate::common::clean_db_path;
 fn test_delete_one() {
     vec![
         prepare_db("test-update-one").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
 
@@ -47,7 +55,6 @@ fn test_delete_one() {
 fn test_one_delete_item() {
     vec![
         prepare_db("test-delete-item").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let collection = db.collection::<Document>("test");
 
@@ -77,7 +84,6 @@ fn test_one_delete_item() {
 fn test_delete_many() {
     vec![
         prepare_db("test-delete-many").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -106,7 +112,6 @@ fn test_delete_many() {
 fn test_delete_all_items() {
     vec![
         prepare_db("test-delete-all-items").unwrap(),
-        Database::open_memory().unwrap(),
     ].iter().for_each(|db| {
         let metrics = db.metrics();
         metrics.enable();
@@ -163,7 +168,7 @@ fn test_delete_issues_127() {
 
     // Run #2
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         let col = db.collection::<Document>("tasks");
         col.delete_one(doc! { "name": "t1" }).unwrap();
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap(); // The document { "name": "t1" } is returned, but none should be returned instead
@@ -172,7 +177,7 @@ fn test_delete_issues_127() {
 
     // Run #3
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         // Run #2
         let col = db.collection::<Document>("tasks");
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap(); // The document { "name": "t1" } is returned, but none should be returned instead
@@ -189,7 +194,7 @@ fn test_delete_issues_148() {
 
     // insert data
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         let col = db.collection::<Document>("tasks");
 
         col.insert_one(doc! {
@@ -205,8 +210,11 @@ fn test_delete_issues_148() {
         }).unwrap();
     }
 
+    // sleep
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         let col = db.collection::<Document>("tasks");
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap();
         assert_eq!(result.len(), 3);
@@ -216,8 +224,11 @@ fn test_delete_issues_148() {
         assert_eq!(result.len(), 2);
     }
 
+    // sleep
+    std::thread::sleep(std::time::Duration::from_secs(1));
+
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         let col = db.collection::<Document>("tasks");
         col.insert_one(doc! {
             "name": "4"
@@ -229,7 +240,7 @@ fn test_delete_issues_148() {
     }
 
     {
-        let db = Database::open_file(db_path.as_path()).unwrap();
+        let db = Database::open_path(db_path.as_path()).unwrap();
         let col = db.collection::<Document>("tasks");
         let result = col.find(None).unwrap().collect::<Result<Vec<Document>>>().unwrap();
         assert_eq!(result.len(), 3);

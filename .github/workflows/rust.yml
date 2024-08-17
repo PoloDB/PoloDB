@@ -16,6 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          token: ${{ secrets.PAT_TOKEN }}
       - uses: actions/cache@v3
         with:
           path: |
@@ -30,44 +33,34 @@ jobs:
           node-version: '18'
       
       - name: Run Rust tests
-        run: cargo test --release --verbose --workspace
+        run: RUST_BACKTRACE=1 cargo test --release --verbose --workspace
       - name: Build binaries
         run: cargo build --release
 
-  Wasm32:
-    name: Test Wasm32
-    runs-on: ubuntu-latest
+  MacOS:
+    name: Test on MacOS
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/cache@v3
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
+          submodules: recursive
+          token: ${{ secrets.PAT_TOKEN }}
       - uses: actions/setup-node@v2
         with:
           node-version: '18'
-
-      - name: Install wasm32
-        run: |
-          rustup target add wasm32-unknown-unknown
-          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-      - name: Build wasm
-        run: wasm-pack build src/polodb_wasm
-      - run: npm install -g pnpm@7
-      - run: cd src/polodb_wasm && pnpm install
-      - run: cd src/polodb_wasm && pnpm run build
+      - name: Run Rust tests
+        run: RUST_BACKTRACE=1 cargo test --release --verbose --workspace
+      - name: Build Clib
+        run: cargo build --release
 
   Windows:
     name: Test on Windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          token: ${{ secrets.PAT_TOKEN }}
       - uses: actions/cache@v3
         with:
           path: |
@@ -84,5 +77,7 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --release --verbose --workspace
+        env:
+          RUST_BACKTRACE: 1
       - name: Build binaries
         run: cargo build --release

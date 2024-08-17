@@ -1,8 +1,17 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
+// Copyright 2024 Vincent Chan
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::path::PathBuf;
 use std::env;
 use polodb_core::{Config, Database, Result};
@@ -12,37 +21,23 @@ use polodb_core::bson::{Document, doc};
 pub fn mk_db_path(db_name: &str) -> PathBuf {
 
     let mut db_path = env::temp_dir();
-    let db_filename = String::from(db_name) + ".db";
+    let db_filename = String::from(db_name) + "-db";
     db_path.push(db_filename);
     db_path
-}
-
-fn mk_journal_path(db_name: &str) -> PathBuf {
-    let mut journal_path = env::temp_dir();
-
-    let journal_filename = String::from(db_name) + ".db.wal";
-    journal_path.push(journal_filename);
-
-    journal_path
 }
 
 #[allow(dead_code)]
 pub fn prepare_db_with_config(db_name: &str, config: Config) -> Result<Database> {
     let db_path = mk_db_path(db_name);
-    let journal_path = mk_journal_path(db_name);
 
-    let _ = std::fs::remove_file(db_path.as_path());
-    let _ = std::fs::remove_file(journal_path);
+    let _ = std::fs::remove_dir_all(db_path.as_path());
 
-    Database::open_file_with_config(db_path.as_path().to_str().unwrap(), config)
+    Database::open_path_with_config(db_path.as_path().to_str().unwrap(), config)
 }
 
 #[allow(dead_code)]
 pub fn clean_db_path(db_path: &str) {
-    let journal_path = String::from(db_path) + ".wal";
-
-    let _ = std::fs::remove_file(db_path);
-    let _ = std::fs::remove_file(journal_path);
+    let _ = std::fs::remove_dir_all(db_path);
 }
 
 #[allow(dead_code)]
@@ -51,6 +46,7 @@ pub fn prepare_db(db_name: &str) -> Result<Database> {
 }
 
 fn insert_items_to_db(db: Database, size: usize) -> Database {
+    use polodb_core::CollectionT;
     let collection = db.collection::<Document>("test");
 
     let mut data: Vec<Document> = vec![];
@@ -71,11 +67,5 @@ fn insert_items_to_db(db: Database, size: usize) -> Database {
 #[allow(dead_code)]
 pub fn create_file_and_return_db_with_items(db_name: &str, size: usize) -> Database {
     let db = prepare_db(db_name).unwrap();
-    insert_items_to_db(db, size)
-}
-
-#[allow(dead_code)]
-pub fn create_memory_and_return_db_with_items(size: usize) -> Database {
-    let db = Database::open_memory().unwrap();
     insert_items_to_db(db, size)
 }

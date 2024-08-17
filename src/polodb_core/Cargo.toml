@@ -1,8 +1,8 @@
 [package]
 name = "polodb_core"
-version = "4.4.2"
+version = "5.0.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
-license = "MPL-2.0"
+license = "Apache-2.0"
 edition = "2018"
 repository = "https://github.com/PoloDB/PoloDB"
 description = "An embedded document database"
@@ -15,34 +15,20 @@ path = "lib.rs"
 
 [dependencies]
 libc = "0.2"
-bson = "2.6.1"
-crc64fast = "1.0"
-hashbrown = "0.13.1"
-getrandom = { version = "0.2.3", features = ["js"] }
-byteorder = "1.4.3"
-num_enum = "0.6.0"
-serde = { version = "1.0.125", features = ["rc"] }
-uuid = { version = "1.3.0", features = [
+bson = "2.11.0"
+getrandom = { version = "0.2.3" }
+byteorder = "1.5.0"
+serde = { version = "1.0.207", features = ["rc"] }
+uuid = { version = "1.10.0", features = [
     "atomic",
     "v1",
     "v4",
-    "js",
     "rng",
 ] }
-smallvec = { version = "1.10.0", features = ["union", "write", "const_new"] }
-memmap2 = "0.5.10"
-wasm-bindgen = "0.2.84"
-js-sys = "0.3.61"
-lz4_flex = "0.10.0"
-serde-wasm-bindgen = "0.5.0"
-wasm-bindgen-futures = "0.4.34"
-thiserror = "1.0.40"
-indexmap = { version = "1.9.3", features = ["serde"] }
-regex = "1.8"
-
-[dependencies.web-sys]
-version = "0.3.61"
-features = ['Window', 'console']
+thiserror = "1.0.63"
+indexmap = { version = "2.3.0", features = ["serde"] }
+regex = "1.10"
+polodb-librocksdb-sys = { path = "../librocksdb-sys", version = "9.0.0-alpha.1" }
 
 [dev-dependencies]
 polodb_line_diff = { path = "../polodb_line_diff" }

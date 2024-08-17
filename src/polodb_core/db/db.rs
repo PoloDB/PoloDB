@@ -1,17 +1,23 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
-#[cfg(not(target_arch = "wasm32"))]
+// Copyright 2024 Vincent Chan
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::path::Path;
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsValue;
 use serde::Serialize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::errors::Error;
-use crate::{ClientSession, Config};
+use crate::{Config, Transaction};
 use super::db_inner::DatabaseInner;
 use crate::coll::Collection;
 use crate::metrics::Metrics;
@@ -21,7 +27,7 @@ pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 ///
 /// API wrapper for Rust-level
 ///
-/// Use [`Database::open_file`] API to open a database. A main database file will be
+/// Use [`Database::open_path`] API to open a database. A main database file will be
 /// generated in the path user provided.
 ///
 /// When you own an instance of a Database, the instance holds a file
@@ -51,36 +57,22 @@ impl Database {
         VERSION
     }
 
-    pub fn open_memory() -> Result<Database> {
-        Database::open_memory_with_config(Config::default())
-    }
-
-    pub fn open_memory_with_config(config: Config) -> Result<Database> {
-        let inner = DatabaseInner::open_memory(config)?;
-
-        Ok(Database {
-            inner: Arc::new(inner),
-        })
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
+    #[deprecated]
     pub fn open_file<P: AsRef<Path>>(path: P) -> Result<Database>  {
-        Database::open_file_with_config(path, Config::default())
+        Database::open_path(path)
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[deprecated]
     pub fn open_file_with_config<P: AsRef<Path>>(path: P, config: Config) -> Result<Database>  {
-        let inner = DatabaseInner::open_file(path.as_ref(), config)?;
-
-        Ok(Database {
-            inner: Arc::new(inner),
-        })
+        Database::open_path_with_config(path, config)
     }
 
-    #[cfg(target_arch = "wasm32")]
-    pub fn open_indexeddb(init_data: JsValue) -> Result<Database> {
-        let config = Config::default();
-        let inner = DatabaseInner::open_indexeddb(init_data, config)?;
+    pub fn open_path<P: AsRef<Path>>(path: P) -> Result<Database>  {
+        Database::open_path_with_config(path, Config::default())
+    }
+
+    pub fn open_path_with_config<P: AsRef<Path>>(path: P, config: Config) -> Result<Database>  {
+        let inner = DatabaseInner::open_file(path.as_ref(), config)?;
 
         Ok(Database {
             inner: Arc::new(inner),
@@ -98,12 +90,6 @@ impl Database {
         Ok(())
     }
 
-    /// Creates a new collection in the database with the given `name`.
-    pub fn create_collection_with_session(&self, name: &str, session: &mut ClientSession) -> Result<()> {
-        let _ = self.inner.create_collection_internal(name, &mut session.inner)?;
-        Ok(())
-    }
-
     ///
     /// [error]: ../enum.DbErr.html
     ///
@@ -114,20 +100,16 @@ impl Database {
         Collection::new(Arc::downgrade(&self.inner), col_name)
     }
 
-    pub fn start_session(&self) -> Result<ClientSession> {
-        let inner = self.inner.start_session()?;
-        Ok(ClientSession::new(inner))
+    pub fn start_transaction(&self) -> Result<Transaction> {
+        let mut inner = self.inner.start_transaction()?;
+        inner.set_auto_commit(false);
+        Ok(Transaction::new(Arc::downgrade(&self.inner), inner))
     }
 
     /// Gets the names of the collections in the database.
     pub fn list_collection_names(&self) -> Result<Vec<String>> {
-        let mut session = self.inner.start_session()?;
-        self.inner.list_collection_names_with_session(&mut session)
-    }
-
-    /// Gets the names of the collections in the database.
-    pub fn list_collection_names_with_session(&self, session: &mut ClientSession) -> Result<Vec<String>> {
-        self.inner.list_collection_names_with_session(&mut session.inner)
+        let txn = self.inner.start_transaction()?;
+        self.inner.list_collection_names_with_session(&txn)
     }
 
 }

@@ -1,19 +1,26 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
+// Copyright 2024 Vincent Chan
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-use std::sync::Arc;
 use bson::{Bson, Document};
 use bson::spec::ElementType;
-use crate::{LsmKv, Result};
+use crate::Result;
 use crate::coll::collection_info::{
     CollectionSpecification,
     IndexInfo,
 };
 use crate::errors::DuplicateKeyError;
-use crate::session::SessionInner;
+use crate::transaction::TransactionInner;
 
 pub(crate) const INDEX_PREFIX: &'static str = "$I";
 
@@ -24,27 +31,24 @@ pub(crate) enum IndexHelperOperation {
     Delete,
 }
 
-pub(crate) struct IndexHelper<'a, 'b, 'c, 'd, 'e> {
-    kv_engine: &'a LsmKv,
-    session: &'b mut SessionInner,
+pub(crate) struct IndexHelper<'b, 'c, 'd, 'e> {
+    txn: &'b TransactionInner,
     col_spec: &'c CollectionSpecification,
     doc: &'d Document,
     pkey: &'e Bson,
 }
 
-impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
+impl<'b, 'c, 'd, 'e> IndexHelper<'b, 'c, 'd, 'e> {
 
     #[inline]
     pub fn new(
-        kv_engine: &'a LsmKv,
-        session: &'b mut SessionInner,
+        txn: &'b TransactionInner,
         col_spec: &'c CollectionSpecification,
         doc: &'d Document,
         pkey: &'e Bson,
-    ) -> IndexHelper<'a, 'b, 'c, 'd, 'e> {
+    ) -> IndexHelper<'b, 'c, 'd, 'e> {
         IndexHelper {
-            kv_engine,
-            session,
+            txn,
             col_spec,
             doc,
             pkey,
@@ -62,8 +66,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
                 self.pkey,
                 index_name.as_str(),
                 index_info,
-                self.kv_engine,
-                self.session,
+                self.txn,
             )?;
         }
 
@@ -79,8 +82,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
         pkey: &Bson,
         index_name: &str,
         index_info: &IndexInfo,
-        kv_engine: &'a LsmKv,
-        session: &mut SessionInner,
+        txn: &TransactionInner,
     ) -> Result<()> {
         let tuples = index_info.keys.iter().collect::<Vec<(&String, &i8)>>();
         let first_tuple = tuples.first().unwrap();
@@ -96,8 +98,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
                 col_name,
                 index_name,
                 value.as_ref().unwrap(),
-                kv_engine,
-                session,
+                txn,
             )?;
         }
 
@@ -110,9 +111,9 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
 
         if op == IndexHelperOperation::Insert {
             let value_buf = [ElementType::Null as u8];
-            session.put(index_key.as_slice(), &value_buf)?;
+            txn.put(index_key.as_slice(), &value_buf)?;
         } else {
-            session.delete(index_key.as_slice())?;
+            txn.delete(index_key.as_slice())?;
         }
 
         Ok(())
@@ -122,8 +123,7 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
         col_name: &str,
         index_name: &str,
         value: &Bson,
-        kv_engine: &'a LsmKv,
-        session: &mut SessionInner,
+        txn: &TransactionInner,
     ) -> Result<()> {
         let index_key_tester = IndexHelper::make_index_key(
             col_name,
@@ -132,15 +132,13 @@ impl<'a, 'b, 'c, 'd, 'e> IndexHelper<'a, 'b, 'c, 'd, 'e> {
             None,
         )?;
 
-        let mut cursor = kv_engine.open_multi_cursor(Some(session.kv_session()));
-        cursor.seek(&index_key_tester)?;
+        let cursor = txn.rocksdb_txn.new_iterator();
+        cursor.seek(&index_key_tester);
 
-        let current_key = cursor.key();
-        if current_key.is_none() {
+        if !cursor.valid() {
             return Ok(());
         }
-
-        let current_key: Arc<[u8]> = current_key.unwrap();
+        let current_key = cursor.copy_key_arc()?;
 
         if current_key.starts_with(&index_key_tester) {
             return Err(DuplicateKeyError {

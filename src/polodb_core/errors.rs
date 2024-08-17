@@ -1,8 +1,17 @@
-/*
- * This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at https://mozilla.org/MPL/2.0/.
- */
+// Copyright 2024 Vincent Chan
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use bson::ser::Error as BsonErr;
 use bson::Document;
 use std::fmt;
@@ -106,11 +115,6 @@ pub struct VersionMismatchError {
 #[derive(Debug)]
 pub struct BtWrapper<T> {
     pub source: T,
-    pub backtrace: std::backtrace::Backtrace,
-}
-
-#[derive(Debug)]
-pub struct DataMalformedReason {
     pub backtrace: std::backtrace::Backtrace,
 }
 
@@ -235,8 +239,6 @@ pub enum Error {
     DbIsClosed,
     #[error("{0}")]
     FromUtf8Error(Box<FromUtf8Error>),
-    #[error("data malformed, backtrace: {}", .0.backtrace)]
-    DataMalformed(Box<DataMalformedReason>),
     #[error("the database is not ready")]
     DbNotReady,
     #[error("only support single field indexes currently: {0:?}")]
@@ -253,6 +255,8 @@ pub enum Error {
     UnknownAggregationOperation(String),
     #[error("invalid aggregation stage: {0:?}")]
     InvalidAggregationStage(Box<Document>),
+    #[error("rocks db error: {0}")]
+    RocksDbErr(String),
 }
 
 impl Error {
@@ -267,13 +271,6 @@ impl Error {
                 Error::Multiple(result)
             }
         }
-    }
-
-    #[inline]
-    pub(crate) fn data_malformed() -> Error {
-        Error::DataMalformed(Box::new(DataMalformedReason {
-            backtrace: std::backtrace::Backtrace::capture(),
-        }))
     }
 }
 
