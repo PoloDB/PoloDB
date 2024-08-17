@@ -3,6 +3,7 @@ name = "polodb"
 version = "5.0.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 repository = "https://github.com/PoloDB/PoloDB"
+description = "The server of PoloDB, compatible with MongoDB"
 license = "Apache-2.0"
 edition = "2018"
 
