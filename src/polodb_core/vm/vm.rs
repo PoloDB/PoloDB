@@ -25,7 +25,6 @@ use bson::{Bson, Document};
 use regex::RegexBuilder;
 use std::cell::Cell;
 use std::cmp::Ordering;
-use crate::db::RocksDBWrapper;
 
 macro_rules! try_vm {
     ($self:ident, $action:expr) => {
@@ -65,8 +64,6 @@ impl Default for VMFrame {
 }
 
 pub(crate) struct VM {
-    #[allow(dead_code)]
-    rocksdb: RocksDBWrapper,
     pub(crate) state: VmState,
     pc: *const u8,
     r0: i32, // usually the logic register
@@ -99,7 +96,7 @@ fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> Result<bool> {
 }
 
 impl VM {
-    pub(crate) fn new(rocksdb: RocksDBWrapper, program: SubProgram, metrics: Metrics) -> VM {
+    pub(crate) fn new(program: SubProgram, metrics: Metrics) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         let mut global_vars = Vec::<Bson>::new();
@@ -109,7 +106,6 @@ impl VM {
         }
 
         VM {
-            rocksdb,
             state: VmState::Init,
             pc,
             r0: 0,

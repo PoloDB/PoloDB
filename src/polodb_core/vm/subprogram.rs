@@ -279,6 +279,8 @@ impl SubProgram {
         let close_label = codegen.new_label();
 
         let mut ctx = AggregationCodeGenContext::default();
+
+        // set up the slots for the aggregation pipeline
         codegen.emit_aggregation_before_query(&mut ctx, &pipeline_vec)?;
 
         codegen.emit_open(col_spec.name().into());
@@ -290,6 +292,7 @@ impl SubProgram {
         codegen.emit_label(next_label);
         codegen.emit_goto(DbOp::Next, result_label);
 
+        // emit the result row
         codegen.emit_label(close_label);
         codegen.emit_aggregation_before_close(&ctx)?;
         codegen.emit(DbOp::Close);

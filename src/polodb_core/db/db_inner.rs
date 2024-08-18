@@ -189,7 +189,6 @@ impl DatabaseInner {
 
     pub(crate) fn make_handle<T: DeserializeOwned + Send + Sync>(&self, program: SubProgram, txn: TransactionInner) -> Result<ClientCursor<T>> {
         let vm = VM::new(
-            self.rocksdb.clone(),
             program,
             self.metrics.clone(),
         );
@@ -576,7 +575,6 @@ impl DatabaseInner {
                 )?;
 
                 let mut vm = VM::new(
-                    self.rocksdb.clone(),
                     subprogram,
                     self.metrics.clone(),
                 );
@@ -617,7 +615,6 @@ impl DatabaseInner {
 
         {
             let mut vm = VM::new(
-                self.rocksdb.clone(),
                 subprogram,
                 self.metrics.clone(),
             );
@@ -673,7 +670,6 @@ impl DatabaseInner {
         )?;
 
         let mut vm = VM::new(
-            self.rocksdb.clone(),
             subprogram,
             self.metrics.clone(),
         );
@@ -699,7 +695,6 @@ impl DatabaseInner {
 
         let delete_count = {
             let mut vm = VM::new(
-                self.rocksdb.clone(),
                 subprogram,
                 self.metrics.clone(),
             );
@@ -823,7 +818,6 @@ impl DatabaseInner {
         };
 
         let vm = VM::new(
-            self.rocksdb.clone(),
             subprogram,
             self.metrics.clone(),
         );
@@ -855,7 +849,6 @@ impl DatabaseInner {
             None => {
                 let subprogram = SubProgram::compile_empty_query();
                 let vm = VM::new(
-                    self.rocksdb.clone(),
                     subprogram,
                     self.metrics.clone(),
                 );
@@ -942,7 +935,6 @@ impl DatabaseInner {
         };
 
         let vm = VM::new(
-            self.rocksdb.clone(),
             subprogram,
             self.metrics.clone(),
         );
