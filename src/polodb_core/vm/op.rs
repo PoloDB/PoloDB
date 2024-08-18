@@ -265,6 +265,13 @@ pub enum DbOp {
     // op2. size of params: 4 bytes
     Call,
 
+    // call a method
+    //
+    // 9 bytes
+    // op1. func id: 4 bytes
+    // op2. size of params: 4 bytes
+    CallExternal,
+
     // return from a method with 0 size
     //
     // 1 byte

@@ -26,6 +26,7 @@ use std::rc::Rc;
 use crate::errors::FieldTypeUnexpectedStruct;
 use crate::vm::aggregation_codegen_context::AggregationCodeGenContext;
 use crate::vm::global_variable::GlobalVariableSlot;
+use crate::vm::vm_external_func::VmExternalFunc;
 
 pub(crate) struct SubProgramIndexItem {
     pub col_name: String,
@@ -38,6 +39,7 @@ pub(crate) struct SubProgram {
     pub(super) global_variables: Vec<GlobalVariableSlot>,
     pub(super) label_slots: Vec<LabelSlot>,
     pub(super) index_infos: Vec<SubProgramIndexItem>,
+    pub(crate) external_funcs: Vec<Box<dyn VmExternalFunc>>,
 }
 
 impl SubProgram {
@@ -48,6 +50,7 @@ impl SubProgram {
             global_variables: Vec::with_capacity(16),
             label_slots: Vec::with_capacity(32),
             index_infos: Vec::new(),
+            external_funcs: Vec::new(),
         }
     }
 

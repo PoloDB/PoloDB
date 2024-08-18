@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod op;
-mod subprogram;
-mod codegen;
-mod label;
-mod vm;
-mod global_variable;
-mod aggregation_codegen_context;
-mod vm_external_func;
-mod vm_count;
+use bson::Bson;
+use crate::Result;
 
-pub(crate) use subprogram::SubProgram;
-pub(crate) use vm::{VM, VmState};
+pub(crate) enum VmExternalFuncStatus {
+    Continue,
+    Next(Bson),
+}
+
+pub(crate) trait VmExternalFunc {
+    fn name(&self) -> &str;
+    fn call(&self, args: &[Bson]) -> Result<VmExternalFuncStatus>;
+    fn is_completed(&self) -> bool;
+}

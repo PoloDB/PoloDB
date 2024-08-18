@@ -25,6 +25,7 @@ use bson::{Bson, Document};
 use regex::RegexBuilder;
 use std::cell::Cell;
 use std::cmp::Ordering;
+use crate::vm::vm_external_func::VmExternalFuncStatus;
 
 macro_rules! try_vm {
     ($self:ident, $action:expr) => {
@@ -1051,6 +1052,32 @@ impl VM {
                         });
 
                         self.reset_location(location);
+                    }
+
+                    DbOp::CallExternal => {
+                        let id = self.pc.add(1).cast::<u32>().read();
+                        let size_of_param = self.pc.add(5).cast::<u32>().read() as usize;
+
+                        let func = &self.program.external_funcs[id as usize];
+                        let params = &self.stack[self.stack.len() - size_of_param..];
+                        let result = try_vm!(self, func.call(params));
+                        // pop params
+                        self.stack.resize(self.stack.len() - size_of_param, Bson::Null);
+                        match result {
+                            VmExternalFuncStatus::Continue => {
+                                self.stack.push(Bson::Null);
+                            }
+                            VmExternalFuncStatus::Next(v) => {
+                                self.stack.push(v);
+                            }
+                        }
+                        self.r0 = if func.is_completed() {
+                            1
+                        } else {
+                            0
+                        };
+
+                        self.pc = self.pc.add(9);
                     }
 
                     DbOp::Ret0 => {
