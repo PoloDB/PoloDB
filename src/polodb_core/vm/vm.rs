@@ -64,6 +64,7 @@ impl Default for VMFrame {
 }
 
 pub(crate) struct VM {
+    txn: TransactionInner,
     pub(crate) state: VmState,
     pc: *const u8,
     r0: i32, // usually the logic register
@@ -96,7 +97,7 @@ fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> Result<bool> {
 }
 
 impl VM {
-    pub(crate) fn new(program: SubProgram, metrics: Metrics) -> VM {
+    pub(crate) fn new(txn: TransactionInner, program: SubProgram, metrics: Metrics) -> VM {
         let stack = Vec::with_capacity(STACK_SIZE);
         let pc = program.instructions.as_ptr();
         let mut global_vars = Vec::<Bson>::new();
@@ -106,6 +107,7 @@ impl VM {
         }
 
         VM {
+            txn,
             state: VmState::Init,
             pc,
             r0: 0,
@@ -134,8 +136,8 @@ impl VM {
         }
     }
 
-    fn open_read(&mut self, txn: &TransactionInner, prefix: Bson) -> Result<()> {
-        let db_iter = txn.rocksdb_txn.new_iterator();
+    fn open_read(&mut self, prefix: Bson) -> Result<()> {
+        let db_iter = self.txn.rocksdb_txn.new_iterator();
         db_iter.seek_to_first();
 
         let prefix_bytes = VM::prefix_bytes_from_bson(prefix)?;
@@ -144,8 +146,8 @@ impl VM {
         Ok(())
     }
 
-    fn open_write(&mut self, session: &TransactionInner, prefix: Bson) -> Result<()> {
-        let db_iter = session.rocksdb_txn.new_iterator();
+    fn open_write(&mut self, prefix: Bson) -> Result<()> {
+        let db_iter = self.txn.rocksdb_txn.new_iterator();
         db_iter.seek_to_first();
 
         let prefix_bytes = VM::prefix_bytes_from_bson(prefix)?;
@@ -185,7 +187,7 @@ impl VM {
         Ok(true)
     }
 
-    fn find_by_index(&mut self, txn: &TransactionInner) -> Result<bool> {
+    fn find_by_index(&mut self) -> Result<bool> {
         let stack_len = self.stack.len();
         // let col_name = self.stack[stack_len - 1].as_str().expect("col_name must be string").to_string();
         let query_value = &self.stack[stack_len - 2];
@@ -199,7 +201,7 @@ impl VM {
 
         let key = cursor.peek_key().expect("key must exist");
 
-        let index_value = self.read_index_value_by_index_key(key.as_ref(), txn)?;
+        let index_value = self.read_index_value_by_index_key(key.as_ref())?;
 
         if index_value.is_none() {
             return Ok(false);
@@ -215,7 +217,6 @@ impl VM {
     fn read_index_value_by_index_key(
         &mut self,
         index_key: &[u8],
-        txn: &TransactionInner,
     ) -> Result<Option<Bson>> {
         let slices = crate::utils::bson::split_stacked_keys(index_key.as_ref())?;
         let pkey = slices.last().expect("pkey must exist");
@@ -224,7 +225,7 @@ impl VM {
 
         let pkey_in_kv = crate::utils::bson::stacked_key(vec![col_name, pkey])?;
 
-        let db_iter = txn.rocksdb_txn.new_iterator();
+        let db_iter = self.txn.rocksdb_txn.new_iterator();
         db_iter.seek_to_first();
 
         db_iter.seek(pkey_in_kv.as_slice());
@@ -267,7 +268,7 @@ impl VM {
         Ok(())
     }
 
-    fn next_index_value(&mut self, txn: &TransactionInner) -> Result<()> {
+    fn next_index_value(&mut self) -> Result<()> {
         let cursor = self.r1.as_mut().unwrap();
         cursor.next()?;
         let current_key = cursor.peek_key();
@@ -281,7 +282,7 @@ impl VM {
             return Ok(());
         }
 
-        let value_opt = self.read_index_value_by_index_key(current_key.as_ref(), txn)?;
+        let value_opt = self.read_index_value_by_index_key(current_key.as_ref())?;
         if value_opt.is_none() {
             self.r0 = 0;
             return Ok(());
@@ -486,10 +487,11 @@ impl VM {
         Ok(())
     }
 
-    fn update_current(&mut self, txn: &TransactionInner) -> Result<()> {
+    fn update_current(&mut self) -> Result<()> {
         let top_index = self.stack.len() - 1;
         let top_value = &self.stack[top_index];
 
+        let txn = &self.txn;
         let doc = top_value.as_document().unwrap();
         let doc_buf = bson::to_vec(doc)?;
 
@@ -505,13 +507,14 @@ impl VM {
         Ok(())
     }
 
-    fn insert_index(&mut self, index_info_id: u32, txn: &TransactionInner) -> Result<()> {
+    fn insert_index(&mut self, index_info_id: u32) -> Result<()> {
         let info = &self.program.index_infos[index_info_id as usize];
 
         let index_meta = &info.indexes;
 
         let data_doc = self.stack[self.stack.len() - 1].as_document().unwrap();
         let pkey = data_doc.get("_id").unwrap();
+        let txn = &self.txn;
 
         for (index_name, index_info) in index_meta {
             IndexHelper::try_execute_with_index_info(
@@ -528,13 +531,14 @@ impl VM {
         Ok(())
     }
 
-    fn delete_index(&mut self, index_info_id: u32, txn: &TransactionInner) -> Result<()> {
+    fn delete_index(&mut self, index_info_id: u32) -> Result<()> {
         let info = &self.program.index_infos[index_info_id as usize];
 
         let index_meta = &info.indexes;
 
         let data_doc = self.stack[self.stack.len() - 1].as_document().unwrap();
         let pkey = data_doc.get("_id").unwrap();
+        let txn = &self.txn;
 
         for (index_name, index_info) in index_meta {
             IndexHelper::try_execute_with_index_info(
@@ -579,7 +583,7 @@ impl VM {
         }
     }
 
-    pub(crate) fn execute(&mut self, txn: &TransactionInner) -> Result<()> {
+    pub(crate) fn execute(&mut self) -> Result<()> {
         if self.state == VmState::Halt {
             return Err(Error::VmIsHalt);
         }
@@ -655,7 +659,7 @@ impl VM {
                     DbOp::FindByIndex => {
                         let location = self.pc.add(1).cast::<u32>().read();
 
-                        let found = try_vm!(self, self.find_by_index(txn));
+                        let found = try_vm!(self, self.find_by_index());
 
                         if !found {
                             self.reset_location(location);
@@ -675,7 +679,7 @@ impl VM {
                     }
 
                     DbOp::NextIndexValue => {
-                        try_vm!(self, self.next_index_value(txn));
+                        try_vm!(self, self.next_index_value());
                         if self.r0 != 0 {
                             let location = self.pc.add(1).cast::<u32>().read();
                             self.reset_location(location);
@@ -833,12 +837,13 @@ impl VM {
                     }
 
                     DbOp::UpdateCurrent => {
-                        try_vm!(self, self.update_current(txn));
+                        try_vm!(self, self.update_current());
 
                         self.pc = self.pc.add(1);
                     }
 
                     DbOp::DeleteCurrent => {
+                        let txn = &self.txn;
                         let deleted = {
                             let cursor = self.r1.as_mut().unwrap();
                             let key_opt = cursor.peek_key();
@@ -859,7 +864,7 @@ impl VM {
                     DbOp::InsertIndex => {
                         let index_info_id = self.pc.add(1).cast::<u32>().read();
 
-                        self.insert_index(index_info_id, txn)?;
+                        self.insert_index(index_info_id)?;
 
                         self.pc = self.pc.add(5);
                     }
@@ -867,7 +872,7 @@ impl VM {
                     DbOp::DeleteIndex => {
                         let index_info_id = self.pc.add(1).cast::<u32>().read();
 
-                        self.delete_index(index_info_id, txn)?;
+                        self.delete_index(index_info_id)?;
 
                         self.pc = self.pc.add(5);
                     }
@@ -996,7 +1001,7 @@ impl VM {
                         let prefix_idx = self.pc.add(1).cast::<u32>().read();
                         let prefix = self.program.static_values[prefix_idx as usize].clone();
 
-                        try_vm!(self, self.open_read(txn, prefix));
+                        try_vm!(self, self.open_read(prefix));
 
                         self.pc = self.pc.add(5);
                     }
@@ -1005,7 +1010,7 @@ impl VM {
                         let prefix_idx = self.pc.add(1).cast::<u32>().read();
                         let prefix = self.program.static_values[prefix_idx as usize].clone();
 
-                        try_vm!(self, self.open_write(txn, prefix));
+                        try_vm!(self, self.open_write(prefix));
 
                         self.pc = self.pc.add(5);
                     }
@@ -1018,7 +1023,7 @@ impl VM {
 
                     DbOp::Close => {
                         self.r1 = None;
-                        txn.auto_commit()?;
+                        self.txn.auto_commit()?;
 
                         self.pc = self.pc.add(1);
                     }

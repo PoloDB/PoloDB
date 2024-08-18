@@ -19,6 +19,7 @@ mod label;
 mod vm;
 mod global_variable;
 mod aggregation_codegen_context;
+mod doc_stream;
 
 pub(crate) use subprogram::SubProgram;
 pub(crate) use vm::{VM, VmState};
