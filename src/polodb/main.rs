@@ -509,28 +509,31 @@ mod tests {
         impl Runner for TestRunner {
 
             async fn run(&self, client: mongodb::Client) -> Result<()> {
-                let mut docs: Vec<Document> = Vec::with_capacity(100);
-                for i in 0..100 {
+                const COUNT: usize = 50;
+                let mut docs: Vec<Document> = Vec::with_capacity(COUNT);
+                for i in 0..COUNT {
                     docs.push(doc! {
-                        "_id": i,
-                        "x": i,
+                        "_id": i as i64,
+                        "x": i as i64,
                     });
                 }
 
                 let database = client.database("sample_mflix");
                 let my_coll: Collection<Document> = database.collection("movies");
+                my_coll.insert_many(docs).await.unwrap();
 
                 // count
-                let _ = my_coll.count_documents(doc! {}).await.unwrap();
+                let count = my_coll.count_documents(doc! {}).await.unwrap();
 
-                // assert_eq!(50, count);
+                assert_eq!(COUNT as u64, count);
                 Ok(())
             }
         }
 
         let db_path = mk_db_path("test-aggregation");
-        open_server_with_test(db_path.as_path(), Box::new(TestRunner)).await.unwrap();
+        let _ = std::fs::remove_dir_all(db_path.as_path());
 
+        open_server_with_test(db_path.as_path(), Box::new(TestRunner)).await.unwrap();
     }
 
     #[tokio::test]

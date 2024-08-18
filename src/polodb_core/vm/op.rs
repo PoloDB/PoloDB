@@ -116,6 +116,11 @@ pub enum DbOp {
     // 1 byte
     StoreR0,
 
+    // store the op0 to r0
+    //
+    // 2 bytes
+    StoreR0_2,
+
     // get the field of top of the stack
     // push the value to the stack
     //

@@ -498,6 +498,12 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::StoreR0_2 => {
+                        let value = begin.add(pc + 1).read();
+                        writeln!(f, "{}: StoreR0_2({})", pc, value)?;
+                        pc += 2;
+                    }
+
                     DbOp::UpdateCurrent => {
                         writeln!(f, "{}: UpdateCurrent", pc)?;
                         pc += 1;

@@ -733,6 +733,11 @@ impl VM {
                         self.pc = self.pc.add(1);
                     }
 
+                    DbOp::StoreR0_2 => {
+                        self.r0 = self.pc.add(1).read() as i32;
+                        self.pc = self.pc.add(2);
+                    }
+
                     DbOp::GetField => {
                         let key_stat_id = self.pc.add(1).cast::<u32>().read();
                         let location = self.pc.add(5).cast::<u32>().read();

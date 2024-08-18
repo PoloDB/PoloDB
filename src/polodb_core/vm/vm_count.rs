@@ -19,6 +19,8 @@ use crate::Result;
 
 const NAME: &'static str = "count";
 
+// Reference: https://www.mongodb.com/docs/manual/reference/operator/aggregation/count/
+// Distinct from count operator
 pub(crate) struct VmFuncCount {
     count_name: String,
     pub(crate) count: AtomicU64,

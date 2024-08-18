@@ -21,6 +21,8 @@ mod global_variable;
 mod aggregation_codegen_context;
 mod vm_external_func;
 mod vm_count;
+mod vm_group;
+mod operators;
 
 pub(crate) use subprogram::SubProgram;
 pub(crate) use vm::{VM, VmState};
