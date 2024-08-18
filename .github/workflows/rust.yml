@@ -28,10 +28,7 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - uses: actions/setup-node@v2
-        with:
-          node-version: '18'
-      
+
       - name: Run Rust tests
         run: RUST_BACKTRACE=1 cargo test --release --verbose --workspace
       - name: Build binaries
@@ -45,9 +42,16 @@ jobs:
         with:
           submodules: recursive
           token: ${{ secrets.PAT_TOKEN }}
-      - uses: actions/setup-node@v2
+      - uses: actions/cache@v3
         with:
-          node-version: '18'
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
       - name: Run Rust tests
         run: RUST_BACKTRACE=1 cargo test --release --verbose --workspace
       - name: Build Clib
@@ -70,10 +74,6 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - uses: actions/setup-node@v2
-        with:
-          node-version: '18'
 
       - name: Run Rust tests
         run: cargo test --release --verbose --workspace
