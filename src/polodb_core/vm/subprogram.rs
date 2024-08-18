@@ -662,6 +662,14 @@ impl fmt::Display for SubProgram {
                         pc += 9;
                     }
 
+                    DbOp::CallExternal => {
+                        let func_id = begin.add(pc + 1).cast::<u32>().read();
+                        let external_func = &self.external_funcs[func_id as usize];
+                        let param_size = begin.add(pc + 5).cast::<u32>().read();
+                        writeln!(f, "{}: CallExternal(${}, {})", pc, external_func.name(), param_size)?;
+                        pc += 9;
+                    }
+
                     DbOp::Ret0 => {
                         writeln!(f, "{}: Ret0", pc)?;
                         pc += 1;
@@ -1524,65 +1532,60 @@ mod tests {
 
         let expect = r#"Program:
 
-$0 = Int64(0)
-
 0: OpenRead("test")
 5: Rewind(25)
-10: Goto(133)
+10: Goto(130)
 
-15: Label(5)
-20: Next(133)
+15: Label(4)
+20: Next(130)
 
-25: Label(8, "close")
-30: Call(89, 0)
-39: Close
-40: Halt
+25: Label(7, "close")
+30: PushValue(null)
+35: Call(76, 1)
+44: Close
+45: Halt
 
-41: Label(7, "not_this_item")
-46: Pop
-47: Goto(15)
+46: Label(6, "not_this_item")
+51: Pop
+52: Goto(15)
 
-52: Label(6, "result")
-57: Call(71, 1)
-66: Goto(123)
+57: Label(5, "result")
+62: Call(76, 1)
+71: Goto(120)
 
-71: Label(0)
-76: LoadGlobal($0)
-81: Inc
-82: StoreGlobal($0)
-87: Pop
-88: Ret0
+76: Label(0)
+81: Dup
+82: CallExternal($count, 1)
+91: TrueJump(98)
+96: Pop
+97: Ret0
 
-89: Label(1)
-94: PushDocument
-95: LoadGlobal($0)
-100: SetField("total")
-105: Pop
-106: Call(116, 1)
-115: Ret0
+98: Label(10)
+103: Call(113, 1)
+112: Ret0
 
-116: Label(10, "final_result_row_fun")
-121: ResultRow
-122: Ret0
+113: Label(9, "final_result_row_fun")
+118: ResultRow
+119: Ret0
 
-123: Label(9, "next_item_label")
-128: Goto(15)
+120: Label(8, "next_item_label")
+125: Goto(15)
 
-133: Label(4, "compare")
-138: Dup
-139: Call(158, 1)
-148: FalseJump(41)
-153: Goto(52)
+130: Label(3, "compare")
+135: Dup
+136: Call(155, 1)
+145: FalseJump(46)
+150: Goto(57)
 
-158: Label(2, "compare_function")
-163: GetField("age", 188)
-172: PushValue(18)
-177: Greater
-178: FalseJump(188)
-183: Pop2(2)
+155: Label(1, "compare_function")
+160: GetField("age", 185)
+169: PushValue(18)
+174: Greater
+175: FalseJump(185)
+180: Pop2(2)
 
-188: Label(3, "compare_function_clean")
-193: Ret0
+185: Label(2, "compare_function_clean")
+190: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1598,45 +1601,40 @@ $0 = Int64(0)
         let actual = format!("Program:\n\n{}", program);
         let expect = r#"Program:
 
-$0 = Int64(0)
-
 0: OpenRead("test")
 5: Rewind(25)
-10: Goto(41)
+10: Goto(46)
 
 15: Label(1)
-20: Next(41)
+20: Next(46)
 
 25: Label(2)
-30: Call(78, 0)
-39: Close
-40: Halt
+30: PushValue(null)
+35: Call(65, 1)
+44: Close
+45: Halt
 
-41: Label(0)
-46: Call(60, 1)
-55: Goto(112)
+46: Label(0)
+51: Call(65, 1)
+60: Goto(109)
 
-60: Label(3)
-65: LoadGlobal($0)
-70: Inc
-71: StoreGlobal($0)
-76: Pop
-77: Ret0
+65: Label(3)
+70: Dup
+71: CallExternal($count, 1)
+80: TrueJump(87)
+85: Pop
+86: Ret0
 
-78: Label(4)
-83: PushDocument
-84: LoadGlobal($0)
-89: SetField("total")
-94: Pop
-95: Call(105, 1)
-104: Ret0
+87: Label(6)
+92: Call(102, 1)
+101: Ret0
 
-105: Label(6, "final_result_row_fun")
-110: ResultRow
-111: Ret0
+102: Label(5, "final_result_row_fun")
+107: ResultRow
+108: Ret0
 
-112: Label(5, "next_item_label")
-117: Goto(15)
+109: Label(4, "next_item_label")
+114: Goto(15)
 "#;
         assert_eq!(expect, actual);
     }

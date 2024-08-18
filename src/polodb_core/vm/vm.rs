@@ -1120,3 +1120,9 @@ impl VM {
         }
     }
 }
+
+impl Drop for VM {
+    fn drop(&mut self) {
+        self.r1 = None;
+    }
+}

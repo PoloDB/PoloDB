@@ -17,7 +17,6 @@ use crate::vm::label::Label;
 
 pub(crate) struct PipelineItem {
     pub next_label: Label,
-    pub complete_label: Option<Label>,
 }
 
 pub(crate) struct AggregationCodeGenContext {

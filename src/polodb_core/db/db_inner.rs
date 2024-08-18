@@ -616,13 +616,13 @@ impl DatabaseInner {
         )?;
 
         {
+            let mut txn = txn.clone();
+            txn.set_auto_commit(false);
             let mut vm = VM::new(
-                txn.clone(),
+                txn,
                 subprogram,
                 self.metrics.clone(),
             );
-            let mut txn = txn.clone();
-            txn.set_auto_commit(false);
             vm.execute()?;
         } // Delete content end
 
