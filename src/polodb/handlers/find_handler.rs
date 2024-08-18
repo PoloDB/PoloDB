@@ -40,7 +40,7 @@ impl FindHandler {
         Ok(reply)
     }
 
-    fn mk_cursor_doc(cursor_id: i64, db_name: &str, col_name: &str, cursor: &mut ClientCursor<Document>, batch_size: isize) -> Result<RawDocumentBuf> {
+    pub(crate) fn mk_cursor_doc(cursor_id: i64, db_name: &str, col_name: &str, cursor: &mut ClientCursor<Document>, batch_size: isize) -> Result<RawDocumentBuf> {
         let mut doc = rawdoc! {};
 
         let (first_batch, _has_more) = FindHandler::consume_first_batch(cursor, batch_size)?;

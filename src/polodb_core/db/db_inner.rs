@@ -189,11 +189,11 @@ impl DatabaseInner {
 
     pub(crate) fn make_handle<T: DeserializeOwned + Send + Sync>(&self, program: SubProgram, txn: TransactionInner) -> Result<ClientCursor<T>> {
         let vm = VM::new(
-            self.rocksdb.clone(),
+            txn,
             program,
             self.metrics.clone(),
         );
-        Ok(ClientCursor::new(vm, txn))
+        Ok(ClientCursor::new(vm))
     }
 
     pub fn create_index(&self, col_name: &str, index: IndexModel, txn: &TransactionInner) -> Result<()> {
@@ -576,11 +576,11 @@ impl DatabaseInner {
                 )?;
 
                 let mut vm = VM::new(
-                    self.rocksdb.clone(),
+                    txn.clone(),
                     subprogram,
                     self.metrics.clone(),
                 );
-                vm.execute(txn)?;
+                vm.execute()?;
 
                 vm.r2 as u64
             },
@@ -616,14 +616,14 @@ impl DatabaseInner {
         )?;
 
         {
+            let mut txn = txn.clone();
+            txn.set_auto_commit(false);
             let mut vm = VM::new(
-                self.rocksdb.clone(),
+                txn,
                 subprogram,
                 self.metrics.clone(),
             );
-            let mut txn = txn.clone();
-            txn.set_auto_commit(false);
-            vm.execute(&txn)?;
+            vm.execute()?;
         } // Delete content end
 
         self.delete_collection_meta(col_name, txn)?;
@@ -673,11 +673,11 @@ impl DatabaseInner {
         )?;
 
         let mut vm = VM::new(
-            self.rocksdb.clone(),
+            txn.clone(),
             subprogram,
             self.metrics.clone(),
         );
-        vm.execute(txn)?;
+        vm.execute()?;
 
         Ok(vm.r2 as usize)
     }
@@ -699,11 +699,11 @@ impl DatabaseInner {
 
         let delete_count = {
             let mut vm = VM::new(
-                self.rocksdb.clone(),
+                txn.clone(),
                 subprogram,
                 self.metrics.clone(),
             );
-            vm.execute(txn)?;
+            vm.execute()?;
 
             vm.r2 as usize
         }; // Delete content end
@@ -823,12 +823,12 @@ impl DatabaseInner {
         };
 
         let vm = VM::new(
-            self.rocksdb.clone(),
+            txn,
             subprogram,
             self.metrics.clone(),
         );
 
-        let handle = ClientCursor::new(vm, txn);
+        let handle = ClientCursor::new(vm);
 
         Ok(handle)
     }
@@ -855,11 +855,11 @@ impl DatabaseInner {
             None => {
                 let subprogram = SubProgram::compile_empty_query();
                 let vm = VM::new(
-                    self.rocksdb.clone(),
+                    txn.clone(),
                     subprogram,
                     self.metrics.clone(),
                 );
-                let cursor = ClientCursor::new(vm, txn.clone());
+                let cursor = ClientCursor::new(vm);
                 Ok(cursor)
             }
         }
@@ -942,12 +942,12 @@ impl DatabaseInner {
         };
 
         let vm = VM::new(
-            self.rocksdb.clone(),
+            txn,
             subprogram,
             self.metrics.clone(),
         );
 
-        let handle = ClientCursor::new(vm, txn);
+        let handle = ClientCursor::new(vm);
 
         Ok(handle)
     }

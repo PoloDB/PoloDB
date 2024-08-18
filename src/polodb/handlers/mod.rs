@@ -7,7 +7,9 @@ mod update_handler;
 mod delete_handler;
 mod commit_transaction;
 mod abort_transaction;
+mod aggregate_handler;
 
+use std::sync::Arc;
 use bson::RawDocumentBuf;
 use anyhow::Result;
 use crate::reply::Reply;
@@ -23,6 +25,7 @@ pub(crate) use update_handler::UpdateHandler;
 pub(crate) use delete_handler::DeleteHandler;
 pub(crate) use commit_transaction::CommitTransactionHandler;
 pub(crate) use abort_transaction::AbortTransactionHandler;
+pub(crate) use aggregate_handler::AggregateHandle;
 use crate::app_context::AppContext;
 use crate::session_context::SessionContext;
 
@@ -45,3 +48,17 @@ pub(crate) trait Handler: Send + Sync {
 
 }
 
+pub(crate) fn make_handlers() -> Vec<Arc<dyn Handler>> {
+    vec![
+        FindHandler::new(),
+        GetMoreHandler::new(),
+        KillCursorsHandler::new(),
+        AggregateHandle::new(),
+        InsertHandler::new(),
+        UpdateHandler::new(),
+        DeleteHandler::new(),
+        HelloHandler::new(),
+        CommitTransactionHandler::new(),
+        AbortTransactionHandler::new(),
+    ]
+}

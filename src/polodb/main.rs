@@ -51,7 +51,7 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use reply::Reply;
 use crate::app_context::AppContext;
-use crate::handlers::{AbortTransactionHandler, CommitTransactionHandler, DeleteHandler, FindHandler, GetMoreHandler, HandleContext, HelloHandler, InsertHandler, KillCursorsHandler, UpdateHandler};
+use crate::handlers::{make_handlers, HandleContext};
 use crate::utils::uuid_from_bson;
 
 #[tokio::main]
@@ -135,15 +135,7 @@ pub(crate) async fn start_socket_server(path: String, socket: String, token: Can
 
     let ctx = AppContext::new(db);
 
-    ctx.push_handler(FindHandler::new());
-    ctx.push_handler(GetMoreHandler::new());
-    ctx.push_handler(KillCursorsHandler::new());
-    ctx.push_handler(InsertHandler::new());
-    ctx.push_handler(UpdateHandler::new());
-    ctx.push_handler(DeleteHandler::new());
-    ctx.push_handler(HelloHandler::new());
-    ctx.push_handler(CommitTransactionHandler::new());
-    ctx.push_handler(AbortTransactionHandler::new());
+    ctx.register_handlers(make_handlers());
 
     let listener = tokio::net::TcpListener::bind(&socket).await?;
     let addr = listener.local_addr()?;
@@ -501,6 +493,46 @@ mod tests {
         }
 
         let db_path = mk_db_path("test-delete");
+        open_server_with_test(db_path.as_path(), Box::new(TestRunner)).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_aggregation() {
+        use mongodb::{
+            bson::{Document, doc},
+            Collection
+        };
+
+        struct TestRunner;
+
+        #[async_trait::async_trait]
+        impl Runner for TestRunner {
+
+            async fn run(&self, client: mongodb::Client) -> Result<()> {
+                const COUNT: usize = 50;
+                let mut docs: Vec<Document> = Vec::with_capacity(COUNT);
+                for i in 0..COUNT {
+                    docs.push(doc! {
+                        "_id": i as i64,
+                        "x": i as i64,
+                    });
+                }
+
+                let database = client.database("sample_mflix");
+                let my_coll: Collection<Document> = database.collection("movies");
+                my_coll.insert_many(docs).await.unwrap();
+
+                // count
+                let count = my_coll.count_documents(doc! {}).await.unwrap();
+
+                assert_eq!(COUNT as u64, count);
+                Ok(())
+            }
+        }
+
+        let db_path = mk_db_path("test-aggregation");
+        let _ = std::fs::remove_dir_all(db_path.as_path());
+
         open_server_with_test(db_path.as_path(), Box::new(TestRunner)).await.unwrap();
     }
 

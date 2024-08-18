@@ -116,6 +116,11 @@ pub enum DbOp {
     // 1 byte
     StoreR0,
 
+    // store the op0 to r0
+    //
+    // 2 bytes
+    StoreR0_2,
+
     // get the field of top of the stack
     // push the value to the stack
     //
@@ -264,6 +269,13 @@ pub enum DbOp {
     // op1. location: 4 bytes
     // op2. size of params: 4 bytes
     Call,
+
+    // call a method
+    //
+    // 9 bytes
+    // op1. func id: 4 bytes
+    // op2. size of params: 4 bytes
+    CallExternal,
 
     // return from a method with 0 size
     //

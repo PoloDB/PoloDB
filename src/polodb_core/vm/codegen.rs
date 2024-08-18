@@ -25,6 +25,9 @@ use bson::spec::{BinarySubtype, ElementType};
 use bson::{Array, Binary, Bson, Document};
 use crate::vm::aggregation_codegen_context::{AggregationCodeGenContext, PipelineItem};
 use crate::vm::global_variable::{GlobalVariable, GlobalVariableSlot};
+use crate::vm::vm_count::VmFuncCount;
+use crate::vm::vm_external_func::VmExternalFunc;
+use crate::vm::vm_group::VmFuncGroup;
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
@@ -166,11 +169,13 @@ impl Codegen {
         self.program.label_slots[label.u_pos()] = LabelSlot::UnnamedLabel(current_loc);
     }
 
+    #[allow(dead_code)]
     fn emit_load_global(&mut self, global: GlobalVariable) {
         self.emit(DbOp::LoadGlobal);
         self.emit_u32(global.pos());
     }
 
+    #[allow(dead_code)]
     fn emit_store_global(&mut self, global: GlobalVariable) {
         self.emit(DbOp::StoreGlobal);
         self.emit_u32(global.pos());
@@ -472,6 +477,11 @@ impl Codegen {
         result_label: Label,
         not_found_label: Label,
     ) -> Result<()> {
+        if query_doc.is_empty() {
+            self.emit(DbOp::StoreR0_2);
+            self.emit_u8(1);
+            return Ok(())
+        }
         for (key, value) in query_doc.iter() {
             path_hint!(self, key.clone(), {
                 self.emit_query_tuple(
@@ -909,7 +919,6 @@ impl Codegen {
         let final_result_label = self.new_label();
         let final_pipeline_item = PipelineItem {
             next_label: final_result_label,
-            complete_label: None,
         };
 
         ctx.items.push(final_pipeline_item);
@@ -960,34 +969,15 @@ impl Codegen {
                             return Err(Error::InvalidAggregationStage(Box::new(stage.clone())));
                         }
                     };
-                    let global_var = self.new_global_variable(Bson::Int64(0))?;
-
-                    // $count_next =>
-                    self.emit_label(stage_ctx_item.next_label);
-
-                    self.emit_load_global(global_var);
-                    self.emit(DbOp::Inc);
-                    self.emit_store_global(global_var);
-                    self.emit(DbOp::Pop);
-
-                    self.emit_ret(0);
-
-                    // $count_complete =>
-                    self.emit_label(stage_ctx_item.complete_label.unwrap());
-                    self.emit(DbOp::PushDocument);
-                    self.emit_load_global(global_var);
-
-                    let count_name_id = self.push_static(Bson::String(count_name.clone()));
-                    self.emit(DbOp::SetField);
-                    self.emit_u32(count_name_id);
-
-                    self.emit(DbOp::Pop);
 
                     let next_fun = ctx.items[index + 1].next_label;
-                    self.emit_goto(DbOp::Call, next_fun);
-                    self.emit_u32(1);
-
-                    self.emit_ret(0);
+                    let external_func: Box<dyn VmExternalFunc> = Box::new(VmFuncCount::new(count_name.clone()));
+                    self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                }
+                "$group" => {
+                    let next_fun = ctx.items[index + 1].next_label;
+                    let external_func: Box<dyn VmExternalFunc> = VmFuncGroup::compile(value)?;
+                    self.emit_external_func(external_func, stage_ctx_item, next_fun);
                 }
                 _ => {
                     return Err(Error::UnknownAggregationOperation(key.clone()));
@@ -998,26 +988,43 @@ impl Codegen {
         Ok(())
     }
 
+    fn emit_external_func(&mut self, external_func: Box<dyn VmExternalFunc>, stage_ctx_item: &PipelineItem, next_fun: Label) {
+        let external_func_id = self.push_external_func(external_func);
+        let go_next = self.new_label();
+
+        // $count_next =>
+        self.emit_label(stage_ctx_item.next_label);
+
+        self.emit(DbOp::Dup);
+        self.emit_call_external_func_id(external_func_id, 1);
+        self.emit_goto(DbOp::IfTrue, go_next);
+
+        self.emit(DbOp::Pop);
+        self.emit_ret(0);
+
+        self.emit_label(go_next);
+        self.emit_goto(DbOp::Call, next_fun);
+        self.emit_u32(1);
+
+        self.emit_ret(0);
+    }
+
+    fn emit_call_external_func_id(&mut self, external_func_id: u32, param_size: usize) {
+        self.emit(DbOp::CallExternal);
+        self.emit_u32(external_func_id);
+        self.emit_u32(param_size as u32);
+    }
+
     pub fn emit_aggregation_before_query(&mut self, ctx: &mut AggregationCodeGenContext, pipeline: &[Document]) -> Result<()> {
         for stage_doc in pipeline {
             if stage_doc.is_empty() {
                 return Ok(());
             }
-            let first_tuple = stage_doc.iter().next().unwrap();
-            let (key, _) = first_tuple;
 
             let label = self.new_label();
-            let complete_label = match key.as_str() {
-                "$count" => {
-                    let complete_label = self.new_label();
-                    Some(complete_label)
-                }
-                _ => None,
-            };
 
             ctx.items.push(PipelineItem {
                 next_label: label,
-                complete_label,
             });
         }
         Ok(())
@@ -1025,11 +1032,10 @@ impl Codegen {
 
     pub fn emit_aggregation_before_close(&mut self, ctx: &AggregationCodeGenContext) -> Result<()> {
         for item in &ctx.items {
-            if let Some(complete_label) = item.complete_label {
-                self.emit_goto(DbOp::Call, complete_label);
-                self.emit_u32(0);
-                return Ok(());
-            }
+            let static_id = self.push_static(Bson::Null);
+            self.emit_push_value(static_id);
+            self.emit_goto(DbOp::Call, item.next_label);
+            self.emit_u32(1);
         }
 
         Ok(())
@@ -1170,6 +1176,11 @@ impl Codegen {
     }
 
     #[inline]
+    pub(super) fn emit_u8(&mut self, op: u8) {
+        self.program.instructions.push(op);
+    }
+
+    #[inline]
     pub(super) fn emit_u32(&mut self, op: u32) {
         let bytes = op.to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);
@@ -1207,6 +1218,12 @@ impl Codegen {
     pub(super) fn push_static(&mut self, value: Bson) -> u32 {
         let pos = self.program.static_values.len() as u32;
         self.program.static_values.push(value);
+        pos
+    }
+
+    pub(super) fn push_external_func(&mut self, func: Box<dyn VmExternalFunc>) -> u32 {
+        let pos = self.program.external_funcs.len() as u32;
+        self.program.external_funcs.push(func);
         pos
     }
 

@@ -23,4 +23,3 @@ mod rocksdb_options;
 pub use db::{Database, Result};
 pub(crate) use rocksdb_transaction::RocksDBTransaction;
 pub(crate) use rocksdb_iterator::RocksDBIterator;
-pub(crate) use rocksdb_wrapper::RocksDBWrapper;
