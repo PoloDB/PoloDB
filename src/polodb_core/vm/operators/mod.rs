@@ -1,4 +1,5 @@
 mod sum_operator;
+mod op_registry;
 
 use bson::Bson;
 
@@ -13,3 +14,4 @@ pub(crate) trait VmOperator {
 }
 
 pub(crate) use sum_operator::SumOperator;
+pub(crate) use op_registry::OpRegistry;

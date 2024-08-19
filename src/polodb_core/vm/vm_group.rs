@@ -15,11 +15,11 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use bson::{Bson, Document};
+use bson::Bson;
 use crate::vm::vm_external_func::{VmExternalFunc, VmExternalFuncStatus};
 use crate::{Result, Error};
 use indexmap::IndexMap;
-use crate::vm::operators::{SumOperator, VmOperator};
+use crate::vm::operators::{OpRegistry, VmOperator};
 
 const NAME: &'static str = "group";
 
@@ -37,29 +37,19 @@ struct VmFuncGroupInner {
 impl VmFuncGroup {
 
     fn compile_command(
+        registry: OpRegistry,
         key: &str,
-        doc: &Document,
+        value: &Bson,
         group_values: &mut IndexMap<String, Bson>,
         operators: &mut HashMap<String, Box<dyn VmOperator>>,
     ) -> Result<()> {
-        if doc.len() != 1 {
-            return Err(Error::ValidationError("Operator should have exactly one field".to_string()));
-        }
-        let (op_name, op_value) = doc.iter().next().ok_or(Error::ValidationError("Operator should have exactly one field".to_string()))?;
-        match op_name.as_str() {
-            "$sum" => {
-                let op = SumOperator::compile(op_value);
-                group_values.insert(key.into(), op.initial_value());
-                operators.insert(key.into(), op);
-            }
-            _ => {
-                return Err(Error::UnknownAggregationOperation(op_name.clone()));
-            }
-        }
+        let op = registry.compile(value)?;
+        group_values.insert(key.into(), op.initial_value());
+        operators.insert(key.into(), op);
         Ok(())
     }
 
-    pub(crate) fn compile(value: &Bson) -> Result<Box<dyn VmExternalFunc>> {
+    pub(crate) fn compile(registry: OpRegistry, value: &Bson) -> Result<Box<dyn VmExternalFunc>> {
         let doc = crate::try_unwrap_document!("$group", value);
         let mut group_values = IndexMap::new();
         let mut operators = HashMap::new();
@@ -73,14 +63,13 @@ impl VmFuncGroup {
                 continue;
             }
 
-            match v {
-                Bson::Document(doc) => {
-                    VmFuncGroup::compile_command(k_str, doc, &mut group_values, &mut operators)?;
-                }
-                _ => {
-                    return Err(Error::UnknownAggregationOperation(k.clone()));
-                }
-            }
+            VmFuncGroup::compile_command(
+                registry.clone(),
+                k_str,
+                v,
+                &mut group_values,
+                &mut operators,
+            )?;
         }
         if !found_id {
             let err_msg = "Field '_id' is required for $group".to_string();

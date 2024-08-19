@@ -25,10 +25,14 @@ use bson::spec::{BinarySubtype, ElementType};
 use bson::{Array, Binary, Bson, Document};
 use crate::vm::aggregation_codegen_context::{AggregationCodeGenContext, PipelineItem};
 use crate::vm::global_variable::{GlobalVariable, GlobalVariableSlot};
+use crate::vm::operators::OpRegistry;
 use crate::vm::vm_count::VmFuncCount;
 use crate::vm::vm_external_func::VmExternalFunc;
 use crate::vm::vm_group::VmFuncGroup;
+use crate::vm::vm_limit::VmFuncLimit;
 use crate::vm::vm_skip::VmFuncSkip;
+use crate::vm::vm_sort::VmFuncSort;
+use crate::vm::vm_unset::VmFuncUnset;
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
@@ -96,6 +100,7 @@ pub(super) struct Codegen {
     skip_annotation: bool,
     is_write: bool,
     paths: Vec<String>,
+    op_registry: OpRegistry,
 }
 
 macro_rules! path_hint {
@@ -114,6 +119,7 @@ impl Codegen {
             skip_annotation,
             is_write,
             paths: Vec::with_capacity(PATH_DEFAULT_SIZE),
+            op_registry: OpRegistry,
         }
     }
 
@@ -981,12 +987,30 @@ impl Codegen {
                 }
                 "$group" => {
                     let next_fun = ctx.items[index + 1].next_label;
-                    let external_func: Box<dyn VmExternalFunc> = VmFuncGroup::compile(value)?;
+                    let external_func: Box<dyn VmExternalFunc> = VmFuncGroup::compile(
+                        self.op_registry.clone(),
+                        value,
+                    )?;
                     self.emit_external_func(external_func, stage_ctx_item, next_fun);
                 }
                 "$skip" => {
                     let next_fun = ctx.items[index + 1].next_label;
                     let external_func: Box<dyn VmExternalFunc> = VmFuncSkip::new(value)?;
+                    self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                }
+                "$limit" => {
+                    let next_fun = ctx.items[index + 1].next_label;
+                    let external_func: Box<dyn VmExternalFunc> = VmFuncLimit::compile(value)?;
+                    self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                }
+                "$sort" => {
+                    let next_fun = ctx.items[index + 1].next_label;
+                    let external_func: Box<dyn VmExternalFunc> = VmFuncSort::compile(value)?;
+                    self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                }
+                "$unset" => {
+                    let next_fun = ctx.items[index + 1].next_label;
+                    let external_func: Box<dyn VmExternalFunc> = VmFuncUnset::compile(value)?;
                     self.emit_external_func(external_func, stage_ctx_item, next_fun);
                 }
                 _ => {

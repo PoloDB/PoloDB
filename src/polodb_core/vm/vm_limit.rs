@@ -13,32 +13,32 @@
 // limitations under the License.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::vm::vm_external_func::{VmExternalFunc, VmExternalFuncStatus};
 use bson::Bson;
+use crate::vm::vm_external_func::{VmExternalFunc, VmExternalFuncStatus};
 use crate::{Error, Result};
 
-const NAME: &'static str = "skip";
-
-pub(crate) struct VmFuncSkip {
-    remain: AtomicUsize
+pub(crate) struct VmFuncLimit {
+    remain: AtomicUsize,
 }
 
-impl VmFuncSkip {
-    pub(crate) fn new(skip_val: &Bson) -> Result<Box<dyn VmExternalFunc>> {
-        let skip = match skip_val {
+impl VmFuncLimit {
+
+    pub(crate) fn compile(bson: &Bson) -> Result<Box<dyn VmExternalFunc>> {
+        let limit = match bson {
             Bson::Int32(val) => *val as usize,
             Bson::Int64(val) => *val as usize,
-            _ => return Err(Error::ValidationError("Invalid skip value".into()))
+            _ => return Err(Error::ValidationError("Invalid limit value".into()))
         };
-        Ok(Box::new(VmFuncSkip {
-            remain: AtomicUsize::new(skip)
+        Ok(Box::new(VmFuncLimit {
+            remain: AtomicUsize::new(limit)
         }))
     }
+
 }
 
-impl VmExternalFunc for VmFuncSkip {
+impl VmExternalFunc for VmFuncLimit {
     fn name(&self) -> &str {
-        NAME
+        "limit"
     }
 
     fn call(&self, args: &[Bson]) -> Result<VmExternalFuncStatus> {
@@ -49,10 +49,10 @@ impl VmExternalFunc for VmFuncSkip {
         }
 
         match self.remain.load(Ordering::Relaxed) {
-            0 => Ok(VmExternalFuncStatus::Next(args[0].clone())),  // TODO(optimize): reduce clone
+            0 => Ok(VmExternalFuncStatus::Next(Bson::Null)),
             _ => {
                 self.remain.fetch_sub(1, Ordering::Relaxed);
-                Ok(VmExternalFuncStatus::Continue)
+                Ok(VmExternalFuncStatus::Next(args[0].clone()))
             }
         }
     }

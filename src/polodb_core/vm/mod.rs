@@ -25,6 +25,8 @@ mod vm_group;
 mod operators;
 mod vm_skip;
 mod vm_sort;
+mod vm_limit;
+mod vm_unset;
 
 pub(crate) use subprogram::SubProgram;
 pub(crate) use vm::{VM, VmState};
