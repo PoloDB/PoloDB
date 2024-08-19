@@ -106,6 +106,9 @@ pub enum DbOp {
     // 1byte
     PushDocument,
 
+    // 1byte
+    PushNull,
+
     // push r0 to the top of the stack
     //
     // 1 byte
@@ -239,6 +242,8 @@ pub enum DbOp {
     // the result is stored in r0
     In,
 
+    EqualNull,
+
     // open a cursor with op0 as root_pid
     //
     // 5 bytes
@@ -276,6 +281,10 @@ pub enum DbOp {
     // op1. func id: 4 bytes
     // op2. size of params: 4 bytes
     CallExternal,
+
+    // 5 bytes
+    // op1. location: 4 bytes
+    ExternalIsCompleted,
 
     // return from a method with 0 size
     //

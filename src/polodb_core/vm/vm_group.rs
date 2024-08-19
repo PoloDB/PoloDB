@@ -137,6 +137,6 @@ impl VmExternalFunc for VmFuncGroup {
     }
 
     fn is_completed(&self) -> bool {
-        self.is_completed.load(Ordering::Relaxed)
+        true
     }
 }

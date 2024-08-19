@@ -488,6 +488,11 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::PushNull => {
+                        writeln!(f, "{}: PushNull", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::PushR0 => {
                         writeln!(f, "{}: PushR0", pc)?;
                         pc += 1;
@@ -584,6 +589,11 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::EqualNull => {
+                        writeln!(f, "{}: EqualNull", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::OpenRead => {
                         let idx = begin.add(pc + 1).cast::<u32>().read();
                         let value = &self.static_values[idx as usize];
@@ -674,6 +684,13 @@ impl fmt::Display for SubProgram {
                         let param_size = begin.add(pc + 5).cast::<u32>().read();
                         writeln!(f, "{}: CallExternal(${}, {})", pc, external_func.name(), param_size)?;
                         pc += 9;
+                    }
+
+                    DbOp::ExternalIsCompleted => {
+                        let func_id = begin.add(pc + 1).cast::<u32>().read();
+                        let external_func = &self.external_funcs[func_id as usize];
+                        writeln!(f, "{}: ExternalIsCompleted(${})", pc, external_func.name())?;
+                        pc += 5;
                     }
 
                     DbOp::Ret0 => {
@@ -1540,10 +1557,10 @@ mod tests {
 
 0: OpenRead("test")
 5: Rewind(25)
-10: Goto(130)
+10: Goto(141)
 
 15: Label(4)
-20: Next(130)
+20: Next(141)
 
 25: Label(7, "close")
 30: PushValue(null)
@@ -1557,7 +1574,7 @@ mod tests {
 
 57: Label(5, "result")
 62: Call(76, 1)
-71: Goto(120)
+71: Goto(131)
 
 76: Label(0)
 81: Dup
@@ -1571,27 +1588,31 @@ mod tests {
 112: Ret0
 
 113: Label(9, "final_result_row_fun")
-118: ResultRow
-119: Ret0
+118: EqualNull
+119: TrueJump(125)
+124: ResultRow
 
-120: Label(8, "next_item_label")
-125: Goto(15)
+125: Label(11)
+130: Ret0
 
-130: Label(3, "compare")
-135: Dup
-136: Call(155, 1)
-145: FalseJump(46)
-150: Goto(57)
+131: Label(8, "next_item_label")
+136: Goto(15)
 
-155: Label(1, "compare_function")
-160: GetField("age", 185)
-169: PushValue(18)
-174: Greater
-175: FalseJump(185)
-180: Pop2(2)
+141: Label(3, "compare")
+146: Dup
+147: Call(166, 1)
+156: FalseJump(46)
+161: Goto(57)
 
-185: Label(2, "compare_function_clean")
-190: Ret0
+166: Label(1, "compare_function")
+171: GetField("age", 196)
+180: PushValue(18)
+185: Greater
+186: FalseJump(196)
+191: Pop2(2)
+
+196: Label(2, "compare_function_clean")
+201: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1622,7 +1643,7 @@ mod tests {
 
 46: Label(0)
 51: Call(65, 1)
-60: Goto(109)
+60: Goto(120)
 
 65: Label(3)
 70: Dup
@@ -1636,11 +1657,15 @@ mod tests {
 101: Ret0
 
 102: Label(5, "final_result_row_fun")
-107: ResultRow
-108: Ret0
+107: EqualNull
+108: TrueJump(114)
+113: ResultRow
 
-109: Label(4, "next_item_label")
-114: Goto(15)
+114: Label(7)
+119: Ret0
+
+120: Label(4, "next_item_label")
+125: Goto(15)
 "#;
         assert_eq!(expect, actual);
     }

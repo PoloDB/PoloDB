@@ -28,6 +28,7 @@ use crate::vm::global_variable::{GlobalVariable, GlobalVariableSlot};
 use crate::vm::vm_count::VmFuncCount;
 use crate::vm::vm_external_func::VmExternalFunc;
 use crate::vm::vm_group::VmFuncGroup;
+use crate::vm::vm_skip::VmFuncSkip;
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
@@ -930,7 +931,11 @@ impl Codegen {
         }
 
         self.emit_label_with_name(final_result_label, "final_result_row_fun");
+        let skip_result_label = self.new_label();
+        self.emit(DbOp::EqualNull);
+        self.emit_goto(DbOp::IfTrue, skip_result_label);
         self.emit(DbOp::ResultRow);
+        self.emit_label(skip_result_label);
         self.emit_ret(0);
 
         self.emit_label_with_name(next_label, "next_item_label");
@@ -979,6 +984,11 @@ impl Codegen {
                     let external_func: Box<dyn VmExternalFunc> = VmFuncGroup::compile(value)?;
                     self.emit_external_func(external_func, stage_ctx_item, next_fun);
                 }
+                "$skip" => {
+                    let next_fun = ctx.items[index + 1].next_label;
+                    let external_func: Box<dyn VmExternalFunc> = VmFuncSkip::new(value)?;
+                    self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                }
                 _ => {
                     return Err(Error::UnknownAggregationOperation(key.clone()));
                 }
@@ -991,11 +1001,13 @@ impl Codegen {
     fn emit_external_func(&mut self, external_func: Box<dyn VmExternalFunc>, stage_ctx_item: &PipelineItem, next_fun: Label) {
         let external_func_id = self.push_external_func(external_func);
         let go_next = self.new_label();
+        let loop_next = self.new_label();
 
         // $count_next =>
         self.emit_label(stage_ctx_item.next_label);
 
         self.emit(DbOp::Dup);
+        self.emit_label(loop_next);
         self.emit_call_external_func_id(external_func_id, 1);
         self.emit_goto(DbOp::IfTrue, go_next);
 
@@ -1005,6 +1017,12 @@ impl Codegen {
         self.emit_label(go_next);
         self.emit_goto(DbOp::Call, next_fun);
         self.emit_u32(1);
+        self.emit(DbOp::Pop);
+
+        self.emit(DbOp::ExternalIsCompleted);
+        self.emit_u32(external_func_id);
+        self.emit(DbOp::PushNull);
+        self.emit_goto(DbOp::IfFalse, loop_next);
 
         self.emit_ret(0);
     }

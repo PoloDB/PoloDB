@@ -12,19 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod op;
-mod subprogram;
-mod codegen;
-mod label;
-mod vm;
-mod global_variable;
-mod aggregation_codegen_context;
-mod vm_external_func;
-mod vm_count;
-mod vm_group;
-mod operators;
-mod vm_skip;
-mod vm_sort;
+use std::collections::HashMap;
+use bson::Document;
 
-pub(crate) use subprogram::SubProgram;
-pub(crate) use vm::{VM, VmState};
+pub(crate) struct VmFuncSort {
+    order_map: HashMap<String, i8>,
+    buffer: Vec<Document>,
+}
