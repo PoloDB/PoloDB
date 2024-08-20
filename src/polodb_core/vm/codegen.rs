@@ -26,6 +26,7 @@ use bson::{Array, Binary, Bson, Document};
 use crate::vm::aggregation_codegen_context::{AggregationCodeGenContext, PipelineItem};
 use crate::vm::global_variable::{GlobalVariable, GlobalVariableSlot};
 use crate::vm::operators::OpRegistry;
+use crate::vm::vm_add_fields::VmFuncAddFields;
 use crate::vm::vm_count::VmFuncCount;
 use crate::vm::vm_external_func::VmExternalFunc;
 use crate::vm::vm_group::VmFuncGroup;
@@ -1006,6 +1007,12 @@ impl Codegen {
                 "$sort" => {
                     let next_fun = ctx.items[index + 1].next_label;
                     let external_func: Box<dyn VmExternalFunc> = VmFuncSort::compile(value)?;
+                    self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                }
+                "$addFields" => {
+                    let next_fun = ctx.items[index + 1].next_label;
+                    let external_func: Box<dyn VmExternalFunc> = VmFuncAddFields::compile(
+                        self.op_registry.clone(), value)?;
                     self.emit_external_func(external_func, stage_ctx_item, next_fun);
                 }
                 "$unset" => {

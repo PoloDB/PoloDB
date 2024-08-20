@@ -259,3 +259,47 @@ fn test_aggregate_unset() {
         assert_eq!(doc.get("shape"), None);
     }
 }
+
+#[test]
+fn test_aggregate_abs() {
+    let db = project_prepare_db("test-aggregate-abs").unwrap();
+    let elements = db.collection::<Document>("elements");
+
+    elements.insert_many(vec![
+        doc! {
+            "weight": 100,
+        },
+        doc! {
+            "weight": -200,
+        },
+        doc! {
+            "weight": 300,
+        },
+        doc! {
+            "weight": -400,
+        },
+        doc! {
+            "weight": 500,
+        },
+    ]).unwrap();
+
+    let result = elements
+        .aggregate(vec![
+            doc! {
+                "$addFields": {
+                    "abs_weight": {
+                        "$abs": "$weight",
+                    },
+                },
+            }
+        ])
+        .unwrap()
+        .collect::<Result<Vec<Document>>>()
+        .unwrap();
+    assert_eq!(result.len(), 5);
+    for doc in result {
+        let weight = doc.get("weight").unwrap().as_i32().unwrap();
+        let abs_weight = doc.get("abs_weight").unwrap().as_i32().unwrap();
+        assert_eq!(abs_weight, weight.abs());
+    }
+}

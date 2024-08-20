@@ -14,7 +14,7 @@
 
 use bson::{Bson, Document};
 use crate::{Error, Result};
-use crate::vm::operators::{SumOperator, VmOperator};
+use crate::vm::operators::{AbsOperator, SumOperator, VmOperator};
 
 // Reference: https://www.mongodb.com/docs/manual/reference/operator/aggregation/
 #[derive(Clone)]
@@ -35,15 +35,14 @@ impl OpRegistry {
             return Err(Error::ValidationError("Operator should have exactly one field".to_string()));
         }
         let (op_name, op_value) = doc.iter().next().ok_or(Error::ValidationError("Operator should have exactly one field".to_string()))?;
-        match op_name.as_str() {
-            "$sum" => {
-                let op = SumOperator::compile(op_value);
-                Ok(op)
-            }
+        let op = match op_name.as_str() {
+            "$sum" => SumOperator::compile(op_value),
+            "$abs" => AbsOperator::compile(self.clone(), op_value)?,
             _ => {
-                Err(Error::UnknownAggregationOperation(op_name.clone()))
+                return Err(Error::UnknownAggregationOperation(op_name.clone()));
             }
-        }
+        };
+        Ok(op)
     }
 
 }
