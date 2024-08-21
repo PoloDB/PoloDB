@@ -750,6 +750,7 @@ mod tests {
     use bson::{doc, Regex};
     use indexmap::indexmap;
     use polodb_line_diff::assert_eq;
+    use crate::Error;
 
     #[inline]
     fn new_spec<T: Into<String>>(name: T) -> CollectionSpecification {
@@ -1680,5 +1681,28 @@ mod tests {
 142: Goto(15)
 "#;
         assert_eq!(expect, actual);
+    }
+    #[test]
+    fn test_aggregate_error_message() {
+        let col_spec = new_spec("test");
+        let program = SubProgram::compile_aggregate(&col_spec, vec![
+            doc! {
+                "$group": {
+                    "_id": "$name",
+                    "total": {
+                        "$sumabc": 1,
+                    },
+                },
+            },
+        ], false);
+        assert!(program.is_err());
+        match program {
+            Err(Error::InvalidField(i)) => {
+                assert_eq!(i.path.unwrap().as_str(), "/0/$group/total/$sumabc");
+            }
+            _ => {
+                panic!("Should return error");
+            }
+        }
     }
 }

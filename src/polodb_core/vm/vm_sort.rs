@@ -18,6 +18,7 @@ use std::sync::atomic::AtomicUsize;
 use bson::{Bson, Document};
 use crate::vm::vm_external_func::{VmExternalFunc, VmExternalFuncStatus};
 use crate::{Result, Error};
+use crate::errors::mk_invalid_aggregate_field;
 
 pub(crate) struct VmFuncSort {
     order_map: HashMap<String, i8>,
@@ -26,7 +27,7 @@ pub(crate) struct VmFuncSort {
 }
 
 impl VmFuncSort {
-    pub(crate) fn compile(val: &Bson) -> Result<Box<dyn VmExternalFunc>> {
+    pub(crate) fn compile(paths: &mut Vec<String>, val: &Bson) -> Result<Box<dyn VmExternalFunc>> {
         let order_map = match val {
             Bson::Document(doc) => {
                 let mut result = HashMap::default();
@@ -40,7 +41,10 @@ impl VmFuncSort {
                 }
                 result
             }
-            _ => return Err(Error::ValidationError("Invalid sort value".into()))
+            _ => {
+                let invalid_err = mk_invalid_aggregate_field(paths);
+                return Err(Error::InvalidField(invalid_err))
+            }
         };
         let result = VmFuncSort {
             order_map,

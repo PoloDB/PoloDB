@@ -17,6 +17,7 @@ use indexmap::IndexMap;
 use crate::vm::operators::{OpRegistry, OperatorExpr};
 use crate::vm::vm_external_func::{VmExternalFunc, VmExternalFuncStatus};
 use crate::{Result, Error};
+use crate::errors::mk_invalid_aggregate_field;
 
 pub(crate) struct VmFuncAddFields {
     fields: IndexMap<String, OperatorExpr>,
@@ -24,32 +25,35 @@ pub(crate) struct VmFuncAddFields {
 
 impl VmFuncAddFields {
 
-    pub(crate) fn compile(registry: OpRegistry, value: &Bson) -> Result<Box<dyn VmExternalFunc>> {
+    pub(crate) fn compile(paths: &mut Vec<String>, registry: OpRegistry, value: &Bson) -> Result<Box<dyn VmExternalFunc>> {
         let fields = match value {
             Bson::Document(doc) => {
                 let mut fields = IndexMap::new();
                 for (k, v) in doc.iter() {
-                    let op = match v {
-                        Bson::Document(v) => {
-                            let op = registry.compile_doc(v)?;
-                            OperatorExpr::Expr(op)
-                        }
-                        Bson::String(field_name) => {
-                            if field_name.starts_with("$") {
-                                let field_name = field_name[1..].to_string();
-                                OperatorExpr::Alias(field_name)
-                            } else {
-                                OperatorExpr::Constant(Bson::String(field_name.clone()))
+                    let op = crate::path_hint_3!(paths, k.clone(), {
+                        match v {
+                            Bson::Document(v) => {
+                                let op = registry.compile_doc(paths, v)?;
+                                OperatorExpr::Expr(op)
                             }
+                            Bson::String(field_name) => {
+                                if field_name.starts_with("$") {
+                                    let field_name = field_name[1..].to_string();
+                                    OperatorExpr::Alias(field_name)
+                                } else {
+                                    OperatorExpr::Constant(Bson::String(field_name.clone()))
+                                }
+                            }
+                            _ => OperatorExpr::Constant(v.clone()),
                         }
-                        _ => OperatorExpr::Constant(v.clone()),
-                    };
+                    });
                     fields.insert(k.clone(), op);
                 }
                 fields
             }
             _ => {
-                return Err(Error::UnknownAggregationOperation("$addFields".to_string()));
+                let invalid_err = mk_invalid_aggregate_field(paths);
+                return Err(Error::InvalidField(invalid_err));
             }
         };
         Ok(Box::new(VmFuncAddFields {

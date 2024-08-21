@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use bson::Bson;
 use crate::vm::vm_external_func::{VmExternalFunc, VmExternalFuncStatus};
 use crate::{Error, Result};
+use crate::errors::mk_invalid_aggregate_field;
 
 pub(crate) struct VmFuncLimit {
     remain: AtomicUsize,
@@ -23,11 +24,14 @@ pub(crate) struct VmFuncLimit {
 
 impl VmFuncLimit {
 
-    pub(crate) fn compile(bson: &Bson) -> Result<Box<dyn VmExternalFunc>> {
+    pub(crate) fn compile(paths: &mut Vec<String>, bson: &Bson) -> Result<Box<dyn VmExternalFunc>> {
         let limit = match bson {
             Bson::Int32(val) => *val as usize,
             Bson::Int64(val) => *val as usize,
-            _ => return Err(Error::ValidationError("Invalid limit value".into()))
+            _ => {
+                let invalid_err = mk_invalid_aggregate_field(paths);
+                return Err(Error::InvalidField(invalid_err));
+            }
         };
         Ok(Box::new(VmFuncLimit {
             remain: AtomicUsize::new(limit)

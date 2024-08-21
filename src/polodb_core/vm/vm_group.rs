@@ -37,39 +37,48 @@ struct VmFuncGroupInner {
 impl VmFuncGroup {
 
     fn compile_command(
+        paths: &mut Vec<String>,
         registry: OpRegistry,
         key: &str,
         value: &Bson,
         group_values: &mut IndexMap<String, Bson>,
         operators: &mut HashMap<String, Box<dyn VmOperator>>,
     ) -> Result<()> {
-        let op = registry.compile(value)?;
+        let op = registry.compile(paths, value)?;
         group_values.insert(key.into(), op.initial_value());
         operators.insert(key.into(), op);
         Ok(())
     }
 
-    pub(crate) fn compile(registry: OpRegistry, value: &Bson) -> Result<Box<dyn VmExternalFunc>> {
+    pub(crate) fn compile(
+        paths: &mut Vec<String>,
+        registry: OpRegistry,
+        value: &Bson,
+    ) -> Result<Box<dyn VmExternalFunc>> {
         let doc = crate::try_unwrap_document!("$group", value);
         let mut group_values = IndexMap::new();
         let mut operators = HashMap::new();
 
         let mut found_id = false;
         for (k, v) in doc.iter() {
-            group_values.insert(k.clone(), v.clone());
-            let k_str = k.as_str();
-            if k_str == "_id" {
-                found_id = true;
-                continue;
-            }
+            crate::path_hint_2!(paths, k.clone(), {
+                group_values.insert(k.clone(), v.clone());
+                let k_str = k.as_str();
+                if k_str == "_id" {
+                    found_id = true;
+                    paths.pop();
+                    continue;
+                }
 
-            VmFuncGroup::compile_command(
-                registry.clone(),
-                k_str,
-                v,
-                &mut group_values,
-                &mut operators,
-            )?;
+                VmFuncGroup::compile_command(
+                    paths,
+                    registry.clone(),
+                    k_str,
+                    v,
+                    &mut group_values,
+                    &mut operators,
+                )?;
+            });
         }
         if !found_id {
             let err_msg = "Field '_id' is required for $group".to_string();

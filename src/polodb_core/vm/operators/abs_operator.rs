@@ -36,10 +36,10 @@ impl AbsOperator {
         }
     }
 
-    pub(crate) fn compile(registry: OpRegistry, v: &Bson) -> Result<Box<dyn VmOperator>> {
+    pub(crate) fn compile(paths: &mut Vec<String>, registry: OpRegistry, v: &Bson) -> Result<Box<dyn VmOperator>> {
         let inner = match v {
             Bson::Document(doc) => {
-                let op = registry.compile_doc(doc)?;
+                let op = registry.compile_doc(paths, doc)?;
                 OperatorExpr::Expr(op)
             }
             Bson::Null => {

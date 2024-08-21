@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::vm::vm_external_func::{VmExternalFunc, VmExternalFuncStatus};
 use bson::Bson;
 use crate::{Error, Result};
+use crate::errors::mk_invalid_aggregate_field;
 
 const NAME: &'static str = "skip";
 
@@ -24,11 +25,14 @@ pub(crate) struct VmFuncSkip {
 }
 
 impl VmFuncSkip {
-    pub(crate) fn new(skip_val: &Bson) -> Result<Box<dyn VmExternalFunc>> {
+    pub(crate) fn compile(paths: &mut Vec<String>, skip_val: &Bson) -> Result<Box<dyn VmExternalFunc>> {
         let skip = match skip_val {
             Bson::Int32(val) => *val as usize,
             Bson::Int64(val) => *val as usize,
-            _ => return Err(Error::ValidationError("Invalid skip value".into()))
+            _ => {
+                let invalid_err = mk_invalid_aggregate_field(paths);
+                return Err(Error::InvalidField(invalid_err))
+            }
         };
         Ok(Box::new(VmFuncSkip {
             remain: AtomicUsize::new(skip)

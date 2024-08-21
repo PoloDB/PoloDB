@@ -14,6 +14,7 @@
 
 use bson::Bson;
 use crate::{Error, Result};
+use crate::errors::mk_invalid_aggregate_field;
 use crate::vm::vm_external_func::{VmExternalFunc, VmExternalFuncStatus};
 
 pub(crate) struct VmFuncUnset {
@@ -21,21 +22,29 @@ pub(crate) struct VmFuncUnset {
 }
 
 impl VmFuncUnset {
-    pub(crate) fn compile(val: &Bson) -> Result<Box<dyn VmExternalFunc>> {
+    pub(crate) fn compile(paths: &mut Vec<String>, val: &Bson) -> Result<Box<dyn VmExternalFunc>> {
         let fields = match val {
             Bson::Array(arr) => {
                 let mut fields = Vec::new();
+                let mut count = 0;
                 for v in arr {
-                    if let Bson::String(s) = v {
-                        fields.push(s.clone());
-                    } else {
-                        return Err(Error::UnknownAggregationOperation("Invalid argument for $unset".to_string()));
-                    }
+                    crate::path_hint_2!(paths, count.to_string(), {
+                        if let Bson::String(s) = v {
+                            fields.push(s.clone());
+                        } else {
+                            let invalid_err = mk_invalid_aggregate_field(paths);
+                            return Err(Error::InvalidField(invalid_err));
+                        }
+                    });
+                    count += 1;
                 }
                 fields
             }
             Bson::String(s) => vec![s.clone()],
-            _ => return Err(Error::UnknownAggregationOperation("Invalid argument for $unset".to_string())),
+            _ => {
+                let invalid_err = mk_invalid_aggregate_field(paths);
+                return Err(Error::InvalidField(invalid_err));
+            },
         };
         Ok(Box::new(VmFuncUnset {
             fields,
