@@ -55,6 +55,7 @@ fn test_regex() {
                     },
                 }
             })
+            .run()
             .unwrap();
 
         assert_eq!(res.count(), docs.len() - 1);
@@ -97,6 +98,7 @@ fn test_regex_error() {
                     },
                 }
             })
+            .run()
             .unwrap();
 
         assert!(res.next().unwrap().is_err());

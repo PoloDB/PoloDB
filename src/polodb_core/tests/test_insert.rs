@@ -66,16 +66,19 @@ fn test_insert_struct() {
         }).unwrap().unwrap();
         assert_eq!(book.author, "John Steinbeck");
 
-        let cursor = typed_collection.find(doc! {
-            "$or": [
-                {
-                    "title": "The Grapes of Wrath",
-                },
-                {
-                    "title": "To Kill a Mockingbird",
-                }
-            ]
-        }).unwrap();
+        let cursor = typed_collection
+            .find(doc! {
+                "$or": [
+                    {
+                        "title": "The Grapes of Wrath",
+                    },
+                    {
+                        "title": "To Kill a Mockingbird",
+                    }
+                ]
+            })
+            .run()
+            .unwrap();
         let result = cursor.collect::<Result<Vec<Book>>>().unwrap();
         assert_eq!(result.len(), 2);
     });
@@ -250,7 +253,7 @@ fn test_insert_different_types_as_key() {
         "_id": "0",
     }).unwrap();
 
-    let cursor = collection.find(None).unwrap();
+    let cursor = collection.find(doc! {}).run().unwrap();
     let result: Vec<Result<Document>> = cursor.collect();
     assert_eq!(result.len(), 2);
 
@@ -276,7 +279,11 @@ fn test_insert_persist() {
             "test": "test",
         };
         collection.insert_one(document).unwrap();
-        let result = collection.find(None).unwrap().collect::<Result<Vec<_>>>().unwrap();
+        let result = collection
+            .find(doc! {})
+            .run().unwrap()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
         assert_eq!(result.len() as u64, i as u64 + 1);
     }
 }

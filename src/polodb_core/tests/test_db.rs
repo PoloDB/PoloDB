@@ -44,7 +44,7 @@ fn test_reopen_db() {
     {
         let db = Database::open_path(db_path.as_path().to_str().unwrap()).unwrap();
         let collection = db.collection::<Document>("books");
-        let book = collection.find_one(None).unwrap().unwrap();
+        let book = collection.find_one(doc! {}).unwrap().unwrap();
         assert_eq!(book.get("author").unwrap().as_str().unwrap(), "Liu Cixin");
     }
 }
@@ -70,7 +70,7 @@ fn test_multi_threads() {
     t.join().unwrap();
 
     let collection = db.collection::<Document>("test2");
-    let one = collection.find_one(None).unwrap().unwrap();
+    let one = collection.find_one(doc! {}).unwrap().unwrap();
     assert_eq!(one.get("content").unwrap().as_str().unwrap(), "Hello");
 }
 

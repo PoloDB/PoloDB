@@ -62,6 +62,7 @@ fn test_aggregate_empty() {
 
     let result = fruits
         .aggregate(vec![])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();
@@ -81,6 +82,7 @@ fn test_aggregate_match() {
                 },
             }
         ])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();
@@ -106,6 +108,7 @@ fn test_aggregate_count() {
                 "$count": "count",
             }
         ])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();
@@ -118,6 +121,7 @@ fn test_aggregate_count() {
                 "$count": "count",
             }
         ])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();
@@ -133,6 +137,7 @@ fn test_aggregate_count() {
                 "$count": "count",
             }
         ])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();
@@ -151,6 +156,7 @@ fn test_aggregate_skip() {
                 "$skip": 2,
             }
         ])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();
@@ -172,6 +178,7 @@ fn test_aggregate_limit() {
                 "$limit": 2,
             }
         ])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();
@@ -194,6 +201,7 @@ fn test_aggregate_sort() {
                 },
             }
         ])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();
@@ -212,6 +220,7 @@ fn test_aggregate_sort() {
                 },
             }
         ])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();
@@ -234,6 +243,7 @@ fn test_aggregate_unset() {
                 "$unset": "color",
             }
         ])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();
@@ -249,6 +259,7 @@ fn test_aggregate_unset() {
                 "$unset": ["color", "shape"],
             }
         ])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();
@@ -293,6 +304,7 @@ fn test_aggregate_abs() {
                 },
             }
         ])
+        .run()
         .unwrap()
         .collect::<Result<Vec<Document>>>()
         .unwrap();

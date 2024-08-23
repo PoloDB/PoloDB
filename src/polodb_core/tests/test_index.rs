@@ -167,6 +167,7 @@ fn test_index_order() {
             .find(doc! {
                 "age": 23
             })
+            .run()
             .unwrap()
             .collect::<Result<Vec<Document>>>()
             .unwrap();

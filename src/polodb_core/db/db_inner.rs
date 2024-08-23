@@ -833,38 +833,6 @@ impl DatabaseInner {
         Ok(handle)
     }
 
-    pub fn find_with_borrowed_session<T: DeserializeOwned + Send + Sync>(
-        &self,
-        col_name: &str,
-        filter: impl Into<Option<Document>>,
-        txn: &TransactionInner,
-    ) -> Result<ClientCursor<T>> {
-        DatabaseInner::validate_col_name(col_name)?;
-        let filter_query = filter.into();
-        let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, txn)?;
-        match meta_opt {
-            Some(col_spec) => {
-                let handle = self.find_internal(
-                    &col_spec,
-                    filter_query,
-                    txn.clone(),
-                )?;
-
-                Ok(handle)
-            }
-            None => {
-                let subprogram = SubProgram::compile_empty_query();
-                let vm = VM::new(
-                    txn.clone(),
-                    subprogram,
-                    self.metrics.clone(),
-                );
-                let cursor = ClientCursor::new(vm);
-                Ok(cursor)
-            }
-        }
-    }
-
     pub(crate) fn count_documents(&self, col_name: &str, txn: &TransactionInner) -> Result<u64> {
         DatabaseInner::validate_col_name(col_name)?;
         let test_result = self.count(col_name, txn);

@@ -17,8 +17,9 @@ use bson::Document;
 use std::borrow::Borrow;
 use std::sync::Weak;
 use serde::de::DeserializeOwned;
-use crate::{ClientCursor, Error, IndexModel, Result};
+use crate::{Error, IndexModel, Result};
 use crate::db::db_inner::DatabaseInner;
+use crate::action::{Aggregate, Find};
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 
 macro_rules! try_multiple {
@@ -84,15 +85,15 @@ pub trait CollectionT<T> {
 
     /// When query document is passed to the function. The result satisfies
     /// the query document.
-    fn find(&self, filter: impl Into<Option<Document>>) -> Result<ClientCursor<T>>
+    fn find(&self, filter: Document) -> Find<'_, '_, T>
     where T: DeserializeOwned + Send + Sync;
 
     /// Finds a single document in the collection matching `filter`.
-    fn find_one(&self, filter: impl Into<Option<Document>>) -> Result<Option<T>>
+    fn find_one(&self, filter: Document) -> Result<Option<T>>
     where T: DeserializeOwned + Send + Sync;
 
     /// Runs an aggregation operation.
-    fn aggregate(&self, pipeline: impl IntoIterator<Item = Document>) -> Result<ClientCursor<T>>
+    fn aggregate(&self, pipeline: impl IntoIterator<Item = Document>) -> Aggregate<'_, '_, T>
     where T: DeserializeOwned + Send + Sync;
 }
 
@@ -206,16 +207,14 @@ impl<T> CollectionT<T> for Collection<T> {
         Ok(result)
     }
 
-    fn find(&self, filter: impl Into<Option<Document>>) -> Result<ClientCursor<T>>
+    fn find(&self, filter: Document) -> Find<T>
     where T: DeserializeOwned + Send + Sync {
-        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
-        let txn = db.start_transaction()?;
-        db.find_with_owned_session(&self.name, filter, txn)
+        Find::new(self.db.clone(), &self.name, None, filter)
     }
 
-    fn find_one(&self, filter: impl Into<Option<Document>>) -> Result<Option<T>>
+    fn find_one(&self, filter: Document) -> Result<Option<T>>
     where T: DeserializeOwned + Send + Sync {
-        let mut cursor = self.find(filter)?;
+        let mut cursor = self.find(filter).run()?;
         let test = cursor.advance()?;
         if !test {
             return Ok(None);
@@ -223,10 +222,13 @@ impl<T> CollectionT<T> for Collection<T> {
         Ok(Some(cursor.deserialize_current()?))
     }
 
-    fn aggregate(&self, pipeline: impl IntoIterator<Item = Document>) -> Result<ClientCursor<T>>
+    fn aggregate(&self, pipeline: impl IntoIterator<Item = Document>) -> Aggregate<'_, '_, T>
     where T: DeserializeOwned + Send + Sync {
-        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
-        let txn = db.start_transaction()?;
-        db.aggregate_with_owned_session(&self.name, pipeline, txn)
+        Aggregate::new(
+            self.db.clone(),
+            &self.name,
+            pipeline.into_iter().collect(),
+            None,
+        )
     }
 }

@@ -42,7 +42,8 @@ fn test_transaction_commit() {
         let collection = db.collection::<Document>("test");
 
         let doc = collection
-            .find(None)
+            .find(doc! {})
+            .run()
             .unwrap()
             .collect::<Result<Vec<Document>>>()
             .unwrap();
