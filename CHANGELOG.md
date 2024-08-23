@@ -1,4 +1,24 @@
 
+
+# 5.0.0
+
+This is a major change:
+
+- Change license to Apache-2.0
+- Add standalone server that supports MongoDB's wire protocol
+
+**Breaking changes:**
+- RocksDB as storage layer
+  - Make the DB more stable and performant in storage. You don't need to worry about data lose any more.
+  - PoloDB is no longer a single file DB.
+- Remove WASM support
+  - Maybe we can add back in the future, but we must remove it now
+- Remove memory db
+  - Maybe we can add back in the future, but we must remove it now
+- Simplify API
+  - Transaction API
+  - Unify ClientCursor and ClientSessionCursor
+
 # 4.4.2
 
 - Fix #148

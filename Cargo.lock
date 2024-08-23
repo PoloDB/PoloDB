@@ -1233,7 +1233,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 
 [[package]]
 name = "polodb"
-version = "5.0.0"
+version = "5.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1274,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "polodb_core"
-version = "5.0.0"
+version = "5.1.0"
 dependencies = [
  "bson",
  "byteorder",

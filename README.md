@@ -83,13 +83,14 @@ The features will be implemented one by one in order.
   - [x] Transactions
   - [x] Serde
   - [x] Indexes(Alpha)
-  - [ ] Aggregation
+  - [x] Aggregation(Alpha)
 - [x] Command line Tools
 - [ ] Platforms
   - [x] MacOS
   - [x] Linux
   - [x] Windows
-  - [ ] Web Browser(WIP)
   - [ ] iOS
   - [ ] Android
-- [ ] Visualization Tools
+- [ ] Languages
+  - [ ] Python
+  - [ ] JavaScript
