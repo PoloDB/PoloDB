@@ -99,7 +99,7 @@
 //! ];
 //! collection.insert_many(docs).unwrap();
 //!
-//! let books = collection.find(None).unwrap();
+//! let books = collection.find(doc! {}).run().unwrap();
 //! for book in books {
 //!     println!("name: {:?}", book);
 //! }
@@ -154,7 +154,7 @@ mod metrics;
 mod utils;
 mod index;
 mod coll;
-mod find;
+pub mod action;
 
 pub use db::{Database, Result};
 pub use coll::{Collection, CollectionT, TransactionalCollection};
@@ -164,6 +164,5 @@ pub use db::client_cursor::ClientCursor;
 pub use errors::Error;
 pub use metrics::Metrics;
 pub use index::{IndexModel, IndexOptions};
-pub use find::Find;
 
 pub extern crate bson;

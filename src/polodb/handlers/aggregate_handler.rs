@@ -59,11 +59,11 @@ impl Handler for AggregateHandle {
         let cursor = if let Some(session) = session_opt {
             let txn = session.get_transaction().ok_or(anyhow!("transaction not started"))?;
             let collection = txn.collection::<Document>(&col_name);
-            collection.aggregate(pipeline_arr)?
+            collection.aggregate(pipeline_arr).run()?
         } else {
             let db = ctx.app_context.db();
             let collection = db.collection::<Document>(&col_name);
-            collection.aggregate(pipeline_arr)?
+            collection.aggregate(pipeline_arr).run()?
         };
 
         let cursor = Arc::new(Mutex::new(cursor));

@@ -117,7 +117,7 @@ fn test_find_empty_collection() {
     {
         let collection = db.collection::<Document>("test");
 
-        let mut cursor = collection.find(None).run().unwrap();
+        let mut cursor = collection.find(doc! {}).run().unwrap();
 
         assert!(!cursor.advance().unwrap());
     }
@@ -126,7 +126,7 @@ fn test_find_empty_collection() {
 
     let collection = txn.collection::<Document>("test");
 
-    let mut cursor = collection.find(None).run().unwrap();
+    let mut cursor = collection.find(doc! {}).run().unwrap();
 
     assert!(!cursor.advance().unwrap());
 }
@@ -210,4 +210,147 @@ fn test_not_expression() {
         assert_eq!(result[0].get("name").unwrap().as_str().unwrap(), "David");
         assert_eq!(result[1].get("name").unwrap().as_str().unwrap(), "John");
     });
+}
+
+#[test]
+fn test_find_skip() {
+    let db = prepare_db("test-find-skip").unwrap();
+
+    let fruits = db.collection::<Document>("fruits");
+    fruits.insert_many(vec![
+        doc! {
+            "name": "apple",
+            "color": "red",
+            "shape": "round",
+        },
+        doc! {
+            "name": "banana",
+            "color": "yellow",
+            "shape": "long",
+        },
+        doc! {
+            "name": "orange",
+            "color": "orange",
+            "shape": "round",
+        },
+        doc! {
+            "name": "grape",
+            "color": "purple",
+            "shape": "round",
+        },
+        doc! {
+            "name": "watermelon",
+            "color": "green",
+            "shape": "round",
+        },
+    ]).unwrap();
+
+    let result = fruits
+        .find(doc! {})
+        .skip(2)
+        .run()
+        .unwrap()
+        .collect::<Result<Vec<Document>>>()
+        .unwrap();
+
+    assert_eq!(result.len(), 3);
+}
+
+#[test]
+fn test_find_limit() {
+    let db = prepare_db("test-find-limit").unwrap();
+
+    let fruits = db.collection::<Document>("fruits");
+    fruits.insert_many(vec![
+        doc! {
+            "name": "apple",
+            "color": "red",
+            "shape": "round",
+        },
+        doc! {
+            "name": "banana",
+            "color": "yellow",
+            "shape": "long",
+        },
+        doc! {
+            "name": "orange",
+            "color": "orange",
+            "shape": "round",
+        },
+        doc! {
+            "name": "grape",
+            "color": "purple",
+            "shape": "round",
+        },
+        doc! {
+            "name": "watermelon",
+            "color": "green",
+            "shape": "round",
+        },
+    ]).unwrap();
+
+    let result = fruits
+        .find(doc! {})
+        .limit(3)
+        .run()
+        .unwrap()
+        .collect::<Result<Vec<Document>>>()
+        .unwrap();
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0].get("name").unwrap().as_str().unwrap(), "apple");
+    assert_eq!(result[1].get("name").unwrap().as_str().unwrap(), "banana");
+    assert_eq!(result[2].get("name").unwrap().as_str().unwrap(), "orange");
+}
+
+#[test]
+fn test_find_sort() {
+    let db = prepare_db("test-find-sort").unwrap();
+
+    let fruits = db.collection::<Document>("fruits");
+    fruits.insert_many(vec![
+        doc! {
+            "name": "apple",
+            "color": "red",
+            "shape": "round",
+            "weight": 1,
+        },
+        doc! {
+            "name": "banana",
+            "color": "yellow",
+            "shape": "long",
+            "weight": 2,
+        },
+        doc! {
+            "name": "orange",
+            "color": "orange",
+            "shape": "round",
+            "weight": 3,
+        },
+        doc! {
+            "name": "grape",
+            "color": "purple",
+            "shape": "round",
+            "weight": 4,
+        },
+        doc! {
+            "name": "watermelon",
+            "color": "green",
+            "shape": "round",
+            "weight": 5,
+        },
+    ]).unwrap();
+
+    let result = fruits
+        .find(doc! {})
+        .sort(doc! {
+            "weight": 1,
+        })
+        .run()
+        .unwrap()
+        .collect::<Result<Vec<Document>>>()
+        .unwrap();
+    assert_eq!(result.len(), 5);
+    assert_eq!(result[0].get("name").unwrap().as_str().unwrap(), "apple");
+    assert_eq!(result[1].get("name").unwrap().as_str().unwrap(), "banana");
+    assert_eq!(result[2].get("name").unwrap().as_str().unwrap(), "orange");
 }

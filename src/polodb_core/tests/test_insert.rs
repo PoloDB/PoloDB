@@ -253,7 +253,7 @@ fn test_insert_different_types_as_key() {
         "_id": "0",
     }).unwrap();
 
-    let cursor = collection.find(None).run().unwrap();
+    let cursor = collection.find(doc! {}).run().unwrap();
     let result: Vec<Result<Document>> = cursor.collect();
     assert_eq!(result.len(), 2);
 
@@ -280,7 +280,7 @@ fn test_insert_persist() {
         };
         collection.insert_one(document).unwrap();
         let result = collection
-            .find(None)
+            .find(doc! {})
             .run().unwrap()
             .collect::<Result<Vec<_>>>()
             .unwrap();

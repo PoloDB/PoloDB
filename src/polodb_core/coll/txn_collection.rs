@@ -18,7 +18,8 @@ use bson::Document;
 use serde::Serialize;
 use crate::db::db_inner::DatabaseInner;
 use serde::de::DeserializeOwned;
-use crate::{ClientCursor, CollectionT, Error, Find, IndexModel, Result};
+use crate::{CollectionT, Error, IndexModel, Result};
+use crate::action::{Aggregate, Find};
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 use crate::transaction::TransactionInner;
 
@@ -118,12 +119,12 @@ impl<T> CollectionT<T> for TransactionalCollection<T> {
         Ok(result)
     }
 
-    fn find(&self, filter: impl Into<Option<Document>>) -> Find<'_, '_, T>
+    fn find(&self, filter: Document) -> Find<'_, '_, T>
     where T: DeserializeOwned + Send + Sync {
-        Find::new(self.db.clone(), &self.name, Some(&self.txn), filter.into())
+        Find::new(self.db.clone(), &self.name, Some(&self.txn), filter)
     }
 
-    fn find_one(&self, filter: impl Into<Option<Document>>) -> Result<Option<T>>
+    fn find_one(&self, filter: Document) -> Result<Option<T>>
     where T: DeserializeOwned + Send + Sync {
         let mut cursor = self.find(filter).run()?;
         let test = cursor.advance()?;
@@ -133,9 +134,13 @@ impl<T> CollectionT<T> for TransactionalCollection<T> {
         Ok(Some(cursor.deserialize_current()?))
     }
 
-    fn aggregate(&self, pipeline: impl IntoIterator<Item = Document>) -> Result<ClientCursor<T>>
+    fn aggregate(&self, pipeline: impl IntoIterator<Item = Document>) -> Aggregate<'_, '_, T>
     where T: DeserializeOwned + Send + Sync {
-        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
-        db.aggregate_with_owned_session(&self.name, pipeline, self.txn.clone())
+        Aggregate::new(
+            self.db.clone(),
+            &self.name,
+            pipeline.into_iter().collect(),
+            Some(&self.txn),
+        )
     }
 }

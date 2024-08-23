@@ -126,10 +126,10 @@ impl Handler for FindHandler {
         let mut cursor = if let Some(session) = session_opt {
             let txn = session.get_transaction().ok_or(anyhow!("transaction not started"))?;
             let collection = txn.collection::<Document>(collection_name);
-            collection.find(Some(filter)).run()?
+            collection.find(filter).run()?
         } else {
             let collection = db.collection::<Document>(collection_name);
-            collection.find(Some(filter)).run()?
+            collection.find(filter).run()?
         };
         if single_batch {
             return FindHandler::handle_single_batch(ctx, &db_name, &collection_name, &mut cursor);

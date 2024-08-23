@@ -29,7 +29,7 @@ fn test_create_collection_and_find_all() {
         create_file_and_return_db_with_items("test-collection", TEST_SIZE),
     ].iter().for_each(|db| {
         let test_collection = db.collection::<Document>("test");
-        let cursor = test_collection.find(None).run().unwrap();
+        let cursor = test_collection.find(doc! {}).run().unwrap();
 
         let all = cursor.collect::<Result<Vec<Document>>>().unwrap();
 
@@ -101,7 +101,7 @@ fn test_create_collection_with_number_pkey() {
         assert_eq!(TEST_SIZE, count as usize);
 
         let all = collection
-            .find(None)
+            .find(doc! {})
             .run()
             .unwrap()
             .collect::<Result<Vec<Document>>>()
@@ -119,7 +119,7 @@ fn test_create_collection_and_find_by_pkey() {
         let collection = db.collection::<Document>("test");
 
         let all = collection
-            .find(None)
+            .find(doc! {})
             .run()
             .unwrap()
             .collect::<Result<Vec<Document>>>()
