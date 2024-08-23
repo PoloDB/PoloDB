@@ -55,7 +55,6 @@ impl VmExternalFunc for VmFuncCount {
     }
 
     fn is_completed(&self) -> bool {
-        self.is_completed.load(Ordering::Relaxed)
+        true
     }
-
 }

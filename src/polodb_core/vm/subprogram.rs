@@ -488,6 +488,11 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::PushNull => {
+                        writeln!(f, "{}: PushNull", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::PushR0 => {
                         writeln!(f, "{}: PushR0", pc)?;
                         pc += 1;
@@ -584,6 +589,11 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::EqualNull => {
+                        writeln!(f, "{}: EqualNull", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::OpenRead => {
                         let idx = begin.add(pc + 1).cast::<u32>().read();
                         let value = &self.static_values[idx as usize];
@@ -676,6 +686,13 @@ impl fmt::Display for SubProgram {
                         pc += 9;
                     }
 
+                    DbOp::ExternalIsCompleted => {
+                        let func_id = begin.add(pc + 1).cast::<u32>().read();
+                        let external_func = &self.external_funcs[func_id as usize];
+                        writeln!(f, "{}: ExternalIsCompleted(${})", pc, external_func.name())?;
+                        pc += 5;
+                    }
+
                     DbOp::Ret0 => {
                         writeln!(f, "{}: Ret0", pc)?;
                         pc += 1;
@@ -733,6 +750,7 @@ mod tests {
     use bson::{doc, Regex};
     use indexmap::indexmap;
     use polodb_line_diff::assert_eq;
+    use crate::Error;
 
     #[inline]
     fn new_spec<T: Into<String>>(name: T) -> CollectionSpecification {
@@ -1540,10 +1558,10 @@ mod tests {
 
 0: OpenRead("test")
 5: Rewind(25)
-10: Goto(130)
+10: Goto(158)
 
 15: Label(4)
-20: Next(130)
+20: Next(158)
 
 25: Label(7, "close")
 30: PushValue(null)
@@ -1557,41 +1575,51 @@ mod tests {
 
 57: Label(5, "result")
 62: Call(76, 1)
-71: Goto(120)
+71: Goto(148)
 
 76: Label(0)
 81: Dup
-82: CallExternal($count, 1)
-91: TrueJump(98)
-96: Pop
-97: Ret0
 
-98: Label(10)
-103: Call(113, 1)
-112: Ret0
+82: Label(11)
+87: CallExternal($count, 1)
+96: TrueJump(103)
+101: Pop
+102: Ret0
 
-113: Label(9, "final_result_row_fun")
-118: ResultRow
-119: Ret0
+103: Label(10)
+108: Call(130, 1)
+117: Pop
+118: ExternalIsCompleted($count)
+123: PushNull
+124: FalseJump(82)
+129: Ret0
 
-120: Label(8, "next_item_label")
-125: Goto(15)
+130: Label(9, "final_result_row_fun")
+135: EqualNull
+136: TrueJump(142)
+141: ResultRow
 
-130: Label(3, "compare")
-135: Dup
-136: Call(155, 1)
-145: FalseJump(46)
-150: Goto(57)
+142: Label(12)
+147: Ret0
 
-155: Label(1, "compare_function")
-160: GetField("age", 185)
-169: PushValue(18)
-174: Greater
-175: FalseJump(185)
-180: Pop2(2)
+148: Label(8, "next_item_label")
+153: Goto(15)
 
-185: Label(2, "compare_function_clean")
-190: Ret0
+158: Label(3, "compare")
+163: Dup
+164: Call(183, 1)
+173: FalseJump(46)
+178: Goto(57)
+
+183: Label(1, "compare_function")
+188: GetField("age", 213)
+197: PushValue(18)
+202: Greater
+203: FalseJump(213)
+208: Pop2(2)
+
+213: Label(2, "compare_function_clean")
+218: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1622,26 +1650,59 @@ mod tests {
 
 46: Label(0)
 51: Call(65, 1)
-60: Goto(109)
+60: Goto(137)
 
 65: Label(3)
 70: Dup
-71: CallExternal($count, 1)
-80: TrueJump(87)
-85: Pop
-86: Ret0
 
-87: Label(6)
-92: Call(102, 1)
-101: Ret0
+71: Label(7)
+76: CallExternal($count, 1)
+85: TrueJump(92)
+90: Pop
+91: Ret0
 
-102: Label(5, "final_result_row_fun")
-107: ResultRow
-108: Ret0
+92: Label(6)
+97: Call(119, 1)
+106: Pop
+107: ExternalIsCompleted($count)
+112: PushNull
+113: FalseJump(71)
+118: Ret0
 
-109: Label(4, "next_item_label")
-114: Goto(15)
+119: Label(5, "final_result_row_fun")
+124: EqualNull
+125: TrueJump(131)
+130: ResultRow
+
+131: Label(8)
+136: Ret0
+
+137: Label(4, "next_item_label")
+142: Goto(15)
 "#;
         assert_eq!(expect, actual);
+    }
+    #[test]
+    fn test_aggregate_error_message() {
+        let col_spec = new_spec("test");
+        let program = SubProgram::compile_aggregate(&col_spec, vec![
+            doc! {
+                "$group": {
+                    "_id": "$name",
+                    "total": {
+                        "$sumabc": 1,
+                    },
+                },
+            },
+        ], false);
+        assert!(program.is_err());
+        match program {
+            Err(Error::InvalidField(i)) => {
+                assert_eq!(i.path.unwrap().as_str(), "/0/$group/total/$sumabc");
+            }
+            _ => {
+                panic!("Should return error");
+            }
+        }
     }
 }

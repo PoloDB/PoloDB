@@ -57,3 +57,32 @@ macro_rules! try_unwrap_array {
     };
 }
 
+#[macro_export]
+macro_rules! path_hint {
+    ($self:tt, $key: expr, $content:block) => {
+        $self.paths.push($key);
+        $content;
+        $self.paths.pop();
+    };
+}
+
+#[macro_export]
+macro_rules! path_hint_2 {
+    ($paths: expr, $key: expr, $content:block) => {
+        $paths.push($key);
+        $content;
+        $paths.pop();
+    };
+}
+
+#[macro_export]
+macro_rules! path_hint_3 {
+    ($paths: expr, $key: expr, $content:block) => {
+        {
+            $paths.push($key);
+            let result = $content;
+            $paths.pop();
+            result
+        }
+    };
+}

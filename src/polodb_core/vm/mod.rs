@@ -23,6 +23,11 @@ mod vm_external_func;
 mod vm_count;
 mod vm_group;
 mod operators;
+mod vm_skip;
+mod vm_sort;
+mod vm_limit;
+mod vm_unset;
+mod vm_add_fields;
 
 pub(crate) use subprogram::SubProgram;
 pub(crate) use vm::{VM, VmState};

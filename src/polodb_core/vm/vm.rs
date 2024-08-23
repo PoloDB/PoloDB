@@ -696,6 +696,11 @@ impl VM {
                         self.pc = self.pc.add(5);
                     }
 
+                    DbOp::PushNull => {
+                        self.stack.push(Bson::Null);
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::PushTrue => {
                         self.stack.push(Bson::Boolean(true));
                         self.pc = self.pc.add(1);
@@ -939,6 +944,12 @@ impl VM {
                         self.pc = self.pc.add(1);
                     }
 
+                    DbOp::EqualNull => {
+                        let val = &self.stack[self.stack.len() - 1];
+                        self.r0 = if val == &Bson::Null { 1 } else { 0 };
+                        self.pc = self.pc.add(1);
+                    }
+
                     DbOp::Regex => {
                         let val1 = &self.stack[self.stack.len() - 2];
                         let val2 = &self.stack[self.stack.len() - 1];
@@ -1068,21 +1079,31 @@ impl VM {
                         let result = try_vm!(self, func.call(params));
                         // pop params
                         self.stack.resize(self.stack.len() - size_of_param, Bson::Null);
-                        match result {
+                        self.r0 = match result {
                             VmExternalFuncStatus::Continue => {
                                 self.stack.push(Bson::Null);
+                                0
                             }
                             VmExternalFuncStatus::Next(v) => {
                                 self.stack.push(v);
+                                1
                             }
-                        }
+                        };
+
+                        self.pc = self.pc.add(9);
+                    }
+
+                    DbOp::ExternalIsCompleted => {
+                        let id = self.pc.add(1).cast::<u32>().read();
+                        let func = &self.program.external_funcs[id as usize];
+
                         self.r0 = if func.is_completed() {
                             1
                         } else {
                             0
                         };
 
-                        self.pc = self.pc.add(9);
+                        self.pc = self.pc.add(5);
                     }
 
                     DbOp::Ret0 => {

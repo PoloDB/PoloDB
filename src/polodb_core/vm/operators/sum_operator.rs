@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::atomic::AtomicU64;
+use std::cell::Cell;
 use bson::Bson;
 use crate::vm::operators::VmOperator;
 
 pub(crate) struct SumOperator {
-    inner: AtomicU64,
+    inner: Cell<i64>,
 }
 
 impl SumOperator {
 
     pub(crate) fn compile(_v: &Bson) -> Box<dyn VmOperator> {
         Box::new(SumOperator {
-            inner: AtomicU64::new(0),
+            inner: Cell::new(0),
         })
     }
 
@@ -32,15 +32,16 @@ impl SumOperator {
 
 impl VmOperator for SumOperator {
     fn initial_value(&self) -> Bson {
-        Bson::Int64(self.inner.load(std::sync::atomic::Ordering::Relaxed) as i64)
+        Bson::Int64(self.inner.get())
     }
 
     fn next(&self, _input: &Bson) -> Bson {
-        self.inner.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Bson::Int64(self.inner.load(std::sync::atomic::Ordering::Relaxed) as i64)
+        let next = self.inner.get() + 1;
+        self.inner.set(next);
+        Bson::Int64(next)
     }
 
     fn complete(&self) -> Bson {
-        Bson::Int64(self.inner.load(std::sync::atomic::Ordering::Relaxed) as i64)
+        Bson::Int64(self.inner.get())
     }
 }

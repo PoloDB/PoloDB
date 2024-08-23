@@ -25,9 +25,15 @@ use bson::spec::{BinarySubtype, ElementType};
 use bson::{Array, Binary, Bson, Document};
 use crate::vm::aggregation_codegen_context::{AggregationCodeGenContext, PipelineItem};
 use crate::vm::global_variable::{GlobalVariable, GlobalVariableSlot};
+use crate::vm::operators::OpRegistry;
+use crate::vm::vm_add_fields::VmFuncAddFields;
 use crate::vm::vm_count::VmFuncCount;
 use crate::vm::vm_external_func::VmExternalFunc;
 use crate::vm::vm_group::VmFuncGroup;
+use crate::vm::vm_limit::VmFuncLimit;
+use crate::vm::vm_skip::VmFuncSkip;
+use crate::vm::vm_sort::VmFuncSort;
+use crate::vm::vm_unset::VmFuncUnset;
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
@@ -95,14 +101,7 @@ pub(super) struct Codegen {
     skip_annotation: bool,
     is_write: bool,
     paths: Vec<String>,
-}
-
-macro_rules! path_hint {
-    ($self:tt, $key: expr, $content:block) => {
-        $self.paths.push($key);
-        $content;
-        $self.paths.pop();
-    };
+    op_registry: OpRegistry,
 }
 
 impl Codegen {
@@ -113,6 +112,7 @@ impl Codegen {
             skip_annotation,
             is_write,
             paths: Vec::with_capacity(PATH_DEFAULT_SIZE),
+            op_registry: OpRegistry,
         }
     }
 
@@ -483,7 +483,7 @@ impl Codegen {
             return Ok(())
         }
         for (key, value) in query_doc.iter() {
-            path_hint!(self, key.clone(), {
+            crate::path_hint!(self, key.clone(), {
                 self.emit_query_tuple(
                     key,
                     value,
@@ -520,7 +520,7 @@ impl Codegen {
     ) -> Result<()> {
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
-            path_hint!(self, path_msg, {
+            crate::path_hint!(self, path_msg, {
                 let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
                 self.emit_standard_query_doc(
                     item_doc,
@@ -545,7 +545,7 @@ impl Codegen {
         let mut functions = Vec::<Label>::new();
         for (index, item_doc_value) in arr.iter().enumerate() {
             let path_msg = format!("[{}]", index);
-            path_hint!(self, path_msg, {
+            crate::path_hint!(self, path_msg, {
                 let item_doc = crate::try_unwrap_document!("$or", item_doc_value);
 
                 let query_label = self.new_label();
@@ -862,7 +862,7 @@ impl Codegen {
                     }
                 };
 
-                path_hint!(self, "$not".to_string(), {
+                crate::path_hint!(self, "$not".to_string(), {
                     self.emit_query_tuple_document(key, doc, !is_in_not, not_found_label)?;
                 });
             }
@@ -886,7 +886,7 @@ impl Codegen {
         not_found_label: Label,
     ) -> Result<()> {
         for (sub_key, sub_value) in value.iter() {
-            path_hint!(self, sub_key.clone(), {
+            crate::path_hint!(self, sub_key.clone(), {
                 self.emit_query_tuple_document_kv(
                     key,
                     is_in_not,
@@ -930,7 +930,11 @@ impl Codegen {
         }
 
         self.emit_label_with_name(final_result_label, "final_result_row_fun");
+        let skip_result_label = self.new_label();
+        self.emit(DbOp::EqualNull);
+        self.emit_goto(DbOp::IfTrue, skip_result_label);
         self.emit(DbOp::ResultRow);
+        self.emit_label(skip_result_label);
         self.emit_ret(0);
 
         self.emit_label_with_name(next_label, "next_item_label");
@@ -957,32 +961,67 @@ impl Codegen {
             return Err(Error::InvalidAggregationStage(Box::new(stage.clone())));
         }
 
-        path_hint!(self, stage_num, {
+        crate::path_hint!(self, stage_num, {
             let first_tuple = stage.iter().next().unwrap();
             let (key, value) = first_tuple;
 
-            match key.as_str() {
-                "$count" => {
-                    let count_name = match value {
-                        Bson::String(s) => s,
-                        _ => {
-                            return Err(Error::InvalidAggregationStage(Box::new(stage.clone())));
-                        }
-                    };
+            crate::path_hint!(self, key.to_string(), {
+                match key.as_str() {
+                    "$count" => {
+                        let count_name = match value {
+                            Bson::String(s) => s,
+                            _ => {
+                                return Err(Error::InvalidAggregationStage(Box::new(stage.clone())));
+                            }
+                        };
 
-                    let next_fun = ctx.items[index + 1].next_label;
-                    let external_func: Box<dyn VmExternalFunc> = Box::new(VmFuncCount::new(count_name.clone()));
-                    self.emit_external_func(external_func, stage_ctx_item, next_fun);
-                }
-                "$group" => {
-                    let next_fun = ctx.items[index + 1].next_label;
-                    let external_func: Box<dyn VmExternalFunc> = VmFuncGroup::compile(value)?;
-                    self.emit_external_func(external_func, stage_ctx_item, next_fun);
-                }
-                _ => {
-                    return Err(Error::UnknownAggregationOperation(key.clone()));
-                }
-            };
+                        let next_fun = ctx.items[index + 1].next_label;
+                        let external_func: Box<dyn VmExternalFunc> = Box::new(VmFuncCount::new(count_name.clone()));
+                        self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                    }
+                    "$group" => {
+                        let next_fun = ctx.items[index + 1].next_label;
+                        let external_func: Box<dyn VmExternalFunc> = VmFuncGroup::compile(
+                            &mut self.paths,
+                            self.op_registry.clone(),
+                            value,
+                        )?;
+                        self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                    }
+                    "$skip" => {
+                        let next_fun = ctx.items[index + 1].next_label;
+                        let external_func: Box<dyn VmExternalFunc> = VmFuncSkip::compile(&mut self.paths, value)?;
+                        self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                    }
+                    "$limit" => {
+                        let next_fun = ctx.items[index + 1].next_label;
+                        let external_func: Box<dyn VmExternalFunc> = VmFuncLimit::compile(&mut self.paths, value)?;
+                        self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                    }
+                    "$sort" => {
+                        let next_fun = ctx.items[index + 1].next_label;
+                        let external_func: Box<dyn VmExternalFunc> = VmFuncSort::compile(&mut self.paths, value)?;
+                        self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                    }
+                    "$addFields" => {
+                        let next_fun = ctx.items[index + 1].next_label;
+                        let external_func = VmFuncAddFields::compile(
+                            &mut self.paths,
+                            self.op_registry.clone(),
+                            value,
+                        )?;
+                        self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                    }
+                    "$unset" => {
+                        let next_fun = ctx.items[index + 1].next_label;
+                        let external_func: Box<dyn VmExternalFunc> = VmFuncUnset::compile(&mut self.paths, value)?;
+                        self.emit_external_func(external_func, stage_ctx_item, next_fun);
+                    }
+                    _ => {
+                        return Err(Error::UnknownAggregationOperation(key.clone()));
+                    }
+                };
+            });
         });
 
         Ok(())
@@ -991,11 +1030,13 @@ impl Codegen {
     fn emit_external_func(&mut self, external_func: Box<dyn VmExternalFunc>, stage_ctx_item: &PipelineItem, next_fun: Label) {
         let external_func_id = self.push_external_func(external_func);
         let go_next = self.new_label();
+        let loop_next = self.new_label();
 
         // $count_next =>
         self.emit_label(stage_ctx_item.next_label);
 
         self.emit(DbOp::Dup);
+        self.emit_label(loop_next);
         self.emit_call_external_func_id(external_func_id, 1);
         self.emit_goto(DbOp::IfTrue, go_next);
 
@@ -1005,6 +1046,12 @@ impl Codegen {
         self.emit_label(go_next);
         self.emit_goto(DbOp::Call, next_fun);
         self.emit_u32(1);
+        self.emit(DbOp::Pop);
+
+        self.emit(DbOp::ExternalIsCompleted);
+        self.emit_u32(external_func_id);
+        self.emit(DbOp::PushNull);
+        self.emit_goto(DbOp::IfFalse, loop_next);
 
         self.emit_ret(0);
     }
@@ -1047,7 +1094,7 @@ impl Codegen {
 
     pub(super) fn emit_update_operation(&mut self, update: &Document) -> Result<()> {
         for (key, value) in update.iter() {
-            path_hint!(self, key.clone(), {
+            crate::path_hint!(self, key.clone(), {
                 self.emit_update_operation_kv(key, value)?;
             });
         }
