@@ -18,7 +18,7 @@ use bson::Document;
 use serde::Serialize;
 use crate::db::db_inner::DatabaseInner;
 use serde::de::DeserializeOwned;
-use crate::{ClientCursor, CollectionT, Error, IndexModel, Result};
+use crate::{ClientCursor, CollectionT, Error, Find, IndexModel, Result};
 use crate::results::{DeleteResult, InsertManyResult, InsertOneResult, UpdateResult};
 use crate::transaction::TransactionInner;
 
@@ -118,15 +118,14 @@ impl<T> CollectionT<T> for TransactionalCollection<T> {
         Ok(result)
     }
 
-    fn find(&self, filter: impl Into<Option<Document>>) -> Result<ClientCursor<T>>
+    fn find(&self, filter: impl Into<Option<Document>>) -> Find<'_, '_, T>
     where T: DeserializeOwned + Send + Sync {
-        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
-        db.find_with_borrowed_session(&self.name, filter, &self.txn)
+        Find::new(self.db.clone(), &self.name, Some(&self.txn), filter.into())
     }
 
     fn find_one(&self, filter: impl Into<Option<Document>>) -> Result<Option<T>>
     where T: DeserializeOwned + Send + Sync {
-        let mut cursor = self.find(filter)?;
+        let mut cursor = self.find(filter).run()?;
         let test = cursor.advance()?;
         if !test {
             return Ok(None);

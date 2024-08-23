@@ -98,6 +98,7 @@ fn test_find() {
             .find(doc! {
                 "content": "3",
             })
+            .run()
             .unwrap()
             .collect::<Result<Vec<Document>>>()
             .unwrap();
@@ -116,7 +117,7 @@ fn test_find_empty_collection() {
     {
         let collection = db.collection::<Document>("test");
 
-        let mut cursor = collection.find(None).unwrap();
+        let mut cursor = collection.find(None).run().unwrap();
 
         assert!(!cursor.advance().unwrap());
     }
@@ -125,7 +126,7 @@ fn test_find_empty_collection() {
 
     let collection = txn.collection::<Document>("test");
 
-    let mut cursor = collection.find(None).unwrap();
+    let mut cursor = collection.find(None).run().unwrap();
 
     assert!(!cursor.advance().unwrap());
 }
@@ -156,6 +157,7 @@ fn test_find_with_empty_document() {
 
         let result = fruits
             .find(doc! {})
+            .run()
             .unwrap()
             .collect::<Result<Vec<Document>>>()
             .unwrap();
@@ -192,13 +194,17 @@ fn test_not_expression() {
             },
         ]).unwrap();
 
-        let result = col.find(doc! {
-            "age": {
-                "$not": {
-                    "$eq": 18,
+        let result = col
+            .find(doc! {
+                "age": {
+                    "$not": {
+                        "$eq": 18,
+                    },
                 },
-            },
-        }).unwrap().collect::<Result<Vec<Document>>>().unwrap();
+            })
+            .run()
+            .unwrap()
+            .collect::<Result<Vec<Document>>>().unwrap();
         assert_eq!(result.len(), 2);
 
         assert_eq!(result[0].get("name").unwrap().as_str().unwrap(), "David");

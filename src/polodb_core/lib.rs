@@ -154,6 +154,7 @@ mod metrics;
 mod utils;
 mod index;
 mod coll;
+mod find;
 
 pub use db::{Database, Result};
 pub use coll::{Collection, CollectionT, TransactionalCollection};
@@ -163,5 +164,6 @@ pub use db::client_cursor::ClientCursor;
 pub use errors::Error;
 pub use metrics::Metrics;
 pub use index::{IndexModel, IndexOptions};
+pub use find::Find;
 
 pub extern crate bson;

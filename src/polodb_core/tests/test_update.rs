@@ -84,9 +84,12 @@ fn test_update_gte_set() {
         },
     }).unwrap();
     assert_eq!(update_result.modified_count, 500);
-    let cursor = col.find(doc! {
-        "content": "updated!",
-    }).unwrap();
+    let cursor = col
+        .find(doc! {
+            "content": "updated!",
+        })
+        .run()
+        .unwrap();
     let result: Vec<Result<Document>> = cursor.collect();
     assert_eq!(result.len(), 500);
     assert_eq!(result[0].as_ref().unwrap().get("_id").unwrap().as_i32().unwrap(), 500);
@@ -117,9 +120,12 @@ fn test_update_inc() {
             "num": 100,
         },
     }).unwrap();
-    let mut cursor = col.find(doc! {
-        "_id": 0,
-    }).unwrap();
+    let mut cursor = col
+        .find(doc! {
+            "_id": 0,
+        })
+        .run()
+        .unwrap();
     assert!(cursor.advance().unwrap());
     let result = cursor.deserialize_current().unwrap();
     assert_eq!(result.get("num").unwrap().as_i32().unwrap(), 100);
@@ -186,7 +192,7 @@ fn test_update_max() {
     }).unwrap();
     let mut cursor = col.find(doc! {
         "_id": 1,
-    }).unwrap();
+    }).run().unwrap();
     assert!(cursor.advance().unwrap());
     let result = cursor.deserialize_current().unwrap();
     assert_eq!(result.get("num").unwrap().as_i32().unwrap(), 2);

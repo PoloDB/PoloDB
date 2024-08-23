@@ -43,6 +43,7 @@ fn test_transaction_commit() {
 
         let doc = collection
             .find(None)
+            .run()
             .unwrap()
             .collect::<Result<Vec<Document>>>()
             .unwrap();
