@@ -19,7 +19,7 @@ use crate::{ClientCursor, Error, Result};
 use crate::db::db_inner::DatabaseInner;
 use crate::transaction::TransactionInner;
 
-pub struct Aggregate<'a, 'b, T: DeserializeOwned + Send + Sync> {
+pub struct Aggregate<'a, 'b, T: DeserializeOwned + Send + Sync = Document> {
     db: Weak<DatabaseInner>,
     name: &'a str,
     pipeline: Vec<Document>,
@@ -48,5 +48,16 @@ impl <'a, 'b , T: DeserializeOwned + Send + Sync> Aggregate<'a, 'b, T> {
             }
         };
         db.aggregate_with_owned_session(&self.name, self.pipeline, txn.clone())
+    }
+
+    pub fn with_type<U>(self) -> Aggregate<'a, 'b, U>
+    where U: DeserializeOwned + Send + Sync {
+        Aggregate {
+            db: self.db,
+            name: self.name,
+            pipeline: self.pipeline,
+            txn: self.txn,
+            _phantom: Default::default(),
+        }
     }
 }

@@ -93,8 +93,7 @@ pub trait CollectionT<T> {
     where T: DeserializeOwned + Send + Sync;
 
     /// Runs an aggregation operation.
-    fn aggregate(&self, pipeline: impl IntoIterator<Item = Document>) -> Aggregate<'_, '_, T>
-    where T: DeserializeOwned + Send + Sync;
+    fn aggregate(&self, pipeline: impl IntoIterator<Item = Document>) -> Aggregate<'_, '_>;
 }
 
 
@@ -222,8 +221,7 @@ impl<T> CollectionT<T> for Collection<T> {
         Ok(Some(cursor.deserialize_current()?))
     }
 
-    fn aggregate(&self, pipeline: impl IntoIterator<Item = Document>) -> Aggregate<'_, '_, T>
-    where T: DeserializeOwned + Send + Sync {
+    fn aggregate(&self, pipeline: impl IntoIterator<Item = Document>) -> Aggregate<'_, '_> {
         Aggregate::new(
             self.db.clone(),
             &self.name,

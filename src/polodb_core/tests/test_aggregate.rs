@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use bson::{doc, Document};
+use serde::{Deserialize, Serialize};
 use polodb_core::{Result, CollectionT, Database};
 use polodb_core::test_utils::prepare_db as project_prepare_db;
 
@@ -90,6 +91,62 @@ fn test_aggregate_match() {
 
     assert_eq!(result[0].get("name").unwrap().as_str().unwrap(), "banana");
     assert_eq!(result[1].get("name").unwrap().as_str().unwrap(), "pear");
+}
+
+// Fix issue: #162
+#[test]
+fn test_aggregate_my_struct() {
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct MyStruct {
+        name: String,
+        color: String,
+        shape: String,
+        weight: i32,
+    }
+
+    let db = prepare_db("test-aggregate-my-struct").unwrap();
+    let fruits = db.collection::<MyStruct>("fruits");
+    fruits.insert_one(MyStruct {
+        name: "apple".to_string(),
+        color: "red".to_string(),
+        shape: "round".to_string(),
+        weight: 100,
+    }).unwrap();
+
+    let result = fruits
+        .aggregate(vec![
+            doc! {
+                "$match": {
+                    "color": "yellow",
+                },
+            }
+        ])
+        .run()
+        .unwrap()
+        .collect::<Result<Vec<Document>>>()
+        .unwrap();
+    assert_eq!(result.len(), 2);
+
+    assert_eq!(result[0].get("name").unwrap().as_str().unwrap(), "banana");
+    assert_eq!(result[1].get("name").unwrap().as_str().unwrap(), "pear");
+
+    let result = fruits
+        .aggregate(vec![
+            doc! {
+                "$match": {
+                    "color": "yellow",
+                },
+            }
+        ])
+        .with_type()
+        .run()
+        .unwrap()
+        .collect::<Result<Vec<MyStruct>>>()
+        .unwrap();
+    assert_eq!(result.len(), 2);
+
+    assert_eq!(result[0].name, "banana");
+    assert_eq!(result[1].name, "pear");
 }
 
 #[test]
