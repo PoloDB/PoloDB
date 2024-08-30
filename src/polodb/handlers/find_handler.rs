@@ -14,7 +14,7 @@
 
 use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, Result};
-use bson::{rawdoc, Document, RawArrayBuf, RawBson, RawDocumentBuf};
+use bson::{rawdoc, Document, RawArrayBuf, RawBson, RawBsonRef, RawDocumentBuf};
 use crate::handlers::{HandleContext, Handler, DEFAULT_BATCH_SIZE};
 use crate::reply::Reply;
 use async_trait::async_trait;
@@ -114,6 +114,22 @@ impl Handler for FindHandler {
             },
         };
 
+        let limit = doc.get("limit")?.map( |val| {
+            match val {
+                RawBsonRef::Int32(val) => val as i64,
+                RawBsonRef::Int64(val) => val as i64,
+                _ => 0,
+            }
+        });
+
+        let skip = doc.get("skip")?.map( |val| {
+            match val {
+                RawBsonRef::Int32(val) => val as i64,
+                RawBsonRef::Int64(val) => val as i64,
+                _ => 0,
+            }
+        });
+
         let batch_size = match doc.get("batchSize")? {
             Some(val) => {
                 val.as_i32().unwrap_or(DEFAULT_BATCH_SIZE)
@@ -126,10 +142,24 @@ impl Handler for FindHandler {
         let mut cursor = if let Some(session) = session_opt {
             let txn = session.get_transaction().ok_or(anyhow!("transaction not started"))?;
             let collection = txn.collection::<Document>(collection_name);
-            collection.find(filter).run()?
+            let mut find = collection.find(filter);
+            if let Some(limit) = limit {
+                find = find.limit(limit as u64)
+            };
+            if let Some(skip) = skip {
+                find = find.skip(skip as u64)
+            };
+            find.run()?
         } else {
             let collection = db.collection::<Document>(collection_name);
-            collection.find(filter).run()?
+            let mut find = collection.find(filter);
+            if let Some(limit) = limit {
+                find = find.limit(limit as u64)
+            };
+            if let Some(skip) = skip {
+                find = find.skip(skip as u64)
+            };
+            find.run()?
         };
         if single_batch {
             return FindHandler::handle_single_batch(ctx, &db_name, &collection_name, &mut cursor);

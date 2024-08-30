@@ -355,6 +355,17 @@ mod tests {
                 }
 
                 assert_eq!(1000, all.len());
+
+                // test limit
+                let cursor = my_coll.find(doc! {}).limit(10).await.unwrap();
+                let all = cursor.try_collect::<Vec<Document>>().await.unwrap();
+                assert_eq!(10, all.len());
+
+                // test offset
+                let cursor = my_coll.find(doc! {}).skip(10).await.unwrap();
+                let all = cursor.try_collect::<Vec<Document>>().await.unwrap();
+                assert_eq!(990, all.len());
+
                 Ok(())
             }
         }
