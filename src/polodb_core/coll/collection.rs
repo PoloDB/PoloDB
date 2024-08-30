@@ -17,6 +17,7 @@ use bson::Document;
 use std::borrow::Borrow;
 use std::sync::Weak;
 use serde::de::DeserializeOwned;
+use crate::options::UpdateOptions;
 use crate::{Error, IndexModel, Result};
 use crate::db::db_inner::DatabaseInner;
 use crate::action::{Aggregate, Find};
@@ -58,9 +59,13 @@ pub trait CollectionT<T> {
     /// [documentation](https://www.polodb.org/docs/curd/update) for more information on specifying updates.
     fn update_one(&self, query: Document, update: Document) -> Result<UpdateResult>;
 
+    fn update_one_with_options(&self, query: Document, update: Document, options: UpdateOptions) -> Result<UpdateResult>;
+
     /// Updates all documents matching `query` in the collection.
     /// [documentation](https://www.polodb.org/docs/curd/update) for more information on specifying updates.
     fn update_many(&self, query: Document, update: Document) -> Result<UpdateResult>;
+
+    fn update_many_with_options(&self, query: Document, update: Document, options: UpdateOptions) -> Result<UpdateResult>;
 
     /// Deletes up to one document found matching `query`.
     fn delete_one(&self, query: Document) -> Result<DeleteResult>;
@@ -139,6 +144,20 @@ impl<T> CollectionT<T> for Collection<T> {
             &self.name,
             Some(&query),
             &update,
+            UpdateOptions::default(),
+            &txn,
+        ));
+        Ok(result)
+    }
+
+    fn update_one_with_options(&self, query: Document, update: Document, options: UpdateOptions) -> Result<UpdateResult> {
+        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
+        let txn = db.start_transaction()?;
+        let result = try_db_op!(txn, db.update_one(
+            &self.name,
+            Some(&query),
+            &update,
+            options,
             &txn,
         ));
         Ok(result)
@@ -147,7 +166,26 @@ impl<T> CollectionT<T> for Collection<T> {
     fn update_many(&self, query: Document, update: Document) -> Result<UpdateResult> {
         let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
         let txn = db.start_transaction()?;
-        let result = try_db_op!(txn, db.update_many(&self.name, query, update, &txn));
+        let result = try_db_op!(txn, db.update_many(
+            &self.name,
+            query,
+            update,
+            UpdateOptions::default(),
+            &txn,
+        ));
+        Ok(result)
+    }
+
+    fn update_many_with_options(&self, query: Document, update: Document, options: UpdateOptions) -> Result<UpdateResult> {
+        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
+        let txn = db.start_transaction()?;
+        let result = try_db_op!(txn, db.update_many(
+            &self.name,
+            query,
+            update,
+            options,
+            &txn,
+        ));
         Ok(result)
     }
 

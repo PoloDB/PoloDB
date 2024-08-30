@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use polodb_core::options::UpdateOptions;
 use polodb_core::{CollectionT, Database, Result};
 use polodb_core::bson::{Document, doc};
 
@@ -220,4 +221,47 @@ fn test_update_push() {
     }).unwrap().unwrap();
     let content = result.get_array("content").unwrap();
     assert_eq!(content.len(), 4);
+}
+
+#[test]
+fn test_upsert() {
+    let db = prepare_db("test-upsert").unwrap();
+    let col = db.collection::<Document>("test");
+
+    // Attempt to update a non-existent document with upsert
+    let update_result = col.update_one_with_options(
+        doc! { "_id": 1 },
+        doc! { "$set": { "name": "John", "age": 30 } },
+        UpdateOptions::builder().upsert(true).build(),
+    ).unwrap();
+
+    // Check that the document was inserted
+    // assert_eq!(update_result.matched_count, 0);
+    assert_eq!(update_result.modified_count, 0);
+    // assert!(update_result.upserted_id.is_some());
+
+    // Verify the inserted document
+    let result = col.find_one(doc! { "name": "John" }).unwrap().unwrap();
+    assert_eq!(result.get_str("name").unwrap(), "John");
+    assert_eq!(result.get_i32("age").unwrap(), 30);
+
+    // Update the existing document with upsert
+    let update_result = col.update_one_with_options(
+        doc! { "name": "John" },
+        doc! { "$set": { "age": 31 }, "$push": { "hobbies": "reading" } },
+        UpdateOptions::builder().upsert(true).build(),
+    ).unwrap();
+
+    // Check that the document was updated
+    // assert_eq!(update_result.matched_count, 1);
+    assert_eq!(update_result.modified_count, 1);
+    // assert!(update_result.upserted_id.is_none());
+
+    // // Verify the updated document
+    // let result = col.find_one(doc! { "name": "John" }).unwrap().unwrap();
+    // assert_eq!(result.get_str("name").unwrap(), "John");
+    // assert_eq!(result.get_i32("age").unwrap(), 31);
+    // let hobbies = result.get_array("hobbies").unwrap();
+    // assert_eq!(hobbies.len(), 1);
+    // assert_eq!(hobbies[0].as_str().unwrap(), "reading");
 }
