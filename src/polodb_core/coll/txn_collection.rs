@@ -17,6 +17,7 @@ use std::sync::Weak;
 use bson::Document;
 use serde::Serialize;
 use crate::db::db_inner::DatabaseInner;
+use crate::options::UpdateOptions;
 use serde::de::DeserializeOwned;
 use crate::{CollectionT, Error, IndexModel, Result};
 use crate::action::{Aggregate, Find};
@@ -60,6 +61,19 @@ impl<T> CollectionT<T> for TransactionalCollection<T> {
             &self.name,
             Some(&query),
             &update,
+            UpdateOptions::default(),
+            &self.txn,
+        )?;
+        Ok(result)
+    }
+
+    fn update_one_with_options(&self, query: Document, update: Document, options: UpdateOptions) -> crate::Result<UpdateResult> {
+        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
+        let result = db.update_one(
+            &self.name,
+            Some(&query),
+            &update,
+            options,
             &self.txn,
         )?;
         Ok(result)
@@ -67,7 +81,25 @@ impl<T> CollectionT<T> for TransactionalCollection<T> {
 
     fn update_many(&self, query: Document, update: Document) -> crate::Result<UpdateResult> {
         let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
-        let result = db.update_many(&self.name, query, update, &self.txn)?;
+        let result = db.update_many(
+            &self.name,
+            query,
+            update,
+            UpdateOptions::default(),
+            &self.txn,
+        )?;
+        Ok(result)
+    }
+
+    fn update_many_with_options(&self, query: Document, update: Document, options: UpdateOptions) -> Result<UpdateResult> {
+        let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
+        let result = db.update_many(
+            &self.name,
+            query,
+            update,
+            options,
+            &self.txn,
+        )?;
         Ok(result)
     }
 

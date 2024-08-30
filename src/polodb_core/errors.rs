@@ -274,6 +274,8 @@ pub enum Error {
     InvalidAggregationStage(Box<Document>),
     #[error("rocks db error: {0}")]
     RocksDbErr(String),
+    #[error("$set value is not a document")]
+    SetIsNotADocument,
 }
 
 impl Error {

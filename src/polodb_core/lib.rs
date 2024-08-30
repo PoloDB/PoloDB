@@ -147,6 +147,7 @@ mod meta_doc_helper;
 mod config;
 mod macros;
 mod transaction;
+pub mod options;
 pub mod results;
 
 pub mod test_utils;

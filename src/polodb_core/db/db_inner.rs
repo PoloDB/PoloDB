@@ -18,6 +18,7 @@ use bson::{Bson, Document};
 use serde::Serialize;
 use super::db::Result;
 use crate::errors::Error;
+use crate::options::UpdateOptions;
 use crate::Config;
 use crate::vm::SubProgram;
 use crate::meta_doc_helper::meta_doc_key;
@@ -522,13 +523,14 @@ impl DatabaseInner {
         col_name: &str,
         query: Option<&Document>,
         update: &Document,
+        options: UpdateOptions,
         txn: &TransactionInner,
     ) -> Result<UpdateResult> {
         DatabaseInner::validate_col_name(col_name)?;
 
         let mut txn = txn.clone();
         txn.set_auto_commit(false);
-        let result = self.internal_update(col_name, query, update, false, &txn)?;
+        let result = self.internal_update(col_name, query, update, false, options, &txn)?;
 
         Ok(result)
     }
@@ -538,6 +540,7 @@ impl DatabaseInner {
         col_name: &str,
         query: Document,
         update: Document,
+        options: UpdateOptions,
         txn: &TransactionInner,
     ) -> Result<UpdateResult> {
         DatabaseInner::validate_col_name(col_name)?;
@@ -549,6 +552,7 @@ impl DatabaseInner {
             Some(&query),
             &update,
             true,
+            options,
             &txn,
         )?;
 
@@ -561,6 +565,7 @@ impl DatabaseInner {
         query: Option<&Document>,
         update: &Document,
         is_many: bool,
+        options: UpdateOptions,
         txn: &TransactionInner,
     ) -> Result<UpdateResult> {
         let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, txn)?;
@@ -586,12 +591,30 @@ impl DatabaseInner {
             },
             None => 0,
         };
+        if options.is_upsert() && modified_count == 0 {
+            self.upsert(col_name, update, txn)?;
+        }
 
         Ok(UpdateResult {
             modified_count,
         })
     }
 
+    fn upsert(&self, col_name: &str, update: &Document, txn: &TransactionInner) -> Result<()> {
+        // extract $set from update
+        let set = update.get("$set");
+        if set.is_none() {
+            return Ok(());
+        }
+
+        let set = set.unwrap();
+
+        let doc = set.as_document().ok_or(Error::SetIsNotADocument)?;
+
+        let _insert_result = self.insert_one_internal(txn, col_name, doc.clone(), &self.node_id)?;
+
+        Ok(())
+    }
     pub fn drop_collection(&self, col_name: &str, txn: &TransactionInner) -> Result<()> {
         DatabaseInner::validate_col_name(col_name)?;
 
