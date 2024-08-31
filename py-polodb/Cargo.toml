@@ -1,0 +1,22 @@
+# If you already have [package] information in `Cargo.toml`, you can ignore
+# this section!
+[package]
+# `name` here is name of the package.
+name = "py-binding-polodb"
+# these are good defaults:
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# The name of the native library. This is the name which will be used in Python to import the
+# library (i.e. `import string_sum`). If you change this, you must also change the name of the
+# `#[pymodule]` in `src/lib.rs`.
+name = "rust_polodb"
+
+# "cdylib" is necessary to produce a shared library for Python to import from.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# polodb_core = "5.1.0"
+polodb_core = { path = "../src/polodb_core", default-features = false  }
+pyo3 = { version = "0.22.2", features = ["extension-module"] }
