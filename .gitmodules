@@ -1,6 +1,6 @@
 [submodule "src/librocksdb-sys/snappy"]
 	path = src/librocksdb-sys/snappy
-	url = git@github.com:google/snappy.git
+	url = https://github.com/google/snappy.git
 [submodule "src/librocksdb-sys/rocksdb"]
 	path = src/librocksdb-sys/rocksdb
-	url = git@github.com:facebook/rocksdb.git
+	url = https://github.com/facebook/rocksdb.git
