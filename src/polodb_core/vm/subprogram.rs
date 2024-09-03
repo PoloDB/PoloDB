@@ -1328,7 +1328,7 @@ mod tests {
             },
         };
         let program =
-            SubProgram::compile_update(&col_spec, Some(&query_doc), &update_doc, false, true)
+            SubProgram::compile_update(&col_spec, &query_doc, &update_doc, false, true)
                 .unwrap();
         let actual = format!("Program:\n\n{}", program);
 
@@ -1433,7 +1433,7 @@ mod tests {
             },
         };
         let program =
-            SubProgram::compile_update(&col_spec, Some(&query_doc), &update_doc, false, true)
+            SubProgram::compile_update(&col_spec, &query_doc, &update_doc, false, true)
                 .unwrap();
         let actual = format!("Program:\n\n{}", program);
 
