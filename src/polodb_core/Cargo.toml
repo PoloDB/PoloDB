@@ -28,7 +28,7 @@ uuid = { version = "1.10.0", features = [
 thiserror = "1.0.63"
 indexmap = { version = "2.4.0", features = ["serde"] }
 regex = "1.10"
-polodb-librocksdb-sys = { path = "../librocksdb-sys", version = "9.0.0-alpha.1" }
+polodb-librocksdb-sys = { path = "../librocksdb-sys", version = "9.0.0-alpha.1", features = ["default", "mt_static"] }
 
 [dev-dependencies]
 polodb_line_diff = { path = "../polodb_line_diff" }
