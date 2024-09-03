@@ -1,6 +1,6 @@
 [package]
 name = "polodb_core"
-version = "5.1.0"
+version = "5.1.1"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 license = "Apache-2.0"
 edition = "2018"
