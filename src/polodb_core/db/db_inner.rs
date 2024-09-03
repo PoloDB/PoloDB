@@ -521,8 +521,8 @@ impl DatabaseInner {
     pub fn update_one(
         &self,
         col_name: &str,
-        query: Option<&Document>,
-        update: &Document,
+        query: Document,
+        update: Document,
         options: UpdateOptions,
         txn: &TransactionInner,
     ) -> Result<UpdateResult> {
@@ -549,8 +549,8 @@ impl DatabaseInner {
         txn.set_auto_commit(false);
         let result = self.internal_update(
             col_name,
-            Some(&query),
-            &update,
+            query,
+            update,
             true,
             options,
             &txn,
@@ -562,8 +562,8 @@ impl DatabaseInner {
     fn internal_update(
         &self,
         col_name: &str,
-        query: Option<&Document>,
-        update: &Document,
+        query: Document,
+        update: Document,
         is_many: bool,
         options: UpdateOptions,
         txn: &TransactionInner,
@@ -574,8 +574,8 @@ impl DatabaseInner {
             Some(col_spec) => {
                 let subprogram = SubProgram::compile_update(
                     col_spec,
-                    query,
-                    update,
+                    &query,
+                    &update,
                     true,
                     is_many,
                 )?;
@@ -592,7 +592,7 @@ impl DatabaseInner {
             None => 0,
         };
         if options.is_upsert() && modified_count == 0 {
-            self.upsert(col_name, update, txn)?;
+            self.upsert(col_name, query, update, txn)?;
         }
 
         Ok(UpdateResult {
@@ -600,7 +600,21 @@ impl DatabaseInner {
         })
     }
 
-    fn upsert(&self, col_name: &str, update: &Document, txn: &TransactionInner) -> Result<()> {
+    fn merge_query_and_update(query: &Document, update: &Document) -> Result<Document> {
+        let mut doc = query.clone();
+        for (key, value) in update {
+            if key.contains("$") || key.contains(".") {
+                return Err(Error::UpsertError(key.to_string()))
+            }
+            if value.as_document().is_some() {
+                return Err(Error::UpsertError(key.to_string()))
+            }
+            doc.insert(key, value);
+        }
+        Ok(doc)
+    }
+
+    fn upsert(&self, col_name: &str, query: Document, update: Document, txn: &TransactionInner) -> Result<()> {
         // extract $set from update
         let set = update.get("$set");
         if set.is_none() {
@@ -610,8 +624,9 @@ impl DatabaseInner {
         let set = set.unwrap();
 
         let doc = set.as_document().ok_or(Error::SetIsNotADocument)?;
+        let merged_doc = DatabaseInner::merge_query_and_update(&query, doc)?;
 
-        let _insert_result = self.insert_one_internal(txn, col_name, doc.clone(), &self.node_id)?;
+        let _insert_result = self.insert_one_internal(txn, col_name, merged_doc, &self.node_id)?;
 
         Ok(())
     }

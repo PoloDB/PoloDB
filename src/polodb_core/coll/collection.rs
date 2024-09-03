@@ -142,8 +142,8 @@ impl<T> CollectionT<T> for Collection<T> {
         let txn = db.start_transaction()?;
         let result = try_db_op!(txn, db.update_one(
             &self.name,
-            Some(&query),
-            &update,
+            query,
+            update,
             UpdateOptions::default(),
             &txn,
         ));
@@ -155,8 +155,8 @@ impl<T> CollectionT<T> for Collection<T> {
         let txn = db.start_transaction()?;
         let result = try_db_op!(txn, db.update_one(
             &self.name,
-            Some(&query),
-            &update,
+            query,
+            update,
             options,
             &txn,
         ));

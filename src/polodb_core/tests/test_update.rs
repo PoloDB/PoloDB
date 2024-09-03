@@ -258,9 +258,9 @@ fn test_upsert() {
     // assert!(update_result.upserted_id.is_none());
 
     // // Verify the updated document
-    // let result = col.find_one(doc! { "name": "John" }).unwrap().unwrap();
-    // assert_eq!(result.get_str("name").unwrap(), "John");
-    // assert_eq!(result.get_i32("age").unwrap(), 31);
+    let result = col.find_one(doc! { "name": "John" }).unwrap().unwrap();
+    assert_eq!(result.get_str("name").unwrap(), "John");
+    assert_eq!(result.get_i32("age").unwrap(), 31);
     // let hobbies = result.get_array("hobbies").unwrap();
     // assert_eq!(hobbies.len(), 1);
     // assert_eq!(hobbies[0].as_str().unwrap(), "reading");

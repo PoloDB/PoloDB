@@ -90,7 +90,7 @@ impl SubProgram {
 
     pub(crate) fn compile_update(
         col_spec: &CollectionSpecification,
-        query: Option<&Document>,
+        query: &Document,
         update: &Document,
         skip_annotation: bool,
         is_many: bool,
@@ -109,7 +109,7 @@ impl SubProgram {
 
         codegen.emit_query_layout(
             col_spec,
-            query.unwrap(),
+            query,
             |codegen| -> Result<()> {
                 if has_indexes {
                     codegen.emit(DbOp::DeleteIndex);

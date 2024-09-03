@@ -276,6 +276,8 @@ pub enum Error {
     RocksDbErr(String),
     #[error("$set value is not a document")]
     SetIsNotADocument,
+    #[error("the field '{0}' is not a valid field name")]
+    UpsertError(String),
 }
 
 impl Error {

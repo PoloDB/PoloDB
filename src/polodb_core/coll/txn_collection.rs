@@ -59,8 +59,8 @@ impl<T> CollectionT<T> for TransactionalCollection<T> {
         let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
         let result = db.update_one(
             &self.name,
-            Some(&query),
-            &update,
+            query,
+            update,
             UpdateOptions::default(),
             &self.txn,
         )?;
@@ -71,8 +71,8 @@ impl<T> CollectionT<T> for TransactionalCollection<T> {
         let db = self.db.upgrade().ok_or(Error::DbIsClosed)?;
         let result = db.update_one(
             &self.name,
-            Some(&query),
-            &update,
+            query,
+            update,
             options,
             &self.txn,
         )?;
