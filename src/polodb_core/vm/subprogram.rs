@@ -26,6 +26,7 @@ use std::rc::Rc;
 use crate::errors::FieldTypeUnexpectedStruct;
 use crate::vm::aggregation_codegen_context::AggregationCodeGenContext;
 use crate::vm::global_variable::GlobalVariableSlot;
+use crate::vm::update_operators::UpdateOperator;
 use crate::vm::vm_external_func::VmExternalFunc;
 
 pub(crate) struct SubProgramIndexItem {
@@ -40,6 +41,7 @@ pub(crate) struct SubProgram {
     pub(super) label_slots: Vec<LabelSlot>,
     pub(super) index_infos: Vec<SubProgramIndexItem>,
     pub(crate) external_funcs: Vec<Box<dyn VmExternalFunc>>,
+    pub(crate) update_operators: Vec<Box<dyn UpdateOperator>>,
 }
 
 impl SubProgram {
@@ -51,6 +53,7 @@ impl SubProgram {
             label_slots: Vec::with_capacity(32),
             index_infos: Vec::new(),
             external_funcs: Vec::new(),
+            update_operators: Vec::new(),
         }
     }
 
@@ -633,20 +636,6 @@ impl fmt::Display for SubProgram {
                         pc += 9;
                     }
 
-                    DbOp::IncField => {
-                        let static_id = begin.add(pc + 1).cast::<u32>().read();
-                        let val = &self.static_values[static_id as usize];
-                        writeln!(f, "{}: IncField({})", pc, val)?;
-                        pc += 5;
-                    }
-
-                    DbOp::MulField => {
-                        let static_id = begin.add(pc + 1).cast::<u32>().read();
-                        let val = &self.static_values[static_id as usize];
-                        writeln!(f, "{}: MulField({})", pc, val)?;
-                        pc += 5;
-                    }
-
                     DbOp::SetField => {
                         let static_id = begin.add(pc + 1).cast::<u32>().read();
                         let val = &self.static_values[static_id as usize];
@@ -676,6 +665,13 @@ impl fmt::Display for SubProgram {
                         let param_size = begin.add(pc + 5).cast::<u32>().read();
                         writeln!(f, "{}: Call({}, {})", pc, label_id, param_size)?;
                         pc += 9;
+                    }
+
+                    DbOp::CallUpdateOperator => {
+                        let id = begin.add(pc + 1).cast::<u32>().read();
+                        let operator = &self.update_operators[id as usize];
+                        writeln!(f, "{}: CallUpdateOperator({})", pc, operator.name())?;
+                        pc += 5;
                     }
 
                     DbOp::CallExternal => {
@@ -1336,10 +1332,10 @@ mod tests {
 
 0: OpenWrite("test")
 5: Rewind(25)
-10: Goto(178)
+10: Goto(85)
 
 15: Label(3)
-20: Next(178)
+20: Next(85)
 
 25: Label(6, "close")
 30: Close
@@ -1350,60 +1346,31 @@ mod tests {
 38: Goto(15)
 
 43: Label(4, "result")
-48: PushValue("Alan Chan")
-53: SetField("name")
-58: Pop
-59: PushValue(1)
-64: IncField("age")
-69: Pop
-70: PushValue(3)
-75: MulField("age")
-80: Pop
-81: GetField("age", 136)
-90: PushValue(100)
-95: Less
-96: FalseJump(106)
-101: Goto(129)
+48: CallUpdateOperator(set)
+53: CallUpdateOperator(inc)
+58: CallUpdateOperator(mul)
+63: CallUpdateOperator(min)
+68: CallUpdateOperator(unset)
+73: CallUpdateOperator(rename)
+78: UpdateCurrent
+79: Pop
+80: Goto(15)
 
-106: Label(9)
-111: Pop
-112: Pop
-113: PushValue(100)
-118: SetField("age")
-123: Pop
-124: Goto(136)
+85: Label(2, "compare")
+90: Dup
+91: Call(110, 1)
+100: FalseJump(32)
+105: Goto(43)
 
-129: Label(7)
-134: Pop
-135: Pop
+110: Label(0, "compare_function")
+115: GetField("_id", 140)
+124: PushValue(3)
+129: Greater
+130: FalseJump(140)
+135: Pop2(2)
 
-136: Label(8)
-141: UnsetField("age")
-146: GetField("hello1", 166)
-155: SetField("hello2")
-160: Pop
-161: UnsetField("hello1")
-
-166: Label(10)
-171: UpdateCurrent
-172: Pop
-173: Goto(15)
-
-178: Label(2, "compare")
-183: Dup
-184: Call(203, 1)
-193: FalseJump(32)
-198: Goto(43)
-
-203: Label(0, "compare_function")
-208: GetField("_id", 233)
-217: PushValue(3)
-222: Greater
-223: FalseJump(233)
-228: Pop2(2)
-
-233: Label(1, "compare_function_clean")
-238: Ret0
+140: Label(1, "compare_function_clean")
+145: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1441,10 +1408,10 @@ mod tests {
 
 0: OpenWrite("test")
 5: Rewind(25)
-10: Goto(76)
+10: Goto(70)
 
 15: Label(3)
-20: Next(76)
+20: Next(70)
 
 25: Label(6, "close")
 30: Close
@@ -1456,29 +1423,27 @@ mod tests {
 
 43: Label(4, "result")
 48: DeleteIndex("test")
-53: PushValue("Alan Chan")
-58: SetField("name")
-63: Pop
-64: UpdateCurrent
-65: InsertIndex("test")
-70: Pop
-71: Goto(15)
+53: CallUpdateOperator(set)
+58: UpdateCurrent
+59: InsertIndex("test")
+64: Pop
+65: Goto(15)
 
-76: Label(2, "compare")
-81: Dup
-82: Call(101, 1)
-91: FalseJump(32)
-96: Goto(43)
+70: Label(2, "compare")
+75: Dup
+76: Call(95, 1)
+85: FalseJump(32)
+90: Goto(43)
 
-101: Label(0, "compare_function")
-106: GetField("_id", 131)
-115: PushValue(3)
-120: Greater
-121: FalseJump(131)
-126: Pop2(2)
+95: Label(0, "compare_function")
+100: GetField("_id", 125)
+109: PushValue(3)
+114: Greater
+115: FalseJump(125)
+120: Pop2(2)
 
-131: Label(1, "compare_function_clean")
-136: Ret0
+125: Label(1, "compare_function_clean")
+130: Ret0
 "#;
         assert_eq!(expect, actual);
     }

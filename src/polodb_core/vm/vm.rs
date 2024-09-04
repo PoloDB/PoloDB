@@ -14,11 +14,11 @@
 
 use crate::cursor::Cursor;
 use crate::errors::{
-    CannotApplyOperationForTypes, FieldTypeUnexpectedStruct, RegexError, UnexpectedTypeForOpStruct,
+    FieldTypeUnexpectedStruct, RegexError, UnexpectedTypeForOpStruct,
 };
 use crate::index::{IndexHelper, IndexHelperOperation};
 use crate::transaction::TransactionInner;
-use crate::vm::op::DbOp;
+use crate::vm::op::{generic_cmp, DbOp};
 use crate::vm::SubProgram;
 use crate::{Error, Metrics, Result};
 use bson::{Bson, Document};
@@ -81,21 +81,6 @@ pub(crate) struct VM {
 
 unsafe impl Send for VM {}
 unsafe impl Sync for VM {}
-
-fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> Result<bool> {
-    let ord = crate::utils::bson::value_cmp(val1, val2)?;
-    let result = matches!(
-        (op, ord),
-        (DbOp::Equal, Ordering::Equal)
-            | (DbOp::Greater, Ordering::Greater)
-            | (DbOp::GreaterEqual, Ordering::Equal)
-            | (DbOp::GreaterEqual, Ordering::Greater)
-            | (DbOp::Less, Ordering::Less)
-            | (DbOp::LessEqual, Ordering::Equal)
-            | (DbOp::LessEqual, Ordering::Less)
-    );
-    Ok(result)
-}
 
 impl VM {
     pub(crate) fn new(txn: TransactionInner, program: SubProgram, metrics: Metrics) -> VM {
@@ -309,106 +294,6 @@ impl VM {
 
     fn borrow_static(&self, index: usize) -> &Bson {
         &self.program.static_values[index]
-    }
-
-    fn inc_numeric(key: &str, a: &Bson, b: &Bson) -> Result<Bson> {
-        let val = match (a, b) {
-            (Bson::Int32(a), Bson::Int32(b)) => Bson::Int32(*a + *b),
-            (Bson::Int32(a), Bson::Int64(b)) => Bson::Int64(*a as i64 + *b),
-            (Bson::Int32(a), Bson::Double(b)) => Bson::Double(*a as f64 + *b),
-            (Bson::Int64(a), Bson::Int64(b)) => Bson::Int64(*a + *b),
-            (Bson::Int64(a), Bson::Int32(b)) => Bson::Int64(*a + *b as i64),
-            (Bson::Int64(a), Bson::Double(b)) => Bson::Double(*a as f64 + *b),
-            (Bson::Double(a), Bson::Double(b)) => Bson::Double(*a + *b),
-            (Bson::Double(a), Bson::Int32(b)) => Bson::Double(*a + *b as f64),
-            (Bson::Double(a), Bson::Int64(b)) => Bson::Double(*a + *b as f64),
-
-            _ => {
-                return Err(CannotApplyOperationForTypes {
-                    op_name: "$inc".into(),
-                    field_name: key.into(),
-                    field_type: a.to_string(),
-                    target_type: b.to_string(),
-                }
-                .into());
-            }
-        };
-        Ok(val)
-    }
-
-    fn mul_numeric(key: &str, a: &Bson, b: &Bson) -> Result<Bson> {
-        let val = match (a, b) {
-            (Bson::Int32(a), Bson::Int32(b)) => Bson::Int32(*a * *b),
-            (Bson::Int32(a), Bson::Int64(b)) => Bson::Int64(*a as i64 * *b),
-            (Bson::Int32(a), Bson::Double(b)) => Bson::Double(*a as f64 * *b),
-            (Bson::Int64(a), Bson::Int64(b)) => Bson::Int64(*a * *b),
-            (Bson::Int64(a), Bson::Int32(b)) => Bson::Int64(*a * *b as i64),
-            (Bson::Int64(a), Bson::Double(b)) => Bson::Double(*a as f64 * *b),
-            (Bson::Double(a), Bson::Double(b)) => Bson::Double(*a * *b),
-            (Bson::Double(a), Bson::Int32(b)) => Bson::Double(*a * *b as f64),
-            (Bson::Double(a), Bson::Int64(b)) => Bson::Double(*a * *b as f64),
-
-            _ => {
-                return Err(CannotApplyOperationForTypes {
-                    op_name: "$mul".into(),
-                    field_name: key.into(),
-                    field_type: a.to_string(),
-                    target_type: b.to_string(),
-                }
-                .into());
-            }
-        };
-        Ok(val)
-    }
-
-    fn inc_field(&mut self, field_id: usize) -> Result<()> {
-        let key = self.program.static_values[field_id].as_str().unwrap();
-
-        let value_index = self.stack.len() - 1;
-        let doc_index = self.stack.len() - 2;
-
-        let value = self.stack[value_index].clone();
-
-        let mut_doc = self.stack[doc_index].as_document_mut().unwrap();
-
-        match mut_doc.get(key) {
-            Some(Bson::Null) => {
-                return Err(Error::IncrementNullField);
-            }
-
-            Some(original_value) => {
-                let result = VM::inc_numeric(key, original_value, &value)?;
-                mut_doc.insert::<String, Bson>(key.into(), result);
-            }
-
-            None => {
-                mut_doc.insert::<String, Bson>(key.into(), value);
-            }
-        }
-        Ok(())
-    }
-
-    fn mul_field(&mut self, field_id: usize) -> Result<()> {
-        let key = self.program.static_values[field_id].as_str().unwrap();
-
-        let value_index = self.stack.len() - 1;
-        let doc_index = self.stack.len() - 2;
-
-        let value = self.stack[value_index].clone();
-
-        let mut_doc = self.stack[doc_index].as_document_mut().unwrap();
-
-        match mut_doc.get(key) {
-            Some(original_value) => {
-                let new_value = VM::mul_numeric(key, original_value, &value)?;
-                mut_doc.insert::<String, Bson>(key.into(), new_value);
-            }
-
-            None => {
-                mut_doc.insert::<String, Bson>(key.into(), value);
-            }
-        }
-        Ok(())
     }
 
     fn unset_field(&mut self, field_id: u32) -> Result<()> {
@@ -786,22 +671,6 @@ impl VM {
                         self.pc = self.pc.add(5);
                     }
 
-                    DbOp::IncField => {
-                        let filed_id = self.pc.add(1).cast::<u32>().read();
-
-                        try_vm!(self, self.inc_field(filed_id as usize));
-
-                        self.pc = self.pc.add(5);
-                    }
-
-                    DbOp::MulField => {
-                        let filed_id = self.pc.add(1).cast::<u32>().read();
-
-                        try_vm!(self, self.mul_field(filed_id as usize));
-
-                        self.pc = self.pc.add(5);
-                    }
-
                     DbOp::SetField => {
                         let filed_id = self.pc.add(1).cast::<u32>().read();
 
@@ -1091,6 +960,16 @@ impl VM {
                         };
 
                         self.pc = self.pc.add(9);
+                    }
+
+                    DbOp::CallUpdateOperator => {
+                        let id = self.pc.add(1).cast::<u32>().read();
+
+                        let operator = &self.program.update_operators[id as usize];
+
+                        let _result = try_vm!(self, operator.update(self.stack.last_mut().unwrap()));
+
+                        self.pc = self.pc.add(5);
                     }
 
                     DbOp::ExternalIsCompleted => {

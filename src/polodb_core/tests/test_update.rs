@@ -200,6 +200,37 @@ fn test_update_max() {
 }
 
 #[test]
+fn test_update_min() {
+    let db = prepare_db_with_data("test-update-min");
+    let col = db.collection::<Document>("test");
+    col.update_many(doc! {
+        "_id": 1,
+    }, doc! {
+        "$min": {
+            "num": 2,
+        },
+    }).unwrap();
+    let result = col.find_one(doc! {
+        "_id": 1,
+    }).unwrap().unwrap();
+    assert_eq!(result.get("num").unwrap().as_i32().unwrap(), 1);
+    col.update_many(doc! {
+        "_id": 1,
+    }, doc! {
+        "$min": {
+            "num": 0,
+        },
+    }).unwrap();
+    let mut cursor = col.find(doc! {
+        "_id": 1,
+    }).run().unwrap();
+    assert!(cursor.advance().unwrap());
+    let result = cursor.deserialize_current().unwrap();
+    assert_eq!(result.get("num").unwrap().as_i32().unwrap(), 0);
+
+}
+
+#[test]
 fn test_update_push() {
     let db = prepare_db("test-update-push").unwrap();
     let col = db.collection::<Document>("test");
