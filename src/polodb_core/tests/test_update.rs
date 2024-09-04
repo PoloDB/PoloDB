@@ -203,7 +203,7 @@ fn test_update_max() {
 fn test_update_min() {
     let db = prepare_db_with_data("test-update-min");
     let col = db.collection::<Document>("test");
-    col.update_many(doc! {
+    let update_result = col.update_many(doc! {
         "_id": 1,
     }, doc! {
         "$min": {
@@ -213,8 +213,10 @@ fn test_update_min() {
     let result = col.find_one(doc! {
         "_id": 1,
     }).unwrap().unwrap();
+    assert_eq!(update_result.modified_count, 0);
+    assert_eq!(update_result.matched_count, 1);
     assert_eq!(result.get("num").unwrap().as_i32().unwrap(), 1);
-    col.update_many(doc! {
+    let update_result = col.update_many(doc! {
         "_id": 1,
     }, doc! {
         "$min": {
@@ -226,6 +228,8 @@ fn test_update_min() {
     }).run().unwrap();
     assert!(cursor.advance().unwrap());
     let result = cursor.deserialize_current().unwrap();
+    assert_eq!(update_result.modified_count, 1);
+    assert_eq!(update_result.matched_count, 1);
     assert_eq!(result.get("num").unwrap().as_i32().unwrap(), 0);
 
 }
@@ -267,7 +271,7 @@ fn test_upsert() {
     ).unwrap();
 
     // Check that the document was inserted
-    // assert_eq!(update_result.matched_count, 0);
+    assert_eq!(update_result.matched_count, 0);
     assert_eq!(update_result.modified_count, 0);
     // assert!(update_result.upserted_id.is_some());
 
@@ -284,7 +288,7 @@ fn test_upsert() {
     ).unwrap();
 
     // Check that the document was updated
-    // assert_eq!(update_result.matched_count, 1);
+    assert_eq!(update_result.matched_count, 1);
     assert_eq!(update_result.modified_count, 1);
     // assert!(update_result.upserted_id.is_none());
 

@@ -570,7 +570,7 @@ impl DatabaseInner {
     ) -> Result<UpdateResult> {
         let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, txn)?;
 
-        let modified_count = match &meta_opt {
+        let result = match &meta_opt {
             Some(col_spec) => {
                 let subprogram = SubProgram::compile_update(
                     col_spec,
@@ -587,17 +587,19 @@ impl DatabaseInner {
                 );
                 vm.execute()?;
 
-                vm.r2 as u64
+                // vm.r2 as u64
+                UpdateResult {
+                    matched_count: vm.r2 as u64,
+                    modified_count: vm.r4 as u64,
+                }
             },
-            None => 0,
+            None => UpdateResult::default(),
         };
-        if options.is_upsert() && modified_count == 0 {
+        if options.is_upsert() && result.modified_count == 0 {
             self.upsert(col_name, query, update, txn)?;
         }
 
-        Ok(UpdateResult {
-            modified_count,
-        })
+        Ok(result)
     }
 
     fn merge_query_and_update(query: &Document, update: &Document) -> Result<Document> {

@@ -1037,6 +1037,10 @@ impl Codegen {
     }
 
     pub(super) fn emit_update_operation(&mut self, update: &Document) -> Result<()> {
+        self.emit(DbOp::IncR2);
+        self.emit(DbOp::StoreR0_2);
+        self.emit_u8(0);
+
         for (key, value) in update.iter() {
             crate::path_hint!(self, key.clone(), {
                 self.emit_update_operation_kv(key, value)?;

@@ -1332,10 +1332,10 @@ mod tests {
 
 0: OpenWrite("test")
 5: Rewind(25)
-10: Goto(85)
+10: Goto(88)
 
 15: Label(3)
-20: Next(85)
+20: Next(88)
 
 25: Label(6, "close")
 30: Close
@@ -1346,31 +1346,33 @@ mod tests {
 38: Goto(15)
 
 43: Label(4, "result")
-48: CallUpdateOperator(set)
-53: CallUpdateOperator(inc)
-58: CallUpdateOperator(mul)
-63: CallUpdateOperator(min)
-68: CallUpdateOperator(unset)
-73: CallUpdateOperator(rename)
-78: UpdateCurrent
-79: Pop
-80: Goto(15)
+48: IncR2
+49: StoreR0_2(0)
+51: CallUpdateOperator(set)
+56: CallUpdateOperator(inc)
+61: CallUpdateOperator(mul)
+66: CallUpdateOperator(min)
+71: CallUpdateOperator(unset)
+76: CallUpdateOperator(rename)
+81: UpdateCurrent
+82: Pop
+83: Goto(15)
 
-85: Label(2, "compare")
-90: Dup
-91: Call(110, 1)
-100: FalseJump(32)
-105: Goto(43)
+88: Label(2, "compare")
+93: Dup
+94: Call(113, 1)
+103: FalseJump(32)
+108: Goto(43)
 
-110: Label(0, "compare_function")
-115: GetField("_id", 140)
-124: PushValue(3)
-129: Greater
-130: FalseJump(140)
-135: Pop2(2)
+113: Label(0, "compare_function")
+118: GetField("_id", 143)
+127: PushValue(3)
+132: Greater
+133: FalseJump(143)
+138: Pop2(2)
 
-140: Label(1, "compare_function_clean")
-145: Ret0
+143: Label(1, "compare_function_clean")
+148: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1408,10 +1410,10 @@ mod tests {
 
 0: OpenWrite("test")
 5: Rewind(25)
-10: Goto(70)
+10: Goto(73)
 
 15: Label(3)
-20: Next(70)
+20: Next(73)
 
 25: Label(6, "close")
 30: Close
@@ -1423,27 +1425,29 @@ mod tests {
 
 43: Label(4, "result")
 48: DeleteIndex("test")
-53: CallUpdateOperator(set)
-58: UpdateCurrent
-59: InsertIndex("test")
-64: Pop
-65: Goto(15)
+53: IncR2
+54: StoreR0_2(0)
+56: CallUpdateOperator(set)
+61: UpdateCurrent
+62: InsertIndex("test")
+67: Pop
+68: Goto(15)
 
-70: Label(2, "compare")
-75: Dup
-76: Call(95, 1)
-85: FalseJump(32)
-90: Goto(43)
+73: Label(2, "compare")
+78: Dup
+79: Call(98, 1)
+88: FalseJump(32)
+93: Goto(43)
 
-95: Label(0, "compare_function")
-100: GetField("_id", 125)
-109: PushValue(3)
-114: Greater
-115: FalseJump(125)
-120: Pop2(2)
+98: Label(0, "compare_function")
+103: GetField("_id", 128)
+112: PushValue(3)
+117: Greater
+118: FalseJump(128)
+123: Pop2(2)
 
-125: Label(1, "compare_function_clean")
-130: Ret0
+128: Label(1, "compare_function_clean")
+133: Ret0
 "#;
         assert_eq!(expect, actual);
     }

@@ -72,6 +72,7 @@ pub(crate) struct VM {
     r1: Option<Cursor>,
     pub(crate) r2: i64, // usually the counter
     r3: usize,
+    pub(crate) r4: i64,
     stack: Vec<Bson>,
     frames: Vec<VMFrame>,
     pub(crate) program: SubProgram,
@@ -100,6 +101,7 @@ impl VM {
             r1: None,
             r2: 0,
             r3: 0,
+            r4: 0,
             stack,
             frames: vec![VMFrame::default()],
             program,
@@ -374,6 +376,9 @@ impl VM {
     }
 
     fn update_current(&mut self) -> Result<()> {
+        if self.r0 == 0 {
+            return Ok(());
+        }
         let top_index = self.stack.len() - 1;
         let top_value = &self.stack[top_index];
 
@@ -387,7 +392,7 @@ impl VM {
         };
 
         if updated {
-            self.r2 += 1;
+            self.r4 += 1;
         }
 
         Ok(())
@@ -967,7 +972,9 @@ impl VM {
 
                         let operator = &self.program.update_operators[id as usize];
 
-                        let _result = try_vm!(self, operator.update(self.stack.last_mut().unwrap()));
+                        let result = try_vm!(self, operator.update(self.stack.last_mut().unwrap()));
+
+                        self.r0 = if result.updated { 1 } else { 0 };
 
                         self.pc = self.pc.add(5);
                     }
