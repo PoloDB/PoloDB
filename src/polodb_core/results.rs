@@ -49,6 +49,8 @@ fn map_serialize<S>(data: &HashMap<usize, Bson>, serializer: S) -> Result<S::Ok,
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateResult {
+    #[serde(serialize_with = "crate::bson::serde_helpers::serialize_u64_as_i64")]
+    pub matched_count: u64,
     /// The number of documents that were modified by the operation.
     #[serde(serialize_with = "crate::bson::serde_helpers::serialize_u64_as_i64")]
     pub modified_count: u64,
@@ -57,6 +59,7 @@ pub struct UpdateResult {
 impl Default for UpdateResult {
     fn default() -> Self {
         UpdateResult {
+            matched_count: 0,
             modified_count: 0,
         }
     }

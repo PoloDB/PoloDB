@@ -77,7 +77,7 @@ impl Handler for UpdateHandler {
             "ok": 1,
             "connectionId": ctx.conn_id as i64,
             "nModified": update_result.modified_count as i64,
-            "n": update_result.modified_count as i64,
+            "n": update_result.matched_count as i64,
         };
         let reply = Reply::new(ctx.message.request_id.unwrap(), body);
         Ok(reply)

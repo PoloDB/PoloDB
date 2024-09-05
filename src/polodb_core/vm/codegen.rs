@@ -15,7 +15,7 @@
 
 use super::label::{JumpTableRecord, Label, LabelSlot};
 use crate::coll::collection_info::CollectionSpecification;
-use crate::errors::{mk_invalid_query_field, FieldTypeUnexpectedStruct};
+use crate::errors::{mk_invalid_query_field};
 use crate::index::INDEX_PREFIX;
 use crate::vm::op::DbOp;
 use crate::vm::subprogram::SubProgramIndexItem;
@@ -26,6 +26,7 @@ use bson::{Array, Binary, Bson, Document};
 use crate::vm::aggregation_codegen_context::{AggregationCodeGenContext, PipelineItem};
 use crate::vm::global_variable::{GlobalVariable, GlobalVariableSlot};
 use crate::vm::operators::OpRegistry;
+use crate::vm::update_operators::{IncOperator, MaxOperator, MinOperator, MulOperator, PopOperator, PushOperator, RenameOperator, SetOperator, UnsetOperator, UpdateOperator};
 use crate::vm::vm_add_fields::VmFuncAddFields;
 use crate::vm::vm_count::VmFuncCount;
 use crate::vm::vm_external_func::VmExternalFunc;
@@ -37,63 +38,6 @@ use crate::vm::vm_unset::VmFuncUnset;
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
-
-mod update_op {
-    use crate::vm::codegen::Codegen;
-    use crate::vm::op::DbOp;
-    use crate::Result;
-    use bson::Bson;
-
-    pub(super) fn update_op_min_max(codegen: &mut Codegen, doc: &Bson, min: bool) -> Result<()> {
-        let doc = crate::try_unwrap_document!("$min", doc);
-
-        for (key, value) in doc.iter() {
-            let clean_label = codegen.new_label();
-            let next_element_label = codegen.new_label();
-            let set_field_label = codegen.new_label();
-
-            let key_id_1 = codegen.push_static(Bson::from(key.clone()));
-            let key_id_2 = codegen.push_static(Bson::from(key.clone()));
-            let value_id = codegen.push_static(value.clone());
-
-            codegen.emit_goto2(DbOp::GetField, key_id_1, next_element_label); // stack +1
-
-            codegen.emit_push_value(value_id); // stack +2
-
-            if min {
-                codegen.emit(DbOp::Less);
-            } else {
-                codegen.emit(DbOp::Greater);
-            }
-            codegen.emit_goto(DbOp::IfFalse, set_field_label);
-
-            codegen.emit_goto(DbOp::Goto, clean_label);
-
-            codegen.emit_label(set_field_label);
-
-            codegen.emit(DbOp::Pop);
-            codegen.emit(DbOp::Pop); // stack
-
-            codegen.emit_push_value(value_id);
-
-            codegen.emit(DbOp::SetField);
-            codegen.emit_u32(key_id_2);
-
-            codegen.emit(DbOp::Pop);
-
-            codegen.emit_goto(DbOp::Goto, next_element_label);
-
-            codegen.emit_label(clean_label);
-
-            codegen.emit(DbOp::Pop);
-            codegen.emit(DbOp::Pop);
-
-            codegen.emit_label(next_element_label);
-        }
-
-        Ok(())
-    }
-}
 
 pub(super) struct Codegen {
     program: Box<SubProgram>,
@@ -1093,6 +1037,10 @@ impl Codegen {
     }
 
     pub(super) fn emit_update_operation(&mut self, update: &Document) -> Result<()> {
+        self.emit(DbOp::IncR2);
+        self.emit(DbOp::StoreR0_2);
+        self.emit_u8(0);
+
         for (key, value) in update.iter() {
             crate::path_hint!(self, key.clone(), {
                 self.emit_update_operation_kv(key, value)?;
@@ -1104,121 +1052,90 @@ impl Codegen {
         Ok(())
     }
 
+    fn push_update_operator(&mut self, operator: Box<dyn UpdateOperator>) -> usize {
+        let id = self.program.update_operators.len();
+        self.program.update_operators.push(operator);
+        id
+    }
+
+    fn emit_update_operator(&mut self, operator: Box<dyn UpdateOperator>) {
+        let id = self.push_update_operator(operator) as u32;
+        self.emit(DbOp::CallUpdateOperator);
+        self.emit_u32(id);
+    }
+
     fn emit_update_operation_kv(&mut self, key: &str, value: &Bson) -> Result<()> {
         match key.as_ref() {
             "$inc" => {
                 let doc = crate::try_unwrap_document!("$inc", value);
 
-                self.iterate_add_op(DbOp::IncField, doc)?;
+                let op = IncOperator::compile(doc.clone())?;
+                self.emit_update_operator(Box::new(op));
             }
 
             "$set" => {
                 let doc = crate::try_unwrap_document!("$set", value);
 
-                self.iterate_add_op(DbOp::SetField, doc)?;
+                let op = SetOperator::compile(doc.clone())?;
+                self.emit_update_operator(Box::new(op));
             }
 
             "$max" => {
-                update_op::update_op_min_max(self, value, false)?;
+                let doc = crate::try_unwrap_document!("$max", value);
+
+                let op = MaxOperator::compile(doc.clone())?;
+                self.emit_update_operator(Box::new(op));
             }
 
             "$min" => {
-                update_op::update_op_min_max(self, value, true)?;
+                let doc = crate::try_unwrap_document!("$min", value);
+
+                let op = MinOperator::compile(doc.clone())?;
+                self.emit_update_operator(Box::new(op));
             }
 
             "$mul" => {
                 let doc = crate::try_unwrap_document!("$mul", value);
 
-                self.iterate_add_op(DbOp::MulField, doc)?;
+                let op = MulOperator::compile(doc.clone())?;
+                self.emit_update_operator(Box::new(op));
             }
 
             "$rename" => {
                 let doc = crate::try_unwrap_document!("$set", value);
 
-                for (key, value) in doc.iter() {
-                    let new_name = match value {
-                        Bson::String(new_name) => new_name.as_str(),
-                        t => {
-                            let name = format!("{}", t);
-                            return Err(FieldTypeUnexpectedStruct {
-                                field_name: key.into(),
-                                expected_ty: "String".into(),
-                                actual_ty: name,
-                            }
-                            .into());
-                        }
-                    };
-
-                    self.emit_rename_field(key.as_ref(), new_name);
-                }
+                let op = RenameOperator::compile(doc.clone())?;
+                self.emit_update_operator(Box::new(op));
             }
 
             "$unset" => {
                 let doc = crate::try_unwrap_document!("$unset", value);
 
-                for (key, _) in doc.iter() {
-                    self.emit_unset_field(key.as_ref());
-                }
+                let op = UnsetOperator::compile(doc)?;
+                self.emit_update_operator(Box::new(op));
             }
 
             "$push" => {
                 let doc = crate::try_unwrap_document!("$push", value);
 
-                for (key, value) in doc.iter() {
-                    self.emit_push_field(key.as_ref(), value);
-                }
+                let op = PushOperator::compile(doc.clone())?;
+                self.emit_update_operator(Box::new(op));
             }
 
             "$pop" => {
                 let doc = crate::try_unwrap_document!("$pop", value);
 
-                for (key, value) in doc.iter() {
-                    let num = match value {
-                        Bson::Int64(i) => *i,
-                        _ => {
-                            return Err(Error::InvalidField(mk_invalid_query_field(
-                                self.last_key().into(),
-                                self.gen_path(),
-                            )))
-                        }
-                    };
-                    self.emit_pop_field(
-                        key.as_str(),
-                        match num {
-                            1 => false,
-                            -1 => true,
-                            _ => {
-                                return Err(Error::InvalidField(mk_invalid_query_field(
-                                    self.last_key().into(),
-                                    self.gen_path(),
-                                )))
-                            }
-                        },
-                    );
-                }
+                let op = PopOperator::compile(
+                    doc.clone(),
+                    self.last_key().to_string(),
+                    self.gen_path(),
+                )?;
+                self.emit_update_operator(Box::new(op));
             }
 
             _ => return Err(Error::UnknownUpdateOperation(key.into())),
         }
 
-        Ok(())
-    }
-
-    fn iterate_add_op(&mut self, op: DbOp, doc: &Document) -> Result<()> {
-        for (index, (key, value)) in doc.iter().enumerate() {
-            if index == 0 && key == "_id" {
-                return Err(Error::UnableToUpdatePrimaryKey);
-            }
-
-            let value_id = self.push_static(value.clone());
-            self.emit_push_value(value_id);
-
-            let key_id = self.push_static(Bson::from(key.clone()));
-            self.emit(op);
-            self.emit_u32(key_id);
-
-            self.emit(DbOp::Pop);
-        }
         Ok(())
     }
 
@@ -1284,72 +1201,6 @@ impl Codegen {
         self.emit(DbOp::PushValue);
         let bytes = static_id.to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);
-    }
-
-    pub(super) fn emit_rename_field(&mut self, old_name: &str, new_name: &str) {
-        let get_field_failed_label = self.new_label();
-        let old_name_id = self.push_static(Bson::String(old_name.into()));
-        let new_name_id = self.push_static(Bson::String(new_name.into()));
-        self.emit_goto2(DbOp::GetField, old_name_id, get_field_failed_label);
-
-        self.emit(DbOp::SetField);
-        self.emit_u32(new_name_id);
-
-        self.emit(DbOp::Pop);
-
-        self.emit(DbOp::UnsetField);
-        self.emit_u32(old_name_id);
-
-        self.emit_label(get_field_failed_label);
-    }
-
-    pub(super) fn emit_unset_field(&mut self, name: &str) {
-        let value_id = self.push_static(Bson::String(name.into()));
-        self.emit(DbOp::UnsetField);
-        self.emit_u32(value_id);
-    }
-
-    pub(super) fn emit_push_field(&mut self, field_name: &str, value: &Bson) {
-        let get_field_failed_label = self.new_label();
-        let name_id = self.push_static(field_name.into());
-        self.emit_goto2(DbOp::GetField, name_id, get_field_failed_label);
-
-        let value_id = self.push_static(value.clone());
-        self.emit(DbOp::PushValue);
-        self.emit_u32(value_id);
-
-        self.emit(DbOp::ArrayPush);
-
-        self.emit(DbOp::Pop);
-
-        self.emit(DbOp::SetField);
-        self.emit_u32(name_id);
-
-        self.emit(DbOp::Pop);
-
-        self.emit_label(get_field_failed_label);
-    }
-
-    pub(super) fn emit_pop_field(&mut self, field_name: &str, is_first: bool) {
-        let get_field_failed_label = self.new_label();
-        let name_id = self.push_static(field_name.into());
-
-        // <<---- push an array on stack
-        self.emit_goto2(DbOp::GetField, name_id, get_field_failed_label);
-
-        self.emit(if is_first {
-            DbOp::ArrayPopFirst
-        } else {
-            DbOp::ArrayPopLast
-        });
-
-        self.emit(DbOp::SetField);
-        self.emit_u32(name_id);
-
-        // <<---- pop an array on stack
-        self.emit(DbOp::Pop);
-
-        self.emit_label(get_field_failed_label);
     }
 
     pub(super) fn emit_goto(&mut self, op: DbOp, label: Label) {

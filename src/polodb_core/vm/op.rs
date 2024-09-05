@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::cmp::Ordering;
+use bson::Bson;
+
 #[repr(u8)]
 #[derive(Copy, Clone, Eq, PartialEq)]
 #[allow(dead_code)]
@@ -140,30 +143,6 @@ pub enum DbOp {
     // op1. value_index: 4bytes
     UnsetField,
 
-    // increment the field
-    // if not exists, set the value
-    //
-    // throw error if field is null
-    //
-    // top-1 is the value to push
-    // top-2 is the doc to change
-    //
-    // 5 bytes
-    // op1. field_name_index: 4bytes
-    IncField,
-
-    // multiple the field
-    // if not exists, set the value
-    //
-    // throw error if field is null
-    //
-    // top-1 is the value to push
-    // top-2 is the doc to change
-    //
-    // 5 bytes
-    // op1. field_name_index: 4bytes
-    MulField,
-
     // set the value of the field
     //
     // top-1 is the value to push
@@ -283,6 +262,10 @@ pub enum DbOp {
     CallExternal,
 
     // 5 bytes
+    // op1. id 4 bytes
+    CallUpdateOperator,
+
+    // 5 bytes
     // op1. location: 4 bytes
     ExternalIsCompleted,
 
@@ -318,4 +301,19 @@ pub enum DbOp {
     // Close cursor automatically
     Halt,
 
+}
+
+pub(crate) fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> crate::Result<bool> {
+    let ord = crate::utils::bson::value_cmp(val1, val2)?;
+    let result = matches!(
+        (op, ord),
+        (DbOp::Equal, Ordering::Equal)
+            | (DbOp::Greater, Ordering::Greater)
+            | (DbOp::GreaterEqual, Ordering::Equal)
+            | (DbOp::GreaterEqual, Ordering::Greater)
+            | (DbOp::Less, Ordering::Less)
+            | (DbOp::LessEqual, Ordering::Equal)
+            | (DbOp::LessEqual, Ordering::Less)
+    );
+    Ok(result)
 }
