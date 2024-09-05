@@ -1,7 +1,16 @@
-/target
+# IDEs
 .idea
+.vscode
+
+# Rust
+/target
+
+# Other
 .DS_Store
 src/*/target/
 /venv
 /pypolodb/venv
 .history
+
+# Used in example
+data.db
