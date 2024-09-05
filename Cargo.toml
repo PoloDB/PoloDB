@@ -7,7 +7,3 @@ members = [
 ]
 
 exclude = ["build", "obj"]
-
-[profile.release.package.polodb_wasm]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"
