@@ -5,7 +5,8 @@ members = [
     "src/polodb",
     "src/polodb_core",
     "src/polodb_line_diff",
-    "examples/rust"
+    "bindings/c/polodb-c-exporter",
+    "examples/rust",
 ]
 
 exclude = ["build", "obj"]
