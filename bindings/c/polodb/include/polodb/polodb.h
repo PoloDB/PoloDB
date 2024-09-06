@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdio.h>
+#include "doc.h"
 
 struct Database {
     void* handle;
@@ -39,14 +40,14 @@ void Find_destroy(struct Find* find) {}
 
 const char** Find_run(struct Find* find) {
     static const char* results[] = {
-        "{\
-            \"title\" : \"The Three-Body Problem\",\
-            \"author\" : \"Liu Cixin\"\
-        }",
-        "{\
-            \"title\" : \"The Dark Forest\",\
-            \"author\" : \"Liu Cixin\"\
-        }",
+        OBJECT(
+            FIELD("title", "The Three-Body Problem"),
+            FIELD("author", "Liu Cixin")
+        ),
+        OBJECT(
+            FIELD("title", "The Dark Forest"),
+            FIELD("author", "Liu Cixin")
+        ),
         0
     };
     return results;
