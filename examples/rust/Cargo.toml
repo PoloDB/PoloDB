@@ -1,0 +1,9 @@
+[package]
+name = "rust-example"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+polodb_core = { path = "../../src/polodb_core" }
+serde = { version = "1.0", features = ["derive"] }

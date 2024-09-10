@@ -1,0 +1,38 @@
+
+// TODO: Clean this up.
+// TODO: Create more TRANSFORM_ macros to handle more than 9 arguments.
+
+#define EVAL(...) __VA_ARGS__
+#define VARCOUNT(...) \
+   EVAL(VARCOUNT_I(__VA_ARGS__,9,8,7,6,5,4,3,2,1,))
+#define VARCOUNT_I(_,_9,_8,_7,_6,_5,_4,_3,_2,X_,...) X_
+#define GLUE(X,Y) GLUE_I(X,Y)
+#define GLUE_I(X,Y) X##Y
+#define FIRST(...) EVAL(FIRST_I(__VA_ARGS__,))
+#define FIRST_I(X,...) X
+#define TUPLE_TAIL(...) EVAL(TUPLE_TAIL_I(__VA_ARGS__))
+#define TUPLE_TAIL_I(X,...) (__VA_ARGS__)
+
+#define TRANSFORM(NAME_, ARGS_) (GLUE(TRANSFORM_,VARCOUNT ARGS_)(NAME_, ARGS_))
+#define TRANSFORM_1(NAME_, ARGS_) NAME_ ARGS_
+#define TRANSFORM_2(NAME_, ARGS_) NAME_(FIRST ARGS_) "," TRANSFORM_1(NAME_,TUPLE_TAIL ARGS_)
+#define TRANSFORM_3(NAME_, ARGS_) NAME_(FIRST ARGS_) "," TRANSFORM_2(NAME_,TUPLE_TAIL ARGS_)
+#define TRANSFORM_4(NAME_, ARGS_) NAME_(FIRST ARGS_) "," TRANSFORM_3(NAME_,TUPLE_TAIL ARGS_)
+#define TRANSFORM_5(NAME_, ARGS_) NAME_(FIRST ARGS_) "," TRANSFORM_4(NAME_,TUPLE_TAIL ARGS_)
+#define TRANSFORM_6(NAME_, ARGS_) NAME_(FIRST ARGS_) "," TRANSFORM_5(NAME_,TUPLE_TAIL ARGS_)
+#define TRANSFORM_7(NAME_, ARGS_) NAME_(FIRST ARGS_) "," TRANSFORM_6(NAME_,TUPLE_TAIL ARGS_)
+#define TRANSFORM_8(NAME_, ARGS_) NAME_(FIRST ARGS_) "," TRANSFORM_7(NAME_,TUPLE_TAIL ARGS_)
+#define TRANSFORM_9(NAME_, ARGS_) NAME_(FIRST ARGS_) "," TRANSFORM_8(NAME_,TUPLE_TAIL ARGS_)
+
+#define Z_ARG(X) GLUE(X,)
+#define OBJECT_DEF(...) "{" __VA_ARGS__ "}"
+#define OBJECT(...) \
+   EVAL(OBJECT_DEF TRANSFORM(Z_ARG, (__VA_ARGS__)))
+
+#define ARRAY_DEF(...) "[" __VA_ARGS__ "]"
+#define ARRAY(...) \
+   EVAL(ARRAY_DEF TRANSFORM(Z_ARG, (__VA_ARGS__)))
+
+
+#define FIELD(NAME, VALUE) "\"" NAME "\":\"" VALUE "\""
+
