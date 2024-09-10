@@ -75,7 +75,8 @@ pub extern "C" fn Find_run(ptr: *mut polodb_core::action::Find<polodb_core::bson
             results.push(doc.into_raw() as *mut std::ffi::c_void);
         }
         results.push(std::ptr::null_mut());
-        let vector = std::alloc::alloc(std::alloc::Layout::array::<*mut std::ffi::c_void>(results.len()).unwrap()) as *mut *mut std::ffi::c_void;
+        let layout = std::alloc::Layout::array::<*mut std::ffi::c_void>(results.len()).unwrap();
+        let vector = std::alloc::alloc(layout) as *mut *mut std::ffi::c_void;
         std::ptr::copy_nonoverlapping(results.as_ptr(), vector, results.len());
         vector
     }
