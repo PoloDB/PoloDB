@@ -19,4 +19,4 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # polodb_core = "5.1.0"
 polodb_core = { path = "../src/polodb_core", default-features = false  }
-pyo3 = { version = "0.22.2", features = ["extension-module"] }
+pyo3 = { version = "0.22.2", features = ["extension-module", "auto-initialize"] }
