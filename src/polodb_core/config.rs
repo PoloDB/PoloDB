@@ -86,6 +86,11 @@ impl ConfigBuilder {
 
 }
 
+impl Default for ConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub struct Config {
     pub init_block_count:  u64,

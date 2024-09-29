@@ -15,7 +15,7 @@
 #[macro_export]
 macro_rules! polo_log (
     ($($arg:tt)+) => {
-        if crate::db::SHOULD_LOG.load(std::sync::atomic::Ordering::SeqCst) {
+        if $crate::db::SHOULD_LOG.load(std::sync::atomic::Ordering::SeqCst) {
             eprintln!($($arg)*);
         }
     }
@@ -28,7 +28,7 @@ macro_rules! try_unwrap_document {
             Bson::Document(doc) => doc,
             t => {
                 let name = format!("{}", t);
-                let err = crate::errors::FieldTypeUnexpectedStruct {
+                let err = $crate::errors::FieldTypeUnexpectedStruct {
                     field_name: $op_name.into(),
                     expected_ty: "Document".into(),
                     actual_ty: name,
@@ -46,7 +46,7 @@ macro_rules! try_unwrap_array {
             Bson::Array(arr) => arr,
             t => {
                 let name = format!("{}", t);
-                let err = crate::errors::FieldTypeUnexpectedStruct {
+                let err = $crate::errors::FieldTypeUnexpectedStruct {
                     field_name: $op_name.into(),
                     expected_ty: "Array".into(),
                     actual_ty: name,

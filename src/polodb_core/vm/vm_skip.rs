@@ -18,7 +18,7 @@ use bson::Bson;
 use crate::{Error, Result};
 use crate::errors::mk_invalid_aggregate_field;
 
-const NAME: &'static str = "skip";
+const NAME: &str = "skip";
 
 pub(crate) struct VmFuncSkip {
     remain: AtomicUsize

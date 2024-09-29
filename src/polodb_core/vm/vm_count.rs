@@ -17,7 +17,7 @@ use bson::{Bson, Document};
 use crate::vm::vm_external_func::{VmExternalFunc, VmExternalFuncStatus};
 use crate::Result;
 
-const NAME: &'static str = "count";
+const NAME: &str = "count";
 
 // Reference: https://www.mongodb.com/docs/manual/reference/operator/aggregation/count/
 // Distinct from count operator

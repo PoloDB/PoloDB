@@ -37,9 +37,8 @@ impl VmFuncAddFields {
                                 OperatorExpr::Expr(op)
                             }
                             Bson::String(field_name) => {
-                                if field_name.starts_with("$") {
-                                    let field_name = field_name[1..].to_string();
-                                    OperatorExpr::Alias(field_name)
+                                if let Some(stripped_field_name) = field_name.strip_prefix("$") {
+                                    OperatorExpr::Alias(stripped_field_name.to_string())
                                 } else {
                                     OperatorExpr::Constant(Bson::String(field_name.clone()))
                                 }

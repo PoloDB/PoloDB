@@ -11,18 +11,10 @@ mod max_operator;
 use bson::{Bson, Document};
 use crate::Result;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct UpdateResult {
     #[allow(dead_code)]
     pub(crate) updated: bool,
-}
-
-impl Default for UpdateResult {
-    fn default() -> UpdateResult {
-        UpdateResult {
-            updated: false,
-        }
-    }
 }
 
 pub(crate) trait UpdateOperator {

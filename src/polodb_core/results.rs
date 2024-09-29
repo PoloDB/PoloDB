@@ -46,7 +46,7 @@ fn map_serialize<S>(data: &HashMap<usize, Bson>, serializer: S) -> Result<S::Ok,
     map.end()
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateResult {
     #[serde(serialize_with = "crate::bson::serde_helpers::serialize_u64_as_i64")]
@@ -56,29 +56,12 @@ pub struct UpdateResult {
     pub modified_count: u64,
 }
 
-impl Default for UpdateResult {
-    fn default() -> Self {
-        UpdateResult {
-            matched_count: 0,
-            modified_count: 0,
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DeleteResult {
     /// The number of documents deleted by the operation.
     #[serde(serialize_with = "crate::bson::serde_helpers::serialize_u64_as_i64")]
     pub deleted_count: u64,
-}
-
-impl Default for DeleteResult {
-    fn default() -> Self {
-        DeleteResult {
-            deleted_count: 0,
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]

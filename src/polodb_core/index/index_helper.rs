@@ -22,7 +22,7 @@ use crate::coll::collection_info::{
 use crate::errors::DuplicateKeyError;
 use crate::transaction::TransactionInner;
 
-pub(crate) const INDEX_PREFIX: &'static str = "$I";
+pub(crate) const INDEX_PREFIX: &str = "$I";
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -72,7 +72,7 @@ impl<'b, 'c, 'd, 'e> IndexHelper<'b, 'c, 'd, 'e> {
         for (index_name, index_info) in index_meta.iter() {
             IndexHelper::try_execute_with_index_info(
                 op,
-                &self.doc,
+                self.doc,
                 self.col_spec._id.as_str(),
                 self.pkey,
                 index_name.as_str(),

@@ -69,12 +69,10 @@ fn minimum(a: usize, b: usize, c: usize) -> (usize, char) {
         } else {
             (c, 'c')
         }
+    } else if b < c {
+        (b, 'b')
     } else {
-        if b < c {
-            (b, 'b')
-        } else {
-            (c, 'c')
-        }
+        (c, 'c')
     }
 }
 
@@ -84,8 +82,8 @@ pub fn diff(a: &str, b: &str, splitter: &str) -> Vec<Diff> {
 
     let mut matrix: Vec<Vec<Item>> = make_matrix(a_lines.len() + 1, b_lines.len() + 1);
 
-    for i in 0..=a_lines.len() {
-        matrix[i][0].distance = i;
+    for (i, item) in matrix.iter_mut().enumerate().take(a_lines.len() + 1) {
+        item[0].distance = i;
     }
 
     for j in 0..=b_lines.len() {
@@ -183,7 +181,7 @@ impl std::fmt::Display for Diff {
 
 }
 
-fn backtracking(matrix: &Vec<Vec<Item>>, a_lines: &Vec<&str>, b_lines: &Vec<&str>, mut i: usize, mut j: usize) -> Vec<Diff> {
+fn backtracking(matrix: &[Vec<Item>], a_lines: &[&str], b_lines: &[&str], mut i: usize, mut j: usize) -> Vec<Diff> {
     let mut result: Vec<Diff> = vec![];
     while i > 0 && j > 0 {
         match matrix[i][j].op {

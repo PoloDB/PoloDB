@@ -21,7 +21,7 @@ use crate::{Result, Error};
 use indexmap::IndexMap;
 use crate::vm::operators::{OpRegistry, VmOperator};
 
-const NAME: &'static str = "group";
+const NAME: &str = "group";
 
 // Reference: https://www.mongodb.com/docs/manual/reference/operator/aggregation/group/
 pub(crate) struct VmFuncGroup {
