@@ -38,6 +38,17 @@ pub(crate) struct IndexHelper<'b, 'c, 'd, 'e> {
     pkey: &'e Bson,
 }
 
+pub(crate) fn make_index_key_with_query_key(prefix_bytes: &[u8], query_value: &Bson) -> Result<Vec<u8>> {
+    let mut key_buffer = prefix_bytes.to_vec();
+    let primary_key_buffer = crate::utils::bson::stacked_key([
+        query_value,
+    ])?;
+
+    key_buffer.extend_from_slice(&primary_key_buffer);
+
+    Ok(key_buffer)
+}
+
 impl<'b, 'c, 'd, 'e> IndexHelper<'b, 'c, 'd, 'e> {
 
     #[inline]

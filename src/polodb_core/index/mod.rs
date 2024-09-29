@@ -16,6 +16,6 @@ mod index_helper;
 mod index_model;
 mod index_builder;
 
-pub(crate) use index_helper::{IndexHelper, IndexHelperOperation, INDEX_PREFIX};
+pub(crate) use index_helper::{IndexHelper, IndexHelperOperation, INDEX_PREFIX, make_index_key_with_query_key};
 pub(crate) use index_builder::IndexBuilder;
 pub use index_model::{IndexModel, IndexOptions};
