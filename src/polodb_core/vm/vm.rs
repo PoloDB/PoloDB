@@ -16,7 +16,7 @@ use crate::cursor::Cursor;
 use crate::errors::{
     FieldTypeUnexpectedStruct, RegexError, UnexpectedTypeForOpStruct,
 };
-use crate::index::{IndexHelper, IndexHelperOperation};
+use crate::index::{IndexHelper, IndexHelperOperation, make_index_key_with_query_key};
 use crate::transaction::TransactionInner;
 use crate::vm::op::{generic_cmp, DbOp};
 use crate::vm::SubProgram;
@@ -77,6 +77,7 @@ pub(crate) struct VM {
     frames: Vec<VMFrame>,
     pub(crate) program: SubProgram,
     global_vars: Vec<Bson>,
+    index_value: Option<Bson>,
     metrics: Metrics,
 }
 
@@ -106,6 +107,7 @@ impl VM {
             frames: vec![VMFrame::default()],
             program,
             global_vars,
+            index_value: None,
             metrics,
         }
     }
@@ -182,6 +184,7 @@ impl VM {
 
         let cursor = self.r1.as_mut().unwrap();
         let result = cursor.reset_by_index_value(query_value)?;
+        self.index_value = Some(query_value.clone());
 
         if !result {
             return Ok(false);
@@ -264,8 +267,13 @@ impl VM {
             self.r0 = 0;
             return Ok(());
         }
+
+        let index_value = self.index_value.as_ref().expect("index_value must exist");
+
+        let key_buffer = make_index_key_with_query_key(cursor.prefix_bytes.as_slice(), index_value)?;
+
         let current_key = current_key.unwrap();
-        if !current_key.starts_with(cursor.prefix_bytes.as_slice()) {
+        if !current_key.starts_with(key_buffer.as_slice()) {
             self.r0 = 0;
             return Ok(());
         }
