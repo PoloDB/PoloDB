@@ -23,7 +23,7 @@ use crate::utils::bson::bson_datetime_now;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexInfo {
-    /// The key of the map is prevserd the original format
+    /// The key of the map is preserving the original format
     /// For example, `author.age` is "author.age"
     pub keys: IndexMap<String, i8>,
 
@@ -45,8 +45,7 @@ impl IndexInfo {
     pub fn is_unique(&self) -> bool {
         self.options
             .as_ref()
-            .map(|options| options.unique)
-            .flatten()
+            .and_then(|options| options.unique)
             .unwrap_or(false)
     }
 

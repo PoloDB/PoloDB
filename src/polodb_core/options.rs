@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct UpdateOptions {
     pub upsert: Option<bool>,
 }
@@ -27,6 +27,7 @@ impl UpdateOptions {
     }
 }
 
+#[derive(Default)]
 pub struct UpdateOptionsBuilder {
     upsert: Option<bool>,
 }
@@ -41,17 +42,5 @@ impl UpdateOptionsBuilder {
         UpdateOptions {
             upsert: self.upsert,
         }
-    }
-}
-
-impl Default for UpdateOptionsBuilder {
-    fn default() -> Self {
-        UpdateOptionsBuilder { upsert: None }
-    }
-}
-
-impl Default for UpdateOptions {
-    fn default() -> Self {
-        UpdateOptions { upsert: None }
     }
 }

@@ -131,7 +131,7 @@ pub fn split_stacked_keys(buffer: &[u8]) -> Result<Vec<Bson>> {
             result.push(Bson::String(String::from_utf8(bytes)?));
         } else if ch == ElementType::Boolean as u8 {
             let val = reader.read_u8()?;
-            result.push(Bson::Boolean(if val == 0 { false } else { true }));
+            result.push(Bson::Boolean(val != 0));
         } else if ch == ElementType::Null as u8 {
             result.push(Bson::Null);
         } else if ch == ElementType::Int32 as u8 {
@@ -232,7 +232,7 @@ pub fn try_get_document_value(doc: &Document, key: &str) -> Option<Bson> {
 fn try_get_document_by_slices(doc: &Document, keys: &[&str]) -> Option<Bson> {
     let first = keys.first();
     first
-        .map(|first_str| {
+        .and_then(|first_str| {
             let remains = &keys[1..];
             let value = doc.get(first_str);
             match value {
@@ -243,16 +243,15 @@ fn try_get_document_by_slices(doc: &Document, keys: &[&str]) -> Option<Bson> {
                     if remains.is_empty() {
                         return Some(v.clone());
                     }
-                    return None;
+                    None
                 }
                 _ => None,
             }
         })
-        .flatten()
 }
 
-pub fn bson_datetime_now() -> bson::datetime::DateTime {
-    return bson::datetime::DateTime::now()
+pub fn bson_datetime_now() -> DateTime {
+    DateTime::now()
 }
 
 #[cfg(test)]

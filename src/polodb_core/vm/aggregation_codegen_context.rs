@@ -19,14 +19,7 @@ pub(crate) struct PipelineItem {
     pub next_label: Label,
 }
 
+#[derive(Default)]
 pub(crate) struct AggregationCodeGenContext {
     pub items: Vec<PipelineItem>
-}
-
-impl Default for AggregationCodeGenContext {
-    fn default() -> Self {
-        AggregationCodeGenContext {
-            items: Vec::default(),
-        }
-    }
 }

@@ -373,8 +373,8 @@ fn open_bson_to_str(val: &Bson) -> Result<String> {
     } else {
         "\"".to_string()
     };
-    result.extend(str.chars());
-    result.extend("\"".chars());
+    result.push_str(&str);
+    result.push('"');
 
     Ok(result)
 }

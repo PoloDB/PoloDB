@@ -22,7 +22,7 @@ impl RocksDBWaitForCompactOptions {
 
     pub(crate) fn new() -> RocksDBWaitForCompactOptions {
         let inner = unsafe { ffi::rocksdb_wait_for_compact_options_create() };
-        assert_eq!(inner.is_null(), false, "rocksdb_wait_for_compact_options_create failed");
+        assert!(!inner.is_null(), "rocksdb_wait_for_compact_options_create failed");
         RocksDBWaitForCompactOptions { inner }
     }
 
@@ -56,7 +56,7 @@ impl RocksDBWriteOptions {
 
     pub(crate) fn new() -> RocksDBWriteOptions {
         let inner = unsafe { ffi::rocksdb_writeoptions_create() };
-        assert_eq!(inner.is_null(), false, "rocksdb_writeoptions_create failed");
+        assert!(!inner.is_null(), "rocksdb_writeoptions_create failed");
         RocksDBWriteOptions { inner }
     }
 
@@ -90,7 +90,7 @@ impl RocksDBReadOptions {
 
     pub(crate) fn new() -> RocksDBReadOptions {
         let inner = unsafe { ffi::rocksdb_readoptions_create() };
-        assert_eq!(inner.is_null(), false, "rocksdb_readoptions_create failed");
+        assert!(!inner.is_null(), "rocksdb_readoptions_create failed");
         RocksDBReadOptions { inner }
     }
 
@@ -114,7 +114,7 @@ impl RocksDBTransactionOptions {
 
     pub(crate) fn new() -> RocksDBTransactionOptions {
         let inner = unsafe { ffi::rocksdb_transaction_options_create() };
-        assert_eq!(inner.is_null(), false, "rocksdb_transaction_options_create failed");
+        assert!(!inner.is_null(), "rocksdb_transaction_options_create failed");
         RocksDBTransactionOptions { inner }
     }
 

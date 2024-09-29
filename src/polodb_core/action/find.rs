@@ -64,13 +64,12 @@ impl <'a, 'b , T: DeserializeOwned + Send + Sync> Find<'a, 'b, T> {
         let txn = match self.txn {
             Some(txn) => txn.clone(),
             None => {
-                let txn = db.start_transaction()?;
-                txn
+                db.start_transaction()?
             }
         };
         match (self.skip.as_ref(), self.limit.as_ref(), self.sort.as_ref()) {
             (None, None, None) => {
-                db.find_with_owned_session(&self.name, self.filter, txn)
+                db.find_with_owned_session(self.name, self.filter, txn)
             }
             _ => {
                 let mut pipeline = vec![
@@ -97,7 +96,7 @@ impl <'a, 'b , T: DeserializeOwned + Send + Sync> Find<'a, 'b, T> {
                     });
                 }
 
-                db.aggregate_with_owned_session(&self.name, pipeline, txn)
+                db.aggregate_with_owned_session(self.name, pipeline, txn)
             }
         }
     }

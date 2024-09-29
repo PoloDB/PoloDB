@@ -39,7 +39,7 @@ use crate::db::rocksdb_wrapper::RocksDBWrapper;
 use crate::transaction::TransactionInner;
 use crate::vm::VM;
 
-const TABLE_META_PREFIX: &'static str = "$TABLE_META";
+const TABLE_META_PREFIX: &str = "$TABLE_META";
 
 /**
  * API for all platforms
@@ -135,7 +135,7 @@ impl DatabaseInner {
                     Ok(None)
                 }
             },
-            Err(err) => return Err(err),
+            Err(err) => Err(err),
         }
     }
 
@@ -253,7 +253,7 @@ impl DatabaseInner {
         let index_info = IndexInfo::single_index(
             key.to_string(),
             1,
-            options.map(|x| x.clone()),
+            options.cloned(),
         );
         collection_spec.indexes.insert(index_name.clone(), index_info.clone());
 
@@ -367,11 +367,7 @@ impl DatabaseInner {
 
     #[inline]
     fn is_num_1(val: &Bson) -> bool {
-        match val {
-            Bson::Int32(1) => true,
-            Bson::Int64(1) => true,
-            _ => false,
-        }
+        matches!(val, Bson::Int32(1) | Bson::Int64(1))
     }
 
     #[inline]
@@ -432,7 +428,7 @@ impl DatabaseInner {
 
         let stacked_key = crate::utils::bson::stacked_key([
             &Bson::String(col_spec._id.clone()),
-            &pkey,
+            pkey,
         ])?;
 
         let doc_buf = bson::to_vec(&doc)?;
@@ -483,14 +479,12 @@ impl DatabaseInner {
         let mut col_spec = self.get_collection_meta_by_name_advanced(txn, col_name, true, node_id)?
             .expect("internal: meta must exist");
         let mut inserted_ids: HashMap<usize, Bson> = HashMap::new();
-        let mut counter: usize = 0;
 
-        for item in docs {
+        for (counter, item) in docs.into_iter().enumerate() {
             let doc = bson::to_document(item.borrow())?;
             let (insert_one_result, new_col_spec) = self.insert_one_with_meta(txn, col_spec, doc)?;
             inserted_ids.insert(counter, insert_one_result.inserted_id);
 
-            counter += 1;
             col_spec = new_col_spec;
         }
 
@@ -848,16 +842,14 @@ impl DatabaseInner {
         )?;
         let subprogram = match meta_opt {
             Some(col_spec) => {
-                let subprogram = match filter_query {
+                match filter_query {
                     Some(query) => SubProgram::compile_query(
                         &col_spec,
                         &query,
                         true
                     ),
                     None => SubProgram::compile_query_all(&col_spec, true),
-                }?;
-
-                subprogram
+                }?
             }
             None => SubProgram::compile_empty_query(),
         };
@@ -912,7 +904,7 @@ impl DatabaseInner {
     pub(crate) fn delete_many(&self, col_name: &str, query: Document, txn: &TransactionInner) -> Result<DeleteResult> {
         DatabaseInner::validate_col_name(col_name)?;
 
-        let test_deleted_count = if query.len() == 0 {
+        let test_deleted_count = if query.is_empty() {
             self.delete_all(col_name, txn)
         } else {
             self.delete(col_name, query, true, txn)
@@ -938,13 +930,11 @@ impl DatabaseInner {
         let meta_opt = self.get_collection_meta_by_name_advanced_auto(col_name, false, &txn)?;
         let subprogram = match meta_opt {
             Some(col_spec) => {
-                let subprogram = SubProgram::compile_aggregate(
+                SubProgram::compile_aggregate(
                     &col_spec,
                     pipeline,
                     true
-                )?;
-
-                subprogram
+                )?
             }
             None => SubProgram::compile_empty_query(),
         };

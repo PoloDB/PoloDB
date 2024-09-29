@@ -43,11 +43,10 @@ impl <'a, 'b , T: DeserializeOwned + Send + Sync> Aggregate<'a, 'b, T> {
         let txn = match self.txn {
             Some(txn) => txn.clone(),
             None => {
-                let txn = db.start_transaction()?;
-                txn
+                db.start_transaction()?
             }
         };
-        db.aggregate_with_owned_session(&self.name, self.pipeline, txn.clone())
+        db.aggregate_with_owned_session(self.name, self.pipeline, txn.clone())
     }
 
     pub fn with_type<U>(self) -> Aggregate<'a, 'b, U>

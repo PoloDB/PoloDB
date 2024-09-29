@@ -26,8 +26,7 @@ impl VmFuncUnset {
         let fields = match val {
             Bson::Array(arr) => {
                 let mut fields = Vec::new();
-                let mut count = 0;
-                for v in arr {
+                for (count, v) in arr.iter().enumerate() {
                     crate::path_hint_2!(paths, count.to_string(), {
                         if let Bson::String(s) = v {
                             fields.push(s.clone());
@@ -36,7 +35,6 @@ impl VmFuncUnset {
                             return Err(Error::InvalidField(invalid_err));
                         }
                     });
-                    count += 1;
                 }
                 fields
             }

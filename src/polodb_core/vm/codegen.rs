@@ -528,7 +528,7 @@ impl Codegen {
         result_label: Label,
         not_found_label: Label,
     ) -> Result<()> {
-        if key.chars().next().unwrap() == '$' {
+        if key.starts_with('$') {
             match key {
                 "$and" => {
                     let sub_arr = crate::try_unwrap_array!("$and", value);
@@ -870,7 +870,7 @@ impl Codegen {
         self.emit_goto(DbOp::Goto, next_label);
 
         for i in 0..pipeline.len() {
-            self.emit_aggregation_stage(pipeline, &ctx, i)?;
+            self.emit_aggregation_stage(pipeline, ctx, i)?;
         }
 
         self.emit_label_with_name(final_result_label, "final_result_row_fun");
@@ -1065,7 +1065,7 @@ impl Codegen {
     }
 
     fn emit_update_operation_kv(&mut self, key: &str, value: &Bson) -> Result<()> {
-        match key.as_ref() {
+        match key {
             "$inc" => {
                 let doc = crate::try_unwrap_document!("$inc", value);
 
@@ -1213,7 +1213,7 @@ impl Codegen {
             self.program.instructions.extend_from_slice(&bytes);
             return;
         }
-        let bytes: [u8; 4] = (-1 as i32).to_le_bytes();
+        let bytes: [u8; 4] = (-1_i32).to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes);
         self.jump_table
             .push(JumpTableRecord::new(record_loc, 1, label.pos()));
@@ -1231,7 +1231,7 @@ impl Codegen {
             self.program.instructions.extend_from_slice(&bytes);
             return;
         }
-        let bytes2: [u8; 4] = (-1 as i32).to_le_bytes();
+        let bytes2: [u8; 4] = (-1_i32).to_le_bytes();
         self.program.instructions.extend_from_slice(&bytes2);
         self.jump_table
             .push(JumpTableRecord::new(record_loc, 5, label.pos()));
