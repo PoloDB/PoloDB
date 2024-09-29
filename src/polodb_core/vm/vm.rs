@@ -209,7 +209,7 @@ impl VM {
         &mut self,
         index_key: &[u8],
     ) -> Result<Option<Bson>> {
-        let slices = crate::utils::bson::split_stacked_keys(index_key.as_ref())?;
+        let slices = crate::utils::bson::split_stacked_keys(index_key)?;
         let pkey = slices.last().expect("pkey must exist");
 
         let col_name = &slices[1];

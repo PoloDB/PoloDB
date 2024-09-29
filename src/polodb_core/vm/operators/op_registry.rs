@@ -25,7 +25,7 @@ impl OpRegistry {
 
     pub(crate) fn compile(&self, paths: &mut Vec<String>, v: &Bson) -> Result<Box<dyn VmOperator>> {
         if let Bson::Document(doc) = v {
-            self.compile_doc(paths, &doc)
+            self.compile_doc(paths, doc)
         } else {
             let invalid_err = mk_invalid_aggregate_field(paths);
             Err(Error::InvalidField(invalid_err))

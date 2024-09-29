@@ -117,7 +117,7 @@ impl Handler for FindHandler {
         let limit = doc.get("limit")?.map( |val| {
             match val {
                 RawBsonRef::Int32(val) => val as i64,
-                RawBsonRef::Int64(val) => val as i64,
+                RawBsonRef::Int64(val) => val,
                 _ => 0,
             }
         });
@@ -125,7 +125,7 @@ impl Handler for FindHandler {
         let skip = doc.get("skip")?.map( |val| {
             match val {
                 RawBsonRef::Int32(val) => val as i64,
-                RawBsonRef::Int64(val) => val as i64,
+                RawBsonRef::Int64(val) => val,
                 _ => 0,
             }
         });
@@ -162,14 +162,14 @@ impl Handler for FindHandler {
             find.run()?
         };
         if single_batch {
-            return FindHandler::handle_single_batch(ctx, &db_name, &collection_name, &mut cursor);
+            return FindHandler::handle_single_batch(ctx, db_name, collection_name, &mut cursor);
         }
         let cursor = Arc::new(Mutex::new(cursor));
 
         let cursor_id = ctx.app_context.save_cursor(cursor.clone());
         let cursor_doc = {
             let mut cursor_guard = cursor.lock().unwrap();
-            FindHandler::mk_cursor_doc(cursor_id, db_name, &collection_name, &mut cursor_guard, batch_size as isize)?
+            FindHandler::mk_cursor_doc(cursor_id, db_name, collection_name, &mut cursor_guard, batch_size as isize)?
         };
 
         let body = rawdoc! {

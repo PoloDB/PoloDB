@@ -73,12 +73,12 @@ impl VmFuncSort {
                         let result =  crate::utils::bson::value_cmp(a_val, b_val).expect("Invalid sort value");
                         match result {
                             std::cmp::Ordering::Equal => continue,
-                            std::cmp::Ordering::Less => return Self::i8_to_ordering(v.clone()),
-                            std::cmp::Ordering::Greater => return Self::i8_to_ordering(-v.clone()),
+                            std::cmp::Ordering::Less => return Self::i8_to_ordering(*v),
+                            std::cmp::Ordering::Greater => return Self::i8_to_ordering(-*v),
                         }
                     }
-                    (Some(_), None) => return Self::i8_to_ordering(v.clone()),
-                    (None, Some(_)) => return Self::i8_to_ordering(-v.clone()),
+                    (Some(_), None) => return Self::i8_to_ordering(*v),
+                    (None, Some(_)) => return Self::i8_to_ordering(-*v),
                     (None, None) => continue,
                 }
             }

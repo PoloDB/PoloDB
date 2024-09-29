@@ -45,24 +45,21 @@ impl Handler for AggregateHandle {
         let pipeline = ctx.message.document_payload.get_array("pipeline")?;
         let mut pipeline_arr: Vec<Document> = vec![];
 
-        let mut index: usize = 0;
-        for doc in pipeline.into_iter() {
+        for (index, doc) in pipeline.into_iter().enumerate() {
             let raw_bson = doc?;
             let doc = raw_bson.as_document().ok_or(anyhow!("the {}th element of pipeline should be a doc", index))?;
             let d = bson::from_slice::<Document>(doc.as_bytes())?;
             pipeline_arr.push(d);
-
-            index += 1;
         }
 
         let session_opt = ctx.session.clone();
         let cursor = if let Some(session) = session_opt {
             let txn = session.get_transaction().ok_or(anyhow!("transaction not started"))?;
-            let collection = txn.collection::<Document>(&col_name);
+            let collection = txn.collection::<Document>(col_name);
             collection.aggregate(pipeline_arr).run()?
         } else {
             let db = ctx.app_context.db();
-            let collection = db.collection::<Document>(&col_name);
+            let collection = db.collection::<Document>(col_name);
             collection.aggregate(pipeline_arr).run()?
         };
 

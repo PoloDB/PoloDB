@@ -94,7 +94,7 @@ pub fn mk_invalid_query_field(name: String, path: String) -> Box<InvalidFieldStr
 }
 
 pub fn mk_invalid_aggregate_field(paths: &Vec<String>) -> Box<InvalidFieldStruct> {
-    let last = paths.last().map(|x| x.clone()).unwrap_or_default();
+    let last = paths.last().cloned().unwrap_or_default();
     let mut path = String::with_capacity(32);
 
     for item in paths {

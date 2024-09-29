@@ -72,7 +72,7 @@ impl AppContext {
 
     pub(crate) fn get_cursor(&self, cursor_id: i64) -> Option<Arc<Mutex<ClientCursor<Document>>>> {
         let cursors = self.inner.cursors.lock().unwrap();
-        cursors.get(&cursor_id).map(|c| c.clone())
+        cursors.get(&cursor_id).cloned()
     }
 
     pub(crate) fn remove_cursor(&self, cursor_ids: &[i64]) {
@@ -91,7 +91,7 @@ impl AppContext {
 
     pub(crate) fn get_session(&self, uuid: &Uuid) -> Option<SessionContext> {
         let session_ctx = self.inner.session_ctx.lock().unwrap();
-        session_ctx.get(&uuid).map(|s| s.clone())
+        session_ctx.get(uuid).cloned()
     }
 }
 

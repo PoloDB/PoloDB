@@ -72,7 +72,7 @@ impl<'b, 'c, 'd, 'e> IndexBuilder<'b, 'c, 'd, 'e> {
             op,
             &data_doc,
             self.col_name,
-            &pkey,
+            pkey,
             self.index_name,
             self.index_info,
             self.txn,
