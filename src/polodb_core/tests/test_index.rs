@@ -325,3 +325,41 @@ fn test_drop_index() {
         assert_eq!(metrics.find_by_index_count(), 0);
     });
 }
+
+#[test]
+fn test_issue_171() {
+    let db = prepare_db("test-issue-171").unwrap();
+
+    let col = db.collection::<Document>("teacher");
+
+    col.create_index(IndexModel {
+        keys: doc! {
+                "name": 1,
+            },
+        options: None,
+    }).unwrap();
+
+    col.insert_one(doc! {
+        "name": "David",
+        "age": 33,
+    }).unwrap();
+
+    col.insert_one(doc! {
+        "name": "Harry",
+        "age": 32,
+    }).unwrap();
+
+    let doc = col.find_one(doc! {
+        "name": "David"
+    }).unwrap().unwrap();
+
+    assert_eq!(doc.get_str("name").unwrap(), "David");
+
+    let docs:Vec<Document> = col.find(doc! {
+        "name": "David"
+    }).run().unwrap().into_iter().map(|cc| cc.unwrap()).collect();
+
+    assert_eq!(docs.len(), 1);
+
+    assert_eq!(docs[0].get_str("name").unwrap(), "David");
+}

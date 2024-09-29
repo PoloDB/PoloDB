@@ -18,6 +18,7 @@ use bson::Bson;
 use crate::db::RocksDBIterator;
 use crate::Result;
 use crate::transaction::TransactionInner;
+use crate::index::make_index_key_with_query_key;
 
 /// Cursor is struct pointing on
 /// a value on the kv engine
@@ -105,16 +106,10 @@ impl Cursor {
     }
 
     pub fn reset_by_index_value(&mut self, index_value: &Bson) -> Result<bool> {
-        let key_buffer = {
-            let mut key_buffer = self.prefix_bytes.clone();
-            let primary_key_buffer = crate::utils::bson::stacked_key([
-                index_value,
-            ])?;
-
-            key_buffer.extend_from_slice(&primary_key_buffer);
-
-            key_buffer
-        };
+        let key_buffer = make_index_key_with_query_key(
+            self.prefix_bytes.as_slice(),
+            index_value,
+        )?;
 
         self.kv_cursor.seek(key_buffer.as_slice());
 
