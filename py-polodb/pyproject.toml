@@ -22,6 +22,10 @@ pytest = "^8.3.2"
 flake8 = "^7.1.1"
 black = "^24.8.0"
 
+
 [build-system]
 requires = ["poetry-core", "maturin>=1,<2"]
 build-backend = "maturin"
+
+[tool.poetry.scripts]
+build-rust = "maturin develop"
