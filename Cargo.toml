@@ -1,9 +1,12 @@
 [workspace]
+resolver = "2"
 members = [
     "src/librocksdb-sys",
     "src/polodb",
     "src/polodb_core",
     "src/polodb_line_diff",
+    "bindings/c/polodb-c-exporter",
+    "examples/rust",
 ]
 
 exclude = ["build", "obj"]
