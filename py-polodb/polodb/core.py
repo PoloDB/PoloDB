@@ -42,3 +42,6 @@ class Collection:
 
     def find_one(self, filter: dict):
         return self.rust_collection.find_one(filter)
+
+    def find(self, filter: dict):
+        return self.rust_collection.find(filter)

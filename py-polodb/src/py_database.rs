@@ -72,6 +72,27 @@ impl PyCollection {
             ))),
         }
     }
+    pub fn find(&self, py: Python, filter: Py<PyDict>) -> PyResult<Option<PyObject>> {
+        // Convert PyDict to BSON Document
+        let filter_doc = convert_py_obj_to_document(filter.to_object(py).as_any())?;
+
+        // Call the Rust method `find_one`
+        match self.inner.find(filter_doc).run() {
+            Ok(result_doc) => {
+                // Convert BSON Document to Python Dict
+                let py_result: Vec<Py<PyDict>> = result_doc
+                    .map(|x| document_to_pydict(py, x.unwrap()).unwrap())
+                    .collect();
+                // let py_result = document_to_pydict(py, result_doc).unwrap();
+                Ok(Some(py_result.to_object(py)))
+            }
+            // Ok(None) => Ok(None), // Return None if no document is found
+            Err(err) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Find one error: {}",
+                err
+            ))),
+        }
+    }
 }
 impl From<Collection<Document>> for PyCollection {
     fn from(collection: Collection<Document>) -> PyCollection {
