@@ -1,3 +1,3 @@
-from .core import PoloDB
+from .core import PoloDB, Collection
 
-__all__ = ["PoloDB"]
+__all__ = ["PoloDB", "Collection"]
