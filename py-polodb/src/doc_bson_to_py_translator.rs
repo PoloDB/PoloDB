@@ -3,6 +3,24 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3::types::{PyAny, PyBool, PyBytes, PyFloat, PyList, PyString};
 
+pub fn convert_py_list_to_vec_document<'a>(py_list_obj: &'a Py<PyAny>) -> Vec<Document> {
+    Python::with_gil(|py| {
+        // Try to downcast the PyAny to a PyList
+        if let Ok(py_list) = py_list_obj.downcast_bound::<PyList>(py) {
+            // If downcast is successful, return an iterator over the list's items
+            let iter = py_list.iter().map(|item| {
+                let py_obj: Py<PyAny> = item.to_object(item.py());
+                // Convert each item (expected to be a dictionary) into a BSON document
+
+                convert_py_obj_to_document(&py_obj).unwrap()
+            });
+            Vec::from_iter(iter)
+        } else {
+            Vec::from_iter(std::iter::empty())
+        }
+    })
+}
+
 pub fn convert_py_obj_to_document(py_obj: &Py<PyAny>) -> PyResult<Document> {
     Python::with_gil(|py| {
         // Try to extract as a String and convert to BSON
