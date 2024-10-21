@@ -40,6 +40,9 @@ class Collection:
     def insert_one(self, entry: dict):
         return self.rust_collection.insert_one(entry)
 
+    def insert_many(self, entries: list[dict]):
+        return self.rust_collection.insert_many(entries)
+
     def find_one(self, filter: dict):
         return self.rust_collection.find_one(filter)
 
