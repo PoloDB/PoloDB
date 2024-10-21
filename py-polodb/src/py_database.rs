@@ -1,12 +1,12 @@
 use crate::doc_bson_to_py_translator::{
-    bson_to_py_obj, convert_py_obj_to_document, document_to_pydict,
+    bson_to_py_obj, convert_py_obj_to_document, document_to_pydict,convert_py_list_to_vec_document
 };
 use polodb_core::bson::Document;
 use polodb_core::{Collection, CollectionT, Database};
 use pyo3::exceptions::PyOSError;
 use pyo3::exceptions::PyRuntimeError; // Import PyRuntimeError for error handling
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
 use std::borrow::Borrow;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -20,6 +20,37 @@ pub struct PyCollection {
 impl PyCollection {
     pub fn name(&self) -> &str {
         self.inner.name()
+    }
+    pub fn insert_many(&self, doc: Py<PyList>) -> PyResult<PyObject> {
+        // Acquire the Python GIL (Global Interpreter Lock)
+        Python::with_gil(|py| {
+            // Now you can use `py` inside this block.
+
+            // Example: Create a Python object or interact with the Python runtime.
+            let bson_vec_docs: Vec<Document> =  convert_py_list_to_vec_document(doc.to_object(py).as_any());
+            // let bson_doc = convert_py_to_bson(doc);
+            match self.inner.insert_many(bson_vec_docs) {
+                Ok(result) => {
+                    // Create a Python object from the Rust result and return it
+                    let dict: Bound<'_, PyDict> = PyDict::new_bound(py);
+
+                    for (key, value) in &result.inserted_ids {
+                        dict.set_item(key, bson_to_py_obj(py, value)).unwrap();
+                    }
+                    // let py_inserted_id = bson_to_py_obj(py, &result.inserted_ids);
+                    // let dict: Bound<'_, PyDict> = PyDict::new_bound(py);
+                    // let dict_ref = dict.borrow();
+                    // dict_ref.set_item("inserted_id", py_inserted_id)?;
+                    Ok(dict.to_object(py))
+
+                    // Ok(Py::new(py, result)?.to_object(py))
+                }
+                Err(e) => {
+                    // Raise a Python exception on error
+                    Err(PyRuntimeError::new_err(format!("Insert error: {}", e)))
+                }
+            }
+        })
     }
     pub fn insert_one(&self, doc: Py<PyDict>) -> PyResult<PyObject> {
         // Acquire the Python GIL (Global Interpreter Lock)
