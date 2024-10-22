@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "polodb"
+version = "0.1.0"
+description = ""
+authors = ["SENHAJI RHAZI Hamza <hamza.senhajirhazi@gmail.com>"]
+readme = "README.md"
+packages = [{ include = "polodb" }]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
+pytest = "^8.3.2"
+flake8 = "^7.1.1"
+black = "^24.8.0"
+ipdb = "^0.13.13"
+
+
+[build-system]
+requires = ["poetry-core", "maturin>=1,<2"]
+build-backend = "maturin"
+
+[tool.poetry.scripts]
+build-rust = "maturin develop"
