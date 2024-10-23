@@ -40,8 +40,17 @@ class Collection:
     def insert_one(self, entry: dict):
         return self.rust_collection.insert_one(entry)
 
+    def insert_many(self, entry: dict):
+        return self.rust_collection.insert_many(entry)
+
     def find_one(self, filter: dict):
         return self.rust_collection.find_one(filter)
 
     def find(self, filter: dict):
         return self.rust_collection.find(filter)
+
+    def update_many(self, filter: dict, update_doc: dict):
+        return self.rust_collection.update_many(filter, update_doc)
+
+    def update_one(self, filter: dict, update_doc: dict):
+        return self.rust_collection.update_one(filter, update_doc)
