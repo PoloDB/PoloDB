@@ -1,6 +1,6 @@
-use crate::doc_bson_to_py_translator::{
+use crate::helper_type_translator::{
     bson_to_py_obj, convert_py_list_to_vec_document, convert_py_obj_to_document,
-    document_to_pydict, update_result_to_pydict,
+    delete_result_to_pydict, document_to_pydict, update_result_to_pydict,
 };
 use polodb_core::bson::Document;
 use polodb_core::{Collection, CollectionT, Database};
@@ -22,6 +22,7 @@ impl PyCollection {
     pub fn name(&self) -> &str {
         self.inner.name()
     }
+
     pub fn update_one(
         &self,
         py: Python,
@@ -95,6 +96,25 @@ impl PyCollection {
             }
         })
     }
+
+    pub fn count_documents(&self) -> PyResult<PyObject> {
+        // Acquire the Python GIL (Global Interpreter Lock)
+        Python::with_gil(|py| {
+            match self.inner.count_documents() {
+                Ok(result) => {
+                    Ok(result.into_py(py))
+                }
+                Err(e) => {
+                    // Raise a Python exception on error
+                    Err(PyRuntimeError::new_err(format!(
+                        "Count documents error: {}",
+                        e
+                    )))
+                }
+            }
+        })
+    }
+
     pub fn insert_one(&self, doc: Py<PyDict>) -> PyResult<PyObject> {
         // Acquire the Python GIL (Global Interpreter Lock)
         Python::with_gil(|py| {
@@ -117,6 +137,58 @@ impl PyCollection {
                 Err(e) => {
                     // Raise a Python exception on error
                     Err(PyRuntimeError::new_err(format!("Insert error: {}", e)))
+                }
+            }
+        })
+    }
+
+    pub fn delete_one(&self, filter: Py<PyDict>) -> PyResult<PyObject> {
+        // Acquire the Python GIL (Global Interpreter Lock)
+        // let filter_doc = convert_py_obj_to_document(filter.to_object(py).as_any())?;
+        Python::with_gil(|py| {
+            let bson_doc: Document = match convert_py_obj_to_document(filter.to_object(py).as_any())
+            {
+                Ok(d) => d,
+                Err(e) => return Err(PyRuntimeError::new_err(format!("Delete one : {}", e))),
+            };
+            // let bson_doc = convert_py_to_bson(doc);
+            match self.inner.delete_one(bson_doc) {
+                Ok(delete_result) => {
+                    // Create a Python object from the Rust result and return it
+                    let py_result = delete_result_to_pydict(py, delete_result).unwrap();
+                    Ok(py_result.to_object(py))
+
+                    // Ok(Py::new(py, result)?.to_object(py))
+                }
+                Err(e) => {
+                    // Raise a Python exception on error
+                    Err(PyRuntimeError::new_err(format!("Delete one error: {}", e)))
+                }
+            }
+        })
+    }
+
+    pub fn delete_many(&self, filter: Py<PyDict>) -> PyResult<PyObject> {
+        // Acquire the Python GIL (Global Interpreter Lock)
+        // let filter_doc = convert_py_obj_to_document(filter.to_object(py).as_any())?;
+        Python::with_gil(|py| {
+            let bson_doc: Document = match convert_py_obj_to_document(filter.to_object(py).as_any())
+            {
+                Ok(d) => d,
+                Err(e) => return Err(PyRuntimeError::new_err(format!("Delete many : {}", e))),
+            };
+
+            match self.inner.delete_many(bson_doc) {
+                Ok(delete_result) => {
+                    // Create a Python object from the Rust result and return it
+                    let py_result = delete_result_to_pydict(py, delete_result).unwrap();
+                    Ok(py_result.to_object(py))
+
+                    // Ok(Py::new(py, result)?.to_object(py))
+                }
+                Err(e) => {
+                    // Raise a Python exception on error
+                    Err(PyRuntimeError::new_err(format!("Delete one error: {}", e)))
                 }
             }
         })

@@ -93,6 +93,18 @@ pub fn convert_py_obj_to_bson(py_obj: &Py<PyAny>) -> PyResult<Bson> {
     })
 }
 
+pub fn delete_result_to_pydict(
+    py: Python,
+    delete_result: results::DeleteResult,
+) -> PyResult<Py<PyDict>> {
+    let py_dict = PyDict::new_bound(py);
+
+    // Insert matched_count and modified_count into the PyDict
+    py_dict.set_item("deleted_count", delete_result.deleted_count as i64)?;
+
+    Ok(py_dict.into())
+}
+
 pub fn update_result_to_pydict(
     py: Python,
     update_result: results::UpdateResult,
