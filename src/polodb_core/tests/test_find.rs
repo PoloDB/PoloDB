@@ -300,6 +300,18 @@ fn test_find_limit() {
     assert_eq!(result[0].get("name").unwrap().as_str().unwrap(), "apple");
     assert_eq!(result[1].get("name").unwrap().as_str().unwrap(), "banana");
     assert_eq!(result[2].get("name").unwrap().as_str().unwrap(), "orange");
+
+    // skip and limit
+    let result = fruits
+        .find(doc! {})
+        .skip(2)
+        .limit(2)
+        .run()
+        .unwrap()
+        .collect::<Result<Vec<Document>>>()
+        .unwrap();
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].get("name").unwrap().as_str().unwrap(), "orange");
 }
 
 #[test]
