@@ -3,7 +3,7 @@ use crate::helper_type_translator::{
     delete_result_to_pydict, document_to_pydict, update_result_to_pydict,
 };
 use polodb_core::bson::Document;
-use polodb_core::{Collection, CollectionT, Database};
+use polodb_core::{results, Collection, CollectionT, Database};
 use pyo3::exceptions::PyOSError;
 use pyo3::exceptions::PyRuntimeError; // Import PyRuntimeError for error handling
 use pyo3::prelude::*;
@@ -101,9 +101,7 @@ impl PyCollection {
         // Acquire the Python GIL (Global Interpreter Lock)
         Python::with_gil(|py| {
             match self.inner.count_documents() {
-                Ok(result) => {
-                    Ok(result.into_py(py))
-                }
+                Ok(result) => Ok(result.into_py(py)),
                 Err(e) => {
                     // Raise a Python exception on error
                     Err(PyRuntimeError::new_err(format!(
@@ -193,10 +191,30 @@ impl PyCollection {
             }
         })
     }
+
+    fn aggregate(&self, pipeline: Py<PyList>) -> PyResult<PyObject> {
+        Python::with_gil(|py: Python<'_>| {
+            // Now you can use `py` inside this block.
+            let pipeline_documents: Vec<Document> =
+                convert_py_list_to_vec_document(pipeline.to_object(py).as_any());
+            match self.inner.aggregate(pipeline_documents).run() {
+                Ok(agg_cursor) => {
+                    let vec_res: Vec<Py<PyDict>> = agg_cursor
+                        .map(|x| document_to_pydict(py, x.unwrap()).unwrap())
+                        .collect();
+                    Ok(vec_res.to_object(py))
+                }
+                Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                    "Error in Aggregate {}",
+                    e
+                ))),
+            }
+        })
+    }
+
     pub fn find_one(&self, py: Python, filter: Py<PyDict>) -> PyResult<Option<PyObject>> {
         // Convert PyDict to BSON Document
         let filter_doc = convert_py_obj_to_document(filter.to_object(py).as_any())?;
-
         // Call the Rust method `find_one`
         match self.inner.find_one(filter_doc) {
             Ok(Some(result_doc)) => {
