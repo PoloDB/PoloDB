@@ -854,9 +854,11 @@ impl Codegen {
         }
         let next_label = self.new_label();
 
-        for stage_item in &ctx.items {
-            self.emit_goto(DbOp::Call, stage_item.next_label);
+        if let Some(first_item) = ctx.items.first() {
+            self.emit_goto(DbOp::Call, first_item.next_label);
             self.emit_u32(1);
+        } else {
+            panic!("the first item of the pipeline is empty");
         }
 
         // the final pipeline item to emit the final result
