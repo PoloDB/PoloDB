@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-mod doc_bson_to_py_translator;
+mod helper_type_translator;
 mod py_database;
 
 use py_database::PyCollection;
