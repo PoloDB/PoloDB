@@ -1,5 +1,6 @@
 # If you already have [package] information in `Cargo.toml`, you can ignore
 # this section!
+
 [package]
 # `name` here is name of the package.
 name = "py-binding-polodb"
@@ -17,6 +18,8 @@ name = "rust_polodb"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# polodb_core = "5.1.0"
-polodb_core = { path = "../src/polodb_core", default-features = false  }
+# polodb-librocksdb-sys = { path = "../src/librocksdb-sys", version = "9.0.0-alpha.1", features = ["default", "mt_static"] }
+
+polodb_core = "5.1.3"
+# polodb_core = { path = "../src/polodb_core", default-features = false  }
 pyo3 = { version = "0.22.5", features = ["extension-module", "auto-initialize"] }
