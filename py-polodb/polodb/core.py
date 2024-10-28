@@ -1,4 +1,5 @@
 from rust_polodb import PyDatabase, PyCollection
+from typing import List
 
 
 class PoloDB:
@@ -62,3 +63,6 @@ class Collection:
 
     def len(self):
         return self.__rust_collection.count_documents()
+
+    def aggregate(self, pipeline: List[dict]):
+        return self.__rust_collection.aggregate(pipeline)
