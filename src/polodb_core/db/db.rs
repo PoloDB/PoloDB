@@ -39,6 +39,7 @@ pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 /// You can use [`Database::create_collection`] to create a data collection.
 /// To obtain an exist collection, use [`Database::collection`],
 ///
+#[derive(Clone)]
 pub struct Database {
     inner: Arc<DatabaseInner>,
 }
