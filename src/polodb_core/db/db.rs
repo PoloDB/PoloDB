@@ -16,10 +16,13 @@
 mod redb {
     use redb::{Builder, Database};
 
+    use crate::transaction::redb::{ReDBTransaction, TransactionStates};
     use crate::{backend::Backend, errors::Error};
     struct ReDB(Database);
 
     impl Backend for ReDB {
+        type Transaction = ReDBTransaction;
+
         fn try_open(path: &std::path::Path) -> super::Result<Self> {
             let db = Database::create(path).map_err(|_| Error::DbNotReady)?;
             Ok(Self(db))
@@ -30,6 +33,11 @@ mod redb {
             _config: crate::Config,
         ) -> super::Result<Self> {
             Self::try_open(path)
+        }
+
+        fn begin_transaction(&self) -> super::Result<Self::Transaction> {
+            let transaction = self.0.begin_write().map_err(|_| Error::DbNotReady)?;
+            Ok(ReDBTransaction(TransactionStates::Write(transaction)))
         }
     }
 }
@@ -122,6 +130,7 @@ impl Database {
         Collection::new(Arc::downgrade(&self.inner), col_name)
     }
 
+    #[cfg(not(feature = "redb"))]
     pub fn start_transaction(&self) -> Result<Transaction> {
         let mut inner = self.inner.start_transaction()?;
         inner.set_auto_commit(false);
