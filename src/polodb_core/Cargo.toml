@@ -28,6 +28,7 @@ uuid = { version = "1.10.0", features = [
 thiserror = "1.0.63"
 indexmap = { version = "2.4.0", features = ["serde"] }
 regex = "1.10"
+redb = { version = "2.4.0", optional = true }
 polodb-librocksdb-sys = { path = "../librocksdb-sys", version = "9.0.0-alpha.1", features = ["default", "mt_static"] }
 
 [dev-dependencies]
@@ -36,3 +37,6 @@ csv = "1.2.1"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["fileapi", "namedpipeapi"] }
+
+[features]
+redb = ["dep:redb"]
