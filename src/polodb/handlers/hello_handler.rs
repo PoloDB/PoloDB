@@ -33,7 +33,9 @@ impl HelloHandler {
 #[async_trait]
 impl Handler for HelloHandler {
     fn test(&self, doc: &RawDocumentBuf) -> Result<bool> {
-        Ok(doc.get("helloOk")?.is_some() || doc.get("ismaster")?.is_some())
+        Ok(doc.get("helloOk")?.is_some()
+            || doc.get("ismaster")?.is_some()
+            || doc.get("isMaster")?.is_some())
     }
 
     async fn handle(&self, ctx: &HandleContext) -> Result<Reply> {
