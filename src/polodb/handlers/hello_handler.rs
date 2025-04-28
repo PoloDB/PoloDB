@@ -32,10 +32,8 @@ impl HelloHandler {
 
 #[async_trait]
 impl Handler for HelloHandler {
-
     fn test(&self, doc: &RawDocumentBuf) -> Result<bool> {
-        let val = doc.get("helloOk")?;
-        Ok(val.is_some())
+        Ok(doc.get("helloOk")?.is_some() || doc.get("ismaster")?.is_some())
     }
 
     async fn handle(&self, ctx: &HandleContext) -> Result<Reply> {
@@ -43,8 +41,9 @@ impl Handler for HelloHandler {
         debug!("HelloHandler::handle {}", req_id);
         let body = rawdoc! {
             "ok": 1,
+            "ismaster": true,
             "connectionId": ctx.conn_id as i64,
-            "minWireVersion": 6,
+            "minWireVersion": 7,
             "maxWireVersion": 21,
             "maxBsonObjectSize": 16 * 1024 * 1024,
             "maxMessageSizeBytes": 48000000,
