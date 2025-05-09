@@ -8,6 +8,7 @@ mod delete_handler;
 mod commit_transaction;
 mod abort_transaction;
 mod aggregate_handler;
+mod ping_handler;
 
 use std::sync::Arc;
 use bson::RawDocumentBuf;
@@ -26,6 +27,7 @@ pub(crate) use delete_handler::DeleteHandler;
 pub(crate) use commit_transaction::CommitTransactionHandler;
 pub(crate) use abort_transaction::AbortTransactionHandler;
 pub(crate) use aggregate_handler::AggregateHandle;
+pub(crate) use ping_handler::PingHandler;
 use crate::app_context::AppContext;
 use crate::session_context::SessionContext;
 
@@ -60,5 +62,6 @@ pub(crate) fn make_handlers() -> Vec<Arc<dyn Handler>> {
         HelloHandler::new(),
         CommitTransactionHandler::new(),
         AbortTransactionHandler::new(),
+        PingHandler::new(),
     ]
 }
