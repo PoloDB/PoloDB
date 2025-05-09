@@ -138,32 +138,33 @@
 
 extern crate core;
 
-mod vm;
-mod errors;
 mod cursor;
+mod errors;
+mod vm;
 
-mod db;
-mod meta_doc_helper;
+mod backend;
 mod config;
+mod db;
 mod macros;
-mod transaction;
+mod meta_doc_helper;
 pub mod options;
 pub mod results;
+mod transaction;
 
-pub mod test_utils;
-mod metrics;
-mod utils;
-mod index;
-mod coll;
 pub mod action;
+mod coll;
+mod index;
+mod metrics;
+pub mod test_utils;
+mod utils;
 
-pub use db::{Database, Result};
 pub use coll::{Collection, CollectionT, TransactionalCollection};
 pub use config::{Config, ConfigBuilder};
-pub use transaction::Transaction;
 pub use db::client_cursor::ClientCursor;
+pub use db::{Database, Result};
 pub use errors::Error;
-pub use metrics::Metrics;
 pub use index::{IndexModel, IndexOptions};
+pub use metrics::Metrics;
+pub use transaction::Transaction;
 
 pub extern crate bson;

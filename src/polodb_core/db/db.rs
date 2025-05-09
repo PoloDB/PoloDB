@@ -12,15 +12,45 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::Path;
-use serde::Serialize;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use crate::errors::Error;
-use crate::{Config, Transaction};
+#[cfg(feature = "redb")]
+mod redb {
+    use redb::{Builder, Database};
+
+    use crate::transaction::redb::{ReDBTransaction, TransactionStates};
+    use crate::{backend::Backend, errors::Error};
+    struct ReDB(Database);
+
+    impl Backend for ReDB {
+        type Transaction = ReDBTransaction;
+
+        fn try_open(path: &std::path::Path) -> super::Result<Self> {
+            let db = Database::create(path).map_err(|_| Error::DbNotReady)?;
+            Ok(Self(db))
+        }
+
+        fn try_open_with_config(
+            path: &std::path::Path,
+            _config: crate::Config,
+        ) -> super::Result<Self> {
+            Self::try_open(path)
+        }
+
+        fn begin_transaction(&self) -> super::Result<Self::Transaction> {
+            let transaction = self.0.begin_write().map_err(|_| Error::DbNotReady)?;
+            Ok(ReDBTransaction(TransactionStates::Write(transaction)))
+        }
+    }
+}
+
 use super::db_inner::DatabaseInner;
 use crate::coll::Collection;
+use crate::errors::Error;
 use crate::metrics::Metrics;
+use crate::{Config, Transaction};
+use serde::Serialize;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 
@@ -36,7 +66,7 @@ pub(crate) static SHOULD_LOG: AtomicBool = AtomicBool::new(false);
 ///
 /// # Collection
 /// A [`Collection`] is a dataset of a kind of data.
-/// You can use [`Database::create_collection`] to create a data collection.
+/// You can  se [`Database::create_collection`] to create a data collection.
 /// To obtain an exist collection, use [`Database::collection`],
 ///
 #[derive(Clone)]
@@ -59,20 +89,20 @@ impl Database {
     }
 
     #[deprecated]
-    pub fn open_file<P: AsRef<Path>>(path: P) -> Result<Database>  {
+    pub fn open_file<P: AsRef<Path>>(path: P) -> Result<Database> {
         Database::open_path(path)
     }
 
     #[deprecated]
-    pub fn open_file_with_config<P: AsRef<Path>>(path: P, config: Config) -> Result<Database>  {
+    pub fn open_file_with_config<P: AsRef<Path>>(path: P, config: Config) -> Result<Database> {
         Database::open_path_with_config(path, config)
     }
 
-    pub fn open_path<P: AsRef<Path>>(path: P) -> Result<Database>  {
+    pub fn open_path<P: AsRef<Path>>(path: P) -> Result<Database> {
         Database::open_path_with_config(path, Config::default())
     }
 
-    pub fn open_path_with_config<P: AsRef<Path>>(path: P, config: Config) -> Result<Database>  {
+    pub fn open_path_with_config<P: AsRef<Path>>(path: P, config: Config) -> Result<Database> {
         let inner = DatabaseInner::open_file(path.as_ref(), config)?;
 
         Ok(Database {
@@ -101,6 +131,7 @@ impl Database {
         Collection::new(Arc::downgrade(&self.inner), col_name)
     }
 
+    #[cfg(not(feature = "redb"))]
     pub fn start_transaction(&self) -> Result<Transaction> {
         let mut inner = self.inner.start_transaction()?;
         inner.set_auto_commit(false);
@@ -112,5 +143,4 @@ impl Database {
         let txn = self.inner.start_transaction()?;
         self.inner.list_collection_names_with_session(&txn)
     }
-
 }
