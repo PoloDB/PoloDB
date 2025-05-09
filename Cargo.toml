@@ -9,3 +9,6 @@ members = [
 ]
 
 exclude = ["build", "obj"]
+
+[patch.crates-io]
+polodb-librocksdb-sys = { path = "src/librocksdb-sys" }
