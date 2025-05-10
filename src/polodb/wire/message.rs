@@ -101,11 +101,15 @@ impl Message {
         if header.op_code == OpCode::Compressed {
             return Self::read_op_compressed_from(reader, &header).await;
         }
+        if header.op_code == OpCode::Query {
+            return Self::read_from_op_query(reader, &header).await;
+        }
 
         Err(anyhow!(
-            "Invalid op code, expected {} or {} and got {}",
+            "Invalid op code, expected {}, {} or {} and got {}",
             OpCode::Message as u32,
             OpCode::Compressed as u32,
+            OpCode::Query as u32,
             header.op_code as u32
         ))
     }
@@ -121,6 +125,62 @@ impl Message {
         let reader = buf.as_slice();
 
         Self::read_op_common(reader, length_remaining.get()?, header)
+    }
+
+    async fn read_from_op_query<T: AsyncRead + Unpin + Send>(
+        mut reader: T,
+        header: &Header,
+    ) -> Result<Self> {
+        // These OP_QUERY messages are still used by MongoDB drivers
+        // to check the server's hello response during the handshake.
+        // Let's implement as much of it as we can for compatibility.
+        let length = Checked::<usize>::try_from(header.length)?;
+        let length_remaining = length - Header::LENGTH;
+        let mut buf = vec![0u8; length_remaining.get()?];
+        reader.read_exact(&mut buf).await?;
+
+        let mut buf = buf.as_slice();
+        buf.read_u32_sync()?; // legacy flags
+
+        let mut full_collection_name = Vec::<u8>::new();
+
+        loop {
+            let c: u8 = buf.read_u8_sync()?;
+            full_collection_name.push(c);
+
+            if c == 0 {
+                break;
+            }
+        }
+
+        let number_to_skip = buf.read_i32_sync()?;
+
+        if number_to_skip != 0 {
+            return Err(anyhow!(
+                "Values of number_to_skip that are not 0 are not supported: requested {}",
+                number_to_skip
+            ));
+        }
+
+        let number_to_return = buf.read_i32_sync()?;
+
+        if number_to_return != -1 {
+            return Err(anyhow!(
+                "Values of number_to_return that are not -1 are not supported: requested {}",
+                number_to_return
+            ));
+        }
+
+        let query = bson_util::read_document_bytes(&mut buf)?;
+
+        Ok(Message {
+            response_to: header.response_to,
+            flags: MessageFlags::empty(),
+            document_payload: RawDocumentBuf::from_bytes(query)?,
+            document_sequences: Vec::new(),
+            checksum: None,
+            request_id: Some(header.request_id),
+        })
     }
 
     async fn read_op_compressed_from<T: AsyncRead + Unpin + Send>(
