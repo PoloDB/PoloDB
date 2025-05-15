@@ -1,4 +1,13 @@
 
+# 5.1.4
+
+- Improve mongodb compatibility
+  - #208
+  - #207
+  - #206
+- Add `Clone` for `Database`
+  - #199
+
 # 5.1.3
 
 - Fix #187

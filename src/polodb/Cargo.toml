@@ -1,6 +1,6 @@
 [package]
 name = "polodb"
-version = "5.1.3"
+version = "5.1.4"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 repository = "https://github.com/PoloDB/PoloDB"
 description = "The server of PoloDB, compatible with MongoDB"
