@@ -101,13 +101,11 @@ fn build_rocksdb() {
         .filter(|file| !matches!(*file, "util/build_version.cc"))
         .collect::<Vec<&'static str>>();
 
-    if let (true, Ok(target_feature_value)) = (
-        target.contains("x86_64"),
-        env::var("CARGO_CFG_TARGET_FEATURE"),
-    ) {
+    if target.contains("x86_64") {
         // This is needed to enable hardware CRC32C. Technically, SSE 4.2 is
         // only available since Intel Nehalem (about 2010) and AMD Bulldozer
         // (about 2011).
+        let target_feature_value = env::var("CARGO_CFG_TARGET_FEATURE").unwrap_or_default();
         let target_features: Vec<_> = target_feature_value.split(',').collect();
 
         if target_features.contains(&"sse2") {
@@ -132,6 +130,11 @@ fn build_rocksdb() {
         }
         if !target.contains("android") && target_features.contains(&"pclmulqdq") {
             config.flag_if_supported("-mpclmul");
+        } else {
+            // RocksDB 9 assumes AVX implies PCLMUL. That is not true for all
+            // x86-64 targets (or for custom CXXFLAGS), so explicitly disable
+            // its PCLMUL implementation unless Cargo enables the feature.
+            config.define("NO_PCLMUL", None);
         }
     }
 
@@ -265,6 +268,12 @@ fn build_rocksdb() {
     config.file("build_version.cc");
 
     config.cpp(true);
+    if !target.contains("windows") {
+        // Some RocksDB 9 headers use fixed-width integer types without
+        // including <cstdint> directly. Newer standard libraries no longer
+        // provide those declarations transitively in every translation unit.
+        config.flag("-include").flag("cstdint");
+    }
     config.flag_if_supported("-std=c++17");
     config.compile("librocksdb.a");
 }
