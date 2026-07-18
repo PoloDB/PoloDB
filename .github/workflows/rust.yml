@@ -130,10 +130,10 @@ jobs:
           python -m pytest python-tests
 
   python-bindings-msrv:
-    name: Python Bindings (Rust 1.83 MSRV)
+    name: Python Bindings (Rust 1.88 MSRV)
     runs-on: ubuntu-latest
     env:
-      RUSTUP_TOOLCHAIN: 1.83.0
+      RUSTUP_TOOLCHAIN: 1.88.0
     steps:
       - uses: actions/checkout@v6
         with:
@@ -143,7 +143,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Rust 1.83
+      - name: Install Rust 1.88
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
 
       - uses: actions/cache@v5
@@ -154,7 +154,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-rust-1.83-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-rust-1.88-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Check Python bindings at their Rust MSRV
         run: cargo check --locked -p py-binding-polodb

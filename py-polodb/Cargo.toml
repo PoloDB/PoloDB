@@ -6,7 +6,7 @@ name = "py-binding-polodb"
 # these are good defaults:
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.83"
+rust-version = "1.88"
 
 [lib]
 # The name of the native library. This is the name which will be used in Python to import the
