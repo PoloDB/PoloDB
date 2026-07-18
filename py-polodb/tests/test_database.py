@@ -69,9 +69,7 @@ def test_update_results_and_persisted_values(db):
         ]
     )
 
-    update_one = collection.update_one(
-        {"name": "Alice"}, {"$set": {"active": True}}
-    )
+    update_one = collection.update_one({"name": "Alice"}, {"$set": {"active": True}})
     assert update_one == {"matched_count": 1, "modified_count": 1}
     assert collection.find_one({"name": "Alice"})["active"] is True
 
