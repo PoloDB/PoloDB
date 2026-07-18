@@ -13,19 +13,17 @@
 // limitations under the License.
 
 use crate::cursor::Cursor;
-use crate::errors::{
-    FieldTypeUnexpectedStruct, RegexError, UnexpectedTypeForOpStruct,
-};
-use crate::index::{IndexHelper, IndexHelperOperation, make_index_key_with_query_key};
+use crate::errors::{FieldTypeUnexpectedStruct, UnexpectedTypeForOpStruct};
+use crate::index::{make_index_key_with_query_key, IndexHelper, IndexHelperOperation};
 use crate::transaction::TransactionInner;
 use crate::vm::op::{generic_cmp, DbOp};
+use crate::vm::query_matcher::{field_path_value, matches_in, matches_regex};
+use crate::vm::vm_external_func::VmExternalFuncStatus;
 use crate::vm::SubProgram;
 use crate::{Error, Metrics, Result};
 use bson::{Bson, Document};
-use regex::RegexBuilder;
 use std::cell::Cell;
 use std::cmp::Ordering;
-use crate::vm::vm_external_func::VmExternalFuncStatus;
 
 macro_rules! try_vm {
     ($self:ident, $action:expr) => {
@@ -205,10 +203,7 @@ impl VM {
         Ok(true)
     }
 
-    fn read_index_value_by_index_key(
-        &mut self,
-        index_key: &[u8],
-    ) -> Result<Option<Bson>> {
+    fn read_index_value_by_index_key(&mut self, index_key: &[u8]) -> Result<Option<Bson>> {
         let slices = crate::utils::bson::split_stacked_keys(index_key)?;
         let pkey = slices.last().expect("pkey must exist");
 
@@ -252,7 +247,7 @@ impl VM {
             );
 
             self.r0 = 1;
-            return Ok(())
+            return Ok(());
         }
 
         self.r0 = 0;
@@ -270,7 +265,8 @@ impl VM {
 
         let index_value = self.index_value.as_ref().expect("index_value must exist");
 
-        let key_buffer = make_index_key_with_query_key(cursor.prefix_bytes.as_slice(), index_value)?;
+        let key_buffer =
+            make_index_key_with_query_key(cursor.prefix_bytes.as_slice(), index_value)?;
 
         let current_key = current_key.unwrap();
         if !current_key.starts_with(key_buffer.as_slice()) {
@@ -462,7 +458,8 @@ impl VM {
             self.stack[frame.stack_begin_pos + i] = self.stack[clone_start_pos + i].clone();
         }
 
-        self.stack.resize(frame.stack_begin_pos + return_size, Bson::Null);
+        self.stack
+            .resize(frame.stack_begin_pos + return_size, Bson::Null);
 
         self.reset_location(frame.return_pos as u32);
     }
@@ -478,7 +475,7 @@ impl VM {
             Some(Bson::Double(d)) => {
                 *d += 1.0;
             }
-            _ => ()
+            _ => (),
         }
     }
 
@@ -631,7 +628,7 @@ impl VM {
                                     0
                                 }
                             }
-                            _ => panic!("store r0 failed")
+                            _ => panic!("store r0 failed"),
                         };
                         self.pc = self.pc.add(1);
                     }
@@ -674,6 +671,21 @@ impl VM {
                                 self.reset_location(location);
                             }
                         }
+                    }
+
+                    DbOp::GetFieldOrNull => {
+                        let key_stat_id = self.pc.add(1).cast::<u32>().read();
+                        let key = self.borrow_static(key_stat_id as usize);
+                        let key_name = key.as_str().unwrap();
+                        let value = self
+                            .stack
+                            .last()
+                            .and_then(Bson::as_document)
+                            .and_then(|document| field_path_value(document, key_name))
+                            .unwrap_or(Bson::Null);
+
+                        self.stack.push(value);
+                        self.pc = self.pc.add(5);
                     }
 
                     DbOp::UnsetField => {
@@ -813,15 +825,8 @@ impl VM {
                         let top1 = &self.stack[self.stack.len() - 1];
                         let top2 = &self.stack[self.stack.len() - 2];
 
-                        self.r0 = 0;
-
-                        for item in top1.as_array().unwrap().iter() {
-                            let cmp_result = crate::utils::bson::value_cmp(top2, item);
-                            if let Ok(Ordering::Equal) = cmp_result {
-                                self.r0 = 1;
-                                break;
-                            }
-                        }
+                        let matches = try_vm!(self, matches_in(top2, top1.as_array().unwrap()));
+                        self.r0 = i32::from(matches);
 
                         self.pc = self.pc.add(1);
                     }
@@ -836,62 +841,19 @@ impl VM {
                         let val1 = &self.stack[self.stack.len() - 2];
                         let val2 = &self.stack[self.stack.len() - 1];
 
-                        self.r0 = 0;
-
-                        if let Bson::RegularExpression(re) = val2 {
-                            let mut re_build = RegexBuilder::new(re.pattern.as_str());
-                            for char in re.options.chars() {
-                                match char {
-                                    'i' => {
-                                        re_build.case_insensitive(true);
-                                    }
-                                    'm' => {
-                                        re_build.multi_line(true);
-                                    }
-                                    's' => {
-                                        re_build.dot_matches_new_line(true);
-                                    }
-                                    'u' => {
-                                        re_build.unicode(true);
-                                    }
-                                    'U' => {
-                                        re_build.swap_greed(true);
-                                    }
-                                    'x' => {
-                                        re_build.ignore_whitespace(true);
-                                    }
-                                    _ => {
-                                        return Err(Error::from(RegexError {
-                                            error: format!("unknown regex option: {}", char),
-                                            expression: re.pattern.clone(),
-                                            options: re.options.clone(),
-                                        }));
-                                    }
-                                }
+                        let matches = match val2 {
+                            Bson::RegularExpression(expression) => {
+                                try_vm!(self, matches_regex(val1, expression))
                             }
-
-                            let re_build = re_build.build().map_err(|err| {
-                                Error::from(RegexError {
-                                    error: format!("regex build error: {err}"),
-                                    expression: re.pattern.clone(),
-                                    options: re.options.clone(),
-                                })
-                            })?;
-
-                            if re_build.is_match(&val1.to_string()) {
-                                self.r0 = 1;
-                            }
-                        }
+                            _ => false,
+                        };
+                        self.r0 = i32::from(matches);
 
                         self.pc = self.pc.add(1);
                     }
 
-                    DbOp::Not =>{
-                        self.r0 = if self.r0 == 0 {
-                            1
-                        } else {
-                            0
-                        };
+                    DbOp::Not => {
+                        self.r0 = if self.r0 == 0 { 1 } else { 0 };
 
                         self.pc = self.pc.add(1);
                     }
@@ -960,7 +922,8 @@ impl VM {
                         let params = &self.stack[self.stack.len() - size_of_param..];
                         let result = try_vm!(self, func.call(params));
                         // pop params
-                        self.stack.resize(self.stack.len() - size_of_param, Bson::Null);
+                        self.stack
+                            .resize(self.stack.len() - size_of_param, Bson::Null);
                         self.r0 = match result {
                             VmExternalFuncStatus::Continue => {
                                 self.stack.push(Bson::Null);
@@ -991,11 +954,7 @@ impl VM {
                         let id = self.pc.add(1).cast::<u32>().read();
                         let func = &self.program.external_funcs[id as usize];
 
-                        self.r0 = if func.is_completed() {
-                            1
-                        } else {
-                            0
-                        };
+                        self.r0 = if func.is_completed() { 1 } else { 0 };
 
                         self.pc = self.pc.add(5);
                     }
@@ -1011,7 +970,8 @@ impl VM {
 
                     DbOp::IfFalseRet => {
                         let return_size = self.pc.add(1).cast::<u32>().read() as usize;
-                        if self.r0 == 0 {  // false
+                        if self.r0 == 0 {
+                            // false
                             self.ret(return_size);
                         } else {
                             self.pc = self.pc.add(5);

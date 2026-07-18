@@ -12,21 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 use super::label::{JumpTableRecord, Label, LabelSlot};
 use crate::coll::collection_info::CollectionSpecification;
-use crate::errors::{mk_invalid_query_field};
+use crate::errors::mk_invalid_query_field;
 use crate::index::INDEX_PREFIX;
-use crate::vm::op::DbOp;
-use crate::vm::subprogram::SubProgramIndexItem;
-use crate::vm::SubProgram;
-use crate::{Error, Result};
-use bson::spec::{BinarySubtype, ElementType};
-use bson::{Array, Binary, Bson, Document};
 use crate::vm::aggregation_codegen_context::{AggregationCodeGenContext, PipelineItem};
 use crate::vm::global_variable::{GlobalVariable, GlobalVariableSlot};
+use crate::vm::op::DbOp;
 use crate::vm::operators::OpRegistry;
-use crate::vm::update_operators::{IncOperator, MaxOperator, MinOperator, MulOperator, PopOperator, PushOperator, RenameOperator, SetOperator, UnsetOperator, UpdateOperator};
+use crate::vm::query_matcher::validate_in_candidates;
+use crate::vm::subprogram::SubProgramIndexItem;
+use crate::vm::update_operators::{
+    IncOperator, MaxOperator, MinOperator, MulOperator, PopOperator, PushOperator, RenameOperator,
+    SetOperator, UnsetOperator, UpdateOperator,
+};
 use crate::vm::vm_add_fields::VmFuncAddFields;
 use crate::vm::vm_count::VmFuncCount;
 use crate::vm::vm_external_func::VmExternalFunc;
@@ -35,6 +34,10 @@ use crate::vm::vm_limit::VmFuncLimit;
 use crate::vm::vm_skip::VmFuncSkip;
 use crate::vm::vm_sort::VmFuncSort;
 use crate::vm::vm_unset::VmFuncUnset;
+use crate::vm::SubProgram;
+use crate::{Error, Result};
+use bson::spec::{BinarySubtype, ElementType};
+use bson::{Array, Binary, Bson, Document};
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
@@ -83,11 +86,19 @@ impl Codegen {
 
     #[inline]
     #[allow(dead_code)]
-    pub(super) fn new_global_variable_with_name(&mut self, name: String, init_value: Bson) -> Result<GlobalVariable> {
+    pub(super) fn new_global_variable_with_name(
+        &mut self,
+        name: String,
+        init_value: Bson,
+    ) -> Result<GlobalVariable> {
         self.new_global_variable_impl(init_value, Some(name.into_boxed_str()))
     }
 
-    fn new_global_variable_impl(&mut self, init_value: Bson, name: Option<Box<str>>) -> Result<GlobalVariable> {
+    fn new_global_variable_impl(
+        &mut self,
+        init_value: Bson,
+        name: Option<Box<str>>,
+    ) -> Result<GlobalVariable> {
         let id = self.program.global_variables.len() as u32;
         self.program.global_variables.push(GlobalVariableSlot {
             pos: 0,
@@ -424,16 +435,11 @@ impl Codegen {
         if query_doc.is_empty() {
             self.emit(DbOp::StoreR0_2);
             self.emit_u8(1);
-            return Ok(())
+            return Ok(());
         }
         for (key, value) in query_doc.iter() {
             crate::path_hint!(self, key.clone(), {
-                self.emit_query_tuple(
-                    key,
-                    value,
-                    result_label,
-                    not_found_label,
-                )?;
+                self.emit_query_tuple(key, value, result_label, not_found_label)?;
             });
         }
 
@@ -466,23 +472,14 @@ impl Codegen {
             let path_msg = format!("[{}]", index);
             crate::path_hint!(self, path_msg, {
                 let item_doc = crate::try_unwrap_document!("$and", item_doc_value);
-                self.emit_standard_query_doc(
-                    item_doc,
-                    result_label,
-
-                    not_found_label,
-                )?;
+                self.emit_standard_query_doc(item_doc, result_label, not_found_label)?;
             });
         }
 
         Ok(())
     }
 
-    fn emit_logic_or(
-        &mut self,
-        arr: &Array,
-        ret_label: Label,
-    ) -> Result<()> {
+    fn emit_logic_or(&mut self, arr: &Array, ret_label: Label) -> Result<()> {
         let cmp_label = self.new_label();
         self.emit_goto(DbOp::Goto, cmp_label);
 
@@ -496,11 +493,7 @@ impl Codegen {
                 let ret_label = self.new_label();
 
                 self.emit_label(query_label);
-                self.emit_standard_query_doc(
-                    item_doc,
-                    ret_label,
-                    ret_label
-                )?;
+                self.emit_standard_query_doc(item_doc, ret_label, ret_label)?;
 
                 self.emit_label(ret_label);
                 self.emit_ret(0);
@@ -532,19 +525,12 @@ impl Codegen {
             match key {
                 "$and" => {
                     let sub_arr = crate::try_unwrap_array!("$and", value);
-                    self.emit_logic_and(
-                        sub_arr.as_ref(),
-                        result_label,
-                        not_found_label,
-                    )?;
+                    self.emit_logic_and(sub_arr.as_ref(), result_label, not_found_label)?;
                 }
 
                 "$or" => {
                     let sub_arr = crate::try_unwrap_array!("$or", value);
-                    self.emit_logic_or(
-                        sub_arr.as_ref(),
-                        not_found_label,
-                    )?;
+                    self.emit_logic_or(sub_arr.as_ref(), not_found_label)?;
                 }
 
                 _ => {
@@ -557,12 +543,7 @@ impl Codegen {
         } else {
             match value {
                 Bson::Document(doc) => {
-                    return self.emit_query_tuple_document(
-                        key,
-                        doc,
-                        false,
-                        not_found_label,
-                    );
+                    return self.emit_query_tuple_document(key, doc, false, not_found_label);
                 }
 
                 Bson::Array(_) => {
@@ -601,11 +582,50 @@ impl Codegen {
         slices.len()
     }
 
+    fn get_field_or_null(&mut self, key: &str) -> usize {
+        let key_static_id = self.push_static(key.into());
+        self.emit(DbOp::GetFieldOrNull);
+        self.emit_u32(key_static_id);
+        1
+    }
+
     fn emit_logical(&mut self, op: DbOp, is_in_not: bool) {
         self.emit(op);
         if is_in_not {
             self.emit(DbOp::Not);
         }
+    }
+
+    fn validate_in_operand<'a>(&self, value: &'a Bson) -> Result<&'a Array> {
+        let values = match value {
+            Bson::Array(values) => values,
+            _ => {
+                return Err(Error::InvalidField(mk_invalid_query_field(
+                    self.last_key().into(),
+                    self.gen_path(),
+                )))
+            }
+        };
+
+        if values.iter().any(|value| {
+            matches!(
+                value,
+                Bson::Document(document)
+                    if document
+                        .keys()
+                        .next()
+                        .is_some_and(|key| key.starts_with('$'))
+                        && !(document.contains_key("$ref") && document.contains_key("$id"))
+            )
+        }) {
+            return Err(Error::InvalidField(mk_invalid_query_field(
+                self.last_key().into(),
+                self.gen_path(),
+            )));
+        }
+
+        validate_in_candidates(values)?;
+        Ok(values)
     }
 
     fn emit_query_tuple_document_kv(
@@ -659,17 +679,9 @@ impl Codegen {
 
             // check the value is array
             "$in" => {
-                match sub_value {
-                    Bson::Array(_) => (),
-                    _ => {
-                        return Err(Error::InvalidField(mk_invalid_query_field(
-                            self.last_key().into(),
-                            self.gen_path(),
-                        )))
-                    }
-                }
+                self.validate_in_operand(sub_value)?;
 
-                let field_size = self.recursively_get_field(key, not_found_label);
+                let field_size = self.get_field_or_null(key);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
@@ -723,23 +735,15 @@ impl Codegen {
             }
 
             "$nin" => {
-                match sub_value {
-                    Bson::Array(_) => (),
-                    _ => {
-                        return Err(Error::InvalidField(mk_invalid_query_field(
-                            self.last_key().into(),
-                            self.gen_path(),
-                        )))
-                    }
-                }
+                self.validate_in_operand(sub_value)?;
 
-                let field_size = self.recursively_get_field(key, not_found_label);
+                let field_size = self.get_field_or_null(key);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit_logical(DbOp::In, is_in_not);
+                self.emit_logical(DbOp::In, !is_in_not);
 
-                self.emit_goto(DbOp::IfTrue, not_found_label);
+                self.emit_goto(DbOp::IfFalse, not_found_label);
 
                 self.emit(DbOp::Pop2);
                 self.emit_u32((field_size + 1) as u32);
@@ -846,7 +850,11 @@ impl Codegen {
     // There are two stage of compiling pipeline
     // 1. Generate the layout code of the pipeline
     // 2. Generate the implementation code of the pipeline
-    pub fn emit_aggregation_pipeline(&mut self, ctx: &mut AggregationCodeGenContext, pipeline: &[Document]) -> Result<()> {
+    pub fn emit_aggregation_pipeline(
+        &mut self,
+        ctx: &mut AggregationCodeGenContext,
+        pipeline: &[Document],
+    ) -> Result<()> {
         if pipeline.is_empty() {
             self.emit(DbOp::ResultRow);
             self.emit(DbOp::Pop);
@@ -917,36 +925,39 @@ impl Codegen {
                         let count_name = match value {
                             Bson::String(s) => s,
                             _ => {
-                                return Err(Error::InvalidAggregationStage(Box::new(stage.clone())));
+                                return Err(Error::InvalidAggregationStage(Box::new(
+                                    stage.clone(),
+                                )));
                             }
                         };
 
                         let next_fun = ctx.items[index + 1].next_label;
-                        let external_func: Box<dyn VmExternalFunc> = Box::new(VmFuncCount::new(count_name.clone()));
+                        let external_func: Box<dyn VmExternalFunc> =
+                            Box::new(VmFuncCount::new(count_name.clone()));
                         self.emit_external_func(external_func, stage_ctx_item, next_fun);
                     }
                     "$group" => {
                         let next_fun = ctx.items[index + 1].next_label;
-                        let external_func: Box<dyn VmExternalFunc> = VmFuncGroup::compile(
-                            &mut self.paths,
-                            self.op_registry.clone(),
-                            value,
-                        )?;
+                        let external_func: Box<dyn VmExternalFunc> =
+                            VmFuncGroup::compile(&mut self.paths, self.op_registry.clone(), value)?;
                         self.emit_external_func(external_func, stage_ctx_item, next_fun);
                     }
                     "$skip" => {
                         let next_fun = ctx.items[index + 1].next_label;
-                        let external_func: Box<dyn VmExternalFunc> = VmFuncSkip::compile(&mut self.paths, value)?;
+                        let external_func: Box<dyn VmExternalFunc> =
+                            VmFuncSkip::compile(&mut self.paths, value)?;
                         self.emit_external_func(external_func, stage_ctx_item, next_fun);
                     }
                     "$limit" => {
                         let next_fun = ctx.items[index + 1].next_label;
-                        let external_func: Box<dyn VmExternalFunc> = VmFuncLimit::compile(&mut self.paths, value)?;
+                        let external_func: Box<dyn VmExternalFunc> =
+                            VmFuncLimit::compile(&mut self.paths, value)?;
                         self.emit_external_func(external_func, stage_ctx_item, next_fun);
                     }
                     "$sort" => {
                         let next_fun = ctx.items[index + 1].next_label;
-                        let external_func: Box<dyn VmExternalFunc> = VmFuncSort::compile(&mut self.paths, value)?;
+                        let external_func: Box<dyn VmExternalFunc> =
+                            VmFuncSort::compile(&mut self.paths, value)?;
                         self.emit_external_func(external_func, stage_ctx_item, next_fun);
                     }
                     "$addFields" => {
@@ -960,7 +971,8 @@ impl Codegen {
                     }
                     "$unset" => {
                         let next_fun = ctx.items[index + 1].next_label;
-                        let external_func: Box<dyn VmExternalFunc> = VmFuncUnset::compile(&mut self.paths, value)?;
+                        let external_func: Box<dyn VmExternalFunc> =
+                            VmFuncUnset::compile(&mut self.paths, value)?;
                         self.emit_external_func(external_func, stage_ctx_item, next_fun);
                     }
                     _ => {
@@ -973,7 +985,12 @@ impl Codegen {
         Ok(())
     }
 
-    fn emit_external_func(&mut self, external_func: Box<dyn VmExternalFunc>, stage_ctx_item: &PipelineItem, next_fun: Label) {
+    fn emit_external_func(
+        &mut self,
+        external_func: Box<dyn VmExternalFunc>,
+        stage_ctx_item: &PipelineItem,
+        next_fun: Label,
+    ) {
         let external_func_id = self.push_external_func(external_func);
         let go_next = self.new_label();
         let loop_next = self.new_label();
@@ -1008,7 +1025,11 @@ impl Codegen {
         self.emit_u32(param_size as u32);
     }
 
-    pub fn emit_aggregation_before_query(&mut self, ctx: &mut AggregationCodeGenContext, pipeline: &[Document]) -> Result<()> {
+    pub fn emit_aggregation_before_query(
+        &mut self,
+        ctx: &mut AggregationCodeGenContext,
+        pipeline: &[Document],
+    ) -> Result<()> {
         for stage_doc in pipeline {
             if stage_doc.is_empty() {
                 return Ok(());
@@ -1016,9 +1037,7 @@ impl Codegen {
 
             let label = self.new_label();
 
-            ctx.items.push(PipelineItem {
-                next_label: label,
-            });
+            ctx.items.push(PipelineItem { next_label: label });
         }
         Ok(())
     }

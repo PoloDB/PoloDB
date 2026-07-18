@@ -12,22 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::cell::RefCell;
 use super::label::LabelSlot;
 use super::op::DbOp;
 use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
-use crate::utils::str::escape_binary_to_string;
-use crate::vm::codegen::Codegen;
-use crate::{Result};
-use bson::{Bson, Document};
-use indexmap::IndexMap;
-use std::fmt;
-use std::rc::Rc;
 use crate::errors::FieldTypeUnexpectedStruct;
+use crate::utils::str::escape_binary_to_string;
 use crate::vm::aggregation_codegen_context::AggregationCodeGenContext;
+use crate::vm::codegen::Codegen;
 use crate::vm::global_variable::GlobalVariableSlot;
 use crate::vm::update_operators::UpdateOperator;
 use crate::vm::vm_external_func::VmExternalFunc;
+use crate::Result;
+use bson::{Bson, Document};
+use indexmap::IndexMap;
+use std::cell::RefCell;
+use std::fmt;
+use std::rc::Rc;
 
 pub(crate) struct SubProgramIndexItem {
     pub col_name: String,
@@ -276,7 +276,11 @@ impl SubProgram {
 
         let first = pipeline_vec.first().unwrap();
         if first.len() == 1 && first.contains_key("$match") {
-            return SubProgram::compile_aggregate_with_match(col_spec, pipeline_vec, skip_annotation);
+            return SubProgram::compile_aggregate_with_match(
+                col_spec,
+                pipeline_vec,
+                skip_annotation,
+            );
         }
 
         let mut codegen = Codegen::new(skip_annotation, false);
@@ -329,8 +333,9 @@ impl SubProgram {
                     field_name: "$match".to_string(),
                     expected_ty: "Document".to_string(),
                     actual_ty: name,
-                }.into());
-            },
+                }
+                .into());
+            }
         };
 
         let ctx_ref = Rc::new(RefCell::new(AggregationCodeGenContext::default()));
@@ -358,7 +363,6 @@ impl SubProgram {
 
         Ok(codegen.take())
     }
-
 }
 
 fn open_bson_to_str(val: &Bson) -> Result<String> {
@@ -381,7 +385,6 @@ fn open_bson_to_str(val: &Bson) -> Result<String> {
 
 impl fmt::Display for SubProgram {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-
         for (index, global_var) in self.global_variables.iter().enumerate() {
             writeln!(f, "${} = {:?}", index, global_var.init_value)?;
         }
@@ -636,6 +639,13 @@ impl fmt::Display for SubProgram {
                         pc += 9;
                     }
 
+                    DbOp::GetFieldOrNull => {
+                        let static_id = begin.add(pc + 1).cast::<u32>().read();
+                        let val = &self.static_values[static_id as usize];
+                        writeln!(f, "{}: GetFieldOrNull({})", pc, val)?;
+                        pc += 5;
+                    }
+
                     DbOp::SetField => {
                         let static_id = begin.add(pc + 1).cast::<u32>().read();
                         let val = &self.static_values[static_id as usize];
@@ -678,7 +688,13 @@ impl fmt::Display for SubProgram {
                         let func_id = begin.add(pc + 1).cast::<u32>().read();
                         let external_func = &self.external_funcs[func_id as usize];
                         let param_size = begin.add(pc + 5).cast::<u32>().read();
-                        writeln!(f, "{}: CallExternal(${}, {})", pc, external_func.name(), param_size)?;
+                        writeln!(
+                            f,
+                            "{}: CallExternal(${}, {})",
+                            pc,
+                            external_func.name(),
+                            param_size
+                        )?;
                         pc += 9;
                     }
 
@@ -743,10 +759,10 @@ impl fmt::Display for SubProgram {
 mod tests {
     use crate::coll::collection_info::{CollectionSpecification, IndexInfo};
     use crate::vm::SubProgram;
+    use crate::Error;
     use bson::{doc, Regex};
     use indexmap::indexmap;
     use polodb_line_diff::assert_eq;
-    use crate::Error;
 
     #[inline]
     fn new_spec<T: Into<String>>(name: T) -> CollectionSpecification {
@@ -1222,20 +1238,19 @@ mod tests {
 75: Goto(43)
 
 80: Label(0, "compare_function")
-85: GetField("age", 144)
+85: GetField("age", 131)
 94: PushValue(3)
 99: Greater
-100: FalseJump(144)
+100: FalseJump(131)
 105: Pop2(2)
-110: GetField("child", 144)
-119: GetField("age", 144)
-128: PushValue([1, 2])
-133: In
-134: FalseJump(144)
-139: Pop2(3)
+110: GetFieldOrNull("child.age")
+115: PushValue([1, 2])
+120: In
+121: FalseJump(131)
+126: Pop2(2)
 
-144: Label(1, "compare_function_clean")
-149: Ret0
+131: Label(1, "compare_function_clean")
+136: Ret0
 "#;
         assert_eq!(expect, actual);
     }
@@ -1324,8 +1339,7 @@ mod tests {
             },
         };
         let program =
-            SubProgram::compile_update(&col_spec, &query_doc, &update_doc, false, true)
-                .unwrap();
+            SubProgram::compile_update(&col_spec, &query_doc, &update_doc, false, true).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -1402,8 +1416,7 @@ mod tests {
             },
         };
         let program =
-            SubProgram::compile_update(&col_spec, &query_doc, &update_doc, false, true)
-                .unwrap();
+            SubProgram::compile_update(&col_spec, &query_doc, &update_doc, false, true).unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -1455,15 +1468,18 @@ mod tests {
     #[test]
     fn test_aggregate_match() {
         let col_spec = new_spec("test");
-        let program = SubProgram::compile_aggregate(&col_spec, vec![
-            doc! {
+        let program = SubProgram::compile_aggregate(
+            &col_spec,
+            vec![doc! {
                 "$match": {
                     "age": {
                         "$gt": 18
                     },
                 },
-            },
-        ], false).unwrap();
+            }],
+            false,
+        )
+        .unwrap();
         let actual = format!("Program:\n\n{}", program);
         let expect = r#"Program:
 
@@ -1509,18 +1525,23 @@ mod tests {
     #[test]
     fn test_aggregate_count() {
         let col_spec = new_spec("test");
-        let program = SubProgram::compile_aggregate(&col_spec, vec![
-            doc! {
-                "$match": {
-                    "age": {
-                        "$gt": 18
+        let program = SubProgram::compile_aggregate(
+            &col_spec,
+            vec![
+                doc! {
+                    "$match": {
+                        "age": {
+                            "$gt": 18
+                        },
                     },
                 },
-            },
-            doc! {
-                "$count": "total",
-            },
-        ], false).unwrap();
+                doc! {
+                    "$count": "total",
+                },
+            ],
+            false,
+        )
+        .unwrap();
         let actual = format!("Program:\n\n{}", program);
 
         let expect = r#"Program:
@@ -1596,11 +1617,14 @@ mod tests {
     #[test]
     fn test_aggregate_count_without_match() {
         let col_spec = new_spec("test");
-        let program = SubProgram::compile_aggregate(&col_spec, vec![
-            doc! {
+        let program = SubProgram::compile_aggregate(
+            &col_spec,
+            vec![doc! {
                 "$count": "total",
-            },
-        ], false).unwrap();
+            }],
+            false,
+        )
+        .unwrap();
         let actual = format!("Program:\n\n{}", program);
         let expect = r#"Program:
 
@@ -1654,16 +1678,18 @@ mod tests {
     #[test]
     fn test_aggregate_error_message() {
         let col_spec = new_spec("test");
-        let program = SubProgram::compile_aggregate(&col_spec, vec![
-            doc! {
+        let program = SubProgram::compile_aggregate(
+            &col_spec,
+            vec![doc! {
                 "$group": {
                     "_id": "$name",
                     "total": {
                         "$sumabc": 1,
                     },
                 },
-            },
-        ], false);
+            }],
+            false,
+        );
         assert!(program.is_err());
         match program {
             Err(Error::InvalidField(i)) => {
