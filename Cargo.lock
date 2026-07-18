@@ -1680,7 +1680,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 
 [[package]]
 name = "polodb"
-version = "5.1.4"
+version = "5.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1704,7 +1704,7 @@ dependencies = [
 
 [[package]]
 name = "polodb-librocksdb-sys"
-version = "9.0.0-alpha.1"
+version = "9.0.0-alpha.2"
 dependencies = [
  "bindgen",
  "bzip2-sys",
@@ -1721,7 +1721,7 @@ dependencies = [
 
 [[package]]
 name = "polodb_core"
-version = "5.1.4"
+version = "5.2.0"
 dependencies = [
  "bson 2.15.0",
  "byteorder",

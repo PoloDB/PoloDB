@@ -1,4 +1,17 @@
 
+# 5.2.0
+
+- Update Rust and Python dependencies, including security-related upgrades
+  - #212
+  - #226
+  - #228
+- Restore and strengthen CI coverage for Rust, Python bindings, MSRV, and release builds
+  - #225
+- Upgrade the Python bindings to PyO3 0.29 and validate installed wheels on Python 3.12 through 3.14
+  - #225
+- Harden bundled RocksDB builds for x86 CPU feature combinations and newer GCC toolchains
+  - #227
+
 # 5.1.4
 
 - Improve mongodb compatibility
