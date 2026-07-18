@@ -2,79 +2,159 @@ name: Rust
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTUP_TOOLCHAIN: stable
 
 jobs:
-  Ubuntu:
-    name: Test on Ubuntu
+  rust-core:
+    name: Rust Core (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu
+            os: ubuntu-latest
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run Rust tests
+        run: cargo test --locked --release --verbose --workspace --exclude py-binding-polodb
+
+      - name: Build Rust workspace
+        run: cargo build --locked --release --workspace --exclude py-binding-polodb
+
+  python-bindings:
+    name: Python Bindings (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-python-${{ matrix.python-version }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install Python tooling
+        working-directory: py-polodb
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install "maturin>=1.9.4,<2" pytest
+
+      - name: Build and install Python wheel
+        working-directory: py-polodb
+        run: |
+          source .venv/bin/activate
+          maturin build --locked --release --out "${{ runner.temp }}/wheels"
+          python -m pip install --force-reinstall "${{ runner.temp }}"/wheels/*.whl
+
+      - name: Smoke test installed package
+        working-directory: ${{ runner.temp }}
+        run: |
+          source "$GITHUB_WORKSPACE/py-polodb/.venv/bin/activate"
+          python -c "from polodb import Collection, PoloDB"
+
+      - name: Run Python tests
+        working-directory: ${{ runner.temp }}
+        run: |
+          source "$GITHUB_WORKSPACE/py-polodb/.venv/bin/activate"
+          cp -R "$GITHUB_WORKSPACE/py-polodb/tests" python-tests
+          python -m pytest python-tests
+
+  python-bindings-msrv:
+    name: Python Bindings (Rust 1.83 MSRV)
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: 1.83.0
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust 1.83
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-rust-1.83-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check Python bindings at their Rust MSRV
+        run: cargo check --locked -p py-binding-polodb
+
+  required-ci-gate:
+    name: Rust / Required CI Gate
+    if: ${{ always() }}
+    needs:
+      - rust-core
+      - python-bindings
+      - python-bindings-msrv
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: recursive
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run Rust tests
-        run: RUST_BACKTRACE=1 cargo test --release --verbose --workspace
-      - name: Build binaries
-        run: cargo build --release
-
-  MacOS:
-    name: Test on MacOS
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: recursive
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run Rust tests
-        run: RUST_BACKTRACE=1 cargo test --release --verbose --workspace
-      - name: Build Clib
-        run: cargo build --release
-
-  Windows:
-    name: Test on Windows
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: recursive
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run Rust tests
-        run: cargo test --release --verbose --workspace
+      - name: Verify required jobs succeeded
         env:
-          RUST_BACKTRACE: 1
-      - name: Build binaries
-        run: cargo build --release
+          RUST_CORE_RESULT: ${{ needs.rust-core.result }}
+          PYTHON_BINDINGS_RESULT: ${{ needs.python-bindings.result }}
+          PYTHON_BINDINGS_MSRV_RESULT: ${{ needs.python-bindings-msrv.result }}
+        run: |
+          if [[ "$RUST_CORE_RESULT" != "success" || "$PYTHON_BINDINGS_RESULT" != "success" || "$PYTHON_BINDINGS_MSRV_RESULT" != "success" ]]; then
+            echo "Rust Core result: $RUST_CORE_RESULT"
+            echo "Python Bindings result: $PYTHON_BINDINGS_RESULT"
+            echo "Python Bindings MSRV result: $PYTHON_BINDINGS_MSRV_RESULT"
+            exit 1
+          fi

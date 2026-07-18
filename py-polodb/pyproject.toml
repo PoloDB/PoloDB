@@ -1,3 +1,18 @@
+[project]
+name = "polodb"
+version = "0.1.0"
+description = "Python bindings for the embedded PoloDB document database"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "SENHAJI RHAZI Hamza", email = "hamza.senhajirhazi@gmail.com" },
+]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+
 [tool.poetry]
 name = "polodb"
 version = "0.1.0"
@@ -25,8 +40,12 @@ ipdb = "^0.13.13"
 
 
 [build-system]
-requires = ["poetry-core", "maturin>=1,<2"]
+requires = ["maturin>=1.9.4,<2"]
 build-backend = "maturin"
+
+[tool.maturin]
+python-source = "."
+module-name = "polodb.rust_polodb"
 
 [tool.poetry.scripts]
 build-rust = "maturin develop"

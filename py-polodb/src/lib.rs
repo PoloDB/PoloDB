@@ -6,7 +6,7 @@ mod py_database;
 use py_database::PyCollection;
 use py_database::PyDatabase;
 
-#[pymodule]
+#[pymodule(gil_used = true)]
 fn rust_polodb(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // m.add_function(wrap_pyfunction!(sum_as_string, m)?);
     m.add_class::<PyDatabase>()?;

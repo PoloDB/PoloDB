@@ -1,4 +1,4 @@
-from rust_polodb import PyDatabase, PyCollection
+from .rust_polodb import PyDatabase, PyCollection
 from typing import List
 
 
@@ -40,7 +40,7 @@ class Collection:
     def insert_one(self, entry: dict):
         return self.__rust_collection.insert_one(entry)
 
-    def insert_many(self, entry: dict):
+    def insert_many(self, entry: List[dict]):
         return self.__rust_collection.insert_many(entry)
 
     def find_one(self, filter: dict):

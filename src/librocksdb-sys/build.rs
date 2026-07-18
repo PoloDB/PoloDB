@@ -29,10 +29,6 @@ fn rocksdb_include_dir() -> String {
     }
 }
 
-fn bind_python() {
-    pyo3_build_config::add_extension_module_link_args();
-}
-
 fn bindgen_rocksdb() {
     let bindings = bindgen::Builder::default()
         .header(rocksdb_include_dir() + "/rocksdb/c.h")
@@ -363,7 +359,6 @@ fn main() {
         update_submodules();
     }
     bindgen_rocksdb();
-    bind_python();
     let target = env::var("TARGET").unwrap();
 
     if !try_to_find_and_link_lib("ROCKSDB") {

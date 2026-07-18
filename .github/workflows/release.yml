@@ -2,88 +2,189 @@ name: Build Release
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish (for example, v5.1.4)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: stable
 
 jobs:
+  prepare:
+    name: Resolve release tag
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag to commit
+        id: resolve
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          tag_ref="refs/tags/$RELEASE_TAG"
+          if ! git show-ref --verify --quiet "$tag_ref"; then
+            echo "Tag does not exist: $RELEASE_TAG"
+            exit 1
+          fi
+          commit="$(git rev-parse "$tag_ref^{commit}")"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
   MacOS:
     name: Build on MacOS
-    permissions: write-all
-    runs-on: macos-latest
+    needs: prepare
+    # Keep the published darwin-x64 artifact on an Intel runner. macos-latest is arm64.
+    runs-on: macos-15-intel
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
         with:
+          ref: ${{ needs.prepare.outputs.commit }}
           submodules: recursive
-          token: ${{ secrets.PAT_TOKEN }}
-      - uses: actions/setup-node@v2
+
+      - uses: actions/cache@v5
         with:
-          node-version: '18'
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-release-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run Rust tests
-        run: cargo test --release --verbose --workspace
-      - name: Build Clib
-        run: cargo build --release
+        run: cargo test --locked --release --verbose --workspace --exclude py-binding-polodb
+      - name: Build CLI
+        run: cargo build --locked --release --package polodb --bin polodb
       - name: Copy files
         run: |
           cp target/release/polodb polodb-darwin-x64
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
         with:
-          files: |
-            polodb-darwin-x64
+          name: release-darwin-x64
+          path: polodb-darwin-x64
+          if-no-files-found: error
 
   Ubuntu:
     name: Build on Ubuntu
-    permissions: write-all
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
         with:
+          ref: ${{ needs.prepare.outputs.commit }}
           submodules: recursive
-          token: ${{ secrets.PAT_TOKEN }}
-      - uses: actions/setup-node@v2
+
+      - uses: actions/cache@v5
         with:
-          node-version: '18'
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-release-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run Rust tests
-        run: cargo test --release --verbose --workspace
-      - name: Build Clib
-        run: cargo build --release
+        run: cargo test --locked --release --verbose --workspace --exclude py-binding-polodb
+      - name: Build CLI
+        run: cargo build --locked --release --package polodb --bin polodb
       - name: Copy files
         run: |
           cp target/release/polodb polodb-linux-x64
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
         with:
-          files: |
-            polodb-linux-x64
+          name: release-linux-x64
+          path: polodb-linux-x64
+          if-no-files-found: error
 
   Windows:
     name: Build on Windows
-    permissions: write-all
+    needs: prepare
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
         with:
+          ref: ${{ needs.prepare.outputs.commit }}
           submodules: recursive
-          token: ${{ secrets.PAT_TOKEN }}
-      - uses: actions/setup-node@v2
+
+      - uses: actions/cache@v5
         with:
-          node-version: '18'
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-release-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run Rust tests
-        run: cargo test --release --verbose --workspace
-      - name: Build Clib
-        run: cargo build --release
+        run: cargo test --locked --release --verbose --workspace --exclude py-binding-polodb
+      - name: Build CLI
+        run: cargo build --locked --release --package polodb --bin polodb
       - name: Copy files
         run: |
           Copy-Item "target/release/polodb.exe" -Destination "polodb-win32-x64.exe"
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v7
         with:
-          files: |
-            polodb-win32-x64.exe
+          name: release-win32-x64
+          path: polodb-win32-x64.exe
+          if-no-files-found: error
+
+  Publish:
+    name: Publish GitHub Release
+    needs: [prepare, MacOS, Ubuntu, Windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.commit }}
+
+      - name: Verify tag still points to the built commit
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          EXPECTED_COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: |
+          tag_ref="refs/tags/$RELEASE_TAG"
+          git fetch --force --tags origin
+          actual_commit="$(git rev-parse "$tag_ref^{commit}")"
+          if [[ "$actual_commit" != "$EXPECTED_COMMIT" ]]; then
+            echo "Tag moved during the build: $RELEASE_TAG"
+            echo "Expected: $EXPECTED_COMMIT"
+            echo "Actual:   $actual_commit"
+            exit 1
+          fi
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
