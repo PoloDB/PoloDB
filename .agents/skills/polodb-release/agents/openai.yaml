@@ -1,0 +1,4 @@
+interface:
+  display_name: "PoloDB Release"
+  short_description: "Safely publish a complete PoloDB release"
+  default_prompt: "Use $polodb-release to prepare, publish, and verify the next PoloDB release."
