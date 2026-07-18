@@ -1,32 +1,19 @@
 import pytest
 from polodb import PoloDB
 
-import os
-import shutil
-
-from pathlib import Path
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-
-TEST_DATA_DIR = BASE_DIR / "data"
-TEST_DATA_PATH = TEST_DATA_DIR / "dbtest"
 TEST_COLLECTION_NAME = "test_collection"
 
-os.path.exists(TEST_DATA_DIR.absolute()) or os.makedirs(TEST_DATA_DIR.absolute())
+
+@pytest.fixture
+def data_path(tmp_path):
+    return (tmp_path / "dbtest").as_posix()
 
 
-@pytest.fixture(scope="module")
-def data_path():
-    return TEST_DATA_PATH.as_posix()
-
-
-@pytest.fixture(scope="module")
+@pytest.fixture
 def collection_name():
     return TEST_COLLECTION_NAME
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def db(data_path):
-    yield PoloDB(data_path)
-    shutil.rmtree(data_path)
+    return PoloDB(data_path)

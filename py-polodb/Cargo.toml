@@ -6,6 +6,7 @@ name = "py-binding-polodb"
 # these are good defaults:
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.83"
 
 [lib]
 # The name of the native library. This is the name which will be used in Python to import the
@@ -19,4 +20,4 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # polodb_core = "5.1.0"
 polodb_core = { path = "../src/polodb_core", default-features = false  }
-pyo3 = { version = "0.22.5", features = ["extension-module", "auto-initialize"] }
+pyo3 = "0.29.0"
