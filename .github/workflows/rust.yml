@@ -54,6 +54,28 @@ jobs:
       - name: Build Rust workspace
         run: cargo build --locked --release --workspace --exclude py-binding-polodb
 
+  rocksdb-x86-feature-compat:
+    name: RocksDB x86 Feature Compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-rocksdb-x86-feature-compat-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build RocksDB with AVX but without PCLMUL
+        env:
+          CXXFLAGS: -mavx -mno-pclmul
+        run: cargo build --locked --release --verbose -p polodb-librocksdb-sys
+
   python-bindings:
     name: Python Bindings (${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -142,6 +164,7 @@ jobs:
     if: ${{ always() }}
     needs:
       - rust-core
+      - rocksdb-x86-feature-compat
       - python-bindings
       - python-bindings-msrv
     runs-on: ubuntu-latest
@@ -149,11 +172,13 @@ jobs:
       - name: Verify required jobs succeeded
         env:
           RUST_CORE_RESULT: ${{ needs.rust-core.result }}
+          ROCKSDB_X86_FEATURE_COMPAT_RESULT: ${{ needs.rocksdb-x86-feature-compat.result }}
           PYTHON_BINDINGS_RESULT: ${{ needs.python-bindings.result }}
           PYTHON_BINDINGS_MSRV_RESULT: ${{ needs.python-bindings-msrv.result }}
         run: |
-          if [[ "$RUST_CORE_RESULT" != "success" || "$PYTHON_BINDINGS_RESULT" != "success" || "$PYTHON_BINDINGS_MSRV_RESULT" != "success" ]]; then
+          if [[ "$RUST_CORE_RESULT" != "success" || "$ROCKSDB_X86_FEATURE_COMPAT_RESULT" != "success" || "$PYTHON_BINDINGS_RESULT" != "success" || "$PYTHON_BINDINGS_MSRV_RESULT" != "success" ]]; then
             echo "Rust Core result: $RUST_CORE_RESULT"
+            echo "RocksDB x86 feature compatibility result: $ROCKSDB_X86_FEATURE_COMPAT_RESULT"
             echo "Python Bindings result: $PYTHON_BINDINGS_RESULT"
             echo "Python Bindings MSRV result: $PYTHON_BINDINGS_MSRV_RESULT"
             exit 1
