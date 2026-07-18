@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::cmp::Ordering;
 use bson::Bson;
+use std::cmp::Ordering;
 
 #[repr(u8)]
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -136,6 +136,13 @@ pub enum DbOp {
     // op1. value_index: 4bytes
     // op2. location: 4bytes
     GetField,
+
+    // get a dotted field path from the document on top of the stack
+    // push null when the field is missing
+    //
+    // 5 bytes
+    // op1. value_index: 4bytes
+    GetFieldOrNull,
 
     // remove the field
     //
@@ -300,7 +307,6 @@ pub enum DbOp {
     // Exit
     // Close cursor automatically
     Halt,
-
 }
 
 pub(crate) fn generic_cmp(op: DbOp, val1: &Bson, val2: &Bson) -> crate::Result<bool> {

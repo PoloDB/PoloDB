@@ -12,23 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod op;
-mod subprogram;
-mod codegen;
-mod label;
-mod vm;
-mod global_variable;
 mod aggregation_codegen_context;
-mod vm_external_func;
-mod vm_count;
-mod vm_group;
+mod codegen;
+mod global_variable;
+mod label;
+mod op;
 mod operators;
+mod query_matcher;
+mod subprogram;
+mod update_operators;
+mod vm;
+mod vm_add_fields;
+mod vm_count;
+mod vm_external_func;
+mod vm_group;
+mod vm_limit;
 mod vm_skip;
 mod vm_sort;
-mod vm_limit;
 mod vm_unset;
-mod vm_add_fields;
-mod update_operators;
 
 pub(crate) use subprogram::SubProgram;
-pub(crate) use vm::{VM, VmState};
+pub(crate) use vm::{VmState, VM};
