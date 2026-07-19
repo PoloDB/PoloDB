@@ -28,6 +28,8 @@ jobs:
         include:
           - name: Ubuntu
             os: ubuntu-latest
+          - name: Ubuntu ARM64
+            os: ubuntu-24.04-arm
           - name: macOS
             os: macos-latest
           - name: Windows
@@ -46,7 +48,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run Rust tests
         run: cargo test --locked --release --verbose --workspace --exclude py-binding-polodb

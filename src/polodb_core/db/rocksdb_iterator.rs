@@ -103,7 +103,7 @@ impl RocksDBIteratorInner {
 
     pub fn seek(&self, key: &[u8]) {
         unsafe {
-            ffi::rocksdb_iter_seek(self.inner, key.as_ptr() as *const i8, key.len());
+            ffi::rocksdb_iter_seek(self.inner, key.as_ptr().cast::<c_char>(), key.len());
         }
     }
 
