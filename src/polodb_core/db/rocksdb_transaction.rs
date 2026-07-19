@@ -130,9 +130,9 @@ impl RocksDBTransactionInner {
 
             ffi::rocksdb_transaction_put(
                 self.inner,
-                key.as_ptr() as *const i8,
+                key.as_ptr().cast::<c_char>(),
                 key.len(),
-                value.as_ptr() as *const i8,
+                value.as_ptr().cast::<c_char>(),
                 value.len(),
                 &mut err,
             );
@@ -149,7 +149,7 @@ impl RocksDBTransactionInner {
             let value = ffi::rocksdb_transaction_get(
                 self.inner,
                 self.read_options.get(),
-                key.as_ptr() as *const i8,
+                key.as_ptr().cast::<c_char>(),
                 key.len(),
                 &mut value_len,
                 &mut err,
@@ -172,7 +172,7 @@ impl RocksDBTransactionInner {
 
             ffi::rocksdb_transaction_delete(
                 self.inner,
-                key.as_ptr() as *const i8,
+                key.as_ptr().cast::<c_char>(),
                 key.len(),
                 &mut err,
             );
