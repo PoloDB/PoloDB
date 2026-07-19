@@ -228,6 +228,10 @@ pub enum DbOp {
     // the result is stored in r0
     In,
 
+    // check if every value in top0 matches top2
+    // the result is stored in r0
+    All,
+
     EqualNull,
 
     // open a cursor with op0 as root_pid

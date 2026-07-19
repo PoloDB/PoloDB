@@ -31,35 +31,26 @@ pub(super) fn field_path_value(document: &Document, path: &str) -> Option<Bson> 
 }
 
 pub(super) fn matches_in(field_value: &Bson, candidates: &[Bson]) -> Result<bool> {
-    let compiled_regexes = compile_in_regexes(candidates)?;
+    let compiled_regexes = compile_candidate_regexes(candidates)?;
 
-    for (candidate, compiled_regex) in candidates.iter().zip(compiled_regexes.iter()) {
-        if query_values_equal(field_value, candidate) {
-            return Ok(true);
-        }
-
-        if let Bson::Array(values) = field_value {
-            if values
-                .iter()
-                .any(|value| query_values_equal(value, candidate))
-            {
-                return Ok(true);
-            }
-        }
-
-        if compiled_regex
-            .as_ref()
-            .is_some_and(|regex| matches_compiled_regex(field_value, regex))
-        {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
+    Ok(candidates
+        .iter()
+        .zip(compiled_regexes.iter())
+        .any(|(candidate, regex)| candidate_matches(field_value, candidate, regex.as_ref())))
 }
 
-pub(super) fn validate_in_candidates(candidates: &[Bson]) -> Result<()> {
-    compile_in_regexes(candidates).map(|_| ())
+pub(super) fn matches_all(field_value: &Bson, candidates: &[Bson]) -> Result<bool> {
+    let compiled_regexes = compile_candidate_regexes(candidates)?;
+
+    Ok(!candidates.is_empty()
+        && candidates
+            .iter()
+            .zip(compiled_regexes.iter())
+            .all(|(candidate, regex)| candidate_matches(field_value, candidate, regex.as_ref())))
+}
+
+pub(super) fn validate_membership_candidates(candidates: &[Bson]) -> Result<()> {
+    compile_candidate_regexes(candidates).map(|_| ())
 }
 
 pub(super) fn matches_regex(field_value: &Bson, expression: &Regex) -> Result<bool> {
@@ -78,7 +69,23 @@ fn matches_compiled_regex(field_value: &Bson, regex: &CompiledRegex) -> bool {
     }
 }
 
-fn compile_in_regexes(candidates: &[Bson]) -> Result<Vec<Option<CompiledRegex>>> {
+fn candidate_matches(
+    field_value: &Bson,
+    candidate: &Bson,
+    compiled_regex: Option<&CompiledRegex>,
+) -> bool {
+    query_values_equal(field_value, candidate)
+        || matches!(
+            field_value,
+            Bson::Array(values)
+                if values
+                    .iter()
+                    .any(|value| query_values_equal(value, candidate))
+        )
+        || compiled_regex.is_some_and(|regex| matches_compiled_regex(field_value, regex))
+}
+
+fn compile_candidate_regexes(candidates: &[Bson]) -> Result<Vec<Option<CompiledRegex>>> {
     candidates
         .iter()
         .map(|candidate| match candidate {
@@ -188,7 +195,7 @@ mod tests {
     use bson::spec::BinarySubtype;
     use bson::{doc, Binary, Bson, JavaScriptCodeWithScope, Regex};
 
-    use super::{field_path_value, matches_in, query_values_equal};
+    use super::{field_path_value, matches_all, matches_in, query_values_equal};
 
     #[test]
     fn field_path_lookup_preserves_terminal_documents() {
@@ -294,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn all_regex_candidates_are_validated_before_matching() {
+    fn in_validates_all_regex_candidates_before_matching() {
         let candidates = [
             Bson::Int32(1),
             Bson::RegularExpression(Regex {
@@ -320,5 +327,45 @@ mod tests {
             &[candidate],
         )
         .unwrap());
+    }
+
+    #[test]
+    fn all_candidates_must_match_and_empty_candidates_never_match() {
+        let field = Bson::Array(vec![Bson::Int32(1), Bson::Int64(2)]);
+
+        assert!(
+            matches_all(&field, &[Bson::Double(1.0), Bson::Int32(2), Bson::Int64(2)],).unwrap()
+        );
+        assert!(!matches_all(&field, &[Bson::Int32(1), Bson::Int32(3)]).unwrap());
+        assert!(!matches_all(&field, &[]).unwrap());
+    }
+
+    #[test]
+    fn all_array_candidates_match_whole_or_nested_arrays() {
+        let candidate = Bson::Array(vec![Bson::Int32(1), Bson::Int32(2)]);
+
+        assert!(matches_all(
+            &Bson::Array(vec![Bson::Int64(1), Bson::Double(2.0)]),
+            std::slice::from_ref(&candidate),
+        )
+        .unwrap());
+        assert!(matches_all(
+            &Bson::Array(vec![candidate.clone(), Bson::String("x".into())]),
+            &[candidate],
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn all_validates_all_regex_candidates_before_matching() {
+        let candidates = [
+            Bson::Int32(3),
+            Bson::RegularExpression(Regex {
+                pattern: "[".into(),
+                options: "".into(),
+            }),
+        ];
+
+        assert!(matches_all(&Bson::Int32(1), &candidates).is_err());
     }
 }

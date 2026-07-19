@@ -595,6 +595,11 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::All => {
+                        writeln!(f, "{}: All", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::EqualNull => {
                         writeln!(f, "{}: EqualNull", pc)?;
                         pc += 1;
@@ -1251,6 +1256,61 @@ mod tests {
 
 131: Label(1, "compare_function_clean")
 136: Ret0
+"#;
+        assert_eq!(expect, actual);
+    }
+
+    #[test]
+    fn print_not_all() {
+        let col_spec = new_spec("test");
+        let test_doc = doc! {
+            "tags": {
+                "$not": {
+                    "$all": [1, 2],
+                },
+            },
+        };
+        let program = SubProgram::compile_query(&col_spec, &test_doc, false).unwrap();
+        let actual = format!("Program:\n\n{}", program);
+
+        let expect = r#"Program:
+
+0: OpenRead("test")
+5: Rewind(25)
+10: Goto(55)
+
+15: Label(3)
+20: Next(55)
+
+25: Label(6, "close")
+30: Close
+31: Halt
+
+32: Label(5, "not_this_item")
+37: Pop
+38: Goto(15)
+
+43: Label(4, "result")
+48: ResultRow
+49: Pop
+50: Goto(15)
+
+55: Label(2, "compare")
+60: Dup
+61: Call(80, 1)
+70: FalseJump(32)
+75: Goto(43)
+
+80: Label(0, "compare_function")
+85: GetFieldOrNull("tags")
+90: PushValue([1, 2])
+95: All
+96: Not
+97: FalseJump(107)
+102: Pop2(2)
+
+107: Label(1, "compare_function_clean")
+112: Ret0
 "#;
         assert_eq!(expect, actual);
     }

@@ -20,7 +20,7 @@ use crate::vm::aggregation_codegen_context::{AggregationCodeGenContext, Pipeline
 use crate::vm::global_variable::{GlobalVariable, GlobalVariableSlot};
 use crate::vm::op::DbOp;
 use crate::vm::operators::OpRegistry;
-use crate::vm::query_matcher::validate_in_candidates;
+use crate::vm::query_matcher::validate_membership_candidates;
 use crate::vm::subprogram::SubProgramIndexItem;
 use crate::vm::update_operators::{
     IncOperator, MaxOperator, MinOperator, MulOperator, PopOperator, PushOperator, RenameOperator,
@@ -41,6 +41,17 @@ use bson::{Array, Binary, Bson, Document};
 
 const JUMP_TABLE_DEFAULT_SIZE: usize = 8;
 const PATH_DEFAULT_SIZE: usize = 8;
+
+fn is_in_literal_dollar_document(document: &Document) -> bool {
+    document.contains_key("$ref") && document.contains_key("$id")
+}
+
+fn is_all_literal_dollar_document(document: &Document) -> bool {
+    document
+        .keys()
+        .next()
+        .is_some_and(|key| matches!(key.as_str(), "$ref" | "$id" | "$db"))
+}
 
 pub(super) struct Codegen {
     program: Box<SubProgram>,
@@ -596,7 +607,11 @@ impl Codegen {
         }
     }
 
-    fn validate_in_operand<'a>(&self, value: &'a Bson) -> Result<&'a Array> {
+    fn validate_array_query_operand<'a>(
+        &self,
+        value: &'a Bson,
+        is_literal_dollar_document: fn(&Document) -> bool,
+    ) -> Result<&'a Array> {
         let values = match value {
             Bson::Array(values) => values,
             _ => {
@@ -614,8 +629,10 @@ impl Codegen {
                     if document
                         .keys()
                         .next()
-                        .is_some_and(|key| key.starts_with('$'))
-                        && !(document.contains_key("$ref") && document.contains_key("$id"))
+                        .is_some_and(|key| {
+                            key.starts_with('$')
+                                && !is_literal_dollar_document(document)
+                        })
             )
         }) {
             return Err(Error::InvalidField(mk_invalid_query_field(
@@ -624,8 +641,16 @@ impl Codegen {
             )));
         }
 
-        validate_in_candidates(values)?;
+        validate_membership_candidates(values)?;
         Ok(values)
+    }
+
+    fn validate_in_operand<'a>(&self, value: &'a Bson) -> Result<&'a Array> {
+        self.validate_array_query_operand(value, is_in_literal_dollar_document)
+    }
+
+    fn validate_all_operand<'a>(&self, value: &'a Bson) -> Result<&'a Array> {
+        self.validate_array_query_operand(value, is_all_literal_dollar_document)
     }
 
     fn emit_query_tuple_document_kv(
@@ -686,6 +711,21 @@ impl Codegen {
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
                 self.emit_logical(DbOp::In, is_in_not);
+
+                self.emit_goto(DbOp::IfFalse, not_found_label);
+
+                self.emit(DbOp::Pop2);
+                self.emit_u32((field_size + 1) as u32);
+            }
+
+            "$all" => {
+                self.validate_all_operand(sub_value)?;
+
+                let field_size = self.get_field_or_null(key);
+
+                let stat_val_id = self.push_static(sub_value.clone());
+                self.emit_push_value(stat_val_id);
+                self.emit_logical(DbOp::All, is_in_not);
 
                 self.emit_goto(DbOp::IfFalse, not_found_label);
 
