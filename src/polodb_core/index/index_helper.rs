@@ -104,7 +104,7 @@ impl<'b, 'c, 'd, 'e> IndexHelper<'b, 'c, 'd, 'e> {
             return Ok(())
         }
 
-        if index_info.is_unique() {
+        if op == IndexHelperOperation::Insert && index_info.is_unique() {
             IndexHelper::check_unique_key(
                 col_name,
                 index_name,
