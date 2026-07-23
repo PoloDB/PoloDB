@@ -12,11 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use polodb_core::{CollectionT, IndexModel, IndexOptions, Result};
+use polodb_core::{Collection, CollectionT, IndexModel, IndexOptions, Result};
+use polodb_core::options::UpdateOptions;
 use bson::{doc, Document};
 use crate::common::prepare_db;
 
 mod common;
+
+fn create_unique_name_index(col: &Collection<Document>) {
+    col.create_index(IndexModel {
+        keys: doc! {
+            "name": 1,
+        },
+        options: Some(IndexOptions {
+            unique: Some(true),
+            ..Default::default()
+        }),
+    }).unwrap();
+}
 
 #[test]
 fn test_create_multi_keys_index() {
@@ -206,6 +219,175 @@ fn test_create_unique_index() {
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("duplicate key error"));
     });
+}
+
+#[test]
+fn test_update_non_index_field_with_unique_index() {
+    let db = prepare_db("test-update-non-index-field-with-unique-index").unwrap();
+    let col = db.collection::<Document>("teacher");
+
+    create_unique_name_index(&col);
+
+    col.insert_one(doc! {
+        "name": "David",
+        "age": 33,
+    }).unwrap();
+
+    let result = col.update_one(doc! {
+        "name": "David",
+    }, doc! {
+        "$set": {
+            "age": 34,
+        },
+    }).unwrap();
+
+    assert_eq!(result.matched_count, 1);
+    assert_eq!(result.modified_count, 1);
+    assert_eq!(
+        col.find_one(doc! {
+            "name": "David",
+        }).unwrap().unwrap().get_i32("age").unwrap(),
+        34,
+    );
+}
+
+#[test]
+fn test_upsert_updates_non_index_field_with_unique_index() {
+    let db = prepare_db("test-upsert-update-with-unique-index").unwrap();
+    let col = db.collection::<Document>("teacher");
+
+    create_unique_name_index(&col);
+
+    col.insert_one(doc! {
+        "name": "David",
+        "age": 33,
+    }).unwrap();
+
+    let result = col.update_one_with_options(
+        doc! {
+            "name": "David",
+        },
+        doc! {
+            "$set": {
+                "age": 34,
+            },
+        },
+        UpdateOptions::builder().upsert(true).build(),
+    ).unwrap();
+
+    assert_eq!(result.matched_count, 1);
+    assert_eq!(result.modified_count, 1);
+    assert_eq!(col.count_documents().unwrap(), 1);
+    assert_eq!(
+        col.find_one(doc! {
+            "name": "David",
+        }).unwrap().unwrap().get_i32("age").unwrap(),
+        34,
+    );
+}
+
+#[test]
+fn test_update_unique_index_value() {
+    let db = prepare_db("test-update-unique-index-value").unwrap();
+    let metrics = db.metrics();
+
+    let col = db.collection::<Document>("teacher");
+
+    create_unique_name_index(&col);
+
+    col.insert_one(doc! {
+        "name": "David",
+        "age": 33,
+    }).unwrap();
+
+    let result = col.update_one(doc! {
+        "name": "David",
+    }, doc! {
+        "$set": {
+            "name": "Daniel",
+        },
+    }).unwrap();
+
+    assert_eq!(result.matched_count, 1);
+    assert_eq!(result.modified_count, 1);
+
+    metrics.enable();
+    assert_eq!(
+        col.find_one(doc! {
+            "name": "Daniel",
+        }).unwrap().unwrap().get_i32("age").unwrap(),
+        33,
+    );
+    assert_eq!(metrics.find_by_index_count(), 1);
+    assert!(col.find_one(doc! {
+        "name": "David",
+    }).unwrap().is_none());
+}
+
+#[test]
+fn test_update_unique_index_to_duplicate_rolls_back() {
+    let db = prepare_db("test-update-unique-index-to-duplicate").unwrap();
+    let col = db.collection::<Document>("teacher");
+
+    create_unique_name_index(&col);
+
+    col.insert_many(vec![
+        doc! {
+            "name": "David",
+            "age": 33,
+        },
+        doc! {
+            "name": "Harry",
+            "age": 32,
+        },
+    ]).unwrap();
+
+    let result = col.update_one(doc! {
+        "name": "David",
+    }, doc! {
+        "$set": {
+            "name": "Harry",
+        },
+    });
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("duplicate key error"));
+    assert_eq!(col.count_documents().unwrap(), 2);
+    assert_eq!(
+        col.find_one(doc! {
+            "name": "David",
+        }).unwrap().unwrap().get_i32("age").unwrap(),
+        33,
+    );
+    assert_eq!(
+        col.find_one(doc! {
+            "name": "Harry",
+        }).unwrap().unwrap().get_i32("age").unwrap(),
+        32,
+    );
+}
+
+#[test]
+fn test_delete_with_unique_index() {
+    let db = prepare_db("test-delete-with-unique-index").unwrap();
+    let col = db.collection::<Document>("teacher");
+
+    create_unique_name_index(&col);
+
+    col.insert_one(doc! {
+        "name": "David",
+        "age": 33,
+    }).unwrap();
+
+    let result = col.delete_one(doc! {
+        "name": "David",
+    }).unwrap();
+
+    assert_eq!(result.deleted_count, 1);
+    assert_eq!(col.count_documents().unwrap(), 0);
+    assert!(col.find_one(doc! {
+        "name": "David",
+    }).unwrap().is_none());
 }
 
 #[test]
