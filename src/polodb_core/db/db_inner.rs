@@ -589,7 +589,7 @@ impl DatabaseInner {
             },
             None => UpdateResult::default(),
         };
-        if options.is_upsert() && result.modified_count == 0 {
+        if options.is_upsert() && result.matched_count == 0 {
             self.upsert(col_name, query, update, txn)?;
         }
 

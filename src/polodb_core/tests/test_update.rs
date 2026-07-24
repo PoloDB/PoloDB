@@ -300,3 +300,28 @@ fn test_upsert() {
     // assert_eq!(hobbies.len(), 1);
     // assert_eq!(hobbies[0].as_str().unwrap(), "reading");
 }
+
+#[test]
+fn test_upsert_does_not_insert_when_update_is_noop() {
+    let db = prepare_db("test-upsert-noop").unwrap();
+    let col = db.collection::<Document>("test");
+    let original = doc! {
+        "_id": 1,
+        "name": "John",
+        "age": 30,
+    };
+    col.insert_one(original.clone()).unwrap();
+
+    let update_result = col
+        .update_one_with_options(
+            doc! { "name": "John" },
+            doc! { "$set": {} },
+            UpdateOptions::builder().upsert(true).build(),
+        )
+        .unwrap();
+
+    assert_eq!(update_result.matched_count, 1);
+    assert_eq!(update_result.modified_count, 0);
+    assert_eq!(col.count_documents().unwrap(), 1);
+    assert_eq!(col.find_one(doc! { "_id": 1 }).unwrap(), Some(original));
+}
