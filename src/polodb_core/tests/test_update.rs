@@ -325,3 +325,149 @@ fn test_upsert_does_not_insert_when_update_is_noop() {
     assert_eq!(col.count_documents().unwrap(), 1);
     assert_eq!(col.find_one(doc! { "_id": 1 }).unwrap(), Some(original));
 }
+
+#[test]
+fn test_update_dotted_paths() {
+    let db = prepare_db("test-update-dotted-paths").unwrap();
+    let col = db.collection::<Document>("test");
+    col.insert_one(doc! {
+        "_id": 1,
+        "profile": {
+            "name": "Vincent",
+            "stats": { "visits": 2 },
+            "address": { "city": "London", "zip": "E1" },
+            "tags": ["rust"],
+        },
+    })
+    .unwrap();
+
+    let result = col
+        .update_one(
+            doc! { "_id": 1 },
+            doc! {
+                "$set": {
+                    "profile.name": "Steve",
+                    "profile.preferences.theme": "dark",
+                },
+                "$unset": { "profile.address.city": "" },
+                "$inc": { "profile.stats.visits": 3 },
+                "$push": { "profile.tags": "database" },
+            },
+        )
+        .unwrap();
+    assert_eq!(result.modified_count, 1);
+
+    let actual = col.find_one(doc! { "_id": 1 }).unwrap().unwrap();
+    let profile = actual.get_document("profile").unwrap();
+    assert_eq!(profile.get_str("name").unwrap(), "Steve");
+    assert_eq!(
+        profile
+            .get_document("preferences")
+            .unwrap()
+            .get_str("theme")
+            .unwrap(),
+        "dark"
+    );
+    assert_eq!(
+        profile
+            .get_document("stats")
+            .unwrap()
+            .get_i32("visits")
+            .unwrap(),
+        5
+    );
+    let address = profile.get_document("address").unwrap();
+    assert!(!address.contains_key("city"));
+    assert_eq!(address.get_str("zip").unwrap(), "E1");
+    assert_eq!(
+        profile.get_array("tags").unwrap(),
+        &vec!["rust".into(), "database".into()]
+    );
+}
+
+#[test]
+fn test_dotted_update_rejects_non_document_intermediate_and_rolls_back() {
+    let db = prepare_db("test-update-dotted-non-document").unwrap();
+    let col = db.collection::<Document>("test");
+    let original = doc! {
+        "_id": 1,
+        "status": "original",
+        "profile": "not a document",
+    };
+    col.insert_one(original.clone()).unwrap();
+
+    let result = col.update_one(
+        doc! { "_id": 1 },
+        doc! { "$set": {
+            "status": "changed",
+            "profile.name": "Steve",
+        } },
+    );
+    assert!(result.is_err());
+    assert_eq!(col.find_one(doc! { "_id": 1 }).unwrap().unwrap(), original);
+}
+
+#[test]
+fn test_dotted_update_rejects_primary_key_descendants_and_conflicts() {
+    let db = prepare_db("test-update-dotted-invalid-paths").unwrap();
+    let col = db.collection::<Document>("test");
+    col.insert_one(doc! { "_id": 1, "profile": {} }).unwrap();
+
+    assert!(col
+        .update_one(
+            doc! { "_id": 1 },
+            doc! { "$set": { "_id.value": 2 } },
+        )
+        .is_err());
+    assert!(col
+        .update_one(
+            doc! { "_id": 1 },
+            doc! { "$set": { "profile": {}, "profile.name": "Steve" } },
+        )
+        .is_err());
+}
+
+#[test]
+fn test_remaining_update_operators_support_dotted_paths() {
+    let db = prepare_db("test-update-remaining-dotted-paths").unwrap();
+    let col = db.collection::<Document>("test");
+    col.insert_one(doc! {
+        "_id": 1,
+        "profile": {
+            "score": 2,
+            "minimum": 5,
+            "maximum": 5,
+            "queue": [1, 2],
+            "old_name": "Vincent",
+        },
+    })
+    .unwrap();
+
+    col.update_one(
+        doc! { "_id": 1 },
+        doc! {
+            "$mul": { "profile.score": 3 },
+            "$min": { "profile.minimum": 2 },
+            "$max": { "profile.maximum": 8 },
+            "$pop": { "profile.queue": 1 },
+            "$rename": { "profile.old_name": "archive.name" },
+        },
+    )
+    .unwrap();
+
+    let actual = col.find_one(doc! { "_id": 1 }).unwrap().unwrap();
+    let profile = actual.get_document("profile").unwrap();
+    assert_eq!(profile.get_i32("score").unwrap(), 6);
+    assert_eq!(profile.get_i32("minimum").unwrap(), 2);
+    assert_eq!(profile.get_i32("maximum").unwrap(), 8);
+    assert_eq!(profile.get_array("queue").unwrap(), &vec![1.into()]);
+    assert!(!profile.contains_key("old_name"));
+    assert_eq!(
+        actual
+            .get_document("archive")
+            .unwrap()
+            .get_str("name")
+            .unwrap(),
+        "Vincent"
+    );
+}

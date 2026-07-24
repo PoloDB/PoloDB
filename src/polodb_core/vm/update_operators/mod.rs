@@ -1,3 +1,4 @@
+mod document_path;
 mod set_operator;
 mod inc_operator;
 mod mul_operator;
@@ -25,9 +26,15 @@ pub(crate) trait UpdateOperator {
 impl dyn UpdateOperator {
 
     pub(crate) fn validate_key(doc: &Document) -> Result<()> {
-        for (k, _) in doc.iter() {
-            if k == "_id" {
-                return Err(crate::Error::UnableToUpdatePrimaryKey);
+        let keys: Vec<_> = doc.keys().collect();
+        for (index, k) in keys.iter().enumerate() {
+            document_path::validate_update_path(k)?;
+            for other in keys.iter().skip(index + 1) {
+                if document_path::paths_conflict(k, other) {
+                    return Err(crate::Error::ValidationError(format!(
+                        "conflicting update paths '{k}' and '{other}'"
+                    )));
+                }
             }
         }
         Ok(())
