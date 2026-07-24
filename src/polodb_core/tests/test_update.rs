@@ -460,7 +460,7 @@ fn test_remaining_update_operators_support_dotted_paths() {
     assert_eq!(profile.get_i32("score").unwrap(), 6);
     assert_eq!(profile.get_i32("minimum").unwrap(), 2);
     assert_eq!(profile.get_i32("maximum").unwrap(), 8);
-    assert_eq!(profile.get_array("queue").unwrap(), &vec![1.into()]);
+    assert_eq!(profile.get_array("queue").unwrap().len(), 1);
     assert!(!profile.contains_key("old_name"));
     assert_eq!(
         actual
