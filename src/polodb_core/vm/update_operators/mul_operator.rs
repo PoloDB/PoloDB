@@ -48,7 +48,23 @@ impl MulOperator {
                 MulOperator::mul_numeric(key, original_value, &value)?
             }
 
-            None => value,
+            None => match value {
+                Bson::Int32(_) => Bson::Int32(0),
+                Bson::Int64(_) => Bson::Int64(0),
+                Bson::Double(_) => Bson::Double(0.0),
+                Bson::Decimal128(_) => Bson::Decimal128(
+                    "0".parse().expect("zero is a valid Decimal128"),
+                ),
+                _ => {
+                    return Err(CannotApplyOperationForTypes {
+                        op_name: "$mul".into(),
+                        field_name: key.into(),
+                        field_type: "missing".into(),
+                        target_type: value.to_string(),
+                    }
+                    .into());
+                }
+            },
         };
         set_path(doc, key, new_value)?;
         Ok(())

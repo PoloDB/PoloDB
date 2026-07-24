@@ -14,7 +14,7 @@
 
 use polodb_core::options::UpdateOptions;
 use polodb_core::{CollectionT, Database, Result};
-use polodb_core::bson::{Document, doc};
+use polodb_core::bson::{Bson, Decimal128, Document, doc};
 
 mod common;
 
@@ -411,7 +411,14 @@ fn test_dotted_update_rejects_non_document_intermediate_and_rolls_back() {
 fn test_dotted_update_rejects_primary_key_descendants_and_conflicts() {
     let db = prepare_db("test-update-dotted-invalid-paths").unwrap();
     let col = db.collection::<Document>("test");
-    col.insert_one(doc! { "_id": 1, "profile": {} }).unwrap();
+    let original = doc! {
+        "_id": 1,
+        "profile": {
+            "name": "Vincent",
+            "visits": 1,
+        },
+    };
+    col.insert_one(original.clone()).unwrap();
 
     assert!(col
         .update_one(
@@ -425,6 +432,39 @@ fn test_dotted_update_rejects_primary_key_descendants_and_conflicts() {
             doc! { "$set": { "profile": {}, "profile.name": "Steve" } },
         )
         .is_err());
+    assert!(col
+        .update_one(
+            doc! { "_id": 1 },
+            doc! {
+                "$set": { "profile": {} },
+                "$inc": { "profile.visits": 1 },
+            },
+        )
+        .is_err());
+    assert!(col
+        .update_one(
+            doc! { "_id": 1 },
+            doc! { "$rename": { "profile": "profile.archive" } },
+        )
+        .is_err());
+    assert!(col
+        .update_one(
+            doc! { "_id": 1 },
+            doc! { "$rename": { "profile.name": "profile" } },
+        )
+        .is_err());
+    assert!(col
+        .update_one(
+            doc! { "_id": 1 },
+            doc! {
+                "$rename": {
+                    "profile.name": "archive.value",
+                    "profile.visits": "archive.value",
+                },
+            },
+        )
+        .is_err());
+    assert_eq!(col.find_one(doc! { "_id": 1 }).unwrap(), Some(original));
 }
 
 #[test]
@@ -469,5 +509,35 @@ fn test_remaining_update_operators_support_dotted_paths() {
             .get_str("name")
             .unwrap(),
         "Vincent"
+    );
+}
+
+#[test]
+fn test_dotted_mul_creates_typed_zero_for_missing_fields() {
+    let db = prepare_db("test-update-dotted-mul-missing-fields").unwrap();
+    let col = db.collection::<Document>("test");
+    col.insert_one(doc! { "_id": 1 }).unwrap();
+
+    col.update_one(
+        doc! { "_id": 1 },
+        doc! {
+            "$mul": {
+                "stats.int32": 3,
+                "stats.int64": 3_i64,
+                "stats.double": 3.0,
+                "stats.decimal": Bson::Decimal128("3".parse::<Decimal128>().unwrap()),
+            },
+        },
+    )
+    .unwrap();
+
+    let actual = col.find_one(doc! { "_id": 1 }).unwrap().unwrap();
+    let stats = actual.get_document("stats").unwrap();
+    assert_eq!(stats.get("int32"), Some(&Bson::Int32(0)));
+    assert_eq!(stats.get("int64"), Some(&Bson::Int64(0)));
+    assert_eq!(stats.get("double"), Some(&Bson::Double(0.0)));
+    assert_eq!(
+        stats.get("decimal"),
+        Some(&Bson::Decimal128("0".parse::<Decimal128>().unwrap())),
     );
 }

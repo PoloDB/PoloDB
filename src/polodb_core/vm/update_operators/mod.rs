@@ -26,18 +26,37 @@ pub(crate) trait UpdateOperator {
 impl dyn UpdateOperator {
 
     pub(crate) fn validate_key(doc: &Document) -> Result<()> {
-        let keys: Vec<_> = doc.keys().collect();
-        for (index, k) in keys.iter().enumerate() {
-            document_path::validate_update_path(k)?;
-            for other in keys.iter().skip(index + 1) {
-                if document_path::paths_conflict(k, other) {
-                    return Err(crate::Error::ValidationError(format!(
-                        "conflicting update paths '{k}' and '{other}'"
-                    )));
-                }
+        document_path::validate_update_paths(doc.keys().map(String::as_str))
+    }
+
+    pub(crate) fn validate_update_document(update: &Document) -> Result<()> {
+        let mut paths = Vec::new();
+        for (operator, value) in update {
+            if !matches!(
+                operator.as_str(),
+                "$inc"
+                    | "$set"
+                    | "$max"
+                    | "$min"
+                    | "$mul"
+                    | "$rename"
+                    | "$unset"
+                    | "$push"
+                    | "$pop"
+            ) {
+                continue;
+            }
+
+            let Some(fields) = value.as_document() else {
+                continue;
+            };
+            paths.extend(fields.keys().map(String::as_str));
+
+            if operator == "$rename" {
+                paths.extend(fields.values().filter_map(Bson::as_str));
             }
         }
-        Ok(())
+        document_path::validate_update_paths(paths)
     }
 
 }

@@ -54,6 +54,24 @@ pub(super) fn paths_conflict(left: &str, right: &str) -> bool {
             .is_some_and(|suffix| suffix.starts_with('.'))
 }
 
+pub(super) fn validate_update_paths<'a>(
+    paths: impl IntoIterator<Item = &'a str>,
+) -> Result<()> {
+    let mut validated_paths: Vec<&'a str> = Vec::new();
+    for path in paths {
+        validate_update_path(path)?;
+        for other in &validated_paths {
+            if paths_conflict(path, other) {
+                return Err(crate::Error::ValidationError(format!(
+                    "conflicting update paths '{other}' and '{path}'"
+                )));
+            }
+        }
+        validated_paths.push(path);
+    }
+    Ok(())
+}
+
 pub(super) fn get_path<'a>(doc: &'a Document, path: &str) -> Result<Option<&'a Bson>> {
     let parts = split_path(path)?;
     let mut current = doc;
