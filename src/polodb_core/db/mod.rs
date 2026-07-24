@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod backend;
 mod db;
 pub(crate) mod db_inner;
 pub mod client_cursor;
