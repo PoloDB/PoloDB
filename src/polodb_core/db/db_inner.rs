@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use bson::{Bson, Document};
 use serde::Serialize;
 use super::db::Result;
-use crate::errors::Error;
+use crate::errors::{DuplicateKeyError, Error};
 use crate::options::UpdateOptions;
 use crate::Config;
 use crate::vm::SubProgram;
@@ -430,6 +430,15 @@ impl DatabaseInner {
             &Bson::String(col_spec._id.clone()),
             pkey,
         ])?;
+
+        if txn.rocksdb_txn.get(stacked_key.as_ref())?.is_some() {
+            return Err(DuplicateKeyError {
+                name: "_id_".to_string(),
+                key: pkey.to_string(),
+                ns: col_spec.name().to_string(),
+            }
+            .into());
+        }
 
         let doc_buf = bson::to_vec(&doc)?;
 
