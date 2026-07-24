@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use polodb_core::{Result, CollectionT};
-use polodb_core::bson::{doc, Document};
+use polodb_core::bson::{doc, DateTime, Document};
 
 mod common;
 
@@ -108,6 +108,207 @@ fn test_find() {
         let one = result[0].clone();
         assert_eq!(one.get("content").unwrap().as_str().unwrap(), "3");
     });
+}
+
+#[test]
+fn test_nested_range_queries() {
+    let db = prepare_db("test-nested-range-queries").unwrap();
+    let collection = db.collection::<Document>("events");
+
+    collection.insert_many(vec![
+        doc! {
+            "_id": 1,
+            "metadata": {
+                "created_at": -1,
+            },
+        },
+        doc! {
+            "_id": 2,
+            "metadata": {
+                "created_at": 0,
+            },
+        },
+        doc! {
+            "_id": 3,
+            "metadata": {
+                "created_at": 10,
+            },
+        },
+        doc! {
+            "_id": 4,
+            "metadata": {},
+        },
+        doc! {
+            "_id": 5,
+            "metadata": "not a document",
+        },
+        doc! {
+            "_id": 6,
+            "metadata": {
+                "audit": {
+                    "created_at": 20,
+                },
+            },
+        },
+    ]).unwrap();
+
+    let cases = [
+        (
+            doc! {
+                "metadata.created_at": {
+                    "$gt": 0,
+                },
+            },
+            vec![3],
+        ),
+        (
+            doc! {
+                "metadata.created_at": {
+                    "$gte": 0,
+                },
+            },
+            vec![2, 3],
+        ),
+        (
+            doc! {
+                "metadata.created_at": {
+                    "$lt": 10,
+                },
+            },
+            vec![1, 2],
+        ),
+        (
+            doc! {
+                "metadata.created_at": {
+                    "$lte": 0,
+                },
+            },
+            vec![1, 2],
+        ),
+        (
+            doc! {
+                "metadata.created_at": {
+                    "$gte": 0,
+                    "$lt": 10,
+                },
+            },
+            vec![2],
+        ),
+        (
+            doc! {
+                "metadata.audit.created_at": {
+                    "$gte": 20,
+                },
+            },
+            vec![6],
+        ),
+    ];
+
+    for (filter, expected_ids) in cases {
+        let mut actual_ids = collection
+            .find(filter)
+            .run()
+            .unwrap()
+            .collect::<Result<Vec<Document>>>()
+            .unwrap()
+            .into_iter()
+            .map(|document| document.get_i32("_id").unwrap())
+            .collect::<Vec<_>>();
+        actual_ids.sort_unstable();
+        assert_eq!(actual_ids, expected_ids);
+    }
+}
+
+#[test]
+fn test_nested_datetime_range_query() {
+    let db = prepare_db("test-nested-datetime-range-query").unwrap();
+    let collection = db.collection::<Document>("events");
+
+    collection.insert_many(vec![
+        doc! {
+            "_id": 1,
+            "metadata": {
+                "created_at": DateTime::from_millis(-1),
+            },
+        },
+        doc! {
+            "_id": 2,
+            "metadata": {
+                "created_at": DateTime::from_millis(10),
+            },
+        },
+    ]).unwrap();
+
+    let result = collection
+        .find(doc! {
+            "metadata.created_at": {
+                "$gte": DateTime::from_millis(0),
+            },
+        })
+        .run()
+        .unwrap()
+        .collect::<Result<Vec<Document>>>()
+        .unwrap();
+
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].get_i32("_id").unwrap(), 2);
+}
+
+#[test]
+fn test_nested_range_queries_in_update_and_delete() {
+    let db = prepare_db("test-nested-range-queries-in-update-and-delete").unwrap();
+    let collection = db.collection::<Document>("events");
+
+    collection.insert_many(vec![
+        doc! {
+            "_id": 1,
+            "metadata": {
+                "created_at": 1,
+            },
+            "status": "old",
+        },
+        doc! {
+            "_id": 2,
+            "metadata": {
+                "created_at": 20,
+            },
+            "status": "old",
+        },
+    ]).unwrap();
+
+    let update_result = collection.update_one(
+        doc! {
+            "metadata.created_at": {
+                "$gte": 20,
+            },
+        },
+        doc! {
+            "$set": {
+                "status": "new",
+            },
+        },
+    ).unwrap();
+
+    assert_eq!(update_result.matched_count, 1);
+    assert_eq!(update_result.modified_count, 1);
+    assert_eq!(
+        collection.find_one(doc! {
+            "_id": 2,
+        }).unwrap().unwrap().get_str("status").unwrap(),
+        "new",
+    );
+
+    let delete_result = collection.delete_one(doc! {
+        "metadata.created_at": {
+            "$lt": 10,
+        },
+    }).unwrap();
+
+    assert_eq!(delete_result.deleted_count, 1);
+    assert_eq!(collection.count_documents().unwrap(), 1);
+    assert!(collection.find_one(doc! {
+        "_id": 1,
+    }).unwrap().is_none());
 }
 
 #[test]

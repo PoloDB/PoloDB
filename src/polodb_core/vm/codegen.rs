@@ -583,14 +583,10 @@ impl Codegen {
         Ok(())
     }
 
-    fn recursively_get_field(&mut self, key: &str, get_field_failed_label: Label) -> usize {
-        let slices: Vec<&str> = key.split('.').collect();
-        for slice in &slices {
-            let str_ref: &str = slice;
-            let current_stat_id = self.push_static(str_ref.into());
-            self.emit_goto2(DbOp::GetField, current_stat_id, get_field_failed_label);
-        }
-        slices.len()
+    fn get_field(&mut self, key: &str, get_field_failed_label: Label) -> usize {
+        let key_static_id = self.push_static(key.into());
+        self.emit_goto2(DbOp::GetField, key_static_id, get_field_failed_label);
+        1
     }
 
     fn get_field_or_null(&mut self, key: &str) -> usize {
@@ -663,7 +659,7 @@ impl Codegen {
     ) -> Result<()> {
         match sub_key {
             "$eq" => {
-                let field_size = self.recursively_get_field(key, not_found_label);
+                let field_size = self.get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
@@ -677,7 +673,7 @@ impl Codegen {
             }
 
             "$gt" => {
-                let field_size = self.recursively_get_field(key, not_found_label);
+                let field_size = self.get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
@@ -690,7 +686,7 @@ impl Codegen {
             }
 
             "$gte" => {
-                let field_size = self.recursively_get_field(key, not_found_label);
+                let field_size = self.get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
@@ -734,7 +730,7 @@ impl Codegen {
             }
 
             "$lt" => {
-                let field_size = self.recursively_get_field(key, not_found_label);
+                let field_size = self.get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
@@ -747,7 +743,7 @@ impl Codegen {
             }
 
             "$lte" => {
-                let field_size = self.recursively_get_field(key, not_found_label);
+                let field_size = self.get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
@@ -761,7 +757,7 @@ impl Codegen {
             }
 
             "$ne" => {
-                let field_size = self.recursively_get_field(key, not_found_label);
+                let field_size = self.get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
@@ -800,7 +796,7 @@ impl Codegen {
                     }
                 };
 
-                let field_size = self.recursively_get_field(key, not_found_label);
+                let field_size = self.get_field(key, not_found_label);
                 self.emit(DbOp::ArraySize);
 
                 let expect_size_stat_id = self.push_static(Bson::from(expected_size));
@@ -825,7 +821,7 @@ impl Codegen {
                     }
                 }
 
-                let field_size = self.recursively_get_field(key, not_found_label);
+                let field_size = self.get_field(key, not_found_label);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
