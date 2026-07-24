@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use bson::Document;
 use bson::spec::ElementType;
 use serde::{Deserialize, Serialize};
-use polodb_core::{Database, Result, CollectionT};
+use polodb_core::{CollectionT, Database, Error, Result};
 use polodb_core::bson::{doc, Bson};
 
 mod common;
@@ -259,6 +259,65 @@ fn test_insert_different_types_as_key() {
 
     assert_eq!(result[0].as_ref().unwrap().get("_id").unwrap().element_type(), ElementType::String);
     assert_eq!(result[1].as_ref().unwrap().get("_id").unwrap().element_type(), ElementType::Int32);
+}
+
+#[test]
+fn test_insert_one_duplicate_id_preserves_original_document() {
+    let db = prepare_db("test-insert-one-duplicate-id").unwrap();
+    let collection = db.collection::<Document>("test");
+
+    collection.insert_one(doc! {
+        "_id": "duplicate",
+        "value": "original",
+    }).unwrap();
+
+    let error = collection.insert_one(doc! {
+        "_id": "duplicate",
+        "value": "replacement",
+    }).unwrap_err();
+
+    assert!(matches!(error, Error::DuplicateKey(_)));
+    assert_eq!(collection.count_documents().unwrap(), 1);
+    assert_eq!(collection.find_one(doc! {
+        "_id": "duplicate",
+    }).unwrap().unwrap(), doc! {
+        "_id": "duplicate",
+        "value": "original",
+    });
+}
+
+#[test]
+fn test_insert_many_duplicate_id_rolls_back_all_documents() {
+    let db = prepare_db("test-insert-many-duplicate-id").unwrap();
+    let collection = db.collection::<Document>("test");
+
+    collection.insert_one(doc! {
+        "_id": "existing",
+        "value": "original",
+    }).unwrap();
+
+    let error = collection.insert_many(vec![
+        doc! {
+            "_id": "new",
+            "value": "must be rolled back",
+        },
+        doc! {
+            "_id": "existing",
+            "value": "replacement",
+        },
+    ]).unwrap_err();
+
+    assert!(matches!(error, Error::DuplicateKey(_)));
+    assert_eq!(collection.count_documents().unwrap(), 1);
+    assert!(collection.find_one(doc! {
+        "_id": "new",
+    }).unwrap().is_none());
+    assert_eq!(collection.find_one(doc! {
+        "_id": "existing",
+    }).unwrap().unwrap(), doc! {
+        "_id": "existing",
+        "value": "original",
+    });
 }
 
 #[test]
