@@ -1,4 +1,5 @@
 use bson::{Bson, Document};
+use crate::vm::update_operators::document_path::set_path;
 use crate::vm::update_operators::{UpdateOperator, UpdateResult};
 use crate::Result;
 
@@ -28,8 +29,7 @@ impl UpdateOperator for SetOperator {
 
         let mut updated = false;
         for (k, v) in self.doc.iter() {
-            doc.insert(k.clone(), v.clone());
-            updated = true;
+            updated |= set_path(doc, k, v.clone())?.as_ref() != Some(v);
         }
 
         Ok(UpdateResult {

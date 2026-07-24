@@ -1,3 +1,4 @@
+mod document_path;
 mod set_operator;
 mod inc_operator;
 mod mul_operator;
@@ -25,12 +26,37 @@ pub(crate) trait UpdateOperator {
 impl dyn UpdateOperator {
 
     pub(crate) fn validate_key(doc: &Document) -> Result<()> {
-        for (k, _) in doc.iter() {
-            if k == "_id" {
-                return Err(crate::Error::UnableToUpdatePrimaryKey);
+        document_path::validate_update_paths(doc.keys().map(String::as_str))
+    }
+
+    pub(crate) fn validate_update_document(update: &Document) -> Result<()> {
+        let mut paths = Vec::new();
+        for (operator, value) in update {
+            if !matches!(
+                operator.as_str(),
+                "$inc"
+                    | "$set"
+                    | "$max"
+                    | "$min"
+                    | "$mul"
+                    | "$rename"
+                    | "$unset"
+                    | "$push"
+                    | "$pop"
+            ) {
+                continue;
+            }
+
+            let Some(fields) = value.as_document() else {
+                continue;
+            };
+            paths.extend(fields.keys().map(String::as_str));
+
+            if operator == "$rename" {
+                paths.extend(fields.values().filter_map(Bson::as_str));
             }
         }
-        Ok(())
+        document_path::validate_update_paths(paths)
     }
 
 }
