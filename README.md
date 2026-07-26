@@ -32,7 +32,7 @@ protocol compatibility.
 ## Project status
 
 The latest stable release is
-[v5.2.0](https://github.com/PoloDB/PoloDB/releases/tag/v5.2.0).
+[v5.3.0](https://github.com/PoloDB/PoloDB/releases/tag/v5.3.0).
 See the [changelog](CHANGELOG.md) for release details.
 
 PoloDB v5 uses RocksDB as its storage backend. A database path is a directory,
@@ -50,7 +50,7 @@ Add the embedded library and Serde to your project:
 
 ```toml
 [dependencies]
-polodb_core = "5.2.0"
+polodb_core = "5.3.0"
 serde = { version = "1", features = ["derive"] }
 ```
 
@@ -96,7 +96,7 @@ updates, indexes, aggregation, and transactions.
 Install and start the server:
 
 ```console
-cargo install polodb --version 5.2.0
+cargo install polodb --version 5.3.0
 polodb serve --path ./data/server --host 127.0.0.1 --port 27017
 ```
 

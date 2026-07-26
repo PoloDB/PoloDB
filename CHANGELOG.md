@@ -1,4 +1,18 @@
 
+# 5.3.0
+
+- Expand MongoDB-compatible query matching:
+  - Correct `$in` scalar, array, and regular-expression matching ([#231](https://github.com/PoloDB/PoloDB/pull/231))
+  - Add `$all` matching ([#233](https://github.com/PoloDB/PoloDB/pull/233))
+  - Support range queries on nested fields ([#237](https://github.com/PoloDB/PoloDB/pull/237))
+- Strengthen write correctness:
+  - Allow updates that retain an existing unique-index value ([#236](https://github.com/PoloDB/PoloDB/pull/236))
+  - Reject duplicate `_id` values ([#238](https://github.com/PoloDB/PoloDB/pull/238))
+  - Upsert only when no document matches ([#239](https://github.com/PoloDB/PoloDB/pull/239))
+  - Support and validate dotted paths in update operators ([#240](https://github.com/PoloDB/PoloDB/pull/240))
+- Fix RocksDB FFI pointer types on ARM64 and add ARM64 CI coverage ([#234](https://github.com/PoloDB/PoloDB/pull/234))
+- Refresh the project README and document current compatibility boundaries ([#235](https://github.com/PoloDB/PoloDB/pull/235))
+
 # 5.2.0
 
 - Update Rust and Python dependencies, including security-related upgrades
