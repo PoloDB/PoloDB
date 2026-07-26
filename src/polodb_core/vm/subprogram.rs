@@ -1386,13 +1386,13 @@ mod tests {
                 "age": 1,
             },
             "$mul": doc! {
-                "age": 3,
+                "score": 3,
             },
             "$min": doc! {
-                "age": 100,
+                "rank": 100,
             },
             "$unset": doc! {
-                "age": "",
+                "status": "",
             },
             "$rename": doc! {
                 "hello1": "hello2",

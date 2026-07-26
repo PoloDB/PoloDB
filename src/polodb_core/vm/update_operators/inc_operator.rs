@@ -1,5 +1,6 @@
 use bson::{Bson, Document};
 use crate::vm::update_operators::{UpdateOperator, UpdateResult};
+use crate::vm::update_operators::document_path::{get_path, set_path};
 use crate::{Error, Result};
 use crate::errors::CannotApplyOperationForTypes;
 
@@ -42,20 +43,18 @@ impl IncOperator {
     }
 
     fn inc_field(doc: &mut Document, key: &str, value: Bson) -> Result<()> {
-        match doc.get(key) {
+        let result = match get_path(doc, key)? {
             Some(Bson::Null) => {
                 return Err(Error::IncrementNullField);
             }
 
             Some(original_value) => {
-                let result = IncOperator::inc_numeric(key, original_value, &value)?;
-                doc.insert::<String, Bson>(key.into(), result);
+                IncOperator::inc_numeric(key, original_value, &value)?
             }
 
-            None => {
-                doc.insert::<String, Bson>(key.into(), value);
-            }
-        }
+            None => value,
+        };
+        set_path(doc, key, result)?;
         Ok(())
     }
 

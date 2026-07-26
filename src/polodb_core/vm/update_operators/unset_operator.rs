@@ -1,5 +1,6 @@
 use bson::{Bson, Document};
 use crate::Result;
+use crate::vm::update_operators::document_path::remove_path;
 use crate::vm::update_operators::{UpdateOperator, UpdateResult};
 
 pub(crate) struct UnsetOperator {
@@ -9,6 +10,7 @@ pub(crate) struct UnsetOperator {
 impl UnsetOperator {
 
     pub fn compile(doc: &Document) -> Result<UnsetOperator> {
+        <dyn UpdateOperator>::validate_key(doc)?;
         let fields = doc.keys().map(|k| k.to_string()).collect();
         Ok(UnsetOperator {
             fields
@@ -27,8 +29,7 @@ impl UpdateOperator for UnsetOperator {
 
         let mut updated = false;
         for field in &self.fields {
-            doc.remove(field);
-            updated = true;
+            updated |= remove_path(doc, field)?.is_some();
         }
 
         Ok(UpdateResult {

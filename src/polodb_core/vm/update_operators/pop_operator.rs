@@ -3,6 +3,7 @@ use indexmap::IndexMap;
 use crate::{Result, Error};
 use crate::errors::mk_invalid_query_field;
 use crate::vm::update_operators::{UpdateOperator, UpdateResult};
+use crate::vm::update_operators::document_path::{get_path, set_path};
 
 pub(crate) struct PopOperator {
     pop_map: IndexMap<String, bool>,
@@ -11,6 +12,7 @@ pub(crate) struct PopOperator {
 impl PopOperator {
 
     pub fn compile(doc: Document, name: String, path: String) -> Result<PopOperator> {
+        <dyn UpdateOperator>::validate_key(&doc)?;
         let mut pop_map = IndexMap::new();
         for (key, value) in doc.iter() {
             let num = match value {
@@ -53,8 +55,8 @@ impl UpdateOperator for PopOperator {
 
         let mut updated = false;
         for (k, is_first) in self.pop_map.iter() {
-            let target = doc.get(k).unwrap_or(&Bson::Null);
-            let result = match target.clone() {
+            let target = get_path(doc, k)?.cloned().unwrap_or(Bson::Null);
+            let result = match target {
                 Bson::Array(mut arr) => {
                     if arr.is_empty() {
                         continue;
@@ -76,7 +78,7 @@ impl UpdateOperator for PopOperator {
                     )))
                 }
             };
-            doc.insert(k.clone(), result);
+            set_path(doc, k, result)?;
             updated = true;
         }
 

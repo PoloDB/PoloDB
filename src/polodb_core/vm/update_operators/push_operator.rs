@@ -1,5 +1,6 @@
 use bson::{Bson, Document};
 use crate::vm::update_operators::{UpdateOperator, UpdateResult};
+use crate::vm::update_operators::document_path::{get_path, set_path};
 use crate::Result;
 use crate::errors::CannotApplyOperationForTypes;
 
@@ -29,7 +30,7 @@ impl UpdateOperator for PushOperator {
 
         let mut updated = false;
         for (k, v) in self.doc.iter() {
-            let target = doc.get(k).unwrap_or(&Bson::Null);
+            let target = get_path(doc, k)?.cloned().unwrap_or(Bson::Null);
             let result = match target.clone() {
                 Bson::Array(mut arr) => {
                     arr.push(v.clone());
@@ -48,7 +49,7 @@ impl UpdateOperator for PushOperator {
                         .into());
                 }
             };
-            doc.insert(k.clone(), result);
+            set_path(doc, k, result)?;
             updated = true;
         }
 
