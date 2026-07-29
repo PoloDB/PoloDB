@@ -49,6 +49,17 @@ pub(super) fn matches_all(field_value: &Bson, candidates: &[Bson]) -> Result<boo
             .all(|(candidate, regex)| candidate_matches(field_value, candidate, regex.as_ref())))
 }
 
+pub(super) fn matches_query_equality(field_value: &Bson, query_value: &Bson) -> bool {
+    query_values_equal(field_value, query_value)
+        || matches!(
+            field_value,
+            Bson::Array(values)
+                if values
+                    .iter()
+                    .any(|value| query_values_equal(value, query_value))
+        )
+}
+
 pub(super) fn validate_membership_candidates(candidates: &[Bson]) -> Result<()> {
     compile_candidate_regexes(candidates).map(|_| ())
 }
@@ -74,14 +85,7 @@ fn candidate_matches(
     candidate: &Bson,
     compiled_regex: Option<&CompiledRegex>,
 ) -> bool {
-    query_values_equal(field_value, candidate)
-        || matches!(
-            field_value,
-            Bson::Array(values)
-                if values
-                    .iter()
-                    .any(|value| query_values_equal(value, candidate))
-        )
+    matches_query_equality(field_value, candidate)
         || compiled_regex.is_some_and(|regex| matches_compiled_regex(field_value, regex))
 }
 
@@ -195,7 +199,9 @@ mod tests {
     use bson::spec::BinarySubtype;
     use bson::{doc, Binary, Bson, JavaScriptCodeWithScope, Regex};
 
-    use super::{field_path_value, matches_all, matches_in, query_values_equal};
+    use super::{
+        field_path_value, matches_all, matches_in, matches_query_equality, query_values_equal,
+    };
 
     #[test]
     fn field_path_lookup_preserves_terminal_documents() {
@@ -225,6 +231,28 @@ mod tests {
         assert!(!query_values_equal(
             &Bson::Document(doc! { "a": 1, "b": 2 }),
             &Bson::Document(doc! { "b": 2, "a": 1 }),
+        ));
+    }
+
+    #[test]
+    fn query_equality_matches_array_elements_and_exact_arrays() {
+        let exact_array = Bson::Array(vec![Bson::Int32(1), Bson::Int32(2)]);
+
+        assert!(matches_query_equality(
+            &Bson::Array(vec![Bson::Int32(1), Bson::Int64(2)]),
+            &Bson::Double(2.0),
+        ));
+        assert!(matches_query_equality(
+            &Bson::Array(vec![Bson::Int64(1), Bson::Double(2.0)]),
+            &exact_array,
+        ));
+        assert!(matches_query_equality(
+            &Bson::Array(vec![exact_array.clone(), Bson::Int32(3)]),
+            &exact_array,
+        ));
+        assert!(!matches_query_equality(
+            &Bson::Array(vec![Bson::Int32(2), Bson::Int32(1)]),
+            &exact_array,
         ));
     }
 

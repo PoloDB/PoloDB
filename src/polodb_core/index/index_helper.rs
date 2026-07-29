@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashSet;
+
 use bson::{Bson, Document};
 use bson::spec::ElementType;
-use crate::Result;
+use crate::{Error, Result};
 use crate::coll::collection_info::{
     CollectionSpecification,
     IndexInfo,
@@ -23,6 +25,61 @@ use crate::errors::DuplicateKeyError;
 use crate::transaction::TransactionInner;
 
 pub(crate) const INDEX_PREFIX: &str = "$I";
+
+fn extract_index_values(
+    data_doc: &Document,
+    path: &str,
+    reject_intermediate_arrays: bool,
+) -> Result<Vec<Bson>> {
+    let mut path_segments = path.split('.');
+    let Some(first_segment) = path_segments.next() else {
+        return Ok(Vec::new())
+    };
+    let Some(mut value) = data_doc.get(first_segment) else {
+        return Ok(Vec::new())
+    };
+
+    for segment in path_segments {
+        value = match value {
+            Bson::Document(document) => {
+                let Some(value) = document.get(segment) else {
+                    return Ok(Vec::new())
+                };
+                value
+            }
+            Bson::Array(_) => {
+                if reject_intermediate_arrays {
+                    return Err(Error::NotAValidKeyType(format!(
+                        "array encountered before the end of index path '{path}'"
+                    )))
+                }
+                return Ok(Vec::new())
+            }
+            _ => return Ok(Vec::new()),
+        };
+    }
+
+    match value {
+        Bson::Array(values) if values.is_empty() => Ok(vec![Bson::Undefined]),
+        Bson::Array(values) => {
+            let mut encoded_values = HashSet::new();
+            let mut index_values = Vec::with_capacity(values.len());
+
+            for value in values {
+                let encoded = crate::utils::bson::stacked_key([value])?;
+                if encoded_values.insert(encoded) {
+                    index_values.push(value.clone());
+                }
+            }
+
+            Ok(index_values)
+        }
+        value => {
+            crate::utils::bson::stacked_key([value])?;
+            Ok(vec![value.clone()])
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u8)]
@@ -99,32 +156,42 @@ impl<'b, 'c, 'd, 'e> IndexHelper<'b, 'c, 'd, 'e> {
         let first_tuple = tuples.first().unwrap();
         let (keys, _order) = first_tuple;
 
-        let value = crate::utils::bson::try_get_document_value(data_doc, keys);
-        if value.is_none() {
+        // Older versions silently skipped arrays in the middle of dotted paths. Keep delete
+        // operations tolerant so those legacy documents and indexes can still be removed.
+        let values = extract_index_values(
+            data_doc,
+            keys,
+            op == IndexHelperOperation::Insert,
+        )?;
+        if values.is_empty() {
             return Ok(())
         }
 
         if op == IndexHelperOperation::Insert && index_info.is_unique() {
-            IndexHelper::check_unique_key(
-                col_name,
-                index_name,
-                value.as_ref().unwrap(),
-                txn,
-            )?;
+            for value in &values {
+                IndexHelper::check_unique_key(
+                    col_name,
+                    index_name,
+                    value,
+                    txn,
+                )?;
+            }
         }
 
-        let index_key = IndexHelper::make_index_key(
-            col_name,
-            index_name,
-            value.as_ref().unwrap(),
-            Some(pkey),
-        )?;
+        for value in &values {
+            let index_key = IndexHelper::make_index_key(
+                col_name,
+                index_name,
+                value,
+                Some(pkey),
+            )?;
 
-        if op == IndexHelperOperation::Insert {
-            let value_buf = [ElementType::Null as u8];
-            txn.put(index_key.as_slice(), &value_buf)?;
-        } else {
-            txn.delete(index_key.as_slice())?;
+            if op == IndexHelperOperation::Insert {
+                let value_buf = [ElementType::Null as u8];
+                txn.put(index_key.as_slice(), &value_buf)?;
+            } else {
+                txn.delete(index_key.as_slice())?;
+            }
         }
 
         Ok(())
@@ -185,9 +252,9 @@ impl<'b, 'c, 'd, 'e> IndexHelper<'b, 'c, 'd, 'e> {
 
 #[cfg(test)]
 mod tests {
-    use bson::Bson;
+    use bson::{doc, Bson};
     use crate::utils::str::escape_binary_to_string;
-    use super::IndexHelper;
+    use super::{extract_index_values, IndexHelper};
 
     #[test]
     fn test_make_index_key() {
@@ -201,6 +268,57 @@ mod tests {
         let escaped_string = escape_binary_to_string(index_key) .unwrap();
 
         assert_eq!(escaped_string, "\\x02$I\\x00\\x02users\\x00\\x02name\\x00\\x02value\\x00\\x02Vincent\\x00");
+    }
+
+    #[test]
+    fn test_extract_index_values_from_terminal_array() {
+        let document = doc! {
+            "metadata": {
+                "tags": ["rock", "rock", "live"],
+            },
+        };
+
+        assert_eq!(
+            extract_index_values(&document, "metadata.tags", true).unwrap(),
+            vec![Bson::String("rock".into()), Bson::String("live".into())],
+        );
+    }
+
+    #[test]
+    fn test_extract_index_values_from_empty_array() {
+        assert_eq!(
+            extract_index_values(&doc! { "tags": [] }, "tags", true).unwrap(),
+            vec![Bson::Undefined],
+        );
+    }
+
+    #[test]
+    fn test_extract_index_values_rejects_intermediate_array() {
+        let error = extract_index_values(
+            &doc! {
+                "ratings": [
+                    { "score": 5 },
+                ],
+            },
+            "ratings.score",
+            true,
+        )
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("array encountered before the end of index path"));
+        assert!(extract_index_values(
+            &doc! {
+                "ratings": [
+                    { "score": 5 },
+                ],
+            },
+            "ratings.score",
+            false,
+        )
+        .unwrap()
+        .is_empty());
     }
 
 }
