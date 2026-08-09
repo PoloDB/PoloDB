@@ -560,6 +560,11 @@ impl fmt::Display for SubProgram {
                         pc += 1;
                     }
 
+                    DbOp::QueryEqual => {
+                        writeln!(f, "{}: QueryEqual", pc)?;
+                        pc += 1;
+                    }
+
                     DbOp::Greater => {
                         writeln!(f, "{}: Greater", pc)?;
                         pc += 1;
@@ -842,21 +847,21 @@ mod tests {
 75: Goto(43)
 
 80: Label(0, "compare_function")
-85: GetField("name", 129)
-94: PushValue("Vincent Chan")
-99: Equal
-100: FalseJump(129)
-105: Pop
-106: Pop
-107: GetField("age", 129)
-116: PushValue(32)
-121: Equal
-122: FalseJump(129)
-127: Pop
-128: Pop
+85: GetFieldOrNull("name")
+90: PushValue("Vincent Chan")
+95: QueryEqual
+96: FalseJump(121)
+101: Pop
+102: Pop
+103: GetFieldOrNull("age")
+108: PushValue(32)
+113: QueryEqual
+114: FalseJump(121)
+119: Pop
+120: Pop
 
-129: Label(1, "compare_function_clean")
-134: Ret0
+121: Label(1, "compare_function_clean")
+126: Ret0
 "#;
         assert_eq!(expect, actual)
     }
@@ -899,15 +904,15 @@ mod tests {
 75: Goto(43)
 
 80: Label(0, "compare_function")
-85: GetField("info.color", 107)
-94: PushValue("yellow")
-99: Equal
-100: FalseJump(107)
-105: Pop
-106: Pop
+85: GetFieldOrNull("info.color")
+90: PushValue("yellow")
+95: QueryEqual
+96: FalseJump(103)
+101: Pop
+102: Pop
 
-107: Label(1, "compare_function_clean")
-112: Ret0
+103: Label(1, "compare_function_clean")
+108: Ret0
 "#;
         assert_eq!(expect, actual)
     }
@@ -935,15 +940,15 @@ mod tests {
 27: Halt
 
 28: Label(1)
-33: GetField("age", 20)
-42: PushValue(32)
-47: Equal
-48: FalseJump(20)
-53: Pop
-54: Pop
-55: ResultRow
-56: Pop
-57: Goto(20)
+33: GetFieldOrNull("age")
+38: PushValue(32)
+43: QueryEqual
+44: FalseJump(20)
+49: Pop
+50: Pop
+51: ResultRow
+52: Pop
+53: Goto(20)
 "#;
         assert_eq!(expect, actual)
     }
@@ -953,10 +958,10 @@ mod tests {
         let mut col_spec = new_spec("test");
 
         col_spec.indexes.insert(
-            "age_1".into(),
+            "name_1".into(),
             IndexInfo {
                 keys: indexmap! {
-                    "age".into() => 1,
+                    "name".into() => 1,
                 },
                 options: None,
             },
@@ -972,8 +977,8 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead(b"\x02$I\x00\x02test\x00\x02age_1\x00")
-5: PushValue(32)
+0: OpenRead(b"\x02$I\x00\x02test\x00\x02name_1\x00")
+5: PushValue("Vincent Chan")
 10: PushValue("test")
 15: FindByIndex(35)
 20: Goto(44)
@@ -988,15 +993,15 @@ mod tests {
 43: Halt
 
 44: Label(1)
-49: GetField("name", 35)
-58: PushValue("Vincent Chan")
-63: Equal
-64: FalseJump(35)
-69: Pop
-70: Pop
-71: ResultRow
-72: Pop
-73: Goto(25)
+49: GetFieldOrNull("age")
+54: PushValue(32)
+59: QueryEqual
+60: FalseJump(35)
+65: Pop
+66: Pop
+67: ResultRow
+68: Pop
+69: Goto(25)
 "#;
         assert_eq!(expect, actual);
     }
@@ -1046,21 +1051,21 @@ mod tests {
 75: Goto(43)
 
 80: Label(0, "compare_function")
-85: GetField("_id", 129)
-94: PushValue(6)
-99: Equal
-100: FalseJump(129)
-105: Pop
-106: Pop
-107: GetField("age", 129)
-116: PushValue(32)
-121: Equal
-122: FalseJump(129)
-127: Pop
-128: Pop
+85: GetFieldOrNull("_id")
+90: PushValue(6)
+95: QueryEqual
+96: FalseJump(121)
+101: Pop
+102: Pop
+103: GetFieldOrNull("age")
+108: PushValue(32)
+113: QueryEqual
+114: FalseJump(121)
+119: Pop
+120: Pop
 
-129: Label(1, "compare_function_clean")
-134: Ret0
+121: Label(1, "compare_function_clean")
+126: Ret0
 "#;
         assert_eq!(expect, actual)
     }
@@ -1110,38 +1115,38 @@ mod tests {
 75: Goto(43)
 
 80: Label(0, "compare_function")
-85: Goto(156)
+85: Goto(148)
 
 90: Label(8)
-95: GetField("age", 117)
-104: PushValue(11)
-109: Equal
-110: FalseJump(117)
-115: Pop
-116: Pop
+95: GetFieldOrNull("age")
+100: PushValue(11)
+105: QueryEqual
+106: FalseJump(113)
+111: Pop
+112: Pop
 
-117: Label(9)
-122: Ret0
+113: Label(9)
+118: Ret0
 
-123: Label(10)
-128: GetField("age", 150)
-137: PushValue(12)
-142: Equal
-143: FalseJump(150)
-148: Pop
-149: Pop
+119: Label(10)
+124: GetFieldOrNull("age")
+129: PushValue(12)
+134: QueryEqual
+135: FalseJump(142)
+140: Pop
+141: Pop
 
-150: Label(11)
-155: Ret0
+142: Label(11)
+147: Ret0
 
-156: Label(7)
-161: Call(90, 0)
-170: TrueJump(189)
-175: Call(123, 0)
-184: TrueJump(189)
+148: Label(7)
+153: Call(90, 0)
+162: TrueJump(181)
+167: Call(119, 0)
+176: TrueJump(181)
 
-189: Label(1, "compare_function_clean")
-194: Ret0
+181: Label(1, "compare_function_clean")
+186: Ret0
 "#;
         assert_eq!(expect, actual);
     }

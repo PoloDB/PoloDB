@@ -216,6 +216,10 @@ pub enum DbOp {
     // 0 false not equal
     // 1 for equal
     Equal,
+
+    // MongoDB query equality: compare the whole field value, then array elements
+    QueryEqual,
+
     Greater,
     GreaterEqual,
     Less,

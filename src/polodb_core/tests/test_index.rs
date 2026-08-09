@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use polodb_core::{Collection, CollectionT, IndexModel, IndexOptions, Result};
+use polodb_core::{Collection, CollectionT, Database, IndexModel, IndexOptions, Result};
 use polodb_core::options::UpdateOptions;
 use bson::{doc, Document};
 use crate::common::prepare_db;
@@ -25,6 +25,18 @@ fn create_unique_name_index(col: &Collection<Document>) {
             "name": 1,
         },
         options: Some(IndexOptions {
+            unique: Some(true),
+            ..Default::default()
+        }),
+    }).unwrap();
+}
+
+fn create_tags_index(col: &Collection<Document>, unique: bool) {
+    col.create_index(IndexModel {
+        keys: doc! {
+            "tags": 1,
+        },
+        options: unique.then_some(IndexOptions {
             unique: Some(true),
             ..Default::default()
         }),
@@ -98,13 +110,13 @@ fn test_create_index_with_data() {
 
         col.create_index(IndexModel {
             keys: doc! {
-                "age": 1,
+                "name": 1,
             },
             options: None,
         }).unwrap();
 
         let doc = col.find_one(doc! {
-            "age": 33
+            "name": "David"
         }).unwrap().unwrap();
 
         assert_eq!(doc.get_str("name").unwrap(), "David");
@@ -125,7 +137,7 @@ fn test_find_by_index() {
 
         col.create_index(IndexModel {
             keys: doc! {
-                "age": 1,
+                "name": 1,
             },
             options: None,
         }).unwrap();
@@ -136,7 +148,7 @@ fn test_find_by_index() {
         }).unwrap();
 
         let doc = col.find_one(doc! {
-            "age": 33
+            "name": "David"
         }).unwrap().unwrap();
 
         assert_eq!(doc.get_str("name").unwrap(), "David");
@@ -402,7 +414,7 @@ fn test_update_with_index() {
 
         col.create_index(IndexModel {
             keys: doc! {
-                "age": 1,
+                "name": 1,
             },
             options: None,
         }).unwrap();
@@ -413,18 +425,18 @@ fn test_update_with_index() {
         }).unwrap();
 
         col.update_many(doc! {
-            "age": 33,
+            "name": "David",
         }, doc! {
             "$set": {
-                "age": 34,
+                "name": "David Chan",
             },
         }).unwrap();
 
         let doc = col.find_one(doc! {
-            "age": 34
+            "name": "David Chan"
         }).unwrap().unwrap();
 
-        assert_eq!(doc.get_str("name").unwrap(), "David");
+        assert_eq!(doc.get_i32("age").unwrap(), 33);
 
         assert_eq!(metrics.find_by_index_count(), 1);
     });
@@ -544,4 +556,314 @@ fn test_issue_171() {
     assert_eq!(docs.len(), 1);
 
     assert_eq!(docs[0].get_str("name").unwrap(), "David");
+}
+
+#[test]
+fn test_issue_147_dotted_scalar_array_index() {
+    let db = prepare_db("test-issue-147-dotted-scalar-array-index").unwrap();
+    let metrics = db.metrics();
+    let col = db.collection::<Document>("music");
+
+    col.create_index(IndexModel {
+        keys: doc! {
+            "metadata.tags": 1,
+        },
+        options: None,
+    }).unwrap();
+
+    col.insert_many(vec![
+        doc! {
+            "_id": 1,
+            "metadata": {
+                "tags": ["ambient", "electronic"],
+            },
+        },
+        doc! {
+            "_id": 2,
+            "metadata": {
+                "tags": ["jazz"],
+            },
+        },
+    ]).unwrap();
+
+    metrics.enable();
+    let matches = col.find(doc! {
+        "metadata.tags": "ambient",
+    })
+        .run()
+        .unwrap()
+        .collect::<Result<Vec<Document>>>()
+        .unwrap();
+
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].get_i32("_id").unwrap(), 1);
+    assert_eq!(metrics.find_by_index_count(), 1);
+}
+
+#[test]
+fn test_create_multikey_index_with_existing_data() {
+    let db = prepare_db("test-create-multikey-index-with-existing-data").unwrap();
+    let metrics = db.metrics();
+    let col = db.collection::<Document>("music");
+
+    col.insert_one(doc! {
+        "_id": 1,
+        "tags": ["rock", "live"],
+    }).unwrap();
+    create_tags_index(&col, false);
+
+    metrics.enable();
+    assert!(col.find_one(doc! {
+        "tags": "live",
+    }).unwrap().is_some());
+    assert_eq!(metrics.find_by_index_count(), 1);
+}
+
+#[test]
+fn test_multikey_index_persists_after_reopen() {
+    let db_name = "test-multikey-index-persists-after-reopen";
+    let db_path = common::mk_db_path(db_name);
+    let db = prepare_db(db_name).unwrap();
+    let col = db.collection::<Document>("music");
+
+    create_tags_index(&col, false);
+    col.insert_one(doc! {
+        "_id": 1,
+        "tags": ["rock", "live"],
+    }).unwrap();
+
+    drop(col);
+    drop(db);
+
+    let db = Database::open_path(db_path.to_str().unwrap()).unwrap();
+    let metrics = db.metrics();
+    let col = db.collection::<Document>("music");
+    metrics.enable();
+
+    assert!(col.find_one(doc! {
+        "tags": "live",
+    }).unwrap().is_some());
+    assert_eq!(metrics.find_by_index_count(), 1);
+}
+
+#[test]
+fn test_unique_multikey_deduplicates_values_within_document() {
+    let db = prepare_db("test-unique-multikey-deduplicates-values").unwrap();
+    let col = db.collection::<Document>("music");
+    create_tags_index(&col, true);
+
+    col.insert_one(doc! {
+        "_id": 1,
+        "tags": ["rock", "rock", "live"],
+    }).unwrap();
+    col.insert_one(doc! {
+        "_id": 2,
+        "tags": ["jazz"],
+    }).unwrap();
+
+    assert_eq!(col.count_documents().unwrap(), 2);
+}
+
+#[test]
+fn test_unique_multikey_conflict_rolls_back_all_values() {
+    let db = prepare_db("test-unique-multikey-conflict-rolls-back").unwrap();
+    let col = db.collection::<Document>("music");
+    create_tags_index(&col, true);
+
+    col.insert_one(doc! {
+        "_id": 1,
+        "tags": ["rock", "live"],
+    }).unwrap();
+
+    let result = col.insert_one(doc! {
+        "_id": 2,
+        "tags": ["jazz", "rock"],
+    });
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("duplicate key error"));
+    assert_eq!(col.count_documents().unwrap(), 1);
+    assert!(col.find_one(doc! {
+        "tags": "jazz",
+    }).unwrap().is_none());
+    assert_eq!(
+        col.find_one(doc! {
+            "tags": "rock",
+        }).unwrap().unwrap().get_i32("_id").unwrap(),
+        1,
+    );
+}
+
+#[test]
+fn test_create_unique_multikey_index_conflict_rolls_back() {
+    let db = prepare_db("test-create-unique-multikey-conflict-rolls-back").unwrap();
+    let metrics = db.metrics();
+    let col = db.collection::<Document>("music");
+
+    col.insert_many(vec![
+        doc! {
+            "_id": 1,
+            "tags": ["rock", "live"],
+        },
+        doc! {
+            "_id": 2,
+            "tags": ["jazz", "rock"],
+        },
+    ]).unwrap();
+
+    let result = col.create_index(IndexModel {
+        keys: doc! {
+            "tags": 1,
+        },
+        options: Some(IndexOptions {
+            unique: Some(true),
+            ..Default::default()
+        }),
+    });
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("duplicate key error"));
+
+    metrics.enable();
+    let matches = col.find(doc! {
+        "tags": "rock",
+    })
+        .run()
+        .unwrap()
+        .collect::<Result<Vec<Document>>>()
+        .unwrap();
+    assert_eq!(matches.len(), 2);
+    assert_eq!(metrics.find_by_index_count(), 0);
+}
+
+#[test]
+fn test_multikey_update_and_delete_maintain_all_values() {
+    let db = prepare_db("test-multikey-update-and-delete").unwrap();
+    let col = db.collection::<Document>("music");
+    create_tags_index(&col, false);
+
+    col.insert_one(doc! {
+        "_id": 1,
+        "tags": ["rock", "live"],
+    }).unwrap();
+
+    col.update_one(doc! {
+        "_id": 1,
+    }, doc! {
+        "$set": {
+            "tags": ["jazz"],
+        },
+    }).unwrap();
+
+    assert!(col.find_one(doc! {
+        "tags": "rock",
+    }).unwrap().is_none());
+    assert!(col.find_one(doc! {
+        "tags": "live",
+    }).unwrap().is_none());
+    assert!(col.find_one(doc! {
+        "tags": "jazz",
+    }).unwrap().is_some());
+
+    col.delete_one(doc! {
+        "_id": 1,
+    }).unwrap();
+    assert!(col.find_one(doc! {
+        "tags": "jazz",
+    }).unwrap().is_none());
+}
+
+#[test]
+fn test_unique_multikey_update_conflict_rolls_back() {
+    let db = prepare_db("test-unique-multikey-update-conflict").unwrap();
+    let col = db.collection::<Document>("music");
+    create_tags_index(&col, true);
+
+    col.insert_many(vec![
+        doc! {
+            "_id": 1,
+            "tags": ["rock", "live"],
+        },
+        doc! {
+            "_id": 2,
+            "tags": ["jazz", "blues"],
+        },
+    ]).unwrap();
+
+    let result = col.update_one(doc! {
+        "_id": 2,
+    }, doc! {
+        "$set": {
+            "tags": ["jazz", "rock", "new"],
+        },
+    });
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("duplicate key error"));
+    assert_eq!(
+        col.find_one(doc! {
+            "tags": "jazz",
+        }).unwrap().unwrap().get_i32("_id").unwrap(),
+        2,
+    );
+    assert!(col.find_one(doc! {
+        "tags": "new",
+    }).unwrap().is_none());
+}
+
+#[test]
+fn test_unique_multikey_empty_arrays_conflict() {
+    let db = prepare_db("test-unique-multikey-empty-arrays-conflict").unwrap();
+    let col = db.collection::<Document>("music");
+    create_tags_index(&col, true);
+
+    col.insert_one(doc! {
+        "_id": 1,
+        "tags": [],
+    }).unwrap();
+
+    let result = col.insert_one(doc! {
+        "_id": 2,
+        "tags": [],
+    });
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("duplicate key error"));
+    assert_eq!(col.count_documents().unwrap(), 1);
+}
+
+#[test]
+fn test_multikey_rejects_unsupported_array_shapes_atomically() {
+    let db = prepare_db("test-multikey-rejects-unsupported-array-shapes").unwrap();
+    let col = db.collection::<Document>("music");
+    create_tags_index(&col, false);
+
+    assert!(col.insert_one(doc! {
+        "_id": 1,
+        "tags": [
+            { "name": "rock" },
+        ],
+    }).is_err());
+    assert!(col.insert_one(doc! {
+        "_id": 2,
+        "tags": [
+            ["rock"],
+        ],
+    }).is_err());
+    assert_eq!(col.count_documents().unwrap(), 0);
+
+    let ratings = db.collection::<Document>("ratings");
+    ratings.create_index(IndexModel {
+        keys: doc! {
+            "ratings.score": 1,
+        },
+        options: None,
+    }).unwrap();
+    assert!(ratings.insert_one(doc! {
+        "_id": 1,
+        "ratings": [
+            { "score": 5 },
+        ],
+    }).is_err());
+    assert_eq!(ratings.count_documents().unwrap(), 0);
 }

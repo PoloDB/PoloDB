@@ -53,6 +53,19 @@ fn is_all_literal_dollar_document(document: &Document) -> bool {
         .is_some_and(|key| matches!(key.as_str(), "$ref" | "$id" | "$db"))
 }
 
+fn is_index_safe_equality_value(value: &Bson) -> bool {
+    !matches!(
+        value,
+        Bson::Document(_)
+            | Bson::Array(_)
+            | Bson::Null
+            | Bson::Undefined
+            | Bson::Int32(_)
+            | Bson::Int64(_)
+            | Bson::Double(_)
+    )
+}
+
 pub(super) struct Codegen {
     program: Box<SubProgram>,
     jump_table: Vec<JumpTableRecord>,
@@ -195,10 +208,11 @@ impl Codegen {
             let key_static_id = self.push_static(Bson::String(key.clone()));
             let value_static_id = self.push_static(value.clone());
 
-            self.emit_goto2(DbOp::GetField, key_static_id, close_label); // push a value1
+            self.emit(DbOp::GetFieldOrNull);
+            self.emit_u32(key_static_id);
             self.emit_push_value(value_static_id); // push a value2
 
-            self.emit(DbOp::Equal);
+            self.emit(DbOp::QueryEqual);
             // if not equal，go to next
             self.emit_goto(DbOp::IfFalse, close_label);
 
@@ -345,7 +359,7 @@ impl Codegen {
             // { "a.b.c": 1 }
             let test_result = query.get(key);
             if let Some(query_doc) = test_result {
-                if query_doc.element_type() != ElementType::EmbeddedDocument {
+                if is_index_safe_equality_value(query_doc) {
                     let mut remain_query = query.clone();
                     remain_query.remove(key);
 
@@ -419,10 +433,11 @@ impl Codegen {
             let key_static_id = self.push_static(Bson::String(key.clone()));
             let value_static_id = self.push_static(value.clone());
 
-            self.emit_goto2(DbOp::GetField, key_static_id, close_label); // push a value1
+            self.emit(DbOp::GetFieldOrNull);
+            self.emit_u32(key_static_id);
             self.emit_push_value(value_static_id); // push a value2
 
-            self.emit(DbOp::Equal);
+            self.emit(DbOp::QueryEqual);
             // if not equal，go to next
             self.emit_goto(DbOp::IfFalse, close_label);
 
@@ -557,21 +572,13 @@ impl Codegen {
                     return self.emit_query_tuple_document(key, doc, false, not_found_label);
                 }
 
-                Bson::Array(_) => {
-                    return Err(Error::InvalidField(mk_invalid_query_field(
-                        self.last_key().into(),
-                        self.gen_path(),
-                    )))
-                }
-
                 _ => {
-                    let key_static_id = self.push_static(key.into());
-                    self.emit_goto2(DbOp::GetField, key_static_id, not_found_label);
+                    self.get_field_or_null(key);
 
                     let value_static_id = self.push_static(value.clone());
                     self.emit_push_value(value_static_id); // push a value2
 
-                    self.emit(DbOp::Equal);
+                    self.emit(DbOp::QueryEqual);
                     // if not equal，go to next
                     self.emit_goto(DbOp::IfFalse, not_found_label);
 
@@ -659,11 +666,11 @@ impl Codegen {
     ) -> Result<()> {
         match sub_key {
             "$eq" => {
-                let field_size = self.get_field(key, not_found_label);
+                let field_size = self.get_field_or_null(key);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit_logical(DbOp::Equal, is_in_not);
+                self.emit_logical(DbOp::QueryEqual, is_in_not);
 
                 // if not equal，go to next
                 self.emit_goto(DbOp::IfFalse, not_found_label);
@@ -757,11 +764,11 @@ impl Codegen {
             }
 
             "$ne" => {
-                let field_size = self.get_field(key, not_found_label);
+                let field_size = self.get_field_or_null(key);
 
                 let stat_val_id = self.push_static(sub_value.clone());
                 self.emit_push_value(stat_val_id);
-                self.emit_logical(DbOp::Equal, is_in_not);
+                self.emit_logical(DbOp::QueryEqual, !is_in_not);
 
                 // if equal，go to next
                 self.emit_goto(DbOp::IfFalse, not_found_label);

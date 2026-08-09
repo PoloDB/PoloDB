@@ -17,7 +17,9 @@ use crate::errors::{FieldTypeUnexpectedStruct, UnexpectedTypeForOpStruct};
 use crate::index::{make_index_key_with_query_key, IndexHelper, IndexHelperOperation};
 use crate::transaction::TransactionInner;
 use crate::vm::op::{generic_cmp, DbOp};
-use crate::vm::query_matcher::{field_path_value, matches_all, matches_in, matches_regex};
+use crate::vm::query_matcher::{
+    field_path_value, matches_all, matches_in, matches_query_equality, matches_regex,
+};
 use crate::vm::vm_external_func::VmExternalFuncStatus;
 use crate::vm::SubProgram;
 use crate::{Error, Metrics, Result};
@@ -813,6 +815,14 @@ impl VM {
 
                         self.r0 = if cmp { 1 } else { 0 };
 
+                        self.pc = self.pc.add(1);
+                    }
+
+                    DbOp::QueryEqual => {
+                        let field_value = &self.stack[self.stack.len() - 2];
+                        let query_value = &self.stack[self.stack.len() - 1];
+
+                        self.r0 = i32::from(matches_query_equality(field_value, query_value));
                         self.pc = self.pc.add(1);
                     }
 
