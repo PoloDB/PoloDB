@@ -53,6 +53,19 @@ fn is_all_literal_dollar_document(document: &Document) -> bool {
         .is_some_and(|key| matches!(key.as_str(), "$ref" | "$id" | "$db"))
 }
 
+fn is_index_safe_equality_value(value: &Bson) -> bool {
+    !matches!(
+        value,
+        Bson::Document(_)
+            | Bson::Array(_)
+            | Bson::Null
+            | Bson::Undefined
+            | Bson::Int32(_)
+            | Bson::Int64(_)
+            | Bson::Double(_)
+    )
+}
+
 pub(super) struct Codegen {
     program: Box<SubProgram>,
     jump_table: Vec<JumpTableRecord>,
@@ -346,12 +359,7 @@ impl Codegen {
             // { "a.b.c": 1 }
             let test_result = query.get(key);
             if let Some(query_doc) = test_result {
-                if query_doc.element_type() != ElementType::EmbeddedDocument
-                    && !matches!(
-                        query_doc,
-                        Bson::Null | Bson::Undefined | Bson::Array(_)
-                    )
-                {
+                if is_index_safe_equality_value(query_doc) {
                     let mut remain_query = query.clone();
                     remain_query.remove(key);
 

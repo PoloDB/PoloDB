@@ -958,10 +958,10 @@ mod tests {
         let mut col_spec = new_spec("test");
 
         col_spec.indexes.insert(
-            "age_1".into(),
+            "name_1".into(),
             IndexInfo {
                 keys: indexmap! {
-                    "age".into() => 1,
+                    "name".into() => 1,
                 },
                 options: None,
             },
@@ -977,8 +977,8 @@ mod tests {
 
         let expect = r#"Program:
 
-0: OpenRead(b"\x02$I\x00\x02test\x00\x02age_1\x00")
-5: PushValue(32)
+0: OpenRead(b"\x02$I\x00\x02test\x00\x02name_1\x00")
+5: PushValue("Vincent Chan")
 10: PushValue("test")
 15: FindByIndex(35)
 20: Goto(44)
@@ -993,8 +993,8 @@ mod tests {
 43: Halt
 
 44: Label(1)
-49: GetFieldOrNull("name")
-54: PushValue("Vincent Chan")
+49: GetFieldOrNull("age")
+54: PushValue(32)
 59: QueryEqual
 60: FalseJump(35)
 65: Pop

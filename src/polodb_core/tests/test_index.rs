@@ -110,13 +110,13 @@ fn test_create_index_with_data() {
 
         col.create_index(IndexModel {
             keys: doc! {
-                "age": 1,
+                "name": 1,
             },
             options: None,
         }).unwrap();
 
         let doc = col.find_one(doc! {
-            "age": 33
+            "name": "David"
         }).unwrap().unwrap();
 
         assert_eq!(doc.get_str("name").unwrap(), "David");
@@ -137,7 +137,7 @@ fn test_find_by_index() {
 
         col.create_index(IndexModel {
             keys: doc! {
-                "age": 1,
+                "name": 1,
             },
             options: None,
         }).unwrap();
@@ -148,7 +148,7 @@ fn test_find_by_index() {
         }).unwrap();
 
         let doc = col.find_one(doc! {
-            "age": 33
+            "name": "David"
         }).unwrap().unwrap();
 
         assert_eq!(doc.get_str("name").unwrap(), "David");
@@ -414,7 +414,7 @@ fn test_update_with_index() {
 
         col.create_index(IndexModel {
             keys: doc! {
-                "age": 1,
+                "name": 1,
             },
             options: None,
         }).unwrap();
@@ -425,18 +425,18 @@ fn test_update_with_index() {
         }).unwrap();
 
         col.update_many(doc! {
-            "age": 33,
+            "name": "David",
         }, doc! {
             "$set": {
-                "age": 34,
+                "name": "David Chan",
             },
         }).unwrap();
 
         let doc = col.find_one(doc! {
-            "age": 34
+            "name": "David Chan"
         }).unwrap().unwrap();
 
-        assert_eq!(doc.get_str("name").unwrap(), "David");
+        assert_eq!(doc.get_i32("age").unwrap(), 33);
 
         assert_eq!(metrics.find_by_index_count(), 1);
     });

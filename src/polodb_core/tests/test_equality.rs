@@ -177,3 +177,51 @@ fn test_null_undefined_and_array_equality_bypass_index_lookup() {
     );
     assert_eq!(metrics.find_by_index_count(), 0);
 }
+
+#[test]
+fn test_numeric_equality_is_stable_after_creating_index() {
+    let db = prepare_db("test-query-numeric-equality-index-stability").unwrap();
+    let metrics = db.metrics();
+    let collection = db.collection::<Document>("items");
+
+    collection
+        .insert_many(vec![
+            doc! { "_id": "i32", "value": Bson::Int32(2) },
+            doc! { "_id": "i64", "value": Bson::Int64(2) },
+            doc! { "_id": "double", "value": Bson::Double(2.0) },
+            doc! { "_id": "i32_array", "value": [Bson::Int32(2)] },
+            doc! { "_id": "i64_array", "value": [Bson::Int64(2)] },
+            doc! { "_id": "double_array", "value": [Bson::Double(2.0)] },
+            doc! { "_id": "other", "value": Bson::Int32(3) },
+            doc! { "_id": "string", "value": "indexed" },
+        ])
+        .unwrap();
+
+    let query_values = [Bson::Int32(2), Bson::Int64(2), Bson::Double(2.0)];
+    let expected = ["double", "double_array", "i32", "i32_array", "i64", "i64_array"]
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect::<Vec<_>>();
+    let before_index = query_values
+        .iter()
+        .map(|value| matching_ids(&collection, doc! { "value": value.clone() }))
+        .collect::<Vec<_>>();
+
+    collection
+        .create_index(IndexModel {
+            keys: doc! { "value": 1 },
+            options: None,
+        })
+        .unwrap();
+
+    metrics.enable();
+    for (value, before) in query_values.iter().zip(before_index) {
+        let after = matching_ids(&collection, doc! { "value": value.clone() });
+        assert_eq!(after, before);
+        assert_eq!(after, expected);
+    }
+    assert_eq!(metrics.find_by_index_count(), 0);
+
+    assert_matching_ids(&collection, doc! { "value": "indexed" }, &["string"]);
+    assert_eq!(metrics.find_by_index_count(), 1);
+}
