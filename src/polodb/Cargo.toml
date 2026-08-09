@@ -3,9 +3,13 @@ name = "polodb"
 version = "5.3.0"
 authors = ["Vincent Chan <okcdz@diverse.space>"]
 repository = "https://github.com/PoloDB/PoloDB"
-description = "The server of PoloDB, compatible with MongoDB"
+description = "Standalone PoloDB server with partial MongoDB wire protocol compatibility"
 license = "Apache-2.0"
 edition = "2018"
+rust-version = "1.88"
+readme = "README.md"
+keywords = ["database", "document-database", "mongodb"]
+categories = ["command-line-utilities", "database"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [[bin]]

@@ -56,6 +56,12 @@ jobs:
       - name: Build Rust workspace
         run: cargo build --locked --release --workspace --exclude py-binding-polodb
 
+      - name: Verify crates.io packages
+        if: matrix.name == 'Ubuntu'
+        run: |
+          cargo package --locked -p polodb_core
+          cargo package --locked -p polodb
+
   rocksdb-x86-feature-compat:
     name: RocksDB x86 Feature Compatibility
     runs-on: ubuntu-latest
@@ -131,8 +137,8 @@ jobs:
           cp -R "$GITHUB_WORKSPACE/py-polodb/tests" python-tests
           python -m pytest python-tests
 
-  python-bindings-msrv:
-    name: Python Bindings (Rust 1.88 MSRV)
+  rust-workspace-msrv:
+    name: Rust Workspace (1.88 MSRV)
     runs-on: ubuntu-latest
     env:
       RUSTUP_TOOLCHAIN: 1.88.0
@@ -158,8 +164,8 @@ jobs:
             target/
           key: ${{ runner.os }}-rust-1.88-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Check Python bindings at their Rust MSRV
-        run: cargo check --locked -p py-binding-polodb
+      - name: Check workspace at its Rust MSRV
+        run: cargo check --locked --workspace
 
   required-ci-gate:
     name: Rust / Required CI Gate
@@ -168,7 +174,7 @@ jobs:
       - rust-core
       - rocksdb-x86-feature-compat
       - python-bindings
-      - python-bindings-msrv
+      - rust-workspace-msrv
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs succeeded
@@ -176,12 +182,12 @@ jobs:
           RUST_CORE_RESULT: ${{ needs.rust-core.result }}
           ROCKSDB_X86_FEATURE_COMPAT_RESULT: ${{ needs.rocksdb-x86-feature-compat.result }}
           PYTHON_BINDINGS_RESULT: ${{ needs.python-bindings.result }}
-          PYTHON_BINDINGS_MSRV_RESULT: ${{ needs.python-bindings-msrv.result }}
+          RUST_WORKSPACE_MSRV_RESULT: ${{ needs.rust-workspace-msrv.result }}
         run: |
-          if [[ "$RUST_CORE_RESULT" != "success" || "$ROCKSDB_X86_FEATURE_COMPAT_RESULT" != "success" || "$PYTHON_BINDINGS_RESULT" != "success" || "$PYTHON_BINDINGS_MSRV_RESULT" != "success" ]]; then
+          if [[ "$RUST_CORE_RESULT" != "success" || "$ROCKSDB_X86_FEATURE_COMPAT_RESULT" != "success" || "$PYTHON_BINDINGS_RESULT" != "success" || "$RUST_WORKSPACE_MSRV_RESULT" != "success" ]]; then
             echo "Rust Core result: $RUST_CORE_RESULT"
             echo "RocksDB x86 feature compatibility result: $ROCKSDB_X86_FEATURE_COMPAT_RESULT"
             echo "Python Bindings result: $PYTHON_BINDINGS_RESULT"
-            echo "Python Bindings MSRV result: $PYTHON_BINDINGS_MSRV_RESULT"
+            echo "Rust Workspace MSRV result: $RUST_WORKSPACE_MSRV_RESULT"
             exit 1
           fi
